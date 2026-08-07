@@ -29,3 +29,23 @@ Chief Engineer Report Intelligence:
 - approve / edit / reject workflow
 
 No AI-derived fact becomes approved claim data automatically.
+
+
+## Phase B — Chief Engineer Report Intelligence
+
+Completed:
+- CE Report strict extraction schema v1
+- document classification candidate + confidence
+- facts vs source opinions
+- source segment + exact quote attribution
+- source quote verification
+- `ai_runs` persistence with provider/model/prompt/schema versions
+- `document_extractions` candidates with `pending` human status
+- OpenAI Responses API adapter behind provider-neutral gateway
+- PostgreSQL background job type `ai_extract_ce_report`
+- external-AI confidentiality gate for Restricted evidence
+
+No candidate is promoted into official claim facts in Phase B.
+
+### Next — Phase C
+Human AI Review: Approve, Edit, Reject, review audit history, and safe promotion of approved candidate values.

@@ -28,16 +28,17 @@ def _storage() -> LocalDocumentStorage:
     return LocalDocumentStorage(settings.local_storage_path, max_upload_bytes=settings.max_upload_bytes)
 
 
-def enqueue_text_extraction(
+def enqueue_processing_job(
     db: Session,
     *,
     document: Document,
     requested_by_id: UUID | None,
+    job_type: ProcessingJobType,
 ) -> DocumentProcessingJob:
     existing = db.scalar(
         select(DocumentProcessingJob).where(
             DocumentProcessingJob.document_id == document.id,
-            DocumentProcessingJob.job_type == ProcessingJobType.EXTRACT_TEXT,
+            DocumentProcessingJob.job_type == job_type,
             DocumentProcessingJob.status.in_([ProcessingJobStatus.PENDING, ProcessingJobStatus.RUNNING]),
         )
     )
@@ -48,13 +49,24 @@ def enqueue_text_extraction(
         claim_id=document.claim_id,
         document_id=document.id,
         requested_by_id=requested_by_id,
-        job_type=ProcessingJobType.EXTRACT_TEXT,
+        job_type=job_type,
         status=ProcessingJobStatus.PENDING,
         available_at=datetime.now(UTC),
         max_attempts=settings.processing_max_attempts,
     )
     db.add(job)
     return job
+
+
+def enqueue_text_extraction(
+    db: Session,
+    *,
+    document: Document,
+    requested_by_id: UUID | None,
+) -> DocumentProcessingJob:
+    return enqueue_processing_job(
+        db, document=document, requested_by_id=requested_by_id, job_type=ProcessingJobType.EXTRACT_TEXT
+    )
 
 
 def claim_next_job(db: Session, *, worker_id: str) -> DocumentProcessingJob | None:
@@ -85,6 +97,16 @@ def claim_next_job(db: Session, *, worker_id: str) -> DocumentProcessingJob | No
 
 
 def process_job(db: Session, *, job: DocumentProcessingJob) -> None:
+    if job.job_type == ProcessingJobType.EXTRACT_TEXT:
+        _process_text_job(db, job=job)
+        return
+    if job.job_type == ProcessingJobType.AI_EXTRACT_CE_REPORT:
+        _process_ce_ai_job(db, job=job)
+        return
+    _fail_job(db, job=job, document=db.get(Document, job.document_id), error=f"Unsupported job type: {job.job_type}")
+
+
+def _process_text_job(db: Session, *, job: DocumentProcessingJob) -> None:
     document = db.get(Document, job.document_id)
     if document is None or document.deleted_at is not None:
         _fail_job(db, job=job, document=document, error="Document is unavailable or deleted.")
@@ -162,6 +184,39 @@ def process_job(db: Session, *, job: DocumentProcessingJob) -> None:
             _fail_job(db, job=refreshed_job, document=refreshed_document, error=str(exc))
 
 
+def _process_ce_ai_job(db: Session, *, job: DocumentProcessingJob) -> None:
+    document = db.get(Document, job.document_id)
+    if document is None or document.deleted_at is not None:
+        _fail_job(db, job=job, document=document, error="Document is unavailable or deleted.")
+        return
+    try:
+        from app.modules.intelligence.service import run_ce_report_intelligence
+
+        run = run_ce_report_intelligence(
+            db, document=document, requested_by_id=job.requested_by_id
+        )
+        refreshed_job = db.get(DocumentProcessingJob, job.id)
+        if refreshed_job is None:
+            return
+        refreshed_job.status = ProcessingJobStatus.COMPLETED
+        refreshed_job.completed_at = datetime.now(UTC)
+        refreshed_job.locked_at = None
+        refreshed_job.locked_by = None
+        refreshed_job.last_error = None
+        refreshed_job.result = {
+            "ai_run_id": str(run.id),
+            "classification": run.document_type_candidate,
+            "classification_confidence": float(run.classification_confidence or 0),
+        }
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        refreshed_job = db.get(DocumentProcessingJob, job.id)
+        refreshed_document = db.get(Document, job.document_id)
+        if refreshed_job is not None:
+            _fail_job(db, job=refreshed_job, document=refreshed_document, error=str(exc))
+
+
 def _fail_job(db: Session, *, job: DocumentProcessingJob, document: Document | None, error: str) -> None:
     final_failure = job.attempt_count >= job.max_attempts
     job.status = ProcessingJobStatus.FAILED if final_failure else ProcessingJobStatus.PENDING
@@ -170,9 +225,9 @@ def _fail_job(db: Session, *, job: DocumentProcessingJob, document: Document | N
     job.locked_by = None
     if final_failure:
         job.completed_at = datetime.now(UTC)
-        if document is not None:
+        if document is not None and job.job_type == ProcessingJobType.EXTRACT_TEXT:
             document.processing_status = DocumentProcessingStatus.FAILED
-    elif document is not None:
+    elif document is not None and job.job_type == ProcessingJobType.EXTRACT_TEXT:
         document.processing_status = DocumentProcessingStatus.UPLOADED
     db.commit()
 

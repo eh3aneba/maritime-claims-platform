@@ -12,6 +12,7 @@ from app.db.types import enum_values
 
 class ProcessingJobType(str, enum.Enum):
     EXTRACT_TEXT = "extract_text"
+    AI_EXTRACT_CE_REPORT = "ai_extract_ce_report"
 
 
 class ProcessingJobStatus(str, enum.Enum):

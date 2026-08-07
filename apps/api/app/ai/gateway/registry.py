@@ -7,4 +7,8 @@ def get_ai_provider() -> AIProvider:
     settings = get_settings()
     if settings.ai_provider == "disabled":
         return DisabledAIProvider()
+    if settings.ai_provider == "openai":
+        from app.ai.gateway.openai_provider import OpenAIProvider
+
+        return OpenAIProvider(api_key=settings.openai_api_key, model=settings.ai_model)
     raise RuntimeError(f"Unsupported AI provider: {settings.ai_provider}")

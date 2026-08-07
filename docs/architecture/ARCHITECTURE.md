@@ -19,7 +19,7 @@ Browser -> Next.js -> FastAPI -> PostgreSQL
                        -> File storage
 ```
 
-AI/OCR/background workers are deliberately postponed to Sprint 3.
+Sprint 3 activates background document workers and controlled AI document intelligence on top of the secured claim/evidence foundation. OCR remains a separate pending capability for scanned evidence.
 
 ## Guardrails
 

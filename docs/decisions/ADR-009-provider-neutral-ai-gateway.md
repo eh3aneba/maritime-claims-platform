@@ -4,7 +4,7 @@
 Accepted
 
 ## Decision
-Application modules call `app.ai.gateway.AIProvider` rather than vendor SDKs directly. Sprint 3 Phase A ships with the `disabled` provider only.
+Application modules call `app.ai.gateway.AIProvider` rather than vendor SDKs directly. Sprint 3 Phase A shipped with the `disabled` provider only. Phase B adds an OpenAI adapter while keeping `disabled` as the deployment default and preserving the same provider-neutral interface.
 
 ## Rationale
 - Avoid vendor lock-in.

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Phase G introduces the first secure evidence lifecycle for a marine claim. AI/OCR remains deliberately deferred to Sprint 3; Phase G establishes the source-of-truth bytes and metadata that later AI outputs must cite.
+Phase G introduced the secure evidence lifecycle for a marine claim. Sprint 3 now builds text extraction and controlled AI intelligence on top of that source-of-truth; OCR for scanned evidence remains pending.
 
 ## Endpoints
 

@@ -7,7 +7,7 @@ Move slow document work off the request path while preserving tenant isolation, 
 
 `Upload -> DB-backed job -> Worker -> Text extractor -> Source segments -> Processing summary`
 
-AI classification/extraction is intentionally not enabled in this phase.
+Phase A created the processing foundation. Sprint 3 Phase B now enables explicit Chief Engineer Report AI classification/extraction on top of these source segments; see `AI_INTELLIGENCE.md`.
 
 ## Queue choice
 The MVP uses PostgreSQL as a durable job queue. Workers claim pending jobs with `FOR UPDATE SKIP LOCKED` on PostgreSQL. This avoids introducing Redis/Celery before throughput requires it. The worker boundary is replaceable later.

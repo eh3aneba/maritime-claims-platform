@@ -14,6 +14,7 @@ class AIRequest(BaseModel):
     system_instructions: str
     input_text: str
     schema_name: str | None = None
+    output_schema: dict[str, Any] | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 

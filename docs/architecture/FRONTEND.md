@@ -26,4 +26,4 @@ The MVP frontend is a Next.js/TypeScript application that communicates with the 
 
 ## Current limitation
 
-Secure document handling is active in Phase G. AI-derived classification, extraction, chronology and evidence reasoning remain intentionally deferred to Sprint 3.
+Secure document handling is active. Sprint 3 Phase B adds backend CE Report classification/extraction; the human AI review UI, chronology and broader evidence reasoning are still pending.

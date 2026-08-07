@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     processing_poll_seconds: float = 2.0
     ai_provider: str = "disabled"
     ai_model: str = ""
+    openai_api_key: str = ""
+    ai_max_input_chars: int = 60000
+    allow_external_ai_restricted: bool = False
 
     @property
     def max_upload_bytes(self) -> int:

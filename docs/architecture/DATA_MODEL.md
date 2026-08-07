@@ -21,7 +21,7 @@ Sprint 2 / Phase C introduces the first persistent domain model.
 6. Claims and documents support soft deletion; audit logs do not.
 7. Reserve history will become a dedicated append-only table in a later phase; the claim header currently stores only the current snapshot.
 8. File bytes remain outside PostgreSQL; `documents` stores metadata, hash and storage key.
-9. AI extraction tables are deliberately deferred to Sprint 3 so AI never becomes the initial system of record.
+9. Sprint 3 adds `ai_runs` and `document_extractions`; they remain a candidate/review layer and never replace the authoritative claim record automatically.
 
 ## Relationship sketch
 

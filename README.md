@@ -16,7 +16,7 @@ Sprint 2 is complete through Phase G:
 - Tenant-separated persistent local evidence storage with an S3-compatible migration boundary
 - Claim Documents UI with drag-and-drop, upload progress and evidence actions
 
-**Sprint 2 foundation is now complete.** OCR, AI classification, structured extraction, RAG and predictive features remain intentionally deferred until Sprint 3, where they will operate on top of the secured evidence source-of-truth.
+**Sprint 2 foundation is complete and Sprint 3 is active.** Phase B now supports controlled Chief Engineer Report classification and structured, source-linked AI extraction. Human approval remains separate and is the next phase.
 
 ## Prerequisites
 
@@ -133,6 +133,16 @@ The web claim overview includes drag-and-drop multi-file upload, document type/c
 
 Sprint 3 begins with AI Document Intelligence: `uploaded evidence -> text/OCR -> classification -> structured facts -> human review`.
 
+## Sprint 3 Phase A — Document Processing Foundation
+
+Background document processing, page/sheet-aware text extraction, and the provider-neutral AI gateway are active.
+
+## Sprint 3 Phase B — Chief Engineer Report Intelligence
+
+The backend now supports an explicit background AI job for Chief Engineer Reports. It persists versioned `ai_runs` and source-linked `document_extractions`, separates facts from source opinions, verifies source quotes against extracted segments, and leaves every candidate in `pending` human-review state.
+
+`AI_PROVIDER=disabled` remains the default. The OpenAI adapter uses strict Structured Outputs and requires explicit `AI_MODEL` and `OPENAI_API_KEY` configuration. Restricted documents are not sent to that external provider unless separately enabled.
+
 ## Current milestone
 
-Sprint 3 Phase A: background document processing, text extraction, and provider-neutral AI gateway.
+Sprint 3 Phase B complete. Next: Human AI Review (`Approve / Edit / Reject`) and promotion of approved values into the authoritative claim data layer.
