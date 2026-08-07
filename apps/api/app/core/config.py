@@ -9,6 +9,11 @@ class Settings(BaseSettings):
     api_v1_prefix: str = "/api/v1"
     database_url: str = "postgresql+psycopg://maritime:change-me@localhost:5432/maritime_claims"
     secret_key: str = "replace-with-a-long-random-secret"
+    jwt_algorithm: str = "HS256"
+    access_token_expire_minutes: int = 60
+    token_issuer: str = "mcri-api"
+    token_audience: str = "mcri-web"
+    auth_cookie_name: str = "mcri_access_token"
     storage_backend: str = "local"
     local_storage_path: str = ".local-storage/documents"
 

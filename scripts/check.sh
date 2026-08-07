@@ -4,8 +4,9 @@ set -eu
 python -m compileall apps/api/app apps/api/alembic >/dev/null
 (
   cd apps/api
-  pytest -q
-  alembic upgrade head --sql >/tmp/mcri_migration.sql
+  DATABASE_URL=sqlite+pysqlite:///:memory: PYTHONPATH=. pytest -q
+  DATABASE_URL=postgresql://maritime:offline@localhost:5432/maritime_claims PYTHONPATH=. \
+    alembic upgrade head --sql >/tmp/mcri_migration.sql
 )
 
-echo "Static checks, database metadata tests, and offline migration generation passed."
+echo "Static checks, auth/tenant tests, database metadata tests, and offline PostgreSQL migration generation passed."

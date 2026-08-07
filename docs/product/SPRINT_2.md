@@ -43,3 +43,15 @@ Planned:
 - Role enforcement
 - Organization context
 - Tenant-protected repository queries
+
+## Phase D — Authentication & Tenant Security
+
+- Organization-aware login
+- Argon2 password hashing
+- JWT access tokens + HttpOnly browser cookie
+- `/auth/login`, `/auth/logout`, `/auth/me`
+- Admin-only user creation
+- Role authorization foundation
+- Database-authoritative organization context
+- Claim tenant-security helper
+- Cross-tenant isolation tests

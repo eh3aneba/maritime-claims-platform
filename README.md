@@ -4,20 +4,26 @@ Monorepo for the H&M Machinery Claims MVP.
 
 ## Current status
 
-Sprint 2 / Phase C is complete:
+Sprint 2 / Phase D is complete:
 
 - Next.js + TypeScript web app
 - FastAPI backend
 - PostgreSQL 18.4 via Docker Compose
 - SQLAlchemy 2 domain models
 - Alembic migrations
-- Tenant foundation
+- Tenant foundation and backend-enforced tenant isolation
 - Claim/vessel/document/audit foundation
 - Environment configuration
 - Health endpoint
+- Organization-aware authentication (organization slug + email + password)
+- Argon2 password hashing and JWT access tokens
+- HttpOnly auth cookie support
+- Role enforcement for admin / claims manager / claims handler
+- Admin-only user creation
+- Cross-tenant claim access guard
 - Architecture and security ADRs
 
-Authentication and business APIs are implemented in the next Sprint 2 phases. AI remains intentionally deferred until Sprint 3.
+Claims business APIs are implemented in the next Sprint 2 phase. AI remains intentionally deferred until Sprint 3.
 
 ## Prerequisites
 
@@ -90,3 +96,18 @@ scripts/    helper scripts
 6. Sensitive changes are audit logged.
 7. Money uses decimal database types; timestamps are timezone-aware.
 8. MVP remains a modular monolith.
+
+## Bootstrap the first organization admin
+
+After applying the database migration, create the initial organization and administrator with environment variables rather than a public registration endpoint:
+
+```bash
+cd apps/api
+MCRI_BOOTSTRAP_ORG_NAME="Demo Marine Insurer" \
+MCRI_BOOTSTRAP_ORG_SLUG="demo" \
+MCRI_BOOTSTRAP_ADMIN_EMAIL="admin@example.com" \
+MCRI_BOOTSTRAP_ADMIN_PASSWORD="replace-with-a-strong-password" \
+python -m app.modules.auth.seed
+```
+
+Then authenticate through `POST /api/v1/auth/login` with organization slug, email and password.
