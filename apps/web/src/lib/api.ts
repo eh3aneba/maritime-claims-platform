@@ -1,4 +1,4 @@
-import type { AIReviewDetail, AIReviewQueueResponse, AIReviewResult, AISourcePreview, Claim, ClaimDocument, ClaimFactListResponse, ClaimListResponse, CurrentUser, DocumentListResponse, EngineLogEventsResponse, ClaimChronologyResponse, ClaimRuleSummary, Vessel, VesselListResponse } from "./types";
+import type { AIReviewDetail, AIReviewQueueResponse, AIReviewResult, AISourcePreview, Claim, ClaimDocument, ClaimFactListResponse, ClaimListResponse, CurrentUser, DocumentListResponse, EngineLogEventsResponse, ClaimChronologyResponse, ClaimRuleSummary, ClaimTaskListResponse, DocumentRequestResult, Vessel, VesselListResponse } from "./types";
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api/v1";
 
@@ -266,4 +266,21 @@ export function getClaimRules(claimId: string) {
 
 export function evaluateClaimRules(claimId: string) {
   return apiFetch<{ run_id: string; summary: ClaimRuleSummary }>(`/claims/${claimId}/rules/evaluate`, { method: "POST" });
+}
+
+
+export function listClaimTasks(claimId: string) {
+  return apiFetch<ClaimTaskListResponse>(`/claims/${claimId}/tasks`);
+}
+
+export function createDocumentRequest(claimId: string, payload: { requirement_ids?: string[]; all_critical?: boolean; due_date?: string | null; recipient_label?: string | null; assignee_id?: string | null }) {
+  return apiFetch<DocumentRequestResult>(`/claims/${claimId}/document-requests`, { method: "POST", body: JSON.stringify(payload) });
+}
+
+export function completeClaimTask(claimId: string, taskId: string, reason: string) {
+  return apiFetch(`/claims/${claimId}/tasks/${taskId}/complete`, { method: "POST", body: JSON.stringify({ reason }) });
+}
+
+export function markDocumentRequestSent(claimId: string, batchId: string) {
+  return apiFetch(`/claims/${claimId}/document-requests/${batchId}/mark-sent`, { method: "POST" });
 }

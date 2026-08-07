@@ -342,3 +342,46 @@ export interface ClaimRuleSummary {
   readiness: ClaimReadiness;
   triggered_rule_ids: string[];
 }
+
+export type ClaimTaskStatus = "open" | "completed" | "cancelled";
+export type ClaimTaskPriority = "low" | "medium" | "high" | "critical";
+export type ClaimTaskSource = "human" | "rule" | "ai_suggestion";
+export type ClaimTaskType = "document_request" | "review" | "follow_up";
+
+export interface ClaimTask {
+  id: string;
+  claim_id: string;
+  requirement_id: string | null;
+  request_batch_id: string | null;
+  assignee_id: string | null;
+  title: string;
+  description: string | null;
+  task_type: ClaimTaskType;
+  status: ClaimTaskStatus;
+  priority: ClaimTaskPriority;
+  source: ClaimTaskSource;
+  due_date: string | null;
+  completed_at: string | null;
+  completion_reason: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ClaimTaskListResponse { items: ClaimTask[]; total: number; }
+
+export interface DocumentRequestBatch {
+  id: string;
+  claim_id: string;
+  recipient_label: string | null;
+  subject: string;
+  draft_body: string;
+  requirement_ids: string[];
+  status: "draft" | "sent_externally" | "cancelled";
+  due_date: string | null;
+  created_at: string;
+}
+
+export interface DocumentRequestResult {
+  batch: DocumentRequestBatch;
+  tasks: ClaimTask[];
+}

@@ -39,3 +39,8 @@ def test_document_processing_foundation_tables_exist() -> None:
 def test_rules_engine_tables_exist() -> None:
     expected = {"claim_document_requirements", "claim_issues", "rule_evaluation_runs"}
     assert expected.issubset(set(Base.metadata.tables))
+
+
+def test_rule_driven_task_tables_exist() -> None:
+    assert "claim_tasks" in Base.metadata.tables
+    assert "document_request_batches" in Base.metadata.tables

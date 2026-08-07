@@ -12,6 +12,7 @@ from app.modules.processing.router import router as processing_router
 from app.modules.review.router import router as review_router
 from app.modules.rules.router import router as rules_router
 from app.modules.users.router import router as users_router
+from app.modules.tasks.router import router as tasks_router
 from app.modules.vessels.router import router as vessels_router
 
 settings = get_settings()
@@ -40,6 +41,7 @@ app.include_router(documents_router, prefix=settings.api_v1_prefix)
 app.include_router(processing_router, prefix=settings.api_v1_prefix)
 app.include_router(review_router, prefix=settings.api_v1_prefix)
 app.include_router(rules_router, prefix=settings.api_v1_prefix)
+app.include_router(tasks_router, prefix=settings.api_v1_prefix)
 app.include_router(users_router, prefix=settings.api_v1_prefix)
 app.include_router(vessels_router, prefix=settings.api_v1_prefix)
 

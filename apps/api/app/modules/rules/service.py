@@ -410,6 +410,9 @@ def evaluate_claim_rules(db: Session, *, claim: Claim, user: User, trigger: str 
     documents = _active_documents(db, claim)
     requirements, document_rule_ids = _sync_document_requirements(db, claim=claim, facts=facts, documents=documents, now=now)
     issues, issue_rule_ids = _sync_issues(db, claim=claim, facts=facts, now=now)
+    # Keep rule-driven document-request tasks synchronized with evidence receipt.
+    from app.modules.tasks.service import sync_requirement_tasks
+    sync_requirement_tasks(db, claim=claim, user=user)
     readiness = calculate_readiness(requirements)
     triggered = list(dict.fromkeys(document_rule_ids + issue_rule_ids))
     summary = {
