@@ -385,3 +385,35 @@ export interface DocumentRequestResult {
   batch: DocumentRequestBatch;
   tasks: ClaimTask[];
 }
+
+export interface TechnicalEvidenceItem {
+  extraction_id: string | null;
+  field_path: string;
+  value: unknown;
+  document_id: string | null;
+  source_quote: string | null;
+  source_locator_type: string | null;
+  source_locator_value: string | null;
+  source_verified: boolean | null;
+}
+
+export interface TechnicalMatrixRow {
+  key: string;
+  title: string;
+  severity: string;
+  status: string;
+  evidence_for: unknown[];
+  evidence_against: unknown[];
+  unknown_or_missing: string[];
+  recommended_follow_up: string[];
+  explanation: string;
+}
+
+export interface TechnicalReviewResponse {
+  maintenance_facts: Record<string, unknown>;
+  workshop_findings: TechnicalEvidenceItem[];
+  workshop_repair_options: TechnicalEvidenceItem[];
+  workshop_cause_opinions: TechnicalEvidenceItem[];
+  matrix: TechnicalMatrixRow[];
+  generated_at: string;
+}

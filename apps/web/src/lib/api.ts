@@ -1,4 +1,4 @@
-import type { AIReviewDetail, AIReviewQueueResponse, AIReviewResult, AISourcePreview, Claim, ClaimDocument, ClaimFactListResponse, ClaimListResponse, CurrentUser, DocumentListResponse, EngineLogEventsResponse, ClaimChronologyResponse, ClaimRuleSummary, ClaimTaskListResponse, DocumentRequestResult, Vessel, VesselListResponse } from "./types";
+import type { AIReviewDetail, AIReviewQueueResponse, AIReviewResult, AISourcePreview, Claim, ClaimDocument, ClaimFactListResponse, ClaimListResponse, CurrentUser, DocumentListResponse, EngineLogEventsResponse, ClaimChronologyResponse, ClaimRuleSummary, ClaimTaskListResponse, DocumentRequestResult, Vessel, VesselListResponse, TechnicalReviewResponse } from "./types";
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api/v1";
 
@@ -283,4 +283,8 @@ export function completeClaimTask(claimId: string, taskId: string, reason: strin
 
 export function markDocumentRequestSent(claimId: string, batchId: string) {
   return apiFetch(`/claims/${claimId}/document-requests/${batchId}/mark-sent`, { method: "POST" });
+}
+
+export function getTechnicalReview(claimId: string) {
+  return apiFetch<TechnicalReviewResponse>(`/claims/${claimId}/technical-review`);
 }

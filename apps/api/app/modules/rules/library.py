@@ -75,6 +75,10 @@ TECH_RECENT_OVERHAUL = IssueRuleMetadata(
     "TECH-002", IssueCategory.TECHNICAL, "Failure occurred soon after overhaul", IssueSeverity.HIGH,
     "The casualty occurred within 90 days of the reviewed last overhaul date. Review workmanship, assembly, replaced components and post-overhaul testing.",
 )
+TECH_DEFERRED_MAINTENANCE = IssueRuleMetadata(
+    "TECH-003", IssueCategory.TECHNICAL, "PMS indicates deferred maintenance", IssueSeverity.HIGH,
+    "Human-reviewed PMS evidence records deferred maintenance. Review the deferral basis, approval, risk assessment and whether the deferred work is technically related to the casualty. This is not a causation finding.",
+)
 TECH_TEMP_REPAIR = IssueRuleMetadata(
     "TECH-006", IssueCategory.TECHNICAL, "Temporary repair remains subject to permanent repair review", IssueSeverity.HIGH,
     "Reviewed facts indicate a temporary repair. Confirm Class conditions, expiry and the permanent repair plan.",

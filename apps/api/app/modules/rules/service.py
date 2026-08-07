@@ -17,6 +17,7 @@ from app.modules.rules.library import (
     RULESET_VERSION,
     STATUS_RANK,
     TECH_OVERDUE,
+    TECH_DEFERRED_MAINTENANCE,
     TECH_RECENT_OVERHAUL,
     TECH_TEMP_REPAIR,
     DocumentRule,
@@ -353,6 +354,15 @@ def _sync_issues(
             )
             active.append(issue)
             triggered.append(TECH_RECENT_OVERHAUL.rule_id)
+
+    if facts.get("maintenance.overhaul_deferred") is True or "defer" in str(facts.get("maintenance.pms_status") or "").lower():
+        issue = _upsert_issue(
+            db, claim=claim, rule=TECH_DEFERRED_MAINTENANCE,
+            description="Human-reviewed PMS evidence indicates that relevant maintenance was deferred.",
+            evidence={"overhaul_deferred": facts.get("maintenance.overhaul_deferred"), "pms_status": facts.get("maintenance.pms_status")},
+            now=now,
+        )
+        active.append(issue); triggered.append(TECH_DEFERRED_MAINTENANCE.rule_id)
 
     if _condition_applies("temporary_repair", facts=facts, claim=claim):
         issue = _upsert_issue(

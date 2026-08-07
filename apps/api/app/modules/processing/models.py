@@ -14,6 +14,9 @@ class ProcessingJobType(str, enum.Enum):
     EXTRACT_TEXT = "extract_text"
     AI_EXTRACT_CE_REPORT = "ai_extract_ce_report"
     AI_EXTRACT_ENGINE_LOG = "ai_extract_engine_log"
+    AI_EXTRACT_RUNNING_HOURS = "ai_extract_running_hours"
+    AI_EXTRACT_PMS_HISTORY = "ai_extract_pms_history"
+    AI_EXTRACT_WORKSHOP_REPORT = "ai_extract_workshop_report"
 
 
 class ProcessingJobStatus(str, enum.Enum):

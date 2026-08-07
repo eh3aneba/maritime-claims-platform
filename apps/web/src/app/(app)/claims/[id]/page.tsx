@@ -77,6 +77,8 @@ export default function ClaimOverviewPage() {
         <aside className="space-y-5">
           <section className="panel p-5"><h2 className="text-sm font-semibold text-slate-950">AI evidence review</h2><p className="mt-1 text-xs leading-5 text-slate-500">Review source-linked AI candidates before they become approved claim facts.</p><Link href={`/ai-review?claim_id=${claim.id}`} className="secondary-button mt-4 w-full justify-center">Open AI review queue</Link></section>
 
+          <section className="panel p-5"><h2 className="text-sm font-semibold text-slate-950">Technical review</h2><p className="mt-1 text-xs leading-5 text-slate-500">Review approved maintenance facts, workshop findings, source opinions and deterministic technical investigation flags.</p><Link href={`/claims/${claim.id}/technical`} className="secondary-button mt-4 w-full justify-center">Open technical review</Link></section>
+
           <section className="panel p-5"><h2 className="text-sm font-semibold text-slate-950">Chronology & conflicts</h2><p className="mt-1 text-xs leading-5 text-slate-500">Build a timeline from reviewed evidence and inspect material discrepancies without adjudicating source truth.</p><Link href={`/claims/${claim.id}/chronology`} className="secondary-button mt-4 w-full justify-center">Open chronology</Link></section>
 
           <section className="panel p-5"><h2 className="text-sm font-semibold text-slate-950">Requirements & rules</h2><p className="mt-1 text-xs leading-5 text-slate-500">See current-stage missing evidence, blocking items, readiness and explainable rule-generated investigation flags.</p><Link href={`/claims/${claim.id}/rules`} className="secondary-button mt-4 w-full justify-center">Open requirements</Link></section>

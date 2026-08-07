@@ -53,6 +53,10 @@ NON_PROMOTABLE_PATH_FRAGMENTS = {
     "payable",
     "indemnity",
     "engine_log.events[",
+    "pms.records[",
+    "workshop.damage_findings[",
+    "workshop.repair_options[",
+    "workshop.recommendations[",
 }
 
 

@@ -106,6 +106,15 @@ def process_job(db: Session, *, job: DocumentProcessingJob) -> None:
     if job.job_type == ProcessingJobType.AI_EXTRACT_ENGINE_LOG:
         _process_engine_log_ai_job(db, job=job)
         return
+    if job.job_type == ProcessingJobType.AI_EXTRACT_RUNNING_HOURS:
+        _process_named_ai_job(db, job=job, runner_name="run_running_hours_intelligence")
+        return
+    if job.job_type == ProcessingJobType.AI_EXTRACT_PMS_HISTORY:
+        _process_named_ai_job(db, job=job, runner_name="run_pms_history_intelligence")
+        return
+    if job.job_type == ProcessingJobType.AI_EXTRACT_WORKSHOP_REPORT:
+        _process_named_ai_job(db, job=job, runner_name="run_workshop_report_intelligence")
+        return
     _fail_job(db, job=job, document=db.get(Document, job.document_id), error=f"Unsupported job type: {job.job_type}")
 
 
@@ -231,6 +240,40 @@ def _process_engine_log_ai_job(db: Session, *, job: DocumentProcessingJob) -> No
         run = run_engine_log_intelligence(
             db, document=document, requested_by_id=job.requested_by_id
         )
+        refreshed_job = db.get(DocumentProcessingJob, job.id)
+        if refreshed_job is None:
+            return
+        refreshed_job.status = ProcessingJobStatus.COMPLETED
+        refreshed_job.completed_at = datetime.now(UTC)
+        refreshed_job.locked_at = None
+        refreshed_job.locked_by = None
+        refreshed_job.last_error = None
+        refreshed_job.result = {
+            "ai_run_id": str(run.id),
+            "classification": run.document_type_candidate,
+            "classification_confidence": float(run.classification_confidence or 0),
+        }
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        refreshed_job = db.get(DocumentProcessingJob, job.id)
+        refreshed_document = db.get(Document, job.document_id)
+        if refreshed_job is not None:
+            _fail_job(db, job=refreshed_job, document=refreshed_document, error=str(exc))
+
+
+
+def _process_named_ai_job(db: Session, *, job: DocumentProcessingJob, runner_name: str) -> None:
+    document = db.get(Document, job.document_id)
+    if document is None or document.deleted_at is not None:
+        _fail_job(db, job=job, document=document, error="Document is unavailable or deleted.")
+        return
+    try:
+        from app.modules import intelligence as intelligence_module  # noqa: F401
+        from app.modules.intelligence import service as intelligence_service
+
+        runner = getattr(intelligence_service, runner_name)
+        run = runner(db, document=document, requested_by_id=job.requested_by_id)
         refreshed_job = db.get(DocumentProcessingJob, job.id)
         if refreshed_job is None:
             return

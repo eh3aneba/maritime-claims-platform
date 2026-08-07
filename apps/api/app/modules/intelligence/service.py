@@ -14,8 +14,14 @@ from app.ai.gateway.base import AIProvider, AIProviderUnavailable, AIRequest
 from app.ai.gateway.registry import get_ai_provider
 from app.ai.prompts import ce_report as ce_prompt
 from app.ai.prompts import engine_log as engine_log_prompt
+from app.ai.prompts import running_hours as running_hours_prompt
+from app.ai.prompts import pms_history as pms_history_prompt
+from app.ai.prompts import workshop_report as workshop_report_prompt
 from app.ai.schemas.ce_report import ChiefEngineerReportExtraction
 from app.ai.schemas.engine_log import EngineLogExtraction
+from app.ai.schemas.running_hours import RunningHoursExtraction
+from app.ai.schemas.pms_history import PMSHistoryExtraction
+from app.ai.schemas.workshop_report import WorkshopReportExtraction
 from app.core.config import get_settings
 from app.modules.audit.service import write_audit_log
 from app.modules.documents.models import Document
@@ -25,6 +31,9 @@ from app.modules.processing.models import DocumentTextExtraction, DocumentTextSe
 settings = get_settings()
 TASK_CE_REPORT = "chief_engineer_report_extract"
 TASK_ENGINE_LOG = "engine_log_extract"
+TASK_RUNNING_HOURS = "running_hours_extract"
+TASK_PMS_HISTORY = "pms_history_extract"
+TASK_WORKSHOP_REPORT = "workshop_report_extract"
 
 ENGINE_EVENT_PREFIX = "engine_log.events["
 _MEASUREMENT_FIELDS = {
@@ -197,6 +206,82 @@ def run_engine_log_intelligence(
             db, run=run, parsed=parsed, segments=segments, run_warnings=run_warnings
         ),
         audit_action="RUN_ENGINE_LOG_AI_EXTRACTION",
+    )
+
+
+
+def run_running_hours_intelligence(
+    db: Session,
+    *,
+    document: Document,
+    requested_by_id: UUID | None,
+    provider: AIProvider | None = None,
+) -> AIRun:
+    segments, input_text, warnings = _load_source_text(db, document=document)
+    provider = provider or get_ai_provider()
+    run = create_ai_run(
+        db, document=document, requested_by_id=requested_by_id,
+        provider_name=provider.name, model=getattr(provider, "_model", None) or settings.ai_model or "unknown",
+        input_text=input_text, warnings=warnings, task=TASK_RUNNING_HOURS,
+        prompt_name=running_hours_prompt.PROMPT_NAME, prompt_version=running_hours_prompt.PROMPT_VERSION,
+        schema_name=running_hours_prompt.SCHEMA_NAME, schema_version=running_hours_prompt.SCHEMA_VERSION,
+    )
+    return _execute_structured_run(
+        db, run=run, document=document, requested_by_id=requested_by_id, provider=provider, input_text=input_text,
+        output_model=RunningHoursExtraction, system_instructions=running_hours_prompt.SYSTEM_INSTRUCTIONS,
+        accepted_classification="running_hours_record",
+        persist=lambda parsed, run_warnings: _persist_running_hours_extractions(db, run=run, parsed=parsed, segments=segments, run_warnings=run_warnings),
+        audit_action="RUN_RUNNING_HOURS_AI_EXTRACTION",
+    )
+
+
+def run_pms_history_intelligence(
+    db: Session,
+    *,
+    document: Document,
+    requested_by_id: UUID | None,
+    provider: AIProvider | None = None,
+) -> AIRun:
+    segments, input_text, warnings = _load_source_text(db, document=document)
+    provider = provider or get_ai_provider()
+    run = create_ai_run(
+        db, document=document, requested_by_id=requested_by_id,
+        provider_name=provider.name, model=getattr(provider, "_model", None) or settings.ai_model or "unknown",
+        input_text=input_text, warnings=warnings, task=TASK_PMS_HISTORY,
+        prompt_name=pms_history_prompt.PROMPT_NAME, prompt_version=pms_history_prompt.PROMPT_VERSION,
+        schema_name=pms_history_prompt.SCHEMA_NAME, schema_version=pms_history_prompt.SCHEMA_VERSION,
+    )
+    return _execute_structured_run(
+        db, run=run, document=document, requested_by_id=requested_by_id, provider=provider, input_text=input_text,
+        output_model=PMSHistoryExtraction, system_instructions=pms_history_prompt.SYSTEM_INSTRUCTIONS,
+        accepted_classification="pms_history",
+        persist=lambda parsed, run_warnings: _persist_pms_history_extractions(db, run=run, parsed=parsed, segments=segments, run_warnings=run_warnings),
+        audit_action="RUN_PMS_HISTORY_AI_EXTRACTION",
+    )
+
+
+def run_workshop_report_intelligence(
+    db: Session,
+    *,
+    document: Document,
+    requested_by_id: UUID | None,
+    provider: AIProvider | None = None,
+) -> AIRun:
+    segments, input_text, warnings = _load_source_text(db, document=document)
+    provider = provider or get_ai_provider()
+    run = create_ai_run(
+        db, document=document, requested_by_id=requested_by_id,
+        provider_name=provider.name, model=getattr(provider, "_model", None) or settings.ai_model or "unknown",
+        input_text=input_text, warnings=warnings, task=TASK_WORKSHOP_REPORT,
+        prompt_name=workshop_report_prompt.PROMPT_NAME, prompt_version=workshop_report_prompt.PROMPT_VERSION,
+        schema_name=workshop_report_prompt.SCHEMA_NAME, schema_version=workshop_report_prompt.SCHEMA_VERSION,
+    )
+    return _execute_structured_run(
+        db, run=run, document=document, requested_by_id=requested_by_id, provider=provider, input_text=input_text,
+        output_model=WorkshopReportExtraction, system_instructions=workshop_report_prompt.SYSTEM_INSTRUCTIONS,
+        accepted_classification="workshop_report",
+        persist=lambda parsed, run_warnings: _persist_workshop_report_extractions(db, run=run, parsed=parsed, segments=segments, run_warnings=run_warnings),
+        audit_action="RUN_WORKSHOP_REPORT_AI_EXTRACTION",
     )
 
 
@@ -404,6 +489,69 @@ def _persist_engine_log_extractions(
             )
 
 
+
+def _persist_running_hours_extractions(db: Session, *, run: AIRun, parsed: RunningHoursExtraction, segments: list[DocumentTextSegment], run_warnings: list[str]) -> None:
+    fields = [
+        ("identification.vessel_name", parsed.vessel_name),
+        ("identification.imo_number", parsed.imo_number),
+        ("equipment.name", parsed.equipment_name),
+        ("equipment.maker", parsed.equipment_maker),
+        ("equipment.model", parsed.equipment_model),
+        ("equipment.serial_number", parsed.equipment_serial_number),
+        ("maintenance.total_running_hours", parsed.total_running_hours),
+        ("maintenance.running_hours_since_overhaul", parsed.running_hours_since_overhaul),
+        ("maintenance.last_overhaul_date", parsed.last_overhaul_date),
+        ("maintenance.recommended_overhaul_interval", parsed.recommended_overhaul_interval),
+        ("maintenance.interval_extension_approved", parsed.interval_extension_approved),
+        ("maintenance.interval_extension_details", parsed.interval_extension_details),
+    ]
+    for path, item in fields:
+        _persist_item_if_present(db, run=run, field_path=path, semantic_kind=AISemanticKind.FACT, item=item, segments=segments, run_warnings=run_warnings)
+
+
+def _persist_pms_history_extractions(db: Session, *, run: AIRun, parsed: PMSHistoryExtraction, segments: list[DocumentTextSegment], run_warnings: list[str]) -> None:
+    scalars = [
+        ("identification.vessel_name", parsed.vessel_name),
+        ("identification.imo_number", parsed.imo_number),
+        ("equipment.name", parsed.equipment_name),
+        ("maintenance.pms_status", parsed.overall_status),
+        ("maintenance.overhaul_deferred", parsed.overhaul_deferred),
+        ("maintenance.running_hours_since_overhaul", parsed.running_hours_since_overhaul),
+        ("maintenance.last_overhaul_date", parsed.last_overhaul_date),
+    ]
+    for path, item in scalars:
+        _persist_item_if_present(db, run=run, field_path=path, semantic_kind=AISemanticKind.FACT, item=item, segments=segments, run_warnings=run_warnings)
+    for index, record in enumerate(parsed.records):
+        for name in ["job_code", "task", "scheduled_date", "completed_date", "scheduled_running_hours", "actual_running_hours", "status", "deferred", "overdue", "remarks"]:
+            _persist_item_if_present(db, run=run, field_path=f"pms.records[{index}].{name}", semantic_kind=AISemanticKind.FACT, item=getattr(record, name), segments=segments, run_warnings=run_warnings)
+
+
+def _persist_workshop_report_extractions(db: Session, *, run: AIRun, parsed: WorkshopReportExtraction, segments: list[DocumentTextSegment], run_warnings: list[str]) -> None:
+    scalars = [
+        ("workshop.name", parsed.workshop_name),
+        ("workshop.attendance_date", parsed.attendance_date),
+        ("identification.vessel_name", parsed.vessel_name),
+        ("equipment.name", parsed.equipment_name),
+        ("equipment.maker", parsed.equipment_maker),
+        ("equipment.model", parsed.equipment_model),
+        ("equipment.serial_number", parsed.equipment_serial_number),
+        ("workshop.repairable", parsed.repairable),
+        ("repair.temporary", parsed.temporary_repair),
+    ]
+    for path, item in scalars:
+        _persist_item_if_present(db, run=run, field_path=path, semantic_kind=AISemanticKind.FACT, item=item, segments=segments, run_warnings=run_warnings)
+    for index, finding in enumerate(parsed.damage_findings):
+        for name in ["component", "description", "extent", "measurement"]:
+            _persist_item_if_present(db, run=run, field_path=f"workshop.damage_findings[{index}].{name}", semantic_kind=AISemanticKind.FACT, item=getattr(finding, name), segments=segments, run_warnings=run_warnings)
+    for index, option in enumerate(parsed.repair_options):
+        for name in ["scope", "repair_or_replace", "duration", "parts_required", "lead_time"]:
+            _persist_item_if_present(db, run=run, field_path=f"workshop.repair_options[{index}].{name}", semantic_kind=AISemanticKind.FACT, item=getattr(option, name), segments=segments, run_warnings=run_warnings)
+    for index, item in enumerate(parsed.suspected_cause_opinions):
+        _persist_item_if_present(db, run=run, field_path=f"workshop.suspected_cause_opinions[{index}]", semantic_kind=AISemanticKind.OPINION, item=item, segments=segments, run_warnings=run_warnings)
+    for index, item in enumerate(parsed.recommendations):
+        _persist_item_if_present(db, run=run, field_path=f"workshop.recommendations[{index}]", semantic_kind=AISemanticKind.OPINION, item=item, segments=segments, run_warnings=run_warnings)
+
+
 def _persist_item_if_present(
     db: Session,
     *,
@@ -493,12 +641,15 @@ def _normalize_value(field_path: str, value: Any) -> tuple[Any, str | None]:
         digits = re.sub(r"\D", "", normalized)
         if len(digits) == 7:
             return digits, None
-    if field_path.endswith(".date") or field_path == "engine_log.identification.log_date":
+    if field_path.endswith(".date") or field_path in {"engine_log.identification.log_date", "maintenance.last_overhaul_date", "workshop.attendance_date"}:
         try:
             parsed = date.fromisoformat(normalized)
             return parsed.isoformat(), None
         except ValueError:
             return normalized, "Date was not returned in unambiguous ISO YYYY-MM-DD format; manual review required."
+    if field_path in {"maintenance.total_running_hours", "maintenance.running_hours_since_overhaul", "maintenance.recommended_overhaul_interval"}:
+        measurement = _normalize_measurement(normalized)
+        return measurement, None if measurement is not None else "Running-hour value could not be normalized; raw wording was preserved."
     if field_path.startswith(ENGINE_EVENT_PREFIX):
         leaf = field_path.rsplit(".", 1)[-1]
         if leaf in _MEASUREMENT_FIELDS:
@@ -511,7 +662,11 @@ def _normalize_measurement(raw: str) -> dict[str, Any] | None:
     number_match = re.search(r"[-+]?\d+(?:[.,]\d+)?", raw)
     if not number_match:
         return None
-    token = number_match.group(0).replace(",", ".")
+    token = number_match.group(0)
+    if re.fullmatch(r"[-+]?\d{1,3}(?:,\d{3})+", token):
+        token = token.replace(",", "")
+    else:
+        token = token.replace(",", ".")
     try:
         numeric = Decimal(token)
     except InvalidOperation:
