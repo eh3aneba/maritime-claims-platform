@@ -34,3 +34,8 @@ def test_enum_columns_persist_public_values() -> None:
 def test_document_processing_foundation_tables_exist() -> None:
     expected = {"document_processing_jobs", "document_text_extractions", "document_text_segments"}
     assert expected.issubset(set(Base.metadata.tables))
+
+
+def test_rules_engine_tables_exist() -> None:
+    expected = {"claim_document_requirements", "claim_issues", "rule_evaluation_runs"}
+    assert expected.issubset(set(Base.metadata.tables))

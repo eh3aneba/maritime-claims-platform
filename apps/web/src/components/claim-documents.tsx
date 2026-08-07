@@ -21,8 +21,20 @@ const documentTypes = [
   ["chief_engineer_report", "Chief Engineer Report"],
   ["engine_log", "Engine Log"],
   ["workshop_report", "Workshop Report"],
+  ["policy", "H&M Policy / Wording"],
+  ["running_hours_record", "Running Hours Record"],
+  ["overhaul_report", "Last Overhaul Report"],
+  ["pms_record", "PMS History"],
+  ["maker_recommendation", "Maker Recommendation"],
+  ["class_report", "Class Report / Approval"],
   ["quotation", "Quotation"],
   ["invoice", "Invoice"],
+  ["final_invoice", "Final Repair Invoice"],
+  ["towage_contract", "Towage Contract"],
+  ["towage_invoice", "Towage Invoice"],
+  ["towage_report", "Towage / Tug Report"],
+  ["temporary_repair_specification", "Temporary Repair Specification"],
+  ["permanent_repair_plan", "Permanent Repair Plan"],
 ] as const;
 
 function formatBytes(bytes: number) {

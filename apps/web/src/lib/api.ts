@@ -1,4 +1,4 @@
-import type { AIReviewDetail, AIReviewQueueResponse, AIReviewResult, AISourcePreview, Claim, ClaimDocument, ClaimFactListResponse, ClaimListResponse, CurrentUser, DocumentListResponse, EngineLogEventsResponse, ClaimChronologyResponse, Vessel, VesselListResponse } from "./types";
+import type { AIReviewDetail, AIReviewQueueResponse, AIReviewResult, AISourcePreview, Claim, ClaimDocument, ClaimFactListResponse, ClaimListResponse, CurrentUser, DocumentListResponse, EngineLogEventsResponse, ClaimChronologyResponse, ClaimRuleSummary, Vessel, VesselListResponse } from "./types";
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api/v1";
 
@@ -257,4 +257,13 @@ export function resolveEvidenceConflict(
     `/claims/${claimId}/chronology/conflicts/${conflictId}/resolve`,
     { method: "POST", body: JSON.stringify(payload) },
   );
+}
+
+
+export function getClaimRules(claimId: string) {
+  return apiFetch<ClaimRuleSummary>(`/claims/${claimId}/rules`);
+}
+
+export function evaluateClaimRules(claimId: string) {
+  return apiFetch<{ run_id: string; summary: ClaimRuleSummary }>(`/claims/${claimId}/rules/evaluate`, { method: "POST" });
 }

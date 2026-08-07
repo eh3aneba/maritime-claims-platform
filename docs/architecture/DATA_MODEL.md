@@ -51,3 +51,9 @@ Inspect generated SQL without touching a database:
 ```bash
 alembic upgrade head --sql
 ```
+
+## Sprint 4 rules-engine entities
+
+- `claim_document_requirements` — stage/condition-aware evidence requirements, rule provenance, matched document and workflow status.
+- `claim_issues` — explainable rule-generated investigation flags and trigger evidence.
+- `rule_evaluation_runs` — append-only ruleset execution checkpoints and readiness summary.

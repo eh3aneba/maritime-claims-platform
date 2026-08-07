@@ -35,6 +35,7 @@ from app.modules.claims.service import (
     update_current_reserve,
 )
 from app.modules.users.models import User, UserRole
+from app.modules.rules.service import evaluate_claim_rules
 
 router = APIRouter(prefix="/claims", tags=["claims"])
 
@@ -241,6 +242,8 @@ def change_claim_status_endpoint(
             details=payload.reason,
         )
     db.commit()
+    if old_status != claim.status:
+        evaluate_claim_rules(db, claim=claim, user=current_user, trigger="status_change")
     return _read(claim)
 
 

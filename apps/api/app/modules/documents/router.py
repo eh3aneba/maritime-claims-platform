@@ -12,6 +12,7 @@ from app.modules.claims.security import get_claim_for_tenant
 from app.modules.documents.models import ConfidentialityLevel
 from app.modules.documents.schemas import DocumentListResponse, DocumentResponse
 from app.modules.documents.security import get_document_for_tenant
+from app.modules.rules.service import evaluate_claim_rules
 from app.modules.documents.service import (
     _storage,
     create_document_from_upload,
@@ -61,6 +62,7 @@ async def upload_claim_document(
         document_type=document_type,
         confidentiality_level=confidentiality_level,
     )
+    evaluate_claim_rules(db, claim=claim, user=current_user, trigger="document_upload")
     return DocumentResponse.model_validate(document)
 
 
@@ -125,4 +127,5 @@ def delete_claim_document(
     if document is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
     soft_delete_document(db, document=document, current_user=current_user)
+    evaluate_claim_rules(db, claim=claim, user=current_user, trigger="document_delete")
     return Response(status_code=status.HTTP_204_NO_CONTENT)

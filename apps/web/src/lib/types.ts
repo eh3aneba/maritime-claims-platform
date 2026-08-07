@@ -284,3 +284,61 @@ export interface ClaimChronologyResponse {
   event_count: number;
   open_conflict_count: number;
 }
+
+export type RequirementPriority = "critical" | "important" | "supporting";
+export type RequirementStatus = "missing" | "requested" | "received" | "under_review" | "accepted" | "rejected" | "superseded" | "not_required";
+export type ClaimIssueCategory = "technical" | "insurance" | "financial" | "evidence" | "operational" | "workflow";
+export type ClaimIssueSeverity = "low" | "medium" | "high" | "critical";
+export type ClaimIssueStatus = "open" | "under_review" | "resolved" | "dismissed";
+
+export interface ClaimDocumentRequirement {
+  id: string;
+  rule_id: string;
+  rule_version: string;
+  document_type: string;
+  document_label: string;
+  priority: RequirementPriority;
+  required_from_status: string;
+  reason: string;
+  status: RequirementStatus;
+  matched_document_id: string | null;
+  is_active: boolean;
+  last_evaluated_at: string | null;
+}
+
+export interface RuleGeneratedIssue {
+  id: string;
+  issue_key: string;
+  rule_id: string;
+  rule_version: string;
+  category: ClaimIssueCategory;
+  title: string;
+  description: string;
+  severity: ClaimIssueSeverity;
+  status: ClaimIssueStatus;
+  evidence: Record<string, unknown> | null;
+  explanation: string | null;
+  is_active: boolean;
+  last_triggered_at: string | null;
+}
+
+export interface ClaimReadiness {
+  score: number;
+  state: "ready" | "limited" | "not_ready" | string;
+  critical_missing_count: number;
+  important_missing_count: number;
+  blocking_items: string[];
+  satisfied_weight: number;
+  total_weight: number;
+}
+
+export interface ClaimRuleSummary {
+  ruleset_name: string;
+  ruleset_version: string;
+  claim_id: string;
+  evaluated_at: string | null;
+  requirements: ClaimDocumentRequirement[];
+  issues: RuleGeneratedIssue[];
+  readiness: ClaimReadiness;
+  triggered_rule_ids: string[];
+}
