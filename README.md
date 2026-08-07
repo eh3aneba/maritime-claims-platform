@@ -132,3 +132,7 @@ Claim pages now support secure evidence handling. The backend exposes tenant-sco
 The web claim overview includes drag-and-drop multi-file upload, document type/confidentiality metadata, actual upload progress, evidence listing, download and soft removal.
 
 Sprint 3 begins with AI Document Intelligence: `uploaded evidence -> text/OCR -> classification -> structured facts -> human review`.
+
+## Current milestone
+
+Sprint 3 Phase A: background document processing, text extraction, and provider-neutral AI gateway.

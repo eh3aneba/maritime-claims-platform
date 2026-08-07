@@ -17,6 +17,10 @@ class Settings(BaseSettings):
     storage_backend: str = "local"
     local_storage_path: str = ".local-storage/documents"
     max_upload_mb: int = 25
+    processing_max_attempts: int = 3
+    processing_poll_seconds: float = 2.0
+    ai_provider: str = "disabled"
+    ai_model: str = ""
 
     @property
     def max_upload_bytes(self) -> int:

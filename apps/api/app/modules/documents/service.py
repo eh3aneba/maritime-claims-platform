@@ -13,6 +13,7 @@ from app.modules.claims.models import Claim
 from app.modules.documents.models import ConfidentialityLevel, Document
 from app.modules.documents.storage import LocalDocumentStorage, UploadTooLarge
 from app.modules.users.models import User
+from app.modules.processing.service import enqueue_text_extraction
 
 settings = get_settings()
 
@@ -145,6 +146,7 @@ async def create_document_from_upload(
         confidentiality_level=confidentiality_level,
     )
     db.add(document)
+    enqueue_text_extraction(db, document=document, requested_by_id=current_user.id)
     write_audit_log(
         db,
         organization_id=current_user.organization_id,

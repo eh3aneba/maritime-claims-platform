@@ -9,4 +9,4 @@ python -m compileall apps/api/app apps/api/alembic >/dev/null
     alembic upgrade head --sql >/tmp/mcri_migration.sql
 )
 
-echo "Static checks, auth/tenant tests, database metadata tests, and offline PostgreSQL migration generation passed."
+echo "Static checks, backend tests, document-processing tests, and offline PostgreSQL migration generation passed."

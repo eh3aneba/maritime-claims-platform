@@ -27,8 +27,32 @@ services:
       STORAGE_BACKEND: ${STORAGE_BACKEND:-local}
       LOCAL_STORAGE_PATH: ${LOCAL_STORAGE_PATH:-/data/documents}
       MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-25}
+      PROCESSING_MAX_ATTEMPTS: ${PROCESSING_MAX_ATTEMPTS:-3}
+      PROCESSING_POLL_SECONDS: ${PROCESSING_POLL_SECONDS:-2}
+      AI_PROVIDER: ${AI_PROVIDER:-disabled}
+      AI_MODEL: ${AI_MODEL:-}
     ports:
       - "8000:8000"
+    volumes:
+      - local_documents:/data/documents
+    depends_on:
+      db:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: ./apps/api
+    command: ["python", "-m", "app.workers.document_worker"]
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://maritime:change-me-in-local-env@db:5432/maritime_claims}
+      STORAGE_BACKEND: ${STORAGE_BACKEND:-local}
+      LOCAL_STORAGE_PATH: ${LOCAL_STORAGE_PATH:-/data/documents}
+      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-25}
+      PROCESSING_MAX_ATTEMPTS: ${PROCESSING_MAX_ATTEMPTS:-3}
+      PROCESSING_POLL_SECONDS: ${PROCESSING_POLL_SECONDS:-2}
+      AI_PROVIDER: ${AI_PROVIDER:-disabled}
+      AI_MODEL: ${AI_MODEL:-}
     volumes:
       - local_documents:/data/documents
     depends_on:

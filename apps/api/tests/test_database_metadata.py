@@ -29,3 +29,8 @@ def test_enum_columns_persist_public_values() -> None:
     assert claims.c.status.type.enums[0] == "new"
     users = Base.metadata.tables["users"]
     assert users.c.role.type.enums == ["admin", "claims_manager", "claims_handler"]
+
+
+def test_document_processing_foundation_tables_exist() -> None:
+    expected = {"document_processing_jobs", "document_text_extractions", "document_text_segments"}
+    assert expected.issubset(set(Base.metadata.tables))
