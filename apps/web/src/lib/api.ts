@@ -292,3 +292,28 @@ export function getTechnicalReview(claimId: string) {
 export function getFinancialReview(claimId: string) { return apiFetch<FinancialReviewResponse>(`/claims/${claimId}/financial-review`); }
 export function updateCostStatus(claimId:string,itemId:string,status:CostReviewStatus,reason:string){ return apiFetch(`/claims/${claimId}/financial-review/items/${itemId}/status`,{method:"POST",body:JSON.stringify({status,reason})}); }
 export function resolveFinancialFlag(claimId:string,flagId:string,status:"explained"|"resolved"|"irrelevant",note:string){ return apiFetch(`/claims/${claimId}/financial-review/flags/${flagId}/resolve`,{method:"POST",body:JSON.stringify({status,note})}); }
+
+export function getInitialAssessment(claimId: string) {
+  return apiFetch<import("./types").InitialAssessment | null>(`/claims/${claimId}/initial-assessment`);
+}
+
+export function generateInitialAssessment(claimId: string, payload: { allow_if_not_ready: boolean; override_reason?: string | null }) {
+  return apiFetch<import("./types").InitialAssessment>(`/claims/${claimId}/initial-assessment/generate`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function reviewAssessmentSection(claimId: string, sectionId: string, payload: { action: "approve" | "edit"; text?: string | null }) {
+  return apiFetch<import("./types").AssessmentSection>(`/claims/${claimId}/initial-assessment/sections/${sectionId}/review`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function approveInitialAssessment(claimId: string, assessmentId: string, note?: string) {
+  return apiFetch<import("./types").InitialAssessment>(`/claims/${claimId}/initial-assessment/${assessmentId}/approve`, {
+    method: "POST",
+    body: JSON.stringify({ note: note || null }),
+  });
+}

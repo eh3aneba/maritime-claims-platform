@@ -2,6 +2,7 @@
 
 from app.db.base import Base
 from app.modules.audit.models import AuditLog  # noqa: F401
+from app.modules.assessments.models import InitialAssessment, AssessmentSection  # noqa: F401
 from app.modules.claims.models import Claim, ClaimReferenceSequence  # noqa: F401
 from app.modules.claims.facts import ClaimFact  # noqa: F401
 from app.modules.chronology.models import ChronologyEvent, EventEvidence, EvidenceConflict  # noqa: F401

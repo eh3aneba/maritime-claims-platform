@@ -424,3 +424,37 @@ export interface FinancialFlag { id:string; flag_type:string; severity:string; t
 export interface QuoteComparisonRow { document_id:string; supplier:string|null; quotation_number:string|null; currency:string|null; total:string|null; scope_summary:string|null; lead_time:string|null; repair_duration:string|null; line_items:Array<Record<string,unknown>>; }
 export interface ReserveHistoryRow { id:string; amount:string; currency:string; reason:string; created_by_id:string|null; created_at:string; }
 export interface FinancialReviewResponse { claim_id:string; totals_by_currency:Record<string,string>; items:FinancialCostItem[]; flags:FinancialFlag[]; quotations:QuoteComparisonRow[]; reserve_history:ReserveHistoryRow[]; }
+
+export type AssessmentStatus = "draft" | "under_review" | "approved";
+export type AssessmentSectionStatus = "pending" | "approved" | "edited";
+
+export interface AssessmentSection {
+  id: string;
+  section_key: string;
+  title: string;
+  sort_order: number;
+  draft_text: string;
+  approved_text: string | null;
+  status: AssessmentSectionStatus;
+  source_manifest: Array<{ kind: string; id: string; label: string }>;
+  reviewed_by_id: string | null;
+  reviewed_at: string | null;
+}
+
+export interface InitialAssessment {
+  id: string;
+  claim_id: string;
+  version: number;
+  status: AssessmentStatus;
+  readiness_score: number;
+  readiness_state: string;
+  blocking_items: string[];
+  is_preliminary: boolean;
+  generation_override_reason: string | null;
+  generated_by_id: string | null;
+  approved_by_id: string | null;
+  approved_at: string | null;
+  created_at: string;
+  updated_at: string;
+  sections: AssessmentSection[];
+}

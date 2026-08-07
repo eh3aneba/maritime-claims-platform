@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
 from app.modules.auth.router import router as auth_router
+from app.modules.assessments.router import router as assessments_router
 from app.modules.claims.router import router as claims_router
 from app.modules.chronology.router import router as chronology_router
 from app.modules.documents.router import router as documents_router
@@ -35,6 +36,7 @@ app.add_middleware(
 )
 
 app.include_router(health_router, prefix=settings.api_v1_prefix)
+app.include_router(assessments_router, prefix=settings.api_v1_prefix)
 app.include_router(financial_router, prefix=settings.api_v1_prefix)
 app.include_router(intelligence_router, prefix=settings.api_v1_prefix)
 app.include_router(auth_router, prefix=settings.api_v1_prefix)
