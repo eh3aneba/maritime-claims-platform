@@ -8,9 +8,9 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.modules.auth.dependencies import CurrentUser
 from app.modules.claims.security import get_claim_for_tenant
-from app.modules.pilot.models import PilotFeedback, PilotSession
-from app.modules.pilot.schemas import PilotEventCreate, PilotFeedbackCreate, PilotFeedbackRead, PilotMetrics, PilotScorecard, PilotSessionEnd, PilotSessionRead, PilotSessionStart
-from app.modules.pilot.service import add_feedback, build_scorecard, calculate_metrics, end_session, get_session, record_event, start_session
+from app.modules.pilot.models import PilotCommercialValidation, PilotFeedback, PilotSession
+from app.modules.pilot.schemas import PilotCommercialScorecard, PilotCommercialValidationRead, PilotCommercialValidationUpsert, PilotEventCreate, PilotFeedbackCreate, PilotFeedbackRead, PilotMetrics, PilotScorecard, PilotSessionEnd, PilotSessionRead, PilotSessionStart
+from app.modules.pilot.service import add_feedback, build_commercial_scorecard, build_scorecard, calculate_metrics, end_session, get_commercial_validation, get_session, record_event, start_session, upsert_commercial_validation
 
 router = APIRouter(prefix="/pilot", tags=["pilot"])
 
@@ -77,3 +77,26 @@ def metrics(session_id: UUID, current_user: CurrentUser, db: Annotated[Session, 
 def scorecard(session_id: UUID, current_user: CurrentUser, db: Annotated[Session, Depends(get_db)]):
     row = _session_or_404(db, session_id=session_id, organization_id=current_user.organization_id)
     return build_scorecard(db, session=row)
+
+
+@router.get("/sessions/{session_id}/commercial-validation", response_model=PilotCommercialValidationRead | None)
+def commercial_validation_get(session_id: UUID, current_user: CurrentUser, db: Annotated[Session, Depends(get_db)]):
+    _session_or_404(db, session_id=session_id, organization_id=current_user.organization_id)
+    return get_commercial_validation(db, session_id=session_id, organization_id=current_user.organization_id)
+
+
+@router.put("/sessions/{session_id}/commercial-validation", response_model=PilotCommercialValidationRead)
+def commercial_validation_put(session_id: UUID, payload: PilotCommercialValidationUpsert, current_user: CurrentUser, db: Annotated[Session, Depends(get_db)]):
+    row = _session_or_404(db, session_id=session_id, organization_id=current_user.organization_id)
+    try:
+        result = upsert_commercial_validation(db, session=row, user=current_user, values=payload.model_dump())
+        db.commit(); db.refresh(result)
+        return result
+    except ValueError as exc:
+        db.rollback(); raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.get("/sessions/{session_id}/commercial-scorecard", response_model=PilotCommercialScorecard)
+def commercial_scorecard(session_id: UUID, current_user: CurrentUser, db: Annotated[Session, Depends(get_db)]):
+    row = _session_or_404(db, session_id=session_id, organization_id=current_user.organization_id)
+    return build_commercial_scorecard(db, session=row)

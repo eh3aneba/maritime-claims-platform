@@ -8,8 +8,8 @@ from sqlalchemy.orm import Session
 
 from app.modules.audit.service import write_audit_log
 from app.modules.claims.models import Claim
-from app.modules.pilot.models import PilotEvent, PilotFeedback, PilotSession
-from app.modules.pilot.schemas import PilotBacklogItem, PilotMetrics, PilotScorecard
+from app.modules.pilot.models import PilotCommercialValidation, PilotEvent, PilotFeedback, PilotSession
+from app.modules.pilot.schemas import PilotBacklogItem, PilotCommercialScorecard, PilotCommercialValidationRead, PilotMetrics, PilotROIEstimate, PilotScorecard
 from app.modules.users.models import User
 
 
@@ -237,3 +237,190 @@ def build_scorecard(db: Session, *, session: PilotSession) -> PilotScorecard:
     evaluated = [value for value in checks.values() if value is not None]
     ready = session.status == "completed" and bool(evaluated) and all(evaluated)
     return PilotScorecard(metrics=metrics, targets=targets, checks=checks, ready_for_next_pilot=ready, backlog=build_backlog(feedback))
+
+
+def get_commercial_validation(db: Session, *, session_id: UUID, organization_id: UUID) -> PilotCommercialValidation | None:
+    return db.scalar(
+        select(PilotCommercialValidation).where(
+            PilotCommercialValidation.session_id == session_id,
+            PilotCommercialValidation.organization_id == organization_id,
+        )
+    )
+
+
+def upsert_commercial_validation(db: Session, *, session: PilotSession, user: User, values: dict) -> PilotCommercialValidation:
+    if session.organization_id != user.organization_id:
+        raise ValueError("Pilot session does not belong to the current organization.")
+    row = get_commercial_validation(db, session_id=session.id, organization_id=user.organization_id)
+    created = row is None
+    if row is None:
+        row = PilotCommercialValidation(
+            organization_id=user.organization_id,
+            session_id=session.id,
+            claim_id=session.claim_id,
+            recorded_by_id=user.id,
+        )
+        db.add(row)
+    for key, value in values.items():
+        if key == "currency" and value:
+            value = str(value).upper()
+        setattr(row, key, value)
+    row.recorded_by_id = user.id
+    db.flush()
+    record_event(
+        db,
+        session=session,
+        user_id=user.id,
+        event_type="commercial_validation_saved",
+        source="browser",
+        entity_type="pilot_commercial_validation",
+        entity_id=row.id,
+        event_data={"created": created, "buying_stage": row.buying_stage, "respondent_outcome": row.respondent_outcome},
+    )
+    write_audit_log(
+        db,
+        organization_id=user.organization_id,
+        user_id=user.id,
+        action="UPSERT_PILOT_COMMERCIAL_VALIDATION",
+        entity_type="pilot_commercial_validation",
+        entity_id=row.id,
+        new_values={
+            "session_id": str(session.id),
+            "buying_stage": row.buying_stage,
+            "budget_status": row.budget_status,
+            "respondent_outcome": row.respondent_outcome,
+            "preferred_pricing_model": row.preferred_pricing_model,
+        },
+    )
+    return row
+
+
+def calculate_roi_estimate(db: Session, *, session: PilotSession, commercial: PilotCommercialValidation | None) -> PilotROIEstimate:
+    metrics = calculate_metrics(db, session=session)
+    currency = commercial.currency if commercial else "USD"
+    baseline = session.baseline_assessment_minutes
+    observed = metrics.time_to_first_assessment_minutes
+    minutes_saved = None
+    if baseline is not None and observed is not None:
+        minutes_saved = max(0.0, float(baseline) - float(observed))
+
+    annual_claim_volume = commercial.annual_claim_volume if commercial else None
+    adoption_rate = float(commercial.adoption_rate) if commercial and commercial.adoption_rate is not None else None
+    annual_claims_in_scope = None
+    annual_hours_saved = None
+    annual_labor_value = None
+    if annual_claim_volume is not None and adoption_rate is not None:
+        annual_claims_in_scope = float(annual_claim_volume) * adoption_rate
+    if minutes_saved is not None and annual_claims_in_scope is not None:
+        annual_hours_saved = minutes_saved / 60.0 * annual_claims_in_scope
+    if annual_hours_saved is not None and commercial and commercial.fully_loaded_hourly_cost is not None:
+        annual_labor_value = annual_hours_saved * float(commercial.fully_loaded_hourly_cost)
+
+    wtp_midpoint = None
+    if commercial and commercial.annual_wtp_min is not None and commercial.annual_wtp_max is not None:
+        wtp_midpoint = (float(commercial.annual_wtp_min) + float(commercial.annual_wtp_max)) / 2.0
+    elif commercial and commercial.annual_wtp_max is not None:
+        wtp_midpoint = float(commercial.annual_wtp_max)
+    elif commercial and commercial.annual_wtp_min is not None:
+        wtp_midpoint = float(commercial.annual_wtp_min)
+
+    roi_multiple = None
+    payback_months = None
+    if annual_labor_value is not None and wtp_midpoint and wtp_midpoint > 0:
+        roi_multiple = annual_labor_value / wtp_midpoint
+        if annual_labor_value > 0:
+            payback_months = wtp_midpoint / annual_labor_value * 12.0
+
+    assumptions_complete = all(
+        value is not None
+        for value in [minutes_saved, annual_claim_volume, adoption_rate, annual_labor_value]
+    )
+    return PilotROIEstimate(
+        currency=currency,
+        minutes_saved_per_claim=round(minutes_saved, 2) if minutes_saved is not None else None,
+        annual_claim_volume=annual_claim_volume,
+        adoption_rate=round(adoption_rate, 4) if adoption_rate is not None else None,
+        annual_claims_in_scope=round(annual_claims_in_scope, 2) if annual_claims_in_scope is not None else None,
+        annual_hours_saved=round(annual_hours_saved, 2) if annual_hours_saved is not None else None,
+        annual_labor_value=round(annual_labor_value, 2) if annual_labor_value is not None else None,
+        annual_wtp_midpoint=round(wtp_midpoint, 2) if wtp_midpoint is not None else None,
+        estimated_roi_multiple=round(roi_multiple, 2) if roi_multiple is not None else None,
+        estimated_payback_months=round(payback_months, 2) if payback_months is not None else None,
+        assumptions_complete=assumptions_complete,
+    )
+
+
+def build_commercial_scorecard(db: Session, *, session: PilotSession) -> PilotCommercialScorecard:
+    commercial = get_commercial_validation(db, session_id=session.id, organization_id=session.organization_id)
+    product = build_scorecard(db, session=session)
+    roi = calculate_roi_estimate(db, session=session, commercial=commercial)
+
+    buyer_identified = None if commercial is None else bool((commercial.buyer_role or "").strip())
+    champion_identified = None if commercial is None else bool((commercial.champion_role or "").strip())
+    wtp_signal = None
+    next_step_committed = None
+    budget_signal = None
+    if commercial is not None:
+        wtp_signal = any(
+            value is not None and float(value) > 0
+            for value in [commercial.pilot_fee_willingness, commercial.annual_wtp_min, commercial.annual_wtp_max]
+        )
+        next_step_committed = bool((commercial.next_step or "").strip())
+        budget_signal = commercial.budget_status in {"budget_identified", "approved"}
+
+    checks: dict[str, bool | None] = {
+        "measurable_time_value": product.checks.get("time_reduction_target"),
+        "ai_trust_signal": product.checks.get("ai_acceptance_target"),
+        "user_value_signal": product.checks.get("user_rating_target"),
+        "no_critical_product_feedback": product.checks.get("no_critical_feedback"),
+        "buyer_identified": buyer_identified,
+        "champion_identified": champion_identified,
+        "willingness_to_pay_signal": wtp_signal,
+        "budget_signal": budget_signal,
+        "next_step_committed": next_step_committed,
+    }
+
+    rationale: list[str] = []
+    decision: str = "INSUFFICIENT_DATA"
+    if session.status != "completed":
+        rationale.append("Pilot session is not completed yet.")
+    elif commercial is None:
+        rationale.append("Commercial interview has not been recorded.")
+    elif commercial.respondent_outcome == "no_interest" and not wtp_signal and not next_step_committed:
+        decision = "STOP"
+        rationale.append("Respondent explicitly recorded no interest with no willingness-to-pay or follow-up signal.")
+    else:
+        product_failures = [
+            key for key in ["measurable_time_value", "ai_trust_signal", "user_value_signal", "no_critical_product_feedback"]
+            if checks.get(key) is False
+        ]
+        commercial_go = all(checks.get(key) is True for key in ["buyer_identified", "champion_identified", "willingness_to_pay_signal", "next_step_committed"])
+        product_evaluated = any(checks.get(key) is not None for key in ["measurable_time_value", "ai_trust_signal", "user_value_signal"])
+        product_go = product_evaluated and not product_failures
+        if product_go and commercial_go:
+            decision = "GO"
+            rationale.append("Measured product value is not missing target and commercial signals include buyer, champion, WTP, and a committed next step.")
+        elif product_failures:
+            decision = "PIVOT"
+            rationale.append("At least one measured product-value or trust target missed; improve the workflow before expanding commercial scope.")
+        elif commercial.respondent_outcome in {"interested", "pilot_extension", "business_case", "procurement"} and not commercial_go:
+            decision = "PIVOT"
+            rationale.append("Interest exists, but the buying case is incomplete; resolve missing buyer, champion, WTP, or next-step evidence.")
+        else:
+            rationale.append("There is not enough measured product and commercial evidence for a GO/PIVOT/STOP decision.")
+
+    if commercial and commercial.blockers:
+        rationale.append(f"Recorded blockers: {', '.join(str(item) for item in commercial.blockers[:5])}.")
+    if roi.assumptions_complete and roi.annual_labor_value is not None:
+        rationale.append(f"Pilot ROI model estimates {roi.currency} {roi.annual_labor_value:,.2f} annual labor-value capacity under recorded assumptions.")
+
+    commercial_read = PilotCommercialValidationRead.model_validate(commercial) if commercial else None
+    return PilotCommercialScorecard(
+        session_id=session.id,
+        commercial_validation=commercial_read,
+        roi=roi,
+        checks=checks,
+        recommended_validation_decision=decision,
+        rationale=rationale,
+        next_step=commercial.next_step if commercial else None,
+    )

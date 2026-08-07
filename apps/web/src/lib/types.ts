@@ -547,3 +547,64 @@ export interface PilotScorecard {
   ready_for_next_pilot: boolean;
   backlog: PilotBacklogItem[];
 }
+
+export interface PilotCommercialValidation {
+  id: string;
+  session_id: string;
+  claim_id: string;
+  recorded_by_id: string | null;
+  annual_claim_volume: number | null;
+  expected_users: number | null;
+  fully_loaded_hourly_cost: string | number | null;
+  adoption_rate: string | number | null;
+  currency: string;
+  buyer_role: string | null;
+  champion_role: string | null;
+  budget_owner_role: string | null;
+  procurement_owner_role: string | null;
+  security_approver_role: string | null;
+  budget_status: "unknown" | "no_budget" | "exploring" | "budget_identified" | "approved";
+  buying_stage: "problem_validation" | "solution_evaluation" | "pilot" | "business_case" | "procurement" | "contracting" | "no_interest";
+  decision_timeline_days: number | null;
+  pilot_fee_willingness: string | number | null;
+  annual_wtp_min: string | number | null;
+  annual_wtp_max: string | number | null;
+  preferred_pricing_model: "unknown" | "pilot_fee" | "annual_platform" | "per_user" | "per_claim" | "usage";
+  deployment_preference: "unknown" | "cloud" | "private_cloud" | "on_prem";
+  value_hypotheses: string[];
+  must_have_features: string[];
+  required_integrations: string[];
+  security_requirements: string[];
+  blockers: string[];
+  respondent_outcome: "unknown" | "interested" | "pilot_extension" | "business_case" | "procurement" | "no_interest";
+  next_step: string | null;
+  next_step_due_date: string | null;
+  commercial_notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PilotROIEstimate {
+  currency: string;
+  minutes_saved_per_claim: number | null;
+  annual_claim_volume: number | null;
+  adoption_rate: number | null;
+  annual_claims_in_scope: number | null;
+  annual_hours_saved: number | null;
+  annual_labor_value: number | null;
+  annual_wtp_midpoint: number | null;
+  estimated_roi_multiple: number | null;
+  estimated_payback_months: number | null;
+  assumptions_complete: boolean;
+  note: string;
+}
+
+export interface PilotCommercialScorecard {
+  session_id: string;
+  commercial_validation: PilotCommercialValidation | null;
+  roi: PilotROIEstimate;
+  checks: Record<string, boolean | null>;
+  recommended_validation_decision: "GO" | "PIVOT" | "STOP" | "INSUFFICIENT_DATA";
+  rationale: string[];
+  next_step: string | null;
+}

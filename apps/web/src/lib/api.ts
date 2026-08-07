@@ -356,3 +356,15 @@ export function getPilotScorecard(sessionId: string) {
 export function recordPilotBrowserEvent(sessionId: string, payload: { event_type: string; duration_ms?: number; event_data?: Record<string, unknown> }) {
   return apiFetch(`/pilot/sessions/${sessionId}/events`, { method: "POST", body: JSON.stringify(payload) });
 }
+
+export function getPilotCommercialValidation(sessionId: string) {
+  return apiFetch<import("./types").PilotCommercialValidation | null>(`/pilot/sessions/${sessionId}/commercial-validation`);
+}
+
+export function savePilotCommercialValidation(sessionId: string, payload: Record<string, unknown>) {
+  return apiFetch<import("./types").PilotCommercialValidation>(`/pilot/sessions/${sessionId}/commercial-validation`, { method: "PUT", body: JSON.stringify(payload) });
+}
+
+export function getPilotCommercialScorecard(sessionId: string) {
+  return apiFetch<import("./types").PilotCommercialScorecard>(`/pilot/sessions/${sessionId}/commercial-scorecard`);
+}
