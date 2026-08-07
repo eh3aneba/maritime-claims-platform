@@ -1,4 +1,4 @@
-.PHONY: up down logs api-check test migration-sql migrate
+.PHONY: up down logs api-check test migration-sql migrate pilot-mt-orion
 
 up:
 	docker compose up --build
@@ -20,3 +20,7 @@ migration-sql:
 
 migrate:
 	docker compose exec api alembic upgrade head
+
+
+pilot-mt-orion:
+	cd apps/api && pytest -q tests/test_mt_orion_end_to_end_pilot.py

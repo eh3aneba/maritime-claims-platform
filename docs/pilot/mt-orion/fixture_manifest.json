@@ -1,0 +1,25 @@
+{
+  "pilot_id": "MCRI-PILOT-ORION-001",
+  "synthetic": true,
+  "claim_reference_expected": "MCRI-HM-2026-0001",
+  "vessel": "MT ORION",
+  "incident_date": "2026-07-10",
+  "notification_date": "2026-07-11",
+  "claim_type": "hull_machinery",
+  "claim_subtype": "machinery_damage",
+  "equipment": "Main Engine Turbocharger No.2",
+  "estimated_loss": {"amount": 550000, "currency": "USD"},
+  "pilot_reserve": {"amount": 575000, "currency": "USD"},
+  "documents": [
+    {"file": "01_claim_notification.docx", "document_type": "claim_notification", "ai_schema": null},
+    {"file": "02_chief_engineer_report.docx", "document_type": "chief_engineer_report", "ai_schema": "ce_report_v1"},
+    {"file": "03_engine_log.xlsx", "document_type": "engine_log", "ai_schema": "engine_log_v1"},
+    {"file": "04_running_hours.xlsx", "document_type": "running_hours_record", "ai_schema": "running_hours_v1"},
+    {"file": "05_pms_history.xlsx", "document_type": "pms_record", "ai_schema": "pms_history_v1"},
+    {"file": "06_workshop_report.docx", "document_type": "workshop_report", "ai_schema": "workshop_report_v1"},
+    {"file": "07_quotation_A.xlsx", "document_type": "quotation", "ai_schema": "quotation_v1"},
+    {"file": "08_quotation_B.xlsx", "document_type": "quotation", "ai_schema": "quotation_v1"},
+    {"file": "09_invoice.xlsx", "document_type": "invoice", "ai_schema": "invoice_v1"}
+  ],
+  "intentionally_missing": ["policy", "overhaul_report", "maker_recommendation"]
+}
