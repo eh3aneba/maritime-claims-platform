@@ -417,3 +417,10 @@ export interface TechnicalReviewResponse {
   matrix: TechnicalMatrixRow[];
   generated_at: string;
 }
+
+export type CostReviewStatus = "claimed" | "under_review" | "potentially_recoverable" | "potentially_non_recoverable" | "accepted" | "rejected" | "paid";
+export interface FinancialCostItem { id:string; document_id:string; document_kind:string; supplier:string|null; document_number:string|null; document_date:string|null; line_index:number; description:string; quantity:string|null; unit:string|null; unit_price:string|null; amount:string; currency:string; category:string|null; review_status:CostReviewStatus; }
+export interface FinancialFlag { id:string; flag_type:string; severity:string; title:string; explanation:string; evidence:Record<string,unknown>|null; status:"open"|"explained"|"resolved"|"irrelevant"; resolution_note:string|null; }
+export interface QuoteComparisonRow { document_id:string; supplier:string|null; quotation_number:string|null; currency:string|null; total:string|null; scope_summary:string|null; lead_time:string|null; repair_duration:string|null; line_items:Array<Record<string,unknown>>; }
+export interface ReserveHistoryRow { id:string; amount:string; currency:string; reason:string; created_by_id:string|null; created_at:string; }
+export interface FinancialReviewResponse { claim_id:string; totals_by_currency:Record<string,string>; items:FinancialCostItem[]; flags:FinancialFlag[]; quotations:QuoteComparisonRow[]; reserve_history:ReserveHistoryRow[]; }

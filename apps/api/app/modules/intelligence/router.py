@@ -223,3 +223,12 @@ def enqueue_pms_history_intelligence(claim_id: UUID, document_id: UUID, current_
 @router.post("/workshop-report", status_code=status.HTTP_202_ACCEPTED)
 def enqueue_workshop_report_intelligence(claim_id: UUID, document_id: UUID, current_user: CurrentUser, db: Annotated[Session, Depends(get_db)]) -> dict[str, str]:
     return _enqueue_specialized_intelligence(claim_id=claim_id, document_id=document_id, current_user=current_user, db=db, job_type=ProcessingJobType.AI_EXTRACT_WORKSHOP_REPORT)
+
+
+@router.post("/quotation", status_code=status.HTTP_202_ACCEPTED)
+def enqueue_quotation_intelligence(claim_id: UUID, document_id: UUID, current_user: CurrentUser, db: Annotated[Session, Depends(get_db)]) -> dict[str, str]:
+    return _enqueue_specialized_intelligence(claim_id=claim_id, document_id=document_id, current_user=current_user, db=db, job_type=ProcessingJobType.AI_EXTRACT_QUOTATION)
+
+@router.post("/invoice", status_code=status.HTTP_202_ACCEPTED)
+def enqueue_invoice_intelligence(claim_id: UUID, document_id: UUID, current_user: CurrentUser, db: Annotated[Session, Depends(get_db)]) -> dict[str, str]:
+    return _enqueue_specialized_intelligence(claim_id=claim_id, document_id=document_id, current_user=current_user, db=db, job_type=ProcessingJobType.AI_EXTRACT_INVOICE)

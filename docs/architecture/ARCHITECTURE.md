@@ -30,3 +30,6 @@ Sprint 3 activates background document workers and controlled AI document intell
 - Decimal financial amounts
 - Audit logging for sensitive changes
 - Soft deletion for claims/documents where applicable
+
+## Financial intelligence
+Quotation and invoice AI outputs remain candidate evidence until human review. Reviewed commercial evidence is materialized into the claim cost schedule without promotion into scalar claim facts. Deterministic financial flags identify possible duplicates, pre-casualty invoice dates, betterment/ordinary-maintenance cues and quotation scope differences. These are review prompts only. Reserve changes are append-only in `reserve_history`.

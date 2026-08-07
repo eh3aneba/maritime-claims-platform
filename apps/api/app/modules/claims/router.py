@@ -254,13 +254,16 @@ def change_reserve_endpoint(
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[User, Depends(require_roles(UserRole.ADMIN, UserRole.CLAIMS_MANAGER))],
 ) -> ClaimRead:
-    """Temporary MVP endpoint; Sprint 2 follow-up will replace this with reserve history records."""
+    """Append a reserve history record and update the claim current reserve pointer."""
     try:
         claim = get_claim(db, claim_id=claim_id, organization_id=current_user.organization_id)
     except ClaimNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Claim not found") from exc
 
     old_reserve = update_current_reserve(db, claim=claim, amount=payload.amount)
+    from datetime import UTC, datetime
+    from app.modules.financial.models import ReserveHistory
+    db.add(ReserveHistory(organization_id=claim.organization_id, claim_id=claim.id, amount=payload.amount, currency=claim.currency, reason=payload.reason, created_by_id=current_user.id, created_at=datetime.now(UTC)))
     write_audit_log(
         db,
         organization_id=current_user.organization_id,

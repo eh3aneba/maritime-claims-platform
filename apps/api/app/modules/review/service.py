@@ -57,6 +57,8 @@ NON_PROMOTABLE_PATH_FRAGMENTS = {
     "workshop.damage_findings[",
     "workshop.repair_options[",
     "workshop.recommendations[",
+    "quotation.",
+    "invoice.",
 }
 
 

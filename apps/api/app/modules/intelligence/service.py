@@ -17,11 +17,15 @@ from app.ai.prompts import engine_log as engine_log_prompt
 from app.ai.prompts import running_hours as running_hours_prompt
 from app.ai.prompts import pms_history as pms_history_prompt
 from app.ai.prompts import workshop_report as workshop_report_prompt
+from app.ai.prompts import quotation as quotation_prompt
+from app.ai.prompts import invoice as invoice_prompt
 from app.ai.schemas.ce_report import ChiefEngineerReportExtraction
 from app.ai.schemas.engine_log import EngineLogExtraction
 from app.ai.schemas.running_hours import RunningHoursExtraction
 from app.ai.schemas.pms_history import PMSHistoryExtraction
 from app.ai.schemas.workshop_report import WorkshopReportExtraction
+from app.ai.schemas.quotation import QuotationExtraction
+from app.ai.schemas.invoice import InvoiceExtraction
 from app.core.config import get_settings
 from app.modules.audit.service import write_audit_log
 from app.modules.documents.models import Document
@@ -34,6 +38,8 @@ TASK_ENGINE_LOG = "engine_log_extract"
 TASK_RUNNING_HOURS = "running_hours_extract"
 TASK_PMS_HISTORY = "pms_history_extract"
 TASK_WORKSHOP_REPORT = "workshop_report_extract"
+TASK_QUOTATION = "quotation_extract"
+TASK_INVOICE = "invoice_extract"
 
 ENGINE_EVENT_PREFIX = "engine_log.events["
 _MEASUREMENT_FIELDS = {
@@ -284,6 +290,19 @@ def run_workshop_report_intelligence(
         audit_action="RUN_WORKSHOP_REPORT_AI_EXTRACTION",
     )
 
+
+
+def run_quotation_intelligence(db: Session, *, document: Document, requested_by_id: UUID | None, provider: AIProvider | None = None) -> AIRun:
+    segments, input_text, warnings = _load_source_text(db, document=document)
+    provider = provider or get_ai_provider()
+    run = create_ai_run(db, document=document, requested_by_id=requested_by_id, provider_name=provider.name, model=getattr(provider, "_model", None) or settings.ai_model or "unknown", input_text=input_text, warnings=warnings, task=TASK_QUOTATION, prompt_name=quotation_prompt.PROMPT_NAME, prompt_version=quotation_prompt.PROMPT_VERSION, schema_name=quotation_prompt.SCHEMA_NAME, schema_version=quotation_prompt.SCHEMA_VERSION)
+    return _execute_structured_run(db, run=run, document=document, requested_by_id=requested_by_id, provider=provider, input_text=input_text, output_model=QuotationExtraction, system_instructions=quotation_prompt.SYSTEM_INSTRUCTIONS, accepted_classification="quotation", persist=lambda parsed, run_warnings: _persist_financial_extractions(db, run=run, parsed=parsed, segments=segments, run_warnings=run_warnings, kind="quotation"), audit_action="RUN_QUOTATION_AI_EXTRACTION")
+
+def run_invoice_intelligence(db: Session, *, document: Document, requested_by_id: UUID | None, provider: AIProvider | None = None) -> AIRun:
+    segments, input_text, warnings = _load_source_text(db, document=document)
+    provider = provider or get_ai_provider()
+    run = create_ai_run(db, document=document, requested_by_id=requested_by_id, provider_name=provider.name, model=getattr(provider, "_model", None) or settings.ai_model or "unknown", input_text=input_text, warnings=warnings, task=TASK_INVOICE, prompt_name=invoice_prompt.PROMPT_NAME, prompt_version=invoice_prompt.PROMPT_VERSION, schema_name=invoice_prompt.SCHEMA_NAME, schema_version=invoice_prompt.SCHEMA_VERSION)
+    return _execute_structured_run(db, run=run, document=document, requested_by_id=requested_by_id, provider=provider, input_text=input_text, output_model=InvoiceExtraction, system_instructions=invoice_prompt.SYSTEM_INSTRUCTIONS, accepted_classification="invoice", persist=lambda parsed, run_warnings: _persist_financial_extractions(db, run=run, parsed=parsed, segments=segments, run_warnings=run_warnings, kind="invoice"), audit_action="RUN_INVOICE_AI_EXTRACTION")
 
 def _execute_structured_run(
     db: Session,
@@ -552,6 +571,21 @@ def _persist_workshop_report_extractions(db: Session, *, run: AIRun, parsed: Wor
         _persist_item_if_present(db, run=run, field_path=f"workshop.recommendations[{index}]", semantic_kind=AISemanticKind.OPINION, item=item, segments=segments, run_warnings=run_warnings)
 
 
+
+def _persist_financial_extractions(db: Session, *, run: AIRun, parsed: Any, segments: list[DocumentTextSegment], run_warnings: list[str], kind: str) -> None:
+    header_names = (["supplier","quotation_number","quotation_date","currency","subtotal","tax","freight","total","validity","lead_time","repair_duration","scope_summary"] if kind == "quotation" else ["supplier","invoice_number","invoice_date","purchase_order","related_quotation_number","currency","subtotal","tax","discount","total","payment_terms"])
+    for name in header_names:
+        _persist_item_if_present(db, run=run, field_path=f"{kind}.{name}", semantic_kind=AISemanticKind.FACT, item=getattr(parsed,name), segments=segments, run_warnings=run_warnings)
+    if kind == "quotation":
+        for i,item in enumerate(parsed.exclusions):
+            _persist_item_if_present(db, run=run, field_path=f"quotation.exclusions[{i}]", semantic_kind=AISemanticKind.FACT, item=item, segments=segments, run_warnings=run_warnings)
+    for i,line in enumerate(parsed.line_items):
+        for name in ["description","quantity","unit","unit_price","amount"]:
+            _persist_item_if_present(db, run=run, field_path=f"{kind}.line_items[{i}].{name}", semantic_kind=AISemanticKind.FACT, item=getattr(line,name), segments=segments, run_warnings=run_warnings)
+        _persist_item_if_present(db, run=run, field_path=f"{kind}.line_items[{i}].category_candidate", semantic_kind=AISemanticKind.INFERENCE, item=line.category_candidate, segments=segments, run_warnings=run_warnings)
+        _persist_item_if_present(db, run=run, field_path=f"{kind}.line_items[{i}].potential_betterment_cue", semantic_kind=AISemanticKind.INFERENCE, item=line.potential_betterment_cue, segments=segments, run_warnings=run_warnings)
+        _persist_item_if_present(db, run=run, field_path=f"{kind}.line_items[{i}].potential_ordinary_maintenance_cue", semantic_kind=AISemanticKind.INFERENCE, item=line.potential_ordinary_maintenance_cue, segments=segments, run_warnings=run_warnings)
+
 def _persist_item_if_present(
     db: Session,
     *,
@@ -647,6 +681,15 @@ def _normalize_value(field_path: str, value: Any) -> tuple[Any, str | None]:
             return parsed.isoformat(), None
         except ValueError:
             return normalized, "Date was not returned in unambiguous ISO YYYY-MM-DD format; manual review required."
+    if field_path.endswith("quotation_date") or field_path.endswith("invoice_date"):
+        try:
+            parsed = date.fromisoformat(normalized)
+            return parsed.isoformat(), None
+        except ValueError:
+            return normalized, "Financial document date was not unambiguous ISO YYYY-MM-DD; manual review required."
+    if re.search(r"\.(subtotal|tax|freight|discount|total|unit_price|amount)$", field_path):
+        measurement = _normalize_measurement(normalized)
+        return measurement, None if measurement is not None else "Financial amount could not be normalized; raw wording was preserved."
     if field_path in {"maintenance.total_running_hours", "maintenance.running_hours_since_overhaul", "maintenance.recommended_overhaul_interval"}:
         measurement = _normalize_measurement(normalized)
         return measurement, None if measurement is not None else "Running-hour value could not be normalized; raw wording was preserved."

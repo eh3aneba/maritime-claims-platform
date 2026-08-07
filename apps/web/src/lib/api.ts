@@ -1,4 +1,4 @@
-import type { AIReviewDetail, AIReviewQueueResponse, AIReviewResult, AISourcePreview, Claim, ClaimDocument, ClaimFactListResponse, ClaimListResponse, CurrentUser, DocumentListResponse, EngineLogEventsResponse, ClaimChronologyResponse, ClaimRuleSummary, ClaimTaskListResponse, DocumentRequestResult, Vessel, VesselListResponse, TechnicalReviewResponse } from "./types";
+import type { AIReviewDetail, AIReviewQueueResponse, AIReviewResult, AISourcePreview, Claim, ClaimDocument, ClaimFactListResponse, ClaimListResponse, CurrentUser, DocumentListResponse, EngineLogEventsResponse, ClaimChronologyResponse, ClaimRuleSummary, ClaimTaskListResponse, DocumentRequestResult, Vessel, VesselListResponse, TechnicalReviewResponse, FinancialReviewResponse, CostReviewStatus } from "./types";
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api/v1";
 
@@ -222,7 +222,7 @@ export function getAIReviewDetail(extractionId: string) {
 export function runDocumentIntelligence(
   claimId: string,
   documentId: string,
-  type: "ce-report" | "engine-log",
+  type: "ce-report" | "engine-log" | "running-hours" | "pms-history" | "workshop-report" | "quotation" | "invoice",
 ) {
   return apiFetch<{ job_id: string; status: string }>(
     `/claims/${claimId}/documents/${documentId}/intelligence/${type}`,
@@ -288,3 +288,7 @@ export function markDocumentRequestSent(claimId: string, batchId: string) {
 export function getTechnicalReview(claimId: string) {
   return apiFetch<TechnicalReviewResponse>(`/claims/${claimId}/technical-review`);
 }
+
+export function getFinancialReview(claimId: string) { return apiFetch<FinancialReviewResponse>(`/claims/${claimId}/financial-review`); }
+export function updateCostStatus(claimId:string,itemId:string,status:CostReviewStatus,reason:string){ return apiFetch(`/claims/${claimId}/financial-review/items/${itemId}/status`,{method:"POST",body:JSON.stringify({status,reason})}); }
+export function resolveFinancialFlag(claimId:string,flagId:string,status:"explained"|"resolved"|"irrelevant",note:string){ return apiFetch(`/claims/${claimId}/financial-review/flags/${flagId}/resolve`,{method:"POST",body:JSON.stringify({status,note})}); }

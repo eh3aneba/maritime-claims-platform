@@ -115,6 +115,12 @@ def process_job(db: Session, *, job: DocumentProcessingJob) -> None:
     if job.job_type == ProcessingJobType.AI_EXTRACT_WORKSHOP_REPORT:
         _process_named_ai_job(db, job=job, runner_name="run_workshop_report_intelligence")
         return
+    if job.job_type == ProcessingJobType.AI_EXTRACT_QUOTATION:
+        _process_named_ai_job(db, job=job, runner_name="run_quotation_intelligence")
+        return
+    if job.job_type == ProcessingJobType.AI_EXTRACT_INVOICE:
+        _process_named_ai_job(db, job=job, runner_name="run_invoice_intelligence")
+        return
     _fail_job(db, job=job, document=db.get(Document, job.document_id), error=f"Unsupported job type: {job.job_type}")
 
 
