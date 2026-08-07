@@ -1,4 +1,4 @@
-import type { AIReviewDetail, AIReviewQueueResponse, AIReviewResult, AISourcePreview, Claim, ClaimDocument, ClaimFactListResponse, ClaimListResponse, CurrentUser, DocumentListResponse, Vessel, VesselListResponse } from "./types";
+import type { AIReviewDetail, AIReviewQueueResponse, AIReviewResult, AISourcePreview, Claim, ClaimDocument, ClaimFactListResponse, ClaimListResponse, CurrentUser, DocumentListResponse, EngineLogEventsResponse, Vessel, VesselListResponse } from "./types";
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api/v1";
 
@@ -217,4 +217,21 @@ export function getClaimFacts(claimId: string) {
 
 export function getAIReviewDetail(extractionId: string) {
   return apiFetch<AIReviewDetail>(`/ai-review/${extractionId}`);
+}
+
+export function runDocumentIntelligence(
+  claimId: string,
+  documentId: string,
+  type: "ce-report" | "engine-log",
+) {
+  return apiFetch<{ job_id: string; status: string }>(
+    `/claims/${claimId}/documents/${documentId}/intelligence/${type}`,
+    { method: "POST" },
+  );
+}
+
+export function getEngineLogEvents(claimId: string, documentId: string) {
+  return apiFetch<EngineLogEventsResponse>(
+    `/claims/${claimId}/documents/${documentId}/intelligence/engine-log/events`,
+  );
 }

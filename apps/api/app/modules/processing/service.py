@@ -103,6 +103,9 @@ def process_job(db: Session, *, job: DocumentProcessingJob) -> None:
     if job.job_type == ProcessingJobType.AI_EXTRACT_CE_REPORT:
         _process_ce_ai_job(db, job=job)
         return
+    if job.job_type == ProcessingJobType.AI_EXTRACT_ENGINE_LOG:
+        _process_engine_log_ai_job(db, job=job)
+        return
     _fail_job(db, job=job, document=db.get(Document, job.document_id), error=f"Unsupported job type: {job.job_type}")
 
 
@@ -193,6 +196,39 @@ def _process_ce_ai_job(db: Session, *, job: DocumentProcessingJob) -> None:
         from app.modules.intelligence.service import run_ce_report_intelligence
 
         run = run_ce_report_intelligence(
+            db, document=document, requested_by_id=job.requested_by_id
+        )
+        refreshed_job = db.get(DocumentProcessingJob, job.id)
+        if refreshed_job is None:
+            return
+        refreshed_job.status = ProcessingJobStatus.COMPLETED
+        refreshed_job.completed_at = datetime.now(UTC)
+        refreshed_job.locked_at = None
+        refreshed_job.locked_by = None
+        refreshed_job.last_error = None
+        refreshed_job.result = {
+            "ai_run_id": str(run.id),
+            "classification": run.document_type_candidate,
+            "classification_confidence": float(run.classification_confidence or 0),
+        }
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        refreshed_job = db.get(DocumentProcessingJob, job.id)
+        refreshed_document = db.get(Document, job.document_id)
+        if refreshed_job is not None:
+            _fail_job(db, job=refreshed_job, document=refreshed_document, error=str(exc))
+
+
+def _process_engine_log_ai_job(db: Session, *, job: DocumentProcessingJob) -> None:
+    document = db.get(Document, job.document_id)
+    if document is None or document.deleted_at is not None:
+        _fail_job(db, job=job, document=document, error="Document is unavailable or deleted.")
+        return
+    try:
+        from app.modules.intelligence.service import run_engine_log_intelligence
+
+        run = run_engine_log_intelligence(
             db, document=document, requested_by_id=job.requested_by_id
         )
         refreshed_job = db.get(DocumentProcessingJob, job.id)

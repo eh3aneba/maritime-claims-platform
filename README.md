@@ -16,7 +16,7 @@ Sprint 2 is complete through Phase G:
 - Tenant-separated persistent local evidence storage with an S3-compatible migration boundary
 - Claim Documents UI with drag-and-drop, upload progress and evidence actions
 
-**Sprint 2 foundation is complete and Sprint 3 is active.** Phase C now completes the first human-in-the-loop AI workflow: source-linked candidates can be approved, corrected or rejected, with append-only feedback history and safe promotion into human-approved claim facts.
+**Sprint 2 foundation is complete and Sprint 3 is active.** Phase D now adds row-granular Engine Log Intelligence: source-linked machinery events remain human-reviewable repeatable evidence and are prepared for the Chronology Engine without overwriting scalar claim facts.
 
 ## Prerequisites
 
@@ -149,6 +149,12 @@ The web app now includes an AI Review queue with source preview, confidence, fac
 
 The backend adds append-only `ai_feedback`, current `claim_facts`, review/audit APIs, source-verification safeguards, and `GET /api/v1/claims/{claim_id}/facts`. Opinions/inferences and sensitive decision fields cannot be promoted into authoritative claim facts.
 
+## Sprint 3 Phase D — Engine Log Intelligence
+
+The backend now supports the `ai_extract_engine_log` durable job and strict `engine_log_v1` schema for source-order machinery events. Date/time, RPM, load, turbocharger speed, exhaust temperature, lube-oil pressure, alarms, shutdown/restart, actions and remarks are stored as source-linked extraction candidates. Measurements preserve raw wording and receive non-destructive numeric normalization when possible.
+
+Engine-log event fields are intentionally not promoted into scalar `claim_facts`; human-reviewed repeatable evidence will feed the Chronology Engine instead. Claim Documents UI can now queue CE Report or Engine Log intelligence after text extraction completes.
+
 ## Current milestone
 
-Sprint 3 Phase C complete. Next: Engine Log Intelligence and timestamped machinery-event extraction.
+Sprint 3 Phase D complete. Next: Chronology Engine and Evidence Conflict detection.

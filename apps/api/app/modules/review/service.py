@@ -52,6 +52,7 @@ NON_PROMOTABLE_PATH_FRAGMENTS = {
     "rejected",
     "payable",
     "indemnity",
+    "engine_log.events[",
 }
 
 

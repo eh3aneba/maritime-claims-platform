@@ -49,3 +49,18 @@ class DocumentExtractionResponse(BaseModel):
 class DocumentIntelligenceResponse(BaseModel):
     run: AIRunResponse | None
     extractions: list[DocumentExtractionResponse]
+
+
+class EngineLogEventCandidateResponse(BaseModel):
+    event_index: int
+    values: dict[str, Any]
+    review_statuses: dict[str, str]
+    source_verified: bool
+    source_locators: list[dict[str, Any]]
+    human_review_complete: bool
+    timestamp_candidate: dict[str, Any]
+
+
+class EngineLogEventsResponse(BaseModel):
+    run: AIRunResponse | None
+    events: list[EngineLogEventCandidateResponse]

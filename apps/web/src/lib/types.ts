@@ -202,3 +202,26 @@ export interface AIReviewDetail {
   feedback: AIFeedbackEntry[];
   current_claim_fact: ClaimFact | null;
 }
+
+
+export interface EngineLogEventCandidate {
+  event_index: number;
+  values: Record<string, unknown>;
+  review_statuses: Record<string, AIReviewStatus>;
+  source_verified: boolean;
+  source_locators: Array<{ type: string | null; value: string | null; quote: string | null }>;
+  human_review_complete: boolean;
+  timestamp_candidate: { date?: unknown; time?: unknown; timezone?: unknown };
+}
+
+export interface EngineLogEventsResponse {
+  run: {
+    id: string;
+    task: string;
+    status: "pending" | "running" | "completed" | "failed";
+    document_type_candidate: string | null;
+    classification_confidence: string | null;
+    warnings: string[] | null;
+  } | null;
+  events: EngineLogEventCandidate[];
+}

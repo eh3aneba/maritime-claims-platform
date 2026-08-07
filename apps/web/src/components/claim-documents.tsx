@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { ChangeEvent, DragEvent, useEffect, useRef, useState } from "react";
 
 import {
@@ -7,6 +8,7 @@ import {
   deleteClaimDocument,
   downloadClaimDocument,
   listClaimDocuments,
+  runDocumentIntelligence,
   uploadClaimDocument,
 } from "@/lib/api";
 import type { ClaimDocument, ConfidentialityLevel } from "@/lib/types";
@@ -43,6 +45,7 @@ export function ClaimDocuments({ claimId }: { claimId: string }) {
   const [loading, setLoading] = useState(true);
   const [dragging, setDragging] = useState(false);
   const [error, setError] = useState("");
+  const [intelligenceState, setIntelligenceState] = useState<Record<string, string>>({});
 
   async function refresh() {
     try {
@@ -113,6 +116,25 @@ export function ClaimDocuments({ claimId }: { claimId: string }) {
     catch (e) { setError(e instanceof ApiError ? e.detail : "Document could not be downloaded."); }
   }
 
+  async function analyzeDocument(document: ClaimDocument) {
+    const intelligenceType = document.document_type === "chief_engineer_report"
+      ? "ce-report"
+      : document.document_type === "engine_log"
+        ? "engine-log"
+        : null;
+    if (!intelligenceType) return;
+    setError("");
+    setIntelligenceState((current) => ({ ...current, [document.id]: "Queueing…" }));
+    try {
+      const result = await runDocumentIntelligence(claimId, document.id, intelligenceType);
+      setIntelligenceState((current) => ({ ...current, [document.id]: `AI ${result.status}` }));
+    } catch (e) {
+      const message = e instanceof ApiError ? e.detail : "Document intelligence could not be queued.";
+      setIntelligenceState((current) => ({ ...current, [document.id]: "" }));
+      setError(message);
+    }
+  }
+
   return (
     <section className="panel p-6">
       <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
@@ -148,7 +170,7 @@ export function ClaimDocuments({ claimId }: { claimId: string }) {
       {error ? <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div> : null}
 
       <div className="mt-6 overflow-hidden rounded-xl border border-slate-200">
-        {loading ? <div className="p-6 text-sm text-slate-500">Loading documents…</div> : documents.length === 0 ? <div className="p-8 text-center"><p className="text-sm font-medium text-slate-700">No evidence uploaded yet</p><p className="mt-1 text-xs text-slate-500">Start with the Chief Engineer Report, Engine Log or Workshop Report.</p></div> : <div className="overflow-x-auto"><table className="data-table min-w-[760px]"><thead><tr><th>Document</th><th>Type</th><th>Size</th><th>Integrity</th><th>Access</th><th className="text-right">Actions</th></tr></thead><tbody>{documents.map((document) => <tr key={document.id}><td><p className="font-medium text-slate-800">{document.original_filename}</p><p className="mt-1 text-xs text-slate-400">Uploaded {new Date(document.created_at).toLocaleString()}</p></td><td>{readableType(document.document_type)}</td><td>{formatBytes(document.file_size_bytes)}</td><td><span title={document.file_hash} className="font-mono text-xs text-slate-500">SHA-256 · {document.file_hash.slice(0, 10)}…</span></td><td><span className="capitalize">{document.confidentiality_level}</span></td><td><div className="flex justify-end gap-2"><button onClick={() => download(document)} className="text-xs font-semibold text-cyan-800 hover:text-cyan-950">Download</button><button onClick={() => removeDocument(document)} className="text-xs font-semibold text-red-600 hover:text-red-800">Remove</button></div></td></tr>)}</tbody></table></div>}
+        {loading ? <div className="p-6 text-sm text-slate-500">Loading documents…</div> : documents.length === 0 ? <div className="p-8 text-center"><p className="text-sm font-medium text-slate-700">No evidence uploaded yet</p><p className="mt-1 text-xs text-slate-500">Start with the Chief Engineer Report, Engine Log or Workshop Report.</p></div> : <div className="overflow-x-auto"><table className="data-table min-w-[760px]"><thead><tr><th>Document</th><th>Type</th><th>Size</th><th>Integrity</th><th>Access</th><th className="text-right">Actions</th></tr></thead><tbody>{documents.map((document) => <tr key={document.id}><td><p className="font-medium text-slate-800">{document.original_filename}</p><p className="mt-1 text-xs text-slate-400">Uploaded {new Date(document.created_at).toLocaleString()}</p></td><td>{readableType(document.document_type)}</td><td>{formatBytes(document.file_size_bytes)}</td><td><span title={document.file_hash} className="font-mono text-xs text-slate-500">SHA-256 · {document.file_hash.slice(0, 10)}…</span></td><td><span className="capitalize">{document.confidentiality_level}</span></td><td><div className="flex flex-wrap justify-end gap-2">{document.processing_status === "processed" && (document.document_type === "chief_engineer_report" || document.document_type === "engine_log") ? <button onClick={() => analyzeDocument(document)} className="text-xs font-semibold text-indigo-700 hover:text-indigo-950">{intelligenceState[document.id] || (document.document_type === "engine_log" ? "Analyze log" : "Analyze report")}</button> : null}<button onClick={() => download(document)} className="text-xs font-semibold text-cyan-800 hover:text-cyan-950">Download</button><button onClick={() => removeDocument(document)} className="text-xs font-semibold text-red-600 hover:text-red-800">Remove</button></div>{intelligenceState[document.id] ? <div className="mt-1 text-right"><Link href="/ai-review" className="text-[11px] font-semibold text-slate-500 hover:text-slate-800">Open AI review</Link></div> : null}</td></tr>)}</tbody></table></div>}
       </div>
     </section>
   );

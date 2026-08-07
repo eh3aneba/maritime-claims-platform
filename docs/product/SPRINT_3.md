@@ -62,5 +62,20 @@ Completed:
 - manual-verification reason required for unverified citations
 - claim page display of approved structured facts
 
-### Next — Phase D
-Engine Log Intelligence: table/time-series extraction, machinery events and exact timestamp normalization for chronology.
+## Phase D — Engine Log Intelligence ✅
+
+Completed:
+- strict `engine_log_v1` structured schema
+- source-order row/event preservation
+- date/time and machinery operational fields
+- non-destructive measurement normalization
+- source quote verification per event field
+- inference-only event labels
+- durable `ai_extract_engine_log` background job
+- grouped event-candidate API for Phase E
+- human review compatibility without scalar claim-fact overwrite
+- tenant and Restricted-document external-AI controls
+- Claim Documents UI actions for CE Report and Engine Log intelligence
+
+### Next — Phase E
+Chronology Engine: combine reviewed CE Report evidence and reviewed Engine Log events, cluster matching events, and detect material timestamp/evidence conflicts.
