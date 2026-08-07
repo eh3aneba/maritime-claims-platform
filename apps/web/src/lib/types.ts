@@ -225,3 +225,62 @@ export interface EngineLogEventsResponse {
   } | null;
   events: EngineLogEventCandidate[];
 }
+
+export type ChronologyMateriality = "low" | "medium" | "high" | "critical";
+export type EvidenceConflictStatus = "open" | "explained" | "resolved" | "accepted_difference" | "irrelevant";
+
+export interface ChronologyEvidence {
+  extraction_id: string;
+  document_id: string;
+  document_name: string;
+  document_type: string | null;
+  field_path: string;
+  value: unknown;
+  source_quote: string | null;
+  source_locator_type: string | null;
+  source_locator_value: string | null;
+  source_verified: boolean;
+  evidence_role: string;
+}
+
+export interface ChronologyEvent {
+  id: string;
+  event_type: string;
+  title: string;
+  description: string | null;
+  occurred_on: string;
+  occurred_time: string;
+  timezone_label: string | null;
+  materiality: ChronologyMateriality;
+  evidence: ChronologyEvidence[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EvidenceConflict {
+  id: string;
+  conflict_type: string;
+  topic: string;
+  description: string;
+  value_a: unknown;
+  value_b: unknown;
+  difference_minutes: string | null;
+  materiality: ChronologyMateriality;
+  status: EvidenceConflictStatus;
+  resolution_note: string | null;
+  event_a_id: string | null;
+  event_b_id: string | null;
+  evidence_a_extraction_id: string | null;
+  evidence_b_extraction_id: string | null;
+  resolved_by_id: string | null;
+  resolved_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ClaimChronologyResponse {
+  events: ChronologyEvent[];
+  conflicts: EvidenceConflict[];
+  event_count: number;
+  open_conflict_count: number;
+}

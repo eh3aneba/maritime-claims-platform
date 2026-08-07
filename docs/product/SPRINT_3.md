@@ -79,3 +79,27 @@ Completed:
 
 ### Next — Phase E
 Chronology Engine: combine reviewed CE Report evidence and reviewed Engine Log events, cluster matching events, and detect material timestamp/evidence conflicts.
+
+## Phase E — Chronology & Evidence Conflicts ✅
+
+Completed:
+- `chronology_events` source-linked timeline model
+- `event_evidence` many-to-one evidence stack
+- `evidence_conflicts` with materiality and human resolution
+- chronology built only from Approved/Edited evidence
+- deterministic CE Report + Engine Log event mapping
+- same-event clustering within 10 minutes
+- Engine Log timestamp preference inside compatible clusters
+- Medium/High/Critical timestamp discrepancy rules
+- selected operational content contradictions
+- idempotent rebuild with inactive history instead of destructive deletion
+- human `explained / resolved / accepted_difference / irrelevant` resolution states
+- audit events for chronology rebuild and conflict resolution
+- tenant-scoped chronology API
+- Claim Chronology UI with evidence expansion and conflict workflow
+
+### Sprint 3 status
+**COMPLETE.** The product now supports the full loop from uploaded evidence → document processing → structured AI extraction → human review → reviewed event evidence → chronology → explainable evidence conflicts.
+
+### Next — Sprint 4 Phase A
+Rules Engine implementation and stage-aware Missing Document Detection for H&M Turbocharger claims.

@@ -1,4 +1,4 @@
-import type { AIReviewDetail, AIReviewQueueResponse, AIReviewResult, AISourcePreview, Claim, ClaimDocument, ClaimFactListResponse, ClaimListResponse, CurrentUser, DocumentListResponse, EngineLogEventsResponse, Vessel, VesselListResponse } from "./types";
+import type { AIReviewDetail, AIReviewQueueResponse, AIReviewResult, AISourcePreview, Claim, ClaimDocument, ClaimFactListResponse, ClaimListResponse, CurrentUser, DocumentListResponse, EngineLogEventsResponse, ClaimChronologyResponse, Vessel, VesselListResponse } from "./types";
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api/v1";
 
@@ -233,5 +233,28 @@ export function runDocumentIntelligence(
 export function getEngineLogEvents(claimId: string, documentId: string) {
   return apiFetch<EngineLogEventsResponse>(
     `/claims/${claimId}/documents/${documentId}/intelligence/engine-log/events`,
+  );
+}
+
+
+export function getClaimChronology(claimId: string) {
+  return apiFetch<ClaimChronologyResponse>(`/claims/${claimId}/chronology`);
+}
+
+export function rebuildClaimChronology(claimId: string) {
+  return apiFetch<{ events_created_or_activated: number; conflicts_created_or_activated: number; event_count: number; open_conflict_count: number }>(
+    `/claims/${claimId}/chronology/rebuild`,
+    { method: "POST" },
+  );
+}
+
+export function resolveEvidenceConflict(
+  claimId: string,
+  conflictId: string,
+  payload: { status: "explained" | "resolved" | "accepted_difference" | "irrelevant"; note: string },
+) {
+  return apiFetch<{ id: string; status: string; resolution_note: string | null; resolved_by_id: string | null; resolved_at: string | null }>(
+    `/claims/${claimId}/chronology/conflicts/${conflictId}/resolve`,
+    { method: "POST", body: JSON.stringify(payload) },
   );
 }
