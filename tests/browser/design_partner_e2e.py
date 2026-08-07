@@ -17,7 +17,7 @@ from playwright.sync_api import expect, sync_playwright
 
 BASE_URL = os.getenv("MCRI_WEB_URL", "http://127.0.0.1:3000").rstrip("/")
 ORG = os.getenv("MCRI_DEMO_ORG_SLUG", "pilot")
-EMAIL = os.getenv("MCRI_DEMO_EMAIL", "manager@pilot.test")
+EMAIL = os.getenv("MCRI_DEMO_EMAIL", "manager@demo.mcri.app")
 PASSWORD = os.getenv("MCRI_DEMO_PASSWORD", "")
 SCREENSHOT = Path(os.getenv("MCRI_E2E_SCREENSHOT", "artifacts/design-partner-e2e.png"))
 

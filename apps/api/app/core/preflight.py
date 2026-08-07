@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 from sqlalchemy import text
 
 from app.core.config import get_settings
-from app.db.session import SessionLocal
+from app.db.session import create_session
 
 DEFAULT_SECRET = "replace-with-a-long-random-secret"
 DEFAULT_DB_PASSWORD_FRAGMENT = "change-me-in-local-env"
@@ -62,7 +62,7 @@ def run_preflight(*, require_db: bool = True) -> tuple[list[str], list[str]]:
 
     if require_db:
         try:
-            with SessionLocal() as db:
+            with create_session() as db:
                 db.execute(text("SELECT 1"))
         except Exception as exc:  # deployment diagnostic intentionally broad
             _fail(errors, f"Database connectivity failed: {type(exc).__name__}: {exc}")

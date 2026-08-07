@@ -141,7 +141,7 @@ services:
       MCRI_DEMO_FIXTURE_DIR: /demo/mt-orion
       MCRI_DEMO_ORG_NAME: ${MCRI_DEMO_ORG_NAME:-Pilot Marine Insurer}
       MCRI_DEMO_ORG_SLUG: ${MCRI_DEMO_ORG_SLUG:-pilot}
-      MCRI_DEMO_EMAIL: ${MCRI_DEMO_EMAIL:-manager@pilot.test}
+      MCRI_DEMO_EMAIL: ${MCRI_DEMO_EMAIL:-manager@demo.mcri.app}
       MCRI_DEMO_PASSWORD: ${MCRI_DEMO_PASSWORD:-}
     volumes:
       - local_documents:/data/documents

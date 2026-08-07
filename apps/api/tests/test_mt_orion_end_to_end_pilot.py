@@ -424,7 +424,7 @@ def test_mt_orion_full_pilot_workflow(tmp_path):
         with TestingSessionLocal() as db:
             org = Organization(name="Pilot Marine Insurer", slug="pilot")
             db.add(org); db.flush()
-            manager = User(organization_id=org.id, email="manager@pilot.test", full_name="Pilot Claims Manager", password_hash=hash_password(PASSWORD), role=UserRole.CLAIMS_MANAGER, is_active=True)
+            manager = User(organization_id=org.id, email="manager@demo.mcri.app", full_name="Pilot Claims Manager", password_hash=hash_password(PASSWORD), role=UserRole.CLAIMS_MANAGER, is_active=True)
             vessel = Vessel(organization_id=org.id, name="MT ORION", imo_number="7000301", vessel_type="Oil Tanker", flag="Marshall Islands", class_society="Pilot Class")
             db.add_all([manager, vessel]); db.flush()
             claim = create_claim(db, organization_id=org.id, current_user=manager, payload=ClaimCreate(

@@ -64,7 +64,7 @@ def test_design_partner_seed_is_full_and_idempotent(monkeypatch, tmp_path):
     fixture_dir = Path(__file__).resolve().parents[3] / "docs" / "pilot" / "mt-orion" / "documents"
     monkeypatch.setenv("MCRI_DEMO_PASSWORD", "Strong-Demo-2026!")
     monkeypatch.setenv("MCRI_DEMO_FIXTURE_DIR", str(fixture_dir))
-    monkeypatch.setattr(seed_mt_orion, "SessionLocal", TestingSessionLocal)
+    monkeypatch.setattr(seed_mt_orion, "create_session", TestingSessionLocal)
     try:
         seed_mt_orion.main()
         with TestingSessionLocal() as db:
@@ -79,3 +79,40 @@ def test_design_partner_seed_is_full_and_idempotent(monkeypatch, tmp_path):
             assert db.scalar(select(func.count()).select_from(Claim).where(Claim.external_reference == seed_mt_orion.DEMO_EXTERNAL_REFERENCE)) == 1
     finally:
         settings.local_storage_path = previous_storage
+
+
+def test_create_session_binds_configured_engine(monkeypatch):
+    """CLI/worker sessions must be executable without FastAPI dependency injection."""
+    from sqlalchemy import create_engine, text
+    from sqlalchemy.pool import StaticPool
+
+    import app.db.session as session_module
+
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    monkeypatch.setattr(session_module, "get_engine", lambda: engine)
+    with session_module.create_session() as db:
+        assert db.scalar(text("SELECT 1")) == 1
+
+
+def test_standalone_worker_registers_all_orm_models():
+    """Importing the worker must configure relationship targets without API router side effects."""
+    from sqlalchemy.orm import configure_mappers
+
+    import app.workers.document_worker  # noqa: F401
+
+    configure_mappers()
+
+
+def test_default_demo_email_is_login_schema_compatible():
+    from app.modules.auth.schemas import LoginRequest
+
+    payload = LoginRequest(
+        organization_slug="pilot",
+        email="manager@demo.mcri.app",
+        password="Strong-Demo-2026!",
+    )
+    assert str(payload.email) == "manager@demo.mcri.app"

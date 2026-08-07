@@ -18,7 +18,7 @@ from sqlalchemy import func, select
 from starlette.datastructures import Headers
 
 from app.core.security import hash_password
-from app.db.session import SessionLocal
+from app.db.session import create_session
 from app.demo.mt_orion_fixture import AI_CASES, DOC_TYPES, MIME, FixtureProvider
 from app.modules.assessments.service import approve_assessment, generate_assessment, get_assessment, review_section
 from app.modules.chronology.service import build_chronology
@@ -157,12 +157,12 @@ def main() -> None:
 
     org_slug = os.getenv("MCRI_DEMO_ORG_SLUG", "pilot").strip().lower()
     org_name = os.getenv("MCRI_DEMO_ORG_NAME", "Pilot Marine Insurer").strip()
-    email = os.getenv("MCRI_DEMO_EMAIL", "manager@pilot.test").strip().lower()
+    email = os.getenv("MCRI_DEMO_EMAIL", "manager@demo.mcri.app").strip().lower()
     password = required_env("MCRI_DEMO_PASSWORD")
     if len(password) < 12:
         raise SystemExit("MCRI_DEMO_PASSWORD must contain at least 12 characters")
 
-    with SessionLocal() as db:
+    with create_session() as db:
         existing_claim = db.scalar(
             select(Claim).where(
                 Claim.external_reference == DEMO_EXTERNAL_REFERENCE,

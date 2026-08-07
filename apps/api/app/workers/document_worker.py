@@ -5,12 +5,13 @@ import socket
 import time
 
 from app.core.config import get_settings
-from app.db.session import SessionLocal
+from app.db import metadata as _metadata  # noqa: F401 - register all ORM models for standalone worker
+from app.db.session import create_session
 from app.modules.processing.service import claim_next_job, process_job
 
 
 def run_once(worker_id: str) -> bool:
-    with SessionLocal() as db:
+    with create_session() as db:
         job = claim_next_job(db, worker_id=worker_id)
         if job is None:
             return False

@@ -13,7 +13,7 @@ import os
 from sqlalchemy import func, select
 
 from app.core.security import hash_password
-from app.db.session import SessionLocal
+from app.db.session import create_session
 from app.modules.organizations.models import Organization
 from app.modules.users.models import User, UserRole
 
@@ -28,7 +28,7 @@ def main() -> None:
     if len(admin_password) < 12:
         raise SystemExit("Bootstrap admin password must contain at least 12 characters")
 
-    with SessionLocal() as db:
+    with create_session() as db:
         org = db.scalar(select(Organization).where(func.lower(Organization.slug) == org_slug.lower()))
         if org is None:
             org = Organization(name=org_name, slug=org_slug.lower())

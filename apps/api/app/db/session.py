@@ -22,8 +22,17 @@ def get_engine() -> Engine:
 SessionLocal = sessionmaker(class_=Session, expire_on_commit=False)
 
 
+def create_session() -> Session:
+    """Return a production session bound to the configured database engine.
+
+    CLI processes and workers do not run through FastAPI dependency injection, so
+    they must bind SessionLocal explicitly just like request-scoped get_db().
+    """
+    return SessionLocal(bind=get_engine())
+
+
 def get_db() -> Generator[Session, None, None]:
-    db = SessionLocal(bind=get_engine())
+    db = create_session()
     try:
         yield db
     finally:
