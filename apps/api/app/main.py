@@ -11,6 +11,7 @@ from app.modules.health.router import router as health_router
 from app.modules.financial.router import router as financial_router
 from app.modules.intelligence.router import router as intelligence_router
 from app.modules.processing.router import router as processing_router
+from app.modules.pilot.router import router as pilot_router
 from app.modules.review.router import router as review_router
 from app.modules.rules.router import router as rules_router
 from app.modules.users.router import router as users_router
@@ -44,6 +45,7 @@ app.include_router(claims_router, prefix=settings.api_v1_prefix)
 app.include_router(chronology_router, prefix=settings.api_v1_prefix)
 app.include_router(documents_router, prefix=settings.api_v1_prefix)
 app.include_router(processing_router, prefix=settings.api_v1_prefix)
+app.include_router(pilot_router, prefix=settings.api_v1_prefix)
 app.include_router(review_router, prefix=settings.api_v1_prefix)
 app.include_router(rules_router, prefix=settings.api_v1_prefix)
 app.include_router(tasks_router, prefix=settings.api_v1_prefix)

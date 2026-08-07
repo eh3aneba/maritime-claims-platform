@@ -489,3 +489,61 @@ export interface InitialAssessment {
   updated_at: string;
   sections: AssessmentSection[];
 }
+
+export interface PilotSession {
+  id: string;
+  claim_id: string;
+  participant_user_id: string | null;
+  participant_role: string;
+  objective: string | null;
+  baseline_assessment_minutes: number | null;
+  status: "active" | "completed" | "abandoned";
+  started_at: string;
+  ended_at: string | null;
+  created_at: string;
+}
+
+export interface PilotMetrics {
+  session_id: string;
+  session_status: string;
+  elapsed_seconds: number;
+  baseline_assessment_minutes: number | null;
+  time_to_first_assessment_minutes: number | null;
+  estimated_time_reduction_percent: number | null;
+  ai_review_total: number;
+  ai_approved: number;
+  ai_edited: number;
+  ai_rejected: number;
+  ai_acceptance_rate: number | null;
+  ai_edit_rate: number | null;
+  ai_reject_rate: number | null;
+  feedback_count: number;
+  average_rating: number | null;
+  false_positive_count: number;
+  false_negative_count: number;
+  validated_correct_count: number;
+  missing_document_precision: number | null;
+  missing_document_recall_proxy: number | null;
+  friction_count: number;
+  tasks_completed: number;
+  average_task_completion_minutes: number | null;
+  document_requests_sent: number;
+}
+
+export interface PilotBacklogItem {
+  feedback_id: string;
+  priority: "P0" | "P1" | "P2" | "P3";
+  category: string;
+  title: string;
+  rationale: string;
+  entity_type: string | null;
+  entity_id: string | null;
+}
+
+export interface PilotScorecard {
+  metrics: PilotMetrics;
+  targets: Record<string, number>;
+  checks: Record<string, boolean | null>;
+  ready_for_next_pilot: boolean;
+  backlog: PilotBacklogItem[];
+}

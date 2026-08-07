@@ -11,6 +11,7 @@ from app.modules.intelligence.models import AIFeedback, AIRun, DocumentExtractio
 from app.modules.financial.models import CostItem, FinancialFlag, ReserveHistory  # noqa: F401
 from app.modules.organizations.models import Organization  # noqa: F401
 from app.modules.processing.models import DocumentProcessingJob, DocumentTextExtraction, DocumentTextSegment  # noqa: F401
+from app.modules.pilot.models import PilotEvent, PilotFeedback, PilotSession  # noqa: F401
 from app.modules.rules.models import ClaimDocumentRequirement, ClaimIssue, RuleEvaluationRun  # noqa: F401
 from app.modules.tasks.models import ClaimTask, DocumentRequestBatch  # noqa: F401
 from app.modules.users.models import User  # noqa: F401

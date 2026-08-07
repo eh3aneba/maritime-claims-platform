@@ -336,3 +336,23 @@ export function approveInitialAssessment(claimId: string, assessmentId: string, 
     body: JSON.stringify({ note: note || null }),
   });
 }
+
+export function startPilotSession(payload: { claim_id: string; participant_role?: string; objective?: string | null; baseline_assessment_minutes?: number | null }) {
+  return apiFetch<import("./types").PilotSession>("/pilot/sessions", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export function endPilotSession(sessionId: string, status: "completed" | "abandoned" = "completed", note?: string) {
+  return apiFetch<import("./types").PilotSession>(`/pilot/sessions/${sessionId}/end`, { method: "POST", body: JSON.stringify({ status, note: note || null }) });
+}
+
+export function addPilotFeedback(sessionId: string, payload: { category: string; severity: string; verdict?: string | null; rating?: number | null; comment: string; entity_type?: string | null; entity_id?: string | null }) {
+  return apiFetch(`/pilot/sessions/${sessionId}/feedback`, { method: "POST", body: JSON.stringify(payload) });
+}
+
+export function getPilotScorecard(sessionId: string) {
+  return apiFetch<import("./types").PilotScorecard>(`/pilot/sessions/${sessionId}/scorecard`);
+}
+
+export function recordPilotBrowserEvent(sessionId: string, payload: { event_type: string; duration_ms?: number; event_data?: Record<string, unknown> }) {
+  return apiFetch(`/pilot/sessions/${sessionId}/events`, { method: "POST", body: JSON.stringify(payload) });
+}

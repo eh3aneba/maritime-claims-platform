@@ -11,6 +11,7 @@ from app.modules.claims.facts import ClaimFact
 from app.modules.claims.security import get_claim_for_tenant
 from app.modules.documents.models import Document
 from app.modules.intelligence.models import AISemanticKind, AIReviewStatus
+from app.modules.pilot.service import record_active_event
 from app.modules.review.schemas import (
     BulkApproveRequest,
     BulkApproveResponse,
@@ -159,6 +160,15 @@ def review_group(
                 promoted=promoted,
                 claim_fact=ClaimFactResponse.model_validate(fact) if fact else None,
             ))
+        record_active_event(
+            db,
+            organization_id=current_user.organization_id,
+            claim_id=extractions[0].claim_id,
+            user_id=current_user.id,
+            event_type="ai_review_approved" if payload.action == "approve" else "ai_review_rejected",
+            entity_type="review_group",
+            event_data={"count": len(extractions), "grouped": True},
+        )
         db.commit()
         return GroupReviewResponse(reviewed=reviewed)
     except ValueError as exc:
@@ -253,6 +263,17 @@ def review_one(
             value=payload.value,
             reason=payload.reason,
         )
+        event_type = {"approve": "ai_review_approved", "edit": "ai_review_edited", "reject": "ai_review_rejected"}[payload.action]
+        record_active_event(
+            db,
+            organization_id=current_user.organization_id,
+            claim_id=extraction.claim_id,
+            user_id=current_user.id,
+            event_type=event_type,
+            entity_type="document_extraction",
+            entity_id=extraction.id,
+            event_data={"count": 1, "promoted": promoted},
+        )
         db.commit()
         db.refresh(extraction)
         if fact is not None:
@@ -307,6 +328,16 @@ def bulk_approve(
                     promoted=promoted,
                     claim_fact=ClaimFactResponse.model_validate(fact) if fact else None,
                 )
+            )
+        if extractions:
+            record_active_event(
+                db,
+                organization_id=current_user.organization_id,
+                claim_id=extractions[0].claim_id,
+                user_id=current_user.id,
+                event_type="ai_review_approved",
+                entity_type="bulk_review",
+                event_data={"count": len(extractions), "bulk": True},
             )
         db.commit()
     except ValueError as exc:

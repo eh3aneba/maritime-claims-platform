@@ -10,6 +10,7 @@ from app.modules.assessments.schemas import AssessmentApproveRequest, Assessment
 from app.modules.assessments.service import approve_assessment, generate_assessment, get_assessment, review_section
 from app.modules.auth.dependencies import CurrentUser, require_roles
 from app.modules.claims.security import get_claim_for_tenant
+from app.modules.pilot.service import record_active_event
 from app.modules.users.models import UserRole
 
 router=APIRouter(prefix="/claims/{claim_id}/initial-assessment",tags=["initial-assessment"])
@@ -30,6 +31,8 @@ def generate(claim_id:UUID,payload:AssessmentGenerateRequest,current_user:Curren
     claim=get_claim_for_tenant(db,claim_id=claim_id,organization_id=current_user.organization_id)
     if not claim: raise HTTPException(status_code=404,detail="Claim not found")
     a=generate_assessment(db,claim=claim,user=current_user,allow_if_not_ready=payload.allow_if_not_ready,override_reason=payload.override_reason)
+    record_active_event(db, organization_id=current_user.organization_id, claim_id=claim.id, user_id=current_user.id, event_type="initial_assessment_generated", entity_type="initial_assessment", entity_id=a.id, event_data={"version": a.version, "preliminary": a.is_preliminary})
+    db.commit()
     a,sections=get_assessment(db,claim=claim,assessment_id=a.id);return _response(a,sections)
 
 @router.post("/sections/{section_id}/review",response_model=AssessmentSectionRead)
@@ -38,7 +41,10 @@ def review(claim_id:UUID,section_id:UUID,payload:AssessmentSectionReview,current
     if not claim: raise HTTPException(status_code=404,detail="Claim not found")
     section=db.get(AssessmentSection,section_id)
     if not section: raise HTTPException(status_code=404,detail="Assessment section not found")
-    return AssessmentSectionRead.model_validate(review_section(db,claim=claim,section=section,user=current_user,action=payload.action,text=payload.text))
+    reviewed = review_section(db,claim=claim,section=section,user=current_user,action=payload.action,text=payload.text)
+    record_active_event(db, organization_id=current_user.organization_id, claim_id=claim.id, user_id=current_user.id, event_type="assessment_section_reviewed", entity_type="assessment_section", entity_id=section.id, event_data={"action": payload.action, "section_key": section.section_key})
+    db.commit()
+    return AssessmentSectionRead.model_validate(reviewed)
 
 @router.post("/{assessment_id}/approve",response_model=AssessmentRead)
 def approve(claim_id:UUID,assessment_id:UUID,payload:AssessmentApproveRequest,current_user:Annotated[object,Depends(require_roles(UserRole.ADMIN,UserRole.CLAIMS_MANAGER))],db:Annotated[Session,Depends(get_db)]):
@@ -47,4 +53,6 @@ def approve(claim_id:UUID,assessment_id:UUID,payload:AssessmentApproveRequest,cu
     a=db.get(InitialAssessment,assessment_id)
     if not a or a.claim_id!=claim.id or a.organization_id!=claim.organization_id: raise HTTPException(status_code=404,detail="Assessment not found")
     approve_assessment(db,claim=claim,assessment=a,user=current_user,note=payload.note)
+    record_active_event(db, organization_id=current_user.organization_id, claim_id=claim.id, user_id=current_user.id, event_type="initial_assessment_approved", entity_type="initial_assessment", entity_id=a.id, event_data={"version": a.version, "preliminary": a.is_preliminary})
+    db.commit()
     a,sections=get_assessment(db,claim=claim,assessment_id=a.id);return _response(a,sections)
