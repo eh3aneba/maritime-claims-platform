@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 
-import { listClaims } from "@/lib/api";
+import { ApiError, listClaims } from "@/lib/api";
 import { formatDate, formatMoney } from "@/lib/format";
 import type { Claim, ClaimPriority, ClaimStatus } from "@/lib/types";
 import { PriorityText, StatusBadge } from "@/components/status-badge";
@@ -15,6 +15,7 @@ export default function ClaimsPage() {
   const [status, setStatus] = useState("");
   const [priority, setPriority] = useState("");
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   async function load(params = new URLSearchParams()) {
     setLoading(true);
@@ -23,6 +24,9 @@ export default function ClaimsPage() {
       const result = await listClaims(params);
       setItems(result.items);
       setTotal(result.total);
+      setError("");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.detail : "Claims could not be loaded.");
     } finally {
       setLoading(false);
     }
@@ -45,6 +49,8 @@ export default function ClaimsPage() {
         <div><p className="eyebrow">Case portfolio</p><h1 className="page-title">Claims</h1><p className="page-subtitle">Search, filter and open the claims in your organization.</p></div>
         <Link href="/claims/new" className="primary-button">+ New claim</Link>
       </div>
+
+      {error ? <div className="mt-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">{error}</div> : null}
 
       <form onSubmit={filter} className="panel mt-7 grid gap-3 p-4 md:grid-cols-[1fr_220px_180px_auto]">
         <input value={search} onChange={(e) => setSearch(e.target.value)} className="field" placeholder="Search claim, vessel or IMO…" />

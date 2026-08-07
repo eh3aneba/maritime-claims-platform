@@ -2,6 +2,7 @@
 .env
 .env.*
 !.env.example
+!.env.pilot.example
 
 # Python
 __pycache__/
@@ -25,3 +26,7 @@ coverage/
 
 # Local storage
 .local-storage/
+
+# Operational artifacts
+backups/*.dump
+artifacts/

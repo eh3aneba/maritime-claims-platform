@@ -4,19 +4,19 @@ Monorepo for the H&M Machinery Claims MVP.
 
 ## Current status
 
-Sprint 2 is complete through Phase G:
+The MVP now includes the full H&M Machinery / Turbocharger design-partner workflow:
 
-- Next.js + TypeScript claims UI
-- FastAPI modular-monolith backend
-- PostgreSQL 18.4 + SQLAlchemy/Alembic
-- Organization-aware authentication and backend tenant isolation
-- Claim/vessel APIs, workflow state machine and audit controls
-- Secure claim evidence upload/list/download/soft-delete APIs
-- SHA-256 duplicate detection, file-size/type/signature validation
-- Tenant-separated persistent local evidence storage with an S3-compatible migration boundary
-- Claim Documents UI with drag-and-drop, upload progress and evidence actions
+- Core claims platform, tenant isolation, audit and secure evidence handling
+- Source-linked document intelligence and human AI review
+- Engine-log chronology and deterministic evidence-conflict detection
+- Missing-document rules, tasks and controlled document-request workflow
+- Maintenance/workshop and financial intelligence
+- Versioned, source-linked Initial Assessment builder
+- MT ORION end-to-end regression pilot with P0 findings closed
+- Claims-handler usability hardening and equivalent-evidence workflow
+- Design-partner deployment preflight, deterministic demo seed, browser E2E spec and backup/restore baseline
 
-**Sprint 2 foundation is complete and Sprint 3 is active.** Phase D now adds row-granular Engine Log Intelligence: source-linked machinery events remain human-reviewable repeatable evidence and are prepared for the Chronology Engine without overwriting scalar claim facts.
+**Current phase: Sprint 5D — Design Partner Readiness.** The repository is prepared for a controlled private walkthrough. A private pilot is not production certification.
 
 ## Prerequisites
 
@@ -157,4 +157,26 @@ Engine-log event fields are intentionally not promoted into scalar `claim_facts`
 
 ## Current milestone
 
-Sprint 3 Phase D complete. Next: Chronology Engine and Evidence Conflict detection.
+Sprint 5 Phase D: Design Partner Readiness. The private synthetic pilot runbook, deployment preflight, demo seed, browser E2E specification and backup/restore baseline are included.
+
+## Design-partner pilot
+
+For a private synthetic walkthrough:
+
+```bash
+cp .env.pilot.example .env
+# Replace every REPLACE_WITH_* value
+./scripts/design_partner_preflight.sh .env
+```
+
+Then open `http://localhost:3000/login` using the demo organization/email/password from `.env`.
+
+Detailed instructions:
+
+- `docs/pilot/DESIGN_PARTNER_RUNBOOK.md`
+- `docs/pilot/DESIGN_PARTNER_TEST_SCRIPT.md`
+- `docs/security/PILOT_SECURITY_CHECKLIST.md`
+- `docs/operations/DEPLOYMENT_CHECKLIST.md`
+- `docs/operations/BACKUP_RESTORE.md`
+
+The `demo-seed` compose profile populates the synthetic MT ORION case deterministically and never calls an external AI provider.

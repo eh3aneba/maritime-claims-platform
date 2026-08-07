@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     token_issuer: str = "mcri-api"
     token_audience: str = "mcri-web"
     auth_cookie_name: str = "mcri_access_token"
+    cors_allowed_origins: str = "http://localhost:3000"
     storage_backend: str = "local"
     local_storage_path: str = ".local-storage/documents"
     max_upload_mb: int = 25
@@ -28,6 +29,10 @@ class Settings(BaseSettings):
     @property
     def max_upload_bytes(self) -> int:
         return self.max_upload_mb * 1024 * 1024
+
+    @property
+    def cors_origins(self) -> list[str]:
+        return [origin.strip() for origin in self.cors_allowed_origins.split(",") if origin.strip()]
 
     model_config = SettingsConfigDict(
         env_file=".env",

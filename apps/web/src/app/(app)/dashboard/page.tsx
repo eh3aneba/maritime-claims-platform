@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
-import { listClaims } from "@/lib/api";
+import { ApiError, listClaims } from "@/lib/api";
 import { formatDate, formatMoney } from "@/lib/format";
 import type { Claim } from "@/lib/types";
 import { PriorityText, StatusBadge } from "@/components/status-badge";
@@ -11,10 +11,12 @@ import { PriorityText, StatusBadge } from "@/components/status-badge";
 export default function DashboardPage() {
   const [claims, setClaims] = useState<Claim[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   useEffect(() => {
     listClaims(new URLSearchParams({ limit: "100" }))
-      .then((result) => setClaims(result.items))
+      .then((result) => { setClaims(result.items); setError(""); })
+      .catch((err) => setError(err instanceof ApiError ? err.detail : "Dashboard data could not be loaded."))
       .finally(() => setLoading(false));
   }, []);
 
@@ -48,6 +50,8 @@ export default function DashboardPage() {
         </div>
         <Link href="/claims/new" className="primary-button">+ New claim</Link>
       </div>
+
+      {error ? <div className="mt-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">{error}</div> : null}
 
       <section className="mt-7 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {cards.map((card) => (
