@@ -111,3 +111,9 @@ python -m app.modules.auth.seed
 ```
 
 Then authenticate through `POST /api/v1/auth/login` with organization slug, email and password.
+
+## Sprint 2 Phase E — Claims API
+
+The backend now supports tenant-scoped claim creation, listing, search/filtering, detail retrieval, core edits, controlled handler assignment, status transitions, reserve audit updates, and atomic human-readable claim reference generation for PostgreSQL.
+
+Core claims endpoints live under `/api/v1/claims`.

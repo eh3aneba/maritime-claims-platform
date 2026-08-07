@@ -1,53 +1,21 @@
 from datetime import date
+from uuid import UUID
 
-from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, event
-from sqlalchemy.orm import Session, sessionmaker
-from sqlalchemy.pool import StaticPool
+from sqlalchemy import select
 
 from app.core.security import create_access_token, hash_password
-from app.db.metadata import Base
-from app.db.session import get_db
-from app.main import app
 from app.modules.claims.models import Claim
 from app.modules.claims.security import get_claim_for_tenant
 from app.modules.organizations.models import Organization
 from app.modules.users.models import User, UserRole
 from app.modules.vessels.models import Vessel
+from tests.db_harness import TestingSessionLocal, client, reset_database
 
 TEST_PASSWORD = "Correct-Horse-Battery-2026"
 
 
-engine = create_engine(
-    "sqlite+pysqlite:///:memory:",
-    connect_args={"check_same_thread": False},
-    poolclass=StaticPool,
-)
-TestingSessionLocal = sessionmaker(bind=engine, class_=Session, expire_on_commit=False)
-
-
-@event.listens_for(engine, "connect")
-def register_sqlite_functions(dbapi_connection, connection_record) -> None:
-    del connection_record
-    dbapi_connection.create_function("char_length", 1, lambda value: len(value) if value is not None else None)
-
-
-def override_get_db():
-    db = TestingSessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-
-app.dependency_overrides[get_db] = override_get_db
-client = TestClient(app)
-
-
 def setup_function() -> None:
-    Base.metadata.drop_all(bind=engine)
-    Base.metadata.create_all(bind=engine)
-    client.cookies.clear()
+    reset_database()
 
 
 def seed_identity_data() -> tuple[Organization, User, Organization, User]:
@@ -59,7 +27,7 @@ def seed_identity_data() -> tuple[Organization, User, Organization, User]:
 
         admin_a = User(
             organization_id=org_a.id,
-            email="admin@example.com",
+            email="alpha-admin@example.com",
             full_name="Alpha Admin",
             password_hash=hash_password(TEST_PASSWORD),
             role=UserRole.ADMIN,
@@ -67,7 +35,7 @@ def seed_identity_data() -> tuple[Organization, User, Organization, User]:
         )
         handler_b = User(
             organization_id=org_b.id,
-            email="handler@example.com",
+            email="beta-handler@example.com",
             full_name="Beta Handler",
             password_hash=hash_password(TEST_PASSWORD),
             role=UserRole.CLAIMS_HANDLER,
@@ -88,19 +56,19 @@ def test_login_and_me_use_organization_context() -> None:
         "/api/v1/auth/login",
         json={
             "organization_slug": "alpha",
-            "email": "admin@example.com",
+            "email": "alpha-admin@example.com",
             "password": TEST_PASSWORD,
         },
     )
     assert login.status_code == 200
     body = login.json()
-    assert body["user"]["email"] == "admin@example.com"
+    assert body["user"]["email"] == "alpha-admin@example.com"
     assert body["user"]["role"] == "admin"
     assert body["access_token"]
 
     me = client.get("/api/v1/auth/me")
     assert me.status_code == 200
-    assert me.json()["email"] == "admin@example.com"
+    assert me.json()["email"] == "alpha-admin@example.com"
 
 
 def test_same_email_can_exist_in_different_organizations_but_login_is_unambiguous() -> None:
@@ -109,7 +77,7 @@ def test_same_email_can_exist_in_different_organizations_but_login_is_unambiguou
         db.add(
             User(
                 organization_id=org_b.id,
-                email="admin@example.com",
+                email="alpha-admin@example.com",
                 full_name="Beta Same Email",
                 password_hash=hash_password("Different-Password-2026"),
                 role=UserRole.ADMIN,
@@ -122,7 +90,7 @@ def test_same_email_can_exist_in_different_organizations_but_login_is_unambiguou
         "/api/v1/auth/login",
         json={
             "organization_slug": org_b.slug,
-            "email": "admin@example.com",
+            "email": "alpha-admin@example.com",
             "password": TEST_PASSWORD,
         },
     )
@@ -132,7 +100,7 @@ def test_same_email_can_exist_in_different_organizations_but_login_is_unambiguou
         "/api/v1/auth/login",
         json={
             "organization_slug": org_a.slug,
-            "email": "admin@example.com",
+            "email": "alpha-admin@example.com",
             "password": TEST_PASSWORD,
         },
     )
@@ -143,7 +111,7 @@ def test_admin_can_create_user_only_in_own_organization() -> None:
     org_a, _, _, _ = seed_identity_data()
     assert client.post(
         "/api/v1/auth/login",
-        json={"organization_slug": "alpha", "email": "admin@example.com", "password": TEST_PASSWORD},
+        json={"organization_slug": "alpha", "email": "alpha-admin@example.com", "password": TEST_PASSWORD},
     ).status_code == 200
 
     response = client.post(
@@ -159,7 +127,6 @@ def test_admin_can_create_user_only_in_own_organization() -> None:
     assert response.json()["organization_id"] == str(org_a.id)
 
     with TestingSessionLocal() as db:
-        from uuid import UUID
         created = db.get(User, UUID(response.json()["id"]))
         assert created is not None
         assert created.organization_id == org_a.id
@@ -170,7 +137,7 @@ def test_claim_handler_cannot_create_users() -> None:
     seed_identity_data()
     assert client.post(
         "/api/v1/auth/login",
-        json={"organization_slug": "beta", "email": "handler@example.com", "password": TEST_PASSWORD},
+        json={"organization_slug": "beta", "email": "beta-handler@example.com", "password": TEST_PASSWORD},
     ).status_code == 200
 
     response = client.post(
@@ -186,7 +153,7 @@ def test_claim_handler_cannot_create_users() -> None:
 
 
 def test_database_membership_overrides_tampered_token_org_context() -> None:
-    org_a, admin_a, org_b, _ = seed_identity_data()
+    _, admin_a, org_b, _ = seed_identity_data()
     tampered_context_token = create_access_token(
         user_id=admin_a.id,
         organization_id=org_b.id,
@@ -200,7 +167,7 @@ def test_database_membership_overrides_tampered_token_org_context() -> None:
 
 
 def test_cross_tenant_claim_lookup_returns_nothing() -> None:
-    org_a, admin_a, org_b, _ = seed_identity_data()
+    org_a, _, org_b, _ = seed_identity_data()
     with TestingSessionLocal() as db:
         vessel_b = Vessel(organization_id=org_b.id, name="MT BETA", imo_number="1234567")
         db.add(vessel_b)
@@ -227,7 +194,7 @@ def test_logout_clears_cookie() -> None:
     seed_identity_data()
     assert client.post(
         "/api/v1/auth/login",
-        json={"organization_slug": "alpha", "email": "admin@example.com", "password": TEST_PASSWORD},
+        json={"organization_slug": "alpha", "email": "alpha-admin@example.com", "password": TEST_PASSWORD},
     ).status_code == 200
     assert client.get("/api/v1/auth/me").status_code == 200
     assert client.post("/api/v1/auth/logout").status_code == 204

@@ -4,7 +4,7 @@ from decimal import Decimal
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from sqlalchemy import CheckConstraint, Date, Enum, ForeignKey, Index, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import CheckConstraint, Date, Enum, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -56,6 +56,8 @@ class Claim(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     __table_args__ = (
         UniqueConstraint("organization_id", "claim_reference", name="uq_claims_org_reference"),
         CheckConstraint("char_length(currency) = 3", name="ck_claims_currency_len"),
+        CheckConstraint("estimated_loss IS NULL OR estimated_loss >= 0", name="ck_claims_estimated_loss_nonnegative"),
+        CheckConstraint("current_reserve IS NULL OR current_reserve >= 0", name="ck_claims_reserve_nonnegative"),
         Index("ix_claims_org_status", "organization_id", "status"),
         Index("ix_claims_org_incident_date", "organization_id", "incident_date"),
     )
@@ -111,3 +113,26 @@ class Claim(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
         back_populates="assigned_claims", foreign_keys=[handler_id]
     )
     documents: Mapped[list["Document"]] = relationship(back_populates="claim")
+
+
+class ClaimReferenceSequence(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Tenant/year/type sequence used to create readable claim references safely."""
+
+    __tablename__ = "claim_reference_sequences"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id", "year", "claim_type", name="uq_claim_ref_seq_org_year_type"
+        ),
+        CheckConstraint("year >= 2000 AND year <= 2200", name="ck_claim_ref_seq_year"),
+        CheckConstraint("last_number >= 0", name="ck_claim_ref_seq_nonnegative"),
+    )
+
+    organization_id: Mapped[UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    year: Mapped[int] = mapped_column(Integer, nullable=False)
+    claim_type: Mapped[ClaimType] = mapped_column(
+        Enum(ClaimType, name="claim_type", native_enum=True, values_callable=enum_values),
+        nullable=False,
+    )
+    last_number: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
