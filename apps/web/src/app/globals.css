@@ -2,24 +2,35 @@
 
 :root {
   color-scheme: light;
-  --background: #f7f8fa;
-  --foreground: #18202b;
-  --panel: #ffffff;
-  --border: #dfe3e8;
+  --background: #f5f7f9;
+  --foreground: #17212b;
 }
 
-* {
-  box-sizing: border-box;
-}
+* { box-sizing: border-box; }
+html, body { margin: 0; min-height: 100%; background: var(--background); color: var(--foreground); }
+body { font-family: Arial, Helvetica, sans-serif; }
+button, input, select, textarea { font: inherit; }
+button { cursor: pointer; }
+button:disabled { cursor: not-allowed; }
 
-html,
-body {
-  margin: 0;
-  min-height: 100%;
-  background: var(--background);
-  color: var(--foreground);
-}
-
-body {
-  font-family: Arial, Helvetica, sans-serif;
+@layer components {
+  .panel { @apply rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03)]; }
+  .eyebrow { @apply text-xs font-semibold uppercase tracking-[0.18em] text-cyan-800; }
+  .page-title { @apply mt-1 text-3xl font-semibold tracking-tight text-slate-950 md:text-4xl; }
+  .page-subtitle { @apply mt-2 max-w-3xl text-sm leading-6 text-slate-500; }
+  .section-title { @apply text-base font-semibold text-slate-950; }
+  .section-subtitle { @apply mt-1 text-sm leading-6 text-slate-500; }
+  .label { @apply mb-1.5 block text-sm font-medium text-slate-700; }
+  .field { @apply w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-cyan-700 focus:ring-2 focus:ring-cyan-700/10; }
+  .primary-button { @apply inline-flex items-center rounded-lg bg-[#0b1f2a] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#123344]; }
+  .secondary-button { @apply inline-flex items-center rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50; }
+  .metric-label { @apply text-sm font-medium text-slate-500; }
+  .metric-value { @apply mt-3 text-2xl font-semibold tracking-tight text-slate-950; }
+  .detail-label { @apply text-xs font-semibold uppercase tracking-[0.12em] text-slate-400; }
+  .detail-value { @apply mt-1.5 text-sm font-medium text-slate-800; }
+  .data-table { @apply w-full min-w-[900px] border-collapse text-left text-sm; }
+  .data-table thead { @apply bg-slate-50; }
+  .data-table th { @apply border-b border-slate-200 px-5 py-3 text-xs font-semibold uppercase tracking-[0.08em] text-slate-500; }
+  .data-table td { @apply border-b border-slate-100 px-5 py-4 align-middle text-slate-600; }
+  .data-table tbody tr { @apply transition hover:bg-slate-50/70; }
 }

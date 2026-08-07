@@ -117,3 +117,16 @@ Then authenticate through `POST /api/v1/auth/login` with organization slug, emai
 The backend now supports tenant-scoped claim creation, listing, search/filtering, detail retrieval, core edits, controlled handler assignment, status transitions, reserve audit updates, and atomic human-readable claim reference generation for PostgreSQL.
 
 Core claims endpoints live under `/api/v1/claims`.
+
+## Sprint 2 Phase F — Claims UI
+
+The web application now includes organization-aware login, a claims dashboard, claims portfolio, H&M machinery claim creation, vessel creation, and a claim overview page connected to the tenant-safe FastAPI endpoints.
+
+Frontend routes:
+
+- `http://localhost:3000/login`
+- `http://localhost:3000/dashboard`
+- `http://localhost:3000/claims`
+- `http://localhost:3000/claims/new`
+
+The backend also exposes tenant-scoped `GET/POST /api/v1/vessels` endpoints required by claim creation.
