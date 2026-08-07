@@ -1,20 +1,23 @@
 # Maritime Claims & Risk Intelligence Platform
 
-Starter monorepo for the H&M Machinery Claims MVP.
+Monorepo for the H&M Machinery Claims MVP.
 
-## Sprint 2 / Phase B status
+## Current status
 
-This repository establishes the development foundation only:
+Sprint 2 / Phase C is complete:
 
 - Next.js + TypeScript web app
 - FastAPI backend
 - PostgreSQL 18.4 via Docker Compose
+- SQLAlchemy 2 domain models
+- Alembic migrations
+- Tenant foundation
+- Claim/vessel/document/audit foundation
 - Environment configuration
 - Health endpoint
-- Dockerfiles
-- Architecture decision records
+- Architecture and security ADRs
 
-Claims, authentication, database models, and document upload are implemented in later Sprint 2 phases.
+Authentication and business APIs are implemented in the next Sprint 2 phases. AI remains intentionally deferred until Sprint 3.
 
 ## Prerequisites
 
@@ -37,29 +40,40 @@ Then open:
 - API docs: http://localhost:8000/docs
 - API health: http://localhost:8000/api/v1/health
 
-## Local API without Docker
+## Apply database migrations
+
+With the stack running:
+
+```bash
+docker compose exec api alembic upgrade head
+```
+
+Or locally:
 
 ```bash
 cd apps/api
-python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\\Scripts\\activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
+alembic upgrade head
 ```
 
-## Local web without Docker
+Inspect migration SQL without connecting:
 
 ```bash
-cd apps/web
-npm install
-npm run dev
+cd apps/api
+alembic upgrade head --sql
+```
+
+## Run backend tests
+
+```bash
+cd apps/api
+pytest
 ```
 
 ## Repository structure
 
 ```text
 apps/
-  api/      FastAPI modular monolith
+  api/      FastAPI modular monolith + SQLAlchemy/Alembic
   web/      Next.js frontend
 infra/      infrastructure notes/scripts
 docs/       product, architecture, ADRs
@@ -74,5 +88,5 @@ scripts/    helper scripts
 4. Tenant isolation will be backend-enforced.
 5. Files are stored outside the relational database.
 6. Sensitive changes are audit logged.
-7. Money uses decimal types; timestamps use UTC.
+7. Money uses decimal database types; timestamps are timezone-aware.
 8. MVP remains a modular monolith.

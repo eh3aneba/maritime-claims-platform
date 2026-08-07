@@ -1,0 +1,31 @@
+from app.db.metadata import Base
+
+
+def test_database_foundation_tables_present() -> None:
+    expected = {"organizations", "users", "vessels", "claims", "documents", "audit_logs"}
+    assert expected.issubset(Base.metadata.tables.keys())
+
+
+def test_claims_have_tenant_column() -> None:
+    claims = Base.metadata.tables["claims"]
+    assert "organization_id" in claims.c
+
+
+def test_documents_have_hash_and_tenant_columns() -> None:
+    documents = Base.metadata.tables["documents"]
+    assert "organization_id" in documents.c
+    assert "file_hash" in documents.c
+
+
+def test_audit_log_is_immutable_shape() -> None:
+    audit = Base.metadata.tables["audit_logs"]
+    assert "created_at" in audit.c
+    assert "updated_at" not in audit.c
+    assert "deleted_at" not in audit.c
+
+
+def test_enum_columns_persist_public_values() -> None:
+    claims = Base.metadata.tables["claims"]
+    assert claims.c.status.type.enums[0] == "new"
+    users = Base.metadata.tables["users"]
+    assert users.c.role.type.enums == ["admin", "claims_manager", "claims_handler"]

@@ -1,7 +1,11 @@
 #!/usr/bin/env sh
 set -eu
 
-python3 -m compileall apps/api/app
-python3 -m json.tool apps/web/package.json >/dev/null
+python -m compileall apps/api/app apps/api/alembic >/dev/null
+(
+  cd apps/api
+  pytest -q
+  alembic upgrade head --sql >/tmp/mcri_migration.sql
+)
 
-echo "Starter repository static checks passed."
+echo "Static checks, database metadata tests, and offline migration generation passed."

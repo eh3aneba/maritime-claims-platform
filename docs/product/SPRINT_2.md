@@ -4,7 +4,7 @@
 Status: Complete
 
 ## Phase B — Repository & Development Environment
-Status: Complete in starter repository
+Status: Complete
 
 Deliverables:
 - Monorepo structure
@@ -16,12 +16,30 @@ Deliverables:
 - Health endpoint
 - Architecture/security documentation
 
-## Next: Phase C — Database Foundation
+## Phase C — Database Foundation
+Status: Complete
 
-Tables to implement first:
-- organizations
-- users
-- vessels
-- claims
-- documents
-- audit_logs
+Implemented:
+- SQLAlchemy 2 models
+- Alembic configuration
+- Initial migration `0001_database_foundation`
+- `organizations`
+- `users`
+- `vessels`
+- `claims`
+- `documents`
+- `audit_logs`
+- Tenant-scoped indexes and constraints
+- Soft deletion on claims/documents/master records
+- Immutable audit-log shape
+- Database metadata tests
+
+## Next: Phase D — Authentication
+
+Planned:
+- Password hashing
+- Login/logout/current-user endpoints
+- JWT/session strategy
+- Role enforcement
+- Organization context
+- Tenant-protected repository queries
