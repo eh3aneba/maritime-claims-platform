@@ -438,6 +438,26 @@ def _persist_ce_extractions(
         _persist_item_if_present(db, run=run, field_path=f"symptoms[{index}]", semantic_kind=AISemanticKind.FACT, item=item, segments=segments, run_warnings=run_warnings)
     for index, item in enumerate(parsed.immediate_actions):
         _persist_item_if_present(db, run=run, field_path=f"immediate_actions[{index}]", semantic_kind=AISemanticKind.FACT, item=item, segments=segments, run_warnings=run_warnings)
+
+    for index, event in enumerate(parsed.reported_events):
+        event_fields = [
+            ("date", AISemanticKind.FACT, event.date),
+            ("time", AISemanticKind.FACT, event.time),
+            ("timezone", AISemanticKind.FACT, event.timezone),
+            ("event_type", AISemanticKind.INFERENCE, event.event_type),
+            ("description", AISemanticKind.FACT, event.description),
+        ]
+        for leaf, semantic_kind, item in event_fields:
+            _persist_item_if_present(
+                db,
+                run=run,
+                field_path=f"reported_events[{index}].{leaf}",
+                semantic_kind=semantic_kind,
+                item=item,
+                segments=segments,
+                run_warnings=run_warnings,
+            )
+
     for index, item in enumerate(parsed.suspected_cause_opinions):
         _persist_item_if_present(db, run=run, field_path=f"suspected_cause_opinions[{index}]", semantic_kind=AISemanticKind.OPINION, item=item, segments=segments, run_warnings=run_warnings)
     for index, item in enumerate(parsed.recommendations):

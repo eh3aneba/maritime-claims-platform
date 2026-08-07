@@ -248,8 +248,8 @@ export interface ChronologyEvent {
   event_type: string;
   title: string;
   description: string | null;
-  occurred_on: string;
-  occurred_time: string;
+  occurred_on: string | null;
+  occurred_time: string | null;
   timezone_label: string | null;
   materiality: ChronologyMateriality;
   evidence: ChronologyEvidence[];

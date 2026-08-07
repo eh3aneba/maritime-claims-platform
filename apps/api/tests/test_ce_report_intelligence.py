@@ -63,6 +63,22 @@ class FakeCEProvider:
             },
             "symptoms": [sv("abnormal vibration", quote)],
             "immediate_actions": [sv("Engine load was reduced", "Engine load was reduced")],
+            "reported_events": [
+                {
+                    "date": sv("2026-07-10", "10 July 2026"),
+                    "time": sv("10:30", quote),
+                    "timezone": sv("UTC", "10:30 UTC"),
+                    "event_type": sv("observation", quote),
+                    "description": sv("abnormal turbocharger vibration", quote),
+                },
+                {
+                    "date": sv(None, None, 0),
+                    "time": sv(None, None, 0),
+                    "timezone": sv(None, None, 0),
+                    "event_type": sv("load_reduction", "Engine load was reduced"),
+                    "description": sv("Engine load was reduced", "Engine load was reduced"),
+                },
+            ],
             "operational_impact": {
                 "engine_stopped": sb(None, None, 0),
                 "load_reduced": sb(True, "Engine load was reduced"),
@@ -77,6 +93,7 @@ class FakeCEProvider:
         if self.classification != "chief_engineer_report":
             payload["symptoms"] = []
             payload["immediate_actions"] = []
+            payload["reported_events"] = []
             payload["suspected_cause_opinions"] = []
         return AIResponse(
             provider=self.name,
@@ -197,8 +214,8 @@ def test_ce_report_ai_run_persists_source_linked_fact_and_opinion(tmp_path: Path
         run = run_ce_report_intelligence(db, document=document, requested_by_id=None, provider=provider)
         assert run.status == AIRunStatus.COMPLETED
         assert run.document_type_candidate == "chief_engineer_report"
-        assert run.prompt_version == "1.0"
-        assert run.schema_version == "1.0"
+        assert run.prompt_version == "2.0"
+        assert run.schema_version == "2.0"
         assert run.raw_response_id == "resp_test_001"
         assert run.usage["total_tokens"] == 180
 
@@ -217,7 +234,7 @@ def test_ce_report_ai_run_persists_source_linked_fact_and_opinion(tmp_path: Path
 
     assert provider.last_request is not None
     assert provider.last_request.output_schema is not None
-    assert provider.last_request.schema_name == "chief_engineer_report_v1"
+    assert provider.last_request.schema_name == "chief_engineer_report_v2"
     assert "SEGMENT 0" in provider.last_request.input_text
 
 
@@ -314,7 +331,7 @@ def test_openai_adapter_uses_responses_structured_output_shape() -> None:
 
     class Response:
         id = "resp_openai_stub"
-        output_text = '{"classification":{"document_type":"unknown","confidence":0.5},"identification":{"vessel_name":{"value":null,"confidence":0,"source":{"segment_index":null,"quote":null}},"imo_number":{"value":null,"confidence":0,"source":{"segment_index":null,"quote":null}},"report_date":{"value":null,"confidence":0,"source":{"segment_index":null,"quote":null}},"author_name":{"value":null,"confidence":0,"source":{"segment_index":null,"quote":null}},"author_rank":{"value":null,"confidence":0,"source":{"segment_index":null,"quote":null}}},"incident":{"date":{"value":null,"confidence":0,"source":{"segment_index":null,"quote":null}},"time":{"value":null,"confidence":0,"source":{"segment_index":null,"quote":null}},"timezone":{"value":null,"confidence":0,"source":{"segment_index":null,"quote":null}},"location":{"value":null,"confidence":0,"source":{"segment_index":null,"quote":null}},"voyage_from":{"value":null,"confidence":0,"source":{"segment_index":null,"quote":null}},"voyage_to":{"value":null,"confidence":0,"source":{"segment_index":null,"quote":null}},"cargo_status":{"value":null,"confidence":0,"source":{"segment_index":null,"quote":null}},"first_observation":{"value":null,"confidence":0,"source":{"segment_index":null,"quote":null}}},"equipment":{"equipment_type":{"value":null,"confidence":0,"source":{"segment_index":null,"quote":null}},"equipment_name":{"value":null,"confidence":0,"source":{"segment_index":null,"quote":null}},"maker":{"value":null,"confidence":0,"source":{"segment_index":null,"quote":null}},"model":{"value":null,"confidence":0,"source":{"segment_index":null,"quote":null}},"serial_number":{"value":null,"confidence":0,"source":{"segment_index":null,"quote":null}}},"symptoms":[],"immediate_actions":[],"operational_impact":{"engine_stopped":{"value":null,"confidence":0,"source":{"segment_index":null,"quote":null}},"load_reduced":{"value":null,"confidence":0,"source":{"segment_index":null,"quote":null}},"speed_reduced":{"value":null,"confidence":0,"source":{"segment_index":null,"quote":null}},"immobilized":{"value":null,"confidence":0,"source":{"segment_index":null,"quote":null}},"deviation":{"value":null,"confidence":0,"source":{"segment_index":null,"quote":null}},"towage":{"value":null,"confidence":0,"source":{"segment_index":null,"quote":null}}},"suspected_cause_opinions":[],"recommendations":[]}'
+        output_text = '{"classification":{"document_type":"unknown","confidence":0.5},"identification":{"vessel_name":{"value":null,"confidence":0,"source":{"segment_index":null,"quote":null}},"imo_number":{"value":null,"confidence":0,"source":{"segment_index":null,"quote":null}},"report_date":{"value":null,"confidence":0,"source":{"segment_index":null,"quote":null}},"author_name":{"value":null,"confidence":0,"source":{"segment_index":null,"quote":null}},"author_rank":{"value":null,"confidence":0,"source":{"segment_index":null,"quote":null}}},"incident":{"date":{"value":null,"confidence":0,"source":{"segment_index":null,"quote":null}},"time":{"value":null,"confidence":0,"source":{"segment_index":null,"quote":null}},"timezone":{"value":null,"confidence":0,"source":{"segment_index":null,"quote":null}},"location":{"value":null,"confidence":0,"source":{"segment_index":null,"quote":null}},"voyage_from":{"value":null,"confidence":0,"source":{"segment_index":null,"quote":null}},"voyage_to":{"value":null,"confidence":0,"source":{"segment_index":null,"quote":null}},"cargo_status":{"value":null,"confidence":0,"source":{"segment_index":null,"quote":null}},"first_observation":{"value":null,"confidence":0,"source":{"segment_index":null,"quote":null}}},"equipment":{"equipment_type":{"value":null,"confidence":0,"source":{"segment_index":null,"quote":null}},"equipment_name":{"value":null,"confidence":0,"source":{"segment_index":null,"quote":null}},"maker":{"value":null,"confidence":0,"source":{"segment_index":null,"quote":null}},"model":{"value":null,"confidence":0,"source":{"segment_index":null,"quote":null}},"serial_number":{"value":null,"confidence":0,"source":{"segment_index":null,"quote":null}}},"symptoms":[],"immediate_actions":[],"reported_events":[],"operational_impact":{"engine_stopped":{"value":null,"confidence":0,"source":{"segment_index":null,"quote":null}},"load_reduced":{"value":null,"confidence":0,"source":{"segment_index":null,"quote":null}},"speed_reduced":{"value":null,"confidence":0,"source":{"segment_index":null,"quote":null}},"immobilized":{"value":null,"confidence":0,"source":{"segment_index":null,"quote":null}},"deviation":{"value":null,"confidence":0,"source":{"segment_index":null,"quote":null}},"towage":{"value":null,"confidence":0,"source":{"segment_index":null,"quote":null}}},"suspected_cause_opinions":[],"recommendations":[]}'
         usage = Usage()
 
     class Responses:
@@ -334,7 +351,7 @@ def test_openai_adapter_uses_responses_structured_output_shape() -> None:
             task="chief_engineer_report_extract",
             system_instructions="extract only evidence",
             input_text="[SEGMENT 0] test",
-            schema_name="chief_engineer_report_v1",
+            schema_name="chief_engineer_report_v2",
             output_schema=schema,
         )
     )
@@ -357,6 +374,7 @@ def test_ce_schema_requires_all_top_level_fields_for_strict_output() -> None:
         "equipment",
         "symptoms",
         "immediate_actions",
+        "reported_events",
         "operational_impact",
         "suspected_cause_opinions",
         "recommendations",

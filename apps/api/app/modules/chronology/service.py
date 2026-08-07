@@ -42,15 +42,17 @@ class EventCandidate:
     event_type: str
     title: str
     description: str | None
-    occurred_on: date
-    occurred_time: time
+    occurred_on: date | None
+    occurred_time: time | None
     timezone_label: str | None
     materiality: ChronologyMateriality
     source_priority: int
     evidence: list[CandidateEvidence] = field(default_factory=list)
 
     @property
-    def timestamp(self) -> datetime:
+    def timestamp(self) -> datetime | None:
+        if self.occurred_on is None or self.occurred_time is None:
+            return None
         return datetime.combine(self.occurred_on, self.occurred_time)
 
 
@@ -121,8 +123,16 @@ def _truthy(value: Any) -> bool | None:
 
 
 def _classify_action(text: str) -> tuple[str, str, ChronologyMateriality]:
-    lowered = text.lower()
-    if "shutdown" in lowered or "shut down" in lowered or "engine stopped" in lowered or "stopped engine" in lowered:
+    lowered = re.sub(r"\s+", " ", text.lower()).strip()
+    shutdown_patterns = (
+        r"\bshutdown\b",
+        r"\bshut down\b",
+        r"\b(?:main )?engine (?:was |has been |had been )?stopped\b",
+        r"\b(?:main )?engine stopped\b",
+        r"\bstopped (?:the )?(?:main )?engine\b",
+        r"\bme (?:was )?stopped\b",
+    )
+    if any(re.search(pattern, lowered) for pattern in shutdown_patterns):
         return "shutdown", "Main engine shutdown", ChronologyMateriality.HIGH
     if "restart" in lowered or "re-start" in lowered or "resumed" in lowered:
         return "restart", "Main engine restart", ChronologyMateriality.HIGH
@@ -145,8 +155,8 @@ def _event_signature(candidate: EventCandidate) -> str:
     evidence_ids = sorted(str(item.extraction.id) for item in candidate.evidence)
     payload = {
         "type": candidate.event_type,
-        "date": candidate.occurred_on.isoformat(),
-        "time": candidate.occurred_time.isoformat(),
+        "date": candidate.occurred_on.isoformat() if candidate.occurred_on else None,
+        "time": candidate.occurred_time.isoformat() if candidate.occurred_time else None,
         "evidence": evidence_ids,
     }
     return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
@@ -189,47 +199,119 @@ def _build_ce_candidates(rows: list[tuple[DocumentExtraction, Document]]) -> tup
 
     candidates: list[EventCandidate] = []
     fact_index: dict[str, DocumentExtraction] = {}
+    reported_re = re.compile(r"^reported_events\[(\d+)\]\.(.+)$")
+
     for fields in by_doc.values():
-        date_pair = fields.get("incident.date")
-        time_pair = fields.get("incident.time")
-        if not date_pair or not time_pair:
+        for path, pair in fields.items():
+            fact_index[path] = pair[0]
+
+        incident_date_pair = fields.get("incident.date")
+        incident_time_pair = fields.get("incident.time")
+        incident_tz_pair = fields.get("incident.timezone")
+        incident_date = _parse_date(_approved_value(incident_date_pair[0])) if incident_date_pair else None
+        incident_time = _parse_time(_approved_value(incident_time_pair[0])) if incident_time_pair else None
+        incident_tz = _string(_approved_value(incident_tz_pair[0])) if incident_tz_pair else None
+
+        grouped_events: dict[int, dict[str, tuple[DocumentExtraction, Document]]] = {}
+        for path, pair in fields.items():
+            match = reported_re.match(path)
+            if match:
+                grouped_events.setdefault(int(match.group(1)), {})[match.group(2)] = pair
+
+        # CE schema v2: reported_events is authoritative for chronology timing.
+        # We deliberately do not create additional action/operational candidates from
+        # immediate_actions or boolean impact fields when these event rows exist.
+        if grouped_events:
+            for index in sorted(grouped_events):
+                event_fields = grouped_events[index]
+                desc_pair = event_fields.get("description")
+                if desc_pair is None:
+                    continue
+                description = _string(_approved_value(desc_pair[0]))
+                if not description:
+                    continue
+
+                date_pair = event_fields.get("date")
+                time_pair = event_fields.get("time")
+                tz_pair = event_fields.get("timezone")
+                type_pair = event_fields.get("event_type")
+                event_date = _parse_date(_approved_value(date_pair[0])) if date_pair else None
+                event_time = _parse_time(_approved_value(time_pair[0])) if time_pair else None
+                timezone_label = _string(_approved_value(tz_pair[0])) if tz_pair else None
+
+                # Deterministic phrase taxonomy remains authoritative for event type.
+                kind, title, materiality = _classify_action(description)
+                if kind == "action" and type_pair is not None:
+                    raw_type = (_string(_approved_value(type_pair[0])) or "").strip().lower().replace(" ", "_")
+                    allowed = {
+                        "observation": ("observation", "Abnormal machinery condition observed", ChronologyMateriality.MEDIUM),
+                        "alarm": ("alarm", "Machinery alarm", ChronologyMateriality.MEDIUM),
+                        "load_reduction": ("load_reduction", "Engine load reduced", ChronologyMateriality.MEDIUM),
+                        "shutdown": ("shutdown", "Main engine shutdown", ChronologyMateriality.HIGH),
+                        "restart": ("restart", "Main engine restart", ChronologyMateriality.HIGH),
+                        "isolation": ("isolation", "Machinery isolated", ChronologyMateriality.HIGH),
+                        "towage": ("towage", "Towage event", ChronologyMateriality.HIGH),
+                        "deviation": ("deviation", "Vessel deviation", ChronologyMateriality.HIGH),
+                    }
+                    if raw_type in allowed:
+                        kind, title, materiality = allowed[raw_type]
+
+                evidence = [
+                    CandidateEvidence(extraction=pair[0], document=pair[1], value=_approved_value(pair[0]))
+                    for pair in event_fields.values()
+                    if _approved_value(pair[0]) is not None
+                ]
+                candidates.append(
+                    EventCandidate(
+                        kind,
+                        title,
+                        description,
+                        event_date,
+                        event_time,
+                        timezone_label,
+                        materiality,
+                        70,
+                        evidence,
+                    )
+                )
             continue
-        incident_date = _parse_date(_approved_value(date_pair[0]))
-        incident_time = _parse_time(_approved_value(time_pair[0]))
-        if not incident_date or not incident_time:
-            continue
-        tz_pair = fields.get("incident.timezone")
-        timezone_label = _string(_approved_value(tz_pair[0])) if tz_pair else None
+
+        # Backward-compatible fallback for older CE runs. Only first observation may
+        # use incident.time. Other actions/impact flags are retained as undated or
+        # date-only events rather than manufacturing the incident timestamp.
+        first_pair = fields.get("incident.first_observation")
+        if first_pair and incident_date and incident_time:
+            text = _string(_approved_value(first_pair[0]))
+            if text:
+                kind, title, materiality = _classify_action(text)
+                if kind == "action":
+                    kind, title, materiality = "observation", "First abnormality observed", ChronologyMateriality.MEDIUM
+                evidence: list[CandidateEvidence] = []
+                for pair in (incident_date_pair, incident_time_pair, incident_tz_pair, first_pair):
+                    if pair and _approved_value(pair[0]) is not None:
+                        evidence.append(CandidateEvidence(pair[0], pair[1], _approved_value(pair[0])))
+                candidates.append(EventCandidate(kind, title, text, incident_date, incident_time, incident_tz, materiality, 70, evidence))
 
         for path, pair in fields.items():
-            extraction, document = pair
-            value = _approved_value(extraction)
-            fact_index[path] = extraction
+            value = _approved_value(pair[0])
             if value is None:
                 continue
-            if path == "incident.first_observation":
+            if path.startswith("immediate_actions["):
                 text = _string(value)
                 if text:
                     kind, title, materiality = _classify_action(text)
-                    if kind == "action":
-                        kind, title, materiality = "observation", "First abnormality observed", ChronologyMateriality.MEDIUM
-                    evidence = [CandidateEvidence(date_pair[0], date_pair[1], _approved_value(date_pair[0])), CandidateEvidence(time_pair[0], time_pair[1], _approved_value(time_pair[0])), CandidateEvidence(extraction, document, value)]
-                    if tz_pair:
-                        evidence.append(CandidateEvidence(tz_pair[0], tz_pair[1], _approved_value(tz_pair[0])))
-                    candidates.append(EventCandidate(kind, title, text, incident_date, incident_time, timezone_label, materiality, 70, evidence))
-            elif path.startswith("immediate_actions["):
-                text = _string(value)
-                if text:
-                    kind, title, materiality = _classify_action(text)
-                    candidates.append(EventCandidate(kind, title, text, incident_date, incident_time, timezone_label, materiality, 70, [CandidateEvidence(date_pair[0], date_pair[1], _approved_value(date_pair[0])), CandidateEvidence(time_pair[0], time_pair[1], _approved_value(time_pair[0])), CandidateEvidence(extraction, document, value)]))
+                    evidence = [CandidateEvidence(pair[0], pair[1], value)]
+                    if incident_date_pair:
+                        evidence.append(CandidateEvidence(incident_date_pair[0], incident_date_pair[1], _approved_value(incident_date_pair[0])))
+                    candidates.append(EventCandidate(kind, title, text, incident_date, None, incident_tz, materiality, 70, evidence))
             elif path == "operational_impact.engine_stopped" and _truthy(value) is True:
-                candidates.append(EventCandidate("shutdown", "Main engine shutdown", "Chief Engineer Report records that the engine stopped.", incident_date, incident_time, timezone_label, ChronologyMateriality.HIGH, 70, [CandidateEvidence(date_pair[0], date_pair[1], _approved_value(date_pair[0])), CandidateEvidence(time_pair[0], time_pair[1], _approved_value(time_pair[0])), CandidateEvidence(extraction, document, value)]))
+                candidates.append(EventCandidate("shutdown", "Main engine shutdown", "Chief Engineer Report records that the engine stopped.", incident_date, None, incident_tz, ChronologyMateriality.HIGH, 70, [CandidateEvidence(pair[0], pair[1], value)]))
             elif path == "operational_impact.load_reduced" and _truthy(value) is True:
-                candidates.append(EventCandidate("load_reduction", "Engine load reduced", "Chief Engineer Report records reduced engine load.", incident_date, incident_time, timezone_label, ChronologyMateriality.MEDIUM, 70, [CandidateEvidence(date_pair[0], date_pair[1], _approved_value(date_pair[0])), CandidateEvidence(time_pair[0], time_pair[1], _approved_value(time_pair[0])), CandidateEvidence(extraction, document, value)]))
+                candidates.append(EventCandidate("load_reduction", "Engine load reduced", "Chief Engineer Report records reduced engine load.", incident_date, None, incident_tz, ChronologyMateriality.MEDIUM, 70, [CandidateEvidence(pair[0], pair[1], value)]))
             elif path == "operational_impact.deviation" and _truthy(value) is True:
-                candidates.append(EventCandidate("deviation", "Vessel deviation", "Chief Engineer Report records a deviation.", incident_date, incident_time, timezone_label, ChronologyMateriality.HIGH, 70, [CandidateEvidence(date_pair[0], date_pair[1], _approved_value(date_pair[0])), CandidateEvidence(time_pair[0], time_pair[1], _approved_value(time_pair[0])), CandidateEvidence(extraction, document, value)]))
+                candidates.append(EventCandidate("deviation", "Vessel deviation", "Chief Engineer Report records a deviation.", incident_date, None, incident_tz, ChronologyMateriality.HIGH, 70, [CandidateEvidence(pair[0], pair[1], value)]))
             elif path == "operational_impact.towage" and _truthy(value) is True:
-                candidates.append(EventCandidate("towage", "Towage event", "Chief Engineer Report records towage.", incident_date, incident_time, timezone_label, ChronologyMateriality.HIGH, 70, [CandidateEvidence(date_pair[0], date_pair[1], _approved_value(date_pair[0])), CandidateEvidence(time_pair[0], time_pair[1], _approved_value(time_pair[0])), CandidateEvidence(extraction, document, value)]))
+                candidates.append(EventCandidate("towage", "Towage event", "Chief Engineer Report records towage.", incident_date, None, incident_tz, ChronologyMateriality.HIGH, 70, [CandidateEvidence(pair[0], pair[1], value)]))
     return candidates, fact_index
 
 
@@ -295,12 +377,63 @@ def _build_engine_candidates(rows: list[tuple[DocumentExtraction, Document]]) ->
     return candidates, fact_index
 
 
+def _candidate_sort_key(candidate: EventCandidate) -> tuple:
+    return (
+        candidate.occurred_on or date.max,
+        candidate.occurred_time or time.max,
+        candidate.event_type,
+        -candidate.source_priority,
+    )
+
+
+def _source_statement_key(candidate: EventCandidate) -> tuple | None:
+    refs = []
+    for evidence in candidate.evidence:
+        quote = (evidence.extraction.source_quote or "").strip().casefold()
+        if quote:
+            refs.append((str(evidence.document.id), quote))
+    if not refs:
+        return None
+    return (candidate.event_type, tuple(sorted(set(refs))))
+
+
+def _dedupe_same_statement(candidates: list[EventCandidate]) -> list[EventCandidate]:
+    """Collapse duplicate candidates produced from the same source statement.
+
+    This is intentionally conservative: different event types from one sentence are
+    retained because a sentence may legitimately report more than one event.
+    """
+    keyed: dict[tuple, EventCandidate] = {}
+    unkeyed: list[EventCandidate] = []
+    for candidate in candidates:
+        key = _source_statement_key(candidate)
+        if key is None:
+            unkeyed.append(candidate)
+            continue
+        current = keyed.get(key)
+        if current is None:
+            keyed[key] = candidate
+            continue
+        current_precision = int(current.occurred_on is not None) + int(current.occurred_time is not None)
+        candidate_precision = int(candidate.occurred_on is not None) + int(candidate.occurred_time is not None)
+        if (candidate_precision, candidate.source_priority) > (current_precision, current.source_priority):
+            keyed[key] = candidate
+    return list(keyed.values()) + unkeyed
+
+
 def _cluster_candidates(candidates: list[EventCandidate]) -> list[EventCandidate]:
+    candidates = _dedupe_same_statement(candidates)
     clusters: list[list[EventCandidate]] = []
-    for candidate in sorted(candidates, key=lambda c: (c.timestamp, c.event_type, -c.source_priority)):
+    standalone: list[EventCandidate] = []
+    for candidate in sorted(candidates, key=_candidate_sort_key):
+        if candidate.timestamp is None:
+            standalone.append(candidate)
+            continue
         matched = None
         for cluster in clusters:
             representative = max(cluster, key=lambda c: c.source_priority)
+            if representative.timestamp is None:
+                continue
             if representative.event_type != candidate.event_type or representative.occurred_on != candidate.occurred_on:
                 continue
             if representative.timezone_label and candidate.timezone_label and representative.timezone_label != candidate.timezone_label:
@@ -316,11 +449,16 @@ def _cluster_candidates(candidates: list[EventCandidate]) -> list[EventCandidate
 
     result: list[EventCandidate] = []
     for cluster in clusters:
-        primary = max(cluster, key=lambda c: (c.source_priority, -c.timestamp.timestamp()))
+        primary = max(
+            cluster,
+            key=lambda c: (
+                c.source_priority,
+                -(c.timestamp.timestamp() if c.timestamp is not None else float("inf")),
+            ),
+        )
         evidence_by_id: dict[UUID, CandidateEvidence] = {}
         descriptions: list[str] = []
         materiality = primary.materiality
-        # Keep the highest-priority source first so EventEvidence can label it as primary.
         ordered_cluster = [primary] + [item for item in cluster if item is not primary]
         for item in ordered_cluster:
             if item.description and item.description not in descriptions:
@@ -330,7 +468,9 @@ def _cluster_candidates(candidates: list[EventCandidate]) -> list[EventCandidate
             for evidence in item.evidence:
                 evidence_by_id.setdefault(evidence.extraction.id, evidence)
         result.append(EventCandidate(primary.event_type, primary.title, " | ".join(descriptions) or None, primary.occurred_on, primary.occurred_time, primary.timezone_label, materiality, primary.source_priority, list(evidence_by_id.values())))
-    return result
+
+    result.extend(standalone)
+    return sorted(result, key=_candidate_sort_key)
 
 
 def _upsert_events(db: Session, *, claim: Claim, candidates: list[EventCandidate]) -> list[ChronologyEvent]:
@@ -393,7 +533,8 @@ def _representative_extraction(db: Session, event_id: UUID, suffix: str | None =
 def _time_conflicts(db: Session, events: list[ChronologyEvent]) -> list[ConflictCandidate]:
     unique_types = {"shutdown", "restart", "load_reduction", "towage", "deviation", "isolation"}
     conflicts: list[ConflictCandidate] = []
-    ordered = sorted(events, key=lambda event: (event.event_type, event.occurred_on, event.occurred_time))
+    timestamped = [event for event in events if event.occurred_on is not None and event.occurred_time is not None]
+    ordered = sorted(timestamped, key=lambda event: (event.event_type, event.occurred_on, event.occurred_time))
     for idx, event_a in enumerate(ordered):
         if event_a.event_type not in unique_types:
             continue

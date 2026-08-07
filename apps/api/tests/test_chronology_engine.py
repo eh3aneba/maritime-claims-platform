@@ -126,10 +126,16 @@ def seed_timeline(*, ce_time="10:30", engine_time="10:52", ce_stopped=True, engi
         db.add(claim); db.flush()
 
         ce_doc, ce_seg, ce_run = _document(db, org=alpha, claim=claim, user=alpha_user, name="CE_Report.pdf", doc_type="chief_engineer_report", hash_char="a")
-        ce_date = _extraction(db, org=alpha, claim=claim, document=ce_doc, segment=ce_seg, run=ce_run, path="incident.date", value="2026-07-10")
-        ce_time_ex = _extraction(db, org=alpha, claim=claim, document=ce_doc, segment=ce_seg, run=ce_run, path="incident.time", value=ce_time)
+        _extraction(db, org=alpha, claim=claim, document=ce_doc, segment=ce_seg, run=ce_run, path="incident.date", value="2026-07-10")
+        _extraction(db, org=alpha, claim=claim, document=ce_doc, segment=ce_seg, run=ce_run, path="incident.time", value=ce_time)
         _extraction(db, org=alpha, claim=claim, document=ce_doc, segment=ce_seg, run=ce_run, path="incident.timezone", value="UTC")
-        ce_action = _extraction(db, org=alpha, claim=claim, document=ce_doc, segment=ce_seg, run=ce_run, path="immediate_actions[0]", value="Main engine shutdown")
+        ce_time_ex = None
+        if ce_stopped is True:
+            _extraction(db, org=alpha, claim=claim, document=ce_doc, segment=ce_seg, run=ce_run, path="reported_events[0].date", value="2026-07-10")
+            ce_time_ex = _extraction(db, org=alpha, claim=claim, document=ce_doc, segment=ce_seg, run=ce_run, path="reported_events[0].time", value=ce_time)
+            _extraction(db, org=alpha, claim=claim, document=ce_doc, segment=ce_seg, run=ce_run, path="reported_events[0].timezone", value="UTC")
+            _extraction(db, org=alpha, claim=claim, document=ce_doc, segment=ce_seg, run=ce_run, path="reported_events[0].event_type", value="shutdown", kind=AISemanticKind.INFERENCE)
+            _extraction(db, org=alpha, claim=claim, document=ce_doc, segment=ce_seg, run=ce_run, path="reported_events[0].description", value="The main engine was stopped for inspection")
         ce_stop = _extraction(db, org=alpha, claim=claim, document=ce_doc, segment=ce_seg, run=ce_run, path="operational_impact.engine_stopped", value=ce_stopped)
 
         eng_doc, eng_seg, eng_run = _document(db, org=alpha, claim=claim, user=alpha_user, name="Engine_Log.pdf", doc_type="engine_log", hash_char="d")
@@ -141,7 +147,7 @@ def seed_timeline(*, ce_time="10:30", engine_time="10:52", ce_stopped=True, engi
         db.commit()
         return {
             "claim_id": str(claim.id), "alpha_user_id": str(alpha_user.id), "alpha_org_id": str(alpha.id),
-            "ce_time_id": str(ce_time_ex.id), "eng_time_id": str(eng_time_ex.id), "ce_stop_id": str(ce_stop.id), "eng_shutdown_id": str(eng_shutdown.id)
+            "ce_time_id": str(ce_time_ex.id) if ce_time_ex else "", "eng_time_id": str(eng_time_ex.id), "ce_stop_id": str(ce_stop.id), "eng_shutdown_id": str(eng_shutdown.id)
         }
 
 
@@ -261,5 +267,10 @@ def test_pending_or_rejected_evidence_never_enters_chronology() -> None:
         db.commit()
         claim = db.get(Claim, UUID(ids["claim_id"])); user = db.get(User, UUID(ids["alpha_user_id"]))
         events, conflicts = build_chronology(db, claim=claim, user=user)
-        assert events == []
+        # The reviewed CE statement is preserved as an undated/relative event rather
+        # than being assigned incident.time. Pending Engine Log timing cannot create a
+        # timestamped event or conflict.
+        assert len(events) == 1
+        assert events[0].event_type == "shutdown"
+        assert events[0].occurred_time is None
         assert conflicts == []

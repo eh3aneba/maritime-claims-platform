@@ -40,8 +40,8 @@ class ChronologyEvent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     event_type: Mapped[str] = mapped_column(String(80), nullable=False)
     title: Mapped[str] = mapped_column(String(180), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    occurred_on: Mapped[date] = mapped_column(Date, nullable=False)
-    occurred_time: Mapped[time] = mapped_column(Time(timezone=False), nullable=False)
+    occurred_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    occurred_time: Mapped[time | None] = mapped_column(Time(timezone=False), nullable=True)
     timezone_label: Mapped[str | None] = mapped_column(String(50), nullable=True)
     materiality: Mapped[ChronologyMateriality] = mapped_column(
         Enum(ChronologyMateriality, name="chronology_materiality", native_enum=True, values_callable=enum_values),

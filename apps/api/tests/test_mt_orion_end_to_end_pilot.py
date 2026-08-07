@@ -122,6 +122,36 @@ def _ce_payload():
             ss("The main engine was stopped at approximately 10:45 UTC for inspection.", stop_quote),
             ss("Turbocharger No.2 was subsequently isolated.", stop_quote),
         ],
+        "reported_events": [
+            {
+                "date": ss("2026-07-10", first_quote),
+                "time": ss("10:30", first_quote),
+                "timezone": ss("UTC", first_quote),
+                "event_type": ss("observation", first_quote),
+                "description": ss("Abnormal vibration was first noticed from Main Engine Turbocharger No.2.", first_quote),
+            },
+            {
+                "date": ss("2026-07-10", reduce_quote),
+                "time": ss("10:40", reduce_quote),
+                "timezone": ss("UTC", reduce_quote),
+                "event_type": ss("load_reduction", reduce_quote),
+                "description": ss("Main engine load was reduced as a precaution.", reduce_quote),
+            },
+            {
+                "date": ss("2026-07-10", stop_quote),
+                "time": ss("10:45", stop_quote),
+                "timezone": ss("UTC", stop_quote),
+                "event_type": ss("shutdown", stop_quote),
+                "description": ss("The main engine was stopped at approximately 10:45 UTC for inspection.", stop_quote),
+            },
+            {
+                "date": ss("2026-07-10", stop_quote),
+                "time": ss(None, None, 0),
+                "timezone": ss(None, None, 0),
+                "event_type": ss("isolation", stop_quote),
+                "description": ss("Turbocharger No.2 was subsequently isolated.", stop_quote),
+            },
+        ],
         "operational_impact": {
             "engine_stopped": sb(True, stop_quote),
             "load_reduced": sb(True, reduce_quote),
@@ -445,10 +475,15 @@ def test_mt_orion_full_pilot_workflow(tmp_path):
             db.commit()
             assert len(events) >= 5
             shutdown_conflicts = [c for c in conflicts if c.topic == "shutdown time"]
-            assert shutdown_conflicts
-            # Pilot-discovered semantic gap: CE actions inherit incident.time (10:30) rather
-            # than their narrative action time (10:45), producing a 35-minute conflict.
-            assert shutdown_conflicts[0].difference_minutes == Decimal("35.0")
+            assert len(shutdown_conflicts) == 1
+            # CE v2 preserves the narrative shutdown time (approximately 10:45) instead
+            # of copying incident.time=10:30, so the reviewed difference is 20 minutes.
+            assert shutdown_conflicts[0].difference_minutes == Decimal("20.0")
+            assert shutdown_conflicts[0].materiality.value == "medium"
+            # The CE isolation statement has no explicit clock time and must remain
+            # relative/undated rather than inheriting 10:30.
+            relative_isolations = [e for e in events if e.event_type == "isolation" and e.occurred_time is None]
+            assert relative_isolations
 
             # Financial review after entering the financial stage.
             change_claim_status(db, claim=claim, new_status=ClaimStatus.FINANCIAL_REVIEW, current_user=manager)
@@ -482,9 +517,12 @@ def test_mt_orion_full_pilot_workflow(tmp_path):
             assessment, sections = get_assessment(db, claim=claim, assessment_id=assessment.id)
             assert assessment.is_preliminary is True
             assert len(sections) == 11
-            # Diagnostic pilot finding: assessment currently totals quote alternatives plus invoice.
             financial_section = next(section for section in sections if section.section_key == "financial")
-            assert "755,000.00" in financial_section.draft_text
+            assert "Reviewed invoiced/claimed cost: USD 25,000.00" in financial_section.draft_text
+            assert "Ocean Turbo Services Q-A-260: USD 260,000.00" in financial_section.draft_text
+            assert "Global Turbo Marine Q-B-470: USD 470,000.00" in financial_section.draft_text
+            assert "not cumulative claim exposure" in financial_section.draft_text
+            assert "755,000.00" not in financial_section.draft_text
             for section in sections:
                 review_section(db, claim=claim, section=section, user=manager, action="approve", text=None)
             approve_assessment(db, claim=claim, assessment=assessment, user=manager, note="Synthetic end-to-end pilot complete")

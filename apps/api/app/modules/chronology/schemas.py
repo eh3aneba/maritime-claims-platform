@@ -27,8 +27,8 @@ class ChronologyEventResponse(BaseModel):
     event_type: str
     title: str
     description: str | None
-    occurred_on: date
-    occurred_time: time
+    occurred_on: date | None
+    occurred_time: time | None
     timezone_label: str | None
     materiality: ChronologyMateriality
     evidence: list[EventEvidenceResponse]

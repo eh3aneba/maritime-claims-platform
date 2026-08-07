@@ -94,7 +94,7 @@ def chronology_summary(claim_id: UUID, current_user: CurrentUser, db: Annotated[
     claim = get_claim_for_tenant(db, claim_id=claim_id, organization_id=current_user.organization_id)
     if claim is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Claim not found")
-    events = list(db.scalars(select(ChronologyEvent).where(ChronologyEvent.claim_id == claim.id, ChronologyEvent.organization_id == claim.organization_id, ChronologyEvent.is_active.is_(True)).order_by(ChronologyEvent.occurred_on.asc(), ChronologyEvent.occurred_time.asc())))
+    events = list(db.scalars(select(ChronologyEvent).where(ChronologyEvent.claim_id == claim.id, ChronologyEvent.organization_id == claim.organization_id, ChronologyEvent.is_active.is_(True)).order_by(ChronologyEvent.occurred_on.asc().nullslast(), ChronologyEvent.occurred_time.asc().nullslast(), ChronologyEvent.created_at.asc())))
     conflicts = list(db.scalars(select(EvidenceConflict).where(EvidenceConflict.claim_id == claim.id, EvidenceConflict.organization_id == claim.organization_id, EvidenceConflict.is_active.is_(True)).order_by(EvidenceConflict.created_at.asc())))
     return ChronologyResponse(
         events=[_serialize_event(db, event) for event in events],

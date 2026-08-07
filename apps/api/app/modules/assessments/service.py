@@ -69,7 +69,7 @@ def _build_sections(db: Session, claim: Claim) -> list[tuple[str, str, int, str,
     facts = _current_facts(db, claim)
     docs = _docs(db, claim)
     rule_summary = get_rule_summary(db, claim=claim)
-    events = list(db.scalars(select(ChronologyEvent).where(ChronologyEvent.organization_id == claim.organization_id, ChronologyEvent.claim_id == claim.id, ChronologyEvent.is_active.is_(True)).order_by(ChronologyEvent.occurred_on, ChronologyEvent.occurred_time)))
+    events = list(db.scalars(select(ChronologyEvent).where(ChronologyEvent.organization_id == claim.organization_id, ChronologyEvent.claim_id == claim.id, ChronologyEvent.is_active.is_(True)).order_by(ChronologyEvent.occurred_on.asc().nullslast(), ChronologyEvent.occurred_time.asc().nullslast(), ChronologyEvent.created_at.asc())))
     conflicts = list(db.scalars(select(EvidenceConflict).where(EvidenceConflict.organization_id == claim.organization_id, EvidenceConflict.claim_id == claim.id, EvidenceConflict.is_active.is_(True)).order_by(EvidenceConflict.materiality.desc(), EvidenceConflict.created_at.asc())))
     issues = list(db.scalars(select(ClaimIssue).where(ClaimIssue.organization_id == claim.organization_id, ClaimIssue.claim_id == claim.id, ClaimIssue.is_active.is_(True)).order_by(ClaimIssue.severity.desc())))
     cost_items = list(db.scalars(select(CostItem).where(CostItem.organization_id == claim.organization_id, CostItem.claim_id == claim.id).order_by(CostItem.created_at.asc())))
@@ -104,7 +104,13 @@ def _build_sections(db: Session, claim: Claim) -> list[tuple[str, str, int, str,
     event_lines=[]; event_sources=[]
     for e in events[:25]:
         tz=f" {e.timezone_label}" if e.timezone_label else ""
-        event_lines.append(f"- {e.occurred_on.isoformat()} {e.occurred_time.strftime('%H:%M')}{tz} — {e.title}")
+        if e.occurred_on is not None and e.occurred_time is not None:
+            when=f"{e.occurred_on.isoformat()} {e.occurred_time.strftime('%H:%M')}{tz}"
+        elif e.occurred_on is not None:
+            when=f"{e.occurred_on.isoformat()} — time not stated"
+        else:
+            when="Undated / relative"
+        event_lines.append(f"- {when} — {e.title}")
         event_sources.append(_source("chronology_event",e.id,e.title))
     sections["chronology"]=("Chronology",60,"Chronology:\n"+"\n".join(event_lines) if event_lines else "No reviewed chronology events are currently available.",event_sources)
 
@@ -115,13 +121,39 @@ def _build_sections(db: Session, claim: Claim) -> list[tuple[str, str, int, str,
     technical_text="No active technical issues are currently recorded." if not issues else "Technical issues requiring review:\n"+"\n".join(f"- {i.title} [{i.severity.value}]: {i.explanation or i.description}" for i in issues)
     sections["technical"]=("Technical Issues",80,technical_text,[_source("claim_issue",i.id,i.rule_id) for i in issues])
 
-    totals:dict[str,Decimal]={}
+    invoiced_totals:dict[str,Decimal]={}
+    accepted_totals:dict[str,Decimal]={}
+    paid_totals:dict[str,Decimal]={}
+    quote_groups:dict[tuple,Decimal]={}
     for item in cost_items:
-        totals[item.currency]=totals.get(item.currency,Decimal("0"))+item.amount
-    total_text=", ".join(f"{ccy} {amount:,.2f}" for ccy,amount in sorted(totals.items())) or "No reviewed cost items"
+        if item.document_kind == "invoice":
+            invoiced_totals[item.currency]=invoiced_totals.get(item.currency,Decimal("0"))+item.amount
+            if item.review_status in {CostReviewStatus.ACCEPTED, CostReviewStatus.PAID}:
+                accepted_totals[item.currency]=accepted_totals.get(item.currency,Decimal("0"))+item.amount
+            if item.review_status == CostReviewStatus.PAID:
+                paid_totals[item.currency]=paid_totals.get(item.currency,Decimal("0"))+item.amount
+        elif item.document_kind == "quotation":
+            key=(item.document_id,item.supplier or "Quotation",item.document_number or "",item.currency)
+            quote_groups[key]=quote_groups.get(key,Decimal("0"))+item.amount
+
+    def money_text(values:dict[str,Decimal], empty:str="None recorded") -> str:
+        return ", ".join(f"{ccy} {amount:,.2f}" for ccy,amount in sorted(values.items())) or empty
+
+    financial_lines=[
+        f"Reviewed invoiced/claimed cost: {money_text(invoiced_totals, 'No reviewed invoice cost')}.",
+        f"Accepted cost: {money_text(accepted_totals)}.",
+        f"Paid cost: {money_text(paid_totals)}.",
+    ]
+    if quote_groups:
+        financial_lines.append("Reviewed quotation alternatives (not cumulative claim exposure):")
+        for (_,supplier,number,currency),amount in sorted(quote_groups.items(), key=lambda x:(x[0][1],x[0][2])):
+            label=f"{supplier}{f' {number}' if number else ''}"
+            financial_lines.append(f"- {label}: {currency} {amount:,.2f}")
     flag_lines=[f"- {f.title} [{f.severity}] — {f.status.value}" for f in fin_flags if f.status==FinancialFlagStatus.OPEN]
-    financial_text=f"Reviewed cost schedule total(s): {total_text}."
-    if flag_lines: financial_text += "\nOpen financial review flags:\n"+"\n".join(flag_lines)
+    if flag_lines:
+        financial_lines.append("Open financial review flags:")
+        financial_lines.extend(flag_lines)
+    financial_text="\n".join(financial_lines)
     sections["financial"]=("Financial Exposure",90,financial_text,[_source("cost_item",i.id,i.description) for i in cost_items]+[_source("financial_flag",f.id,f.title) for f in fin_flags])
 
     if reserves:

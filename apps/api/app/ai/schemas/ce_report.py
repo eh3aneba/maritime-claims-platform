@@ -69,6 +69,22 @@ class OperationalImpact(BaseModel):
     towage: SourcedBoolean
 
 
+class ReportedEvent(BaseModel):
+    """One narrative event exactly as reported by the Chief Engineer.
+
+    Date/time fields are intentionally independent per event. A null time means the
+    source did not state a usable clock time for that event; callers must not copy the
+    incident start time into it.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    date: SourcedString
+    time: SourcedString
+    timezone: SourcedString
+    event_type: SourcedString
+    description: SourcedString
+
+
 class ChiefEngineerReportExtraction(BaseModel):
     model_config = ConfigDict(extra="forbid")
     classification: Classification
@@ -77,6 +93,7 @@ class ChiefEngineerReportExtraction(BaseModel):
     equipment: Equipment
     symptoms: list[SourcedString]
     immediate_actions: list[SourcedString]
+    reported_events: list[ReportedEvent]
     operational_impact: OperationalImpact
     suspected_cause_opinions: list[SourcedString]
     recommendations: list[SourcedString]
