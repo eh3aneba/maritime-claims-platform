@@ -51,3 +51,46 @@ def test_section_edit_preserves_draft_and_sources():
         s=db.scalar(select(AssessmentSection).where(AssessmentSection.assessment_id==a.id,AssessmentSection.section_key=='incident'))
         original=s.draft_text;review_section(db,claim=c,section=s,user=u,action='edit',text='Human-edited incident assessment.')
         assert s.status==AssessmentSectionStatus.EDITED and s.draft_text==original and s.approved_text=='Human-edited incident assessment.'
+
+
+def test_damage_section_includes_human_reviewed_workshop_findings():
+    from decimal import Decimal
+    from app.modules.documents.models import ConfidentialityLevel, Document, DocumentProcessingStatus
+    from app.modules.intelligence.models import AIRun, AIRunStatus, AISemanticKind, AIReviewStatus, DocumentExtraction
+
+    cid, uid = seed()
+    with TestingSessionLocal() as db:
+        c = db.get(Claim, cid); u = db.get(User, uid)
+        doc = Document(
+            organization_id=c.organization_id, claim_id=c.id, uploaded_by_id=u.id,
+            filename="workshop.docx", original_filename="Workshop_Report.docx", document_type="workshop_report",
+            mime_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document", file_size_bytes=100,
+            file_hash="d"*64, storage_key=f"{c.organization_id}/{c.id}/workshop.docx", version_number=1,
+            processing_status=DocumentProcessingStatus.PROCESSED, confidentiality_level=ConfidentialityLevel.CONFIDENTIAL,
+        )
+        db.add(doc); db.flush()
+        run = AIRun(
+            organization_id=c.organization_id, claim_id=c.id, document_id=doc.id, requested_by_id=u.id,
+            task="workshop_report_extract", status=AIRunStatus.COMPLETED, provider="fake", model="fake-v1",
+            prompt_name="workshop_report", prompt_version="1.0", schema_name="workshop_report_v1", schema_version="1.0",
+            input_text_hash="e"*64, input_char_count=100,
+        )
+        db.add(run); db.flush()
+        for path, value in [
+            ("workshop.damage_findings[0].component", "Turbine rotor"),
+            ("workshop.damage_findings[0].damage_description", "Blade tips heavily damaged"),
+            ("workshop.damage_findings[0].extent", "Replacement or specialist repair required"),
+        ]:
+            db.add(DocumentExtraction(
+                organization_id=c.organization_id, claim_id=c.id, document_id=doc.id, ai_run_id=run.id,
+                field_path=path, semantic_kind=AISemanticKind.FACT, raw_value=value, normalized_value=value,
+                confidence=Decimal("0.950"), source_verified=True, human_status=AIReviewStatus.APPROVED,
+                approved_value=value, reviewed_by_id=u.id,
+            ))
+        db.commit()
+        a = generate_assessment(db, claim=c, user=u, allow_if_not_ready=True, override_reason="Preliminary")
+        _, sections = get_assessment(db, claim=c, assessment_id=a.id)
+        damage = next(section for section in sections if section.section_key == "damage")
+        assert "Workshop finding — Turbine rotor" in damage.draft_text
+        assert "Blade tips heavily damaged" in damage.draft_text
+        assert any(source["kind"] == "document_extraction" for source in damage.source_manifest)

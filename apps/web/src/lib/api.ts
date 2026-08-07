@@ -1,4 +1,4 @@
-import type { AIReviewDetail, AIReviewQueueResponse, AIReviewResult, AISourcePreview, Claim, ClaimDocument, ClaimFactListResponse, ClaimListResponse, CurrentUser, DocumentListResponse, EngineLogEventsResponse, ClaimChronologyResponse, ClaimRuleSummary, ClaimTaskListResponse, DocumentRequestResult, Vessel, VesselListResponse, TechnicalReviewResponse, FinancialReviewResponse, CostReviewStatus } from "./types";
+import type { AIReviewDetail, AIReviewGroupQueueResponse, AIReviewQueueResponse, AIReviewResult, AISourcePreview, Claim, ClaimDocument, ClaimDocumentRequirement, ClaimFactListResponse, ClaimListResponse, CurrentUser, DocumentListResponse, EngineLogEventsResponse, ClaimChronologyResponse, ClaimRuleSummary, ClaimTaskListResponse, DocumentRequestResult, Vessel, VesselListResponse, TechnicalReviewResponse, FinancialReviewResponse, CostReviewStatus } from "./types";
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api/v1";
 
@@ -190,6 +190,18 @@ export function listAIReview(params?: URLSearchParams) {
   return apiFetch<AIReviewQueueResponse>(`/ai-review${query ? `?${query}` : ""}`);
 }
 
+export function listAIReviewGroups(params?: URLSearchParams) {
+  const query = params?.toString();
+  return apiFetch<AIReviewGroupQueueResponse>(`/ai-review/groups${query ? `?${query}` : ""}`);
+}
+
+export function reviewAIGroup(extractionIds: string[], action: "approve" | "reject", reason?: string) {
+  return apiFetch<{ reviewed: AIReviewResult[] }>("/ai-review/groups/review", {
+    method: "POST",
+    body: JSON.stringify({ extraction_ids: extractionIds, action, reason: reason || null }),
+  });
+}
+
 export function reviewAIExtraction(
   extractionId: string,
   payload: { action: "approve" | "edit" | "reject"; value?: unknown; reason?: string },
@@ -266,6 +278,13 @@ export function getClaimRules(claimId: string) {
 
 export function evaluateClaimRules(claimId: string) {
   return apiFetch<{ run_id: string; summary: ClaimRuleSummary }>(`/claims/${claimId}/rules/evaluate`, { method: "POST" });
+}
+
+export function acceptEquivalentEvidence(claimId: string, requirementId: string, claimFactId: string, note: string) {
+  return apiFetch<{ requirement: ClaimDocumentRequirement }>(`/claims/${claimId}/rules/requirements/${requirementId}/accept-equivalent`, {
+    method: "POST",
+    body: JSON.stringify({ claim_fact_id: claimFactId, note }),
+  });
 }
 
 

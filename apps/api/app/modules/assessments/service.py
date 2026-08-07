@@ -19,6 +19,7 @@ from app.modules.financial.models import CostItem, CostReviewStatus, FinancialFl
 from app.modules.rules.models import ClaimDocumentRequirement, ClaimIssue, RequirementPriority, RequirementStatus
 from app.modules.rules.service import get_rule_summary
 from app.modules.tasks.models import ClaimTask, TaskStatus
+from app.modules.technical.service import build_technical_review
 from app.modules.users.models import User
 
 
@@ -88,6 +89,30 @@ def _build_sections(db: Session, claim: Claim) -> list[tuple[str, str, int, str,
     damage_lines=[]; damage_sources=[]
     for fp in ("equipment.type","equipment.name","equipment.maker","equipment.model","maintenance.running_hours_since_overhaul","maintenance.last_overhaul_date"):
         if fp in facts: damage_lines.append(f"{fp.replace('.', ' / ').replace('_',' ')}: {_line(facts[fp])}.")
+
+    technical_review = build_technical_review(db, claim_id=claim.id, organization_id=claim.organization_id)
+    grouped_findings: dict[str, dict[str, Any]] = {}
+    grouped_sources: dict[str, list[dict[str, str]]] = {}
+    for finding in technical_review.get("workshop_findings", []):
+        field_path = str(finding.get("field_path") or "")
+        root = field_path.rsplit(".", 1)[0] if "." in field_path else field_path
+        leaf = field_path.rsplit(".", 1)[-1]
+        grouped_findings.setdefault(root, {})[leaf] = finding.get("value")
+        grouped_sources.setdefault(root, []).append(_source("document_extraction", finding.get("extraction_id"), field_path))
+    for root, values in list(grouped_findings.items())[:8]:
+        component = _line(values.get("component")) if values.get("component") is not None else None
+        description = _line(values.get("damage_description")) if values.get("damage_description") is not None else None
+        extent = _line(values.get("extent")) if values.get("extent") is not None else None
+        parts = [part for part in (description, extent) if part and part != "Not established"]
+        if component and component != "Not established":
+            text = f"Workshop finding — {component}" + (f": {'; '.join(parts)}" if parts else "") + "."
+        elif parts:
+            text = f"Workshop finding: {'; '.join(parts)}."
+        else:
+            continue
+        damage_lines.append(text)
+        damage_sources.extend(grouped_sources.get(root, []))
+
     for issue in issues[:8]:
         damage_lines.append(f"Review issue: {issue.title} ({issue.severity.value}).")
         damage_sources.append(_source("claim_issue", issue.id, issue.rule_id))

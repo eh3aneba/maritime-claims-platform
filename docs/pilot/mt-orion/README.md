@@ -48,4 +48,4 @@ The test uses deterministic fixture AI responses. No evidence is sent to an exte
 
 Claim creation -> evidence upload -> DOCX/XLSX text extraction -> structured AI schemas -> human review -> approved claim facts -> deterministic rules -> missing-document request tasks -> chronology/conflicts -> technical review -> financial review -> reserve history -> preliminary initial assessment.
 
-See `PILOT_REPORT.md` for the original observed results and `HARDENING_REPORT.md` for the Sprint 5 Phase B P0 closure regression.
+See `PILOT_REPORT.md` for the original observed results, `HARDENING_REPORT.md` for the Sprint 5 Phase B P0 closure regression, and `USABILITY_REPORT.md` for the Sprint 5 Phase C Claim Handler workflow hardening.

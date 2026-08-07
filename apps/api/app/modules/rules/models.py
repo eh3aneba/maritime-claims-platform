@@ -61,6 +61,8 @@ class ClaimDocumentRequirement(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     organization_id: Mapped[UUID] = mapped_column(ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False, index=True)
     claim_id: Mapped[UUID] = mapped_column(ForeignKey("claims.id", ondelete="RESTRICT"), nullable=False, index=True)
     matched_document_id: Mapped[UUID | None] = mapped_column(ForeignKey("documents.id", ondelete="SET NULL"), nullable=True)
+    equivalent_claim_fact_id: Mapped[UUID | None] = mapped_column(ForeignKey("claim_facts.id", ondelete="SET NULL"), nullable=True)
+    satisfied_by_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
     rule_id: Mapped[str] = mapped_column(String(80), nullable=False)
     rule_version: Mapped[str] = mapped_column(String(30), nullable=False, default="1.0", server_default="1.0")
@@ -72,6 +74,9 @@ class ClaimDocumentRequirement(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     required_from_status: Mapped[str] = mapped_column(String(50), nullable=False)
     reason: Mapped[str] = mapped_column(Text, nullable=False)
+    satisfaction_basis: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    satisfaction_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    satisfied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     status: Mapped[RequirementStatus] = mapped_column(
         Enum(RequirementStatus, name="requirement_status", native_enum=True, values_callable=enum_values),
         nullable=False,

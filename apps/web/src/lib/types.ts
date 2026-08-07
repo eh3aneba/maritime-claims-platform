@@ -144,6 +144,31 @@ export interface AIReviewQueueResponse {
   offset: number;
 }
 
+export interface AIReviewGroup {
+  group_key: string;
+  group_type: string;
+  label: string;
+  claim_id: string;
+  claim_reference: string;
+  vessel_name: string;
+  document_id: string;
+  document_name: string;
+  items: AIReviewItem[];
+  pending_count: number;
+  needs_attention: boolean;
+  attention_reasons: string[];
+  group_approvable: boolean;
+  requires_reason: boolean;
+  min_confidence: string;
+}
+
+export interface AIReviewGroupQueueResponse {
+  groups: AIReviewGroup[];
+  total_groups: number;
+  total_extractions: number;
+  attention_groups: number;
+}
+
 export interface ClaimFact {
   id: string;
   claim_id: string;
@@ -302,6 +327,12 @@ export interface ClaimDocumentRequirement {
   reason: string;
   status: RequirementStatus;
   matched_document_id: string | null;
+  equivalent_claim_fact_id: string | null;
+  satisfaction_basis: string | null;
+  satisfaction_note: string | null;
+  satisfied_by_id: string | null;
+  satisfied_at: string | null;
+  equivalent_evidence_candidates: Array<{ claim_fact_id: string; field_path: string; value: unknown; source_document_id: string; approved_at: string | null }>;
   is_active: boolean;
   last_evaluated_at: string | null;
 }

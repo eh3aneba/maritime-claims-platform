@@ -9,9 +9,11 @@ import {
   getAIReviewDetail,
   getAISourcePreview,
   listAIReview,
+  listAIReviewGroups,
   reviewAIExtraction,
+  reviewAIGroup,
 } from "@/lib/api";
-import type { AIReviewDetail, AIReviewItem, AIReviewStatus, AISemanticKind, AISourcePreview } from "@/lib/types";
+import type { AIReviewDetail, AIReviewGroup, AIReviewItem, AIReviewStatus, AISemanticKind, AISourcePreview } from "@/lib/types";
 
 function humanField(path: string) {
   return path
@@ -63,11 +65,18 @@ const reviewTone: Record<AIReviewStatus, string> = {
   rejected: "border-red-200 bg-red-50 text-red-700",
 };
 
+function reviewGroupStateKey(group: AIReviewGroup) { return `${group.document_id}:${group.group_key}`; }
+
 export default function AIReviewPage() {
   const [claimId, setClaimId] = useState("");
   const [queryReady, setQueryReady] = useState(false);
   const [items, setItems] = useState<AIReviewItem[]>([]);
   const [total, setTotal] = useState(0);
+  const [groups, setGroups] = useState<AIReviewGroup[]>([]);
+  const [attentionGroups, setAttentionGroups] = useState(0);
+  const [viewMode, setViewMode] = useState<"groups" | "fields">("groups");
+  const [attentionOnly, setAttentionOnly] = useState(true);
+  const [groupReasons, setGroupReasons] = useState<Record<string, string>>({});
   const [statusFilter, setStatusFilter] = useState<AIReviewStatus | "all">("pending");
   const [semanticFilter, setSemanticFilter] = useState<AISemanticKind | "all">("all");
   const [selected, setSelected] = useState<string[]>([]);
@@ -91,9 +100,16 @@ export default function AIReviewPage() {
       params.set("limit", "200");
       if (semanticFilter !== "all") params.set("semantic_kind", semanticFilter);
       if (claimId) params.set("claim_id", claimId);
-      const response = await listAIReview(params);
+      const groupParams = new URLSearchParams();
+      groupParams.set("review_status", statusFilter);
+      groupParams.set("limit_groups", "200");
+      groupParams.set("attention_only", attentionOnly ? "true" : "false");
+      if (claimId) groupParams.set("claim_id", claimId);
+      const [response, grouped] = await Promise.all([listAIReview(params), listAIReviewGroups(groupParams)]);
       setItems(response.items);
       setTotal(response.total);
+      setGroups(grouped.groups);
+      setAttentionGroups(grouped.attention_groups);
       setSelected((current) => current.filter((id) => response.items.some((item) => item.extraction_id === id && item.bulk_approvable)));
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : "AI review queue could not be loaded.");
@@ -107,7 +123,7 @@ export default function AIReviewPage() {
     setQueryReady(true);
   }, []);
 
-  useEffect(() => { if (queryReady) load(); }, [statusFilter, semanticFilter, claimId, queryReady]);
+  useEffect(() => { if (queryReady) load(); }, [statusFilter, semanticFilter, claimId, attentionOnly, queryReady]);
 
   const bulkEligible = useMemo(() => items.filter((item) => item.bulk_approvable), [items]);
 
@@ -163,6 +179,23 @@ export default function AIReviewPage() {
     }
   }
 
+  async function reviewGroup(group: AIReviewGroup, action: "approve" | "reject") {
+    const ids = group.items.filter((item) => item.human_status === "pending").map((item) => item.extraction_id);
+    if (!ids.length) return;
+    setWorking(true);
+    setError("");
+    try {
+      const stateKey = reviewGroupStateKey(group);
+      await reviewAIGroup(ids, action, groupReasons[stateKey]?.trim() || undefined);
+      setGroupReasons((current) => { const next = { ...current }; delete next[stateKey]; return next; });
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.detail : "Grouped review could not be completed.");
+    } finally {
+      setWorking(false);
+    }
+  }
+
   async function bulkApprove() {
     if (!selected.length) return;
     setWorking(true);
@@ -184,7 +217,7 @@ export default function AIReviewPage() {
         <div>
           <p className="eyebrow">Human-in-the-loop</p>
           <h1 className="page-title">AI Review</h1>
-          <p className="page-subtitle">Approve, correct or reject AI extraction candidates. Only explicit human actions can promote facts into the authoritative claim-facts layer.</p>
+          <p className="page-subtitle">Exception-first review groups related evidence into rows and line items. Resolve judgment-heavy groups first; only explicit human actions can promote facts into the authoritative claim-facts layer.</p>
         </div>
         {selected.length ? <button disabled={working} onClick={bulkApprove} className="primary-button">Approve selected ({selected.length})</button> : null}
       </div>
@@ -193,15 +226,27 @@ export default function AIReviewPage() {
       {error ? <div className="mt-5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div> : null}
 
       <section className="panel mt-6 p-4">
-        <div className="grid gap-3 md:grid-cols-[220px_220px_1fr_auto] md:items-end">
+        <div className="grid gap-3 md:grid-cols-[180px_200px_200px_1fr_auto] md:items-end">
+          <label><span className="label">Review view</span><select className="field" value={viewMode} onChange={(e) => setViewMode(e.target.value as "groups" | "fields")}><option value="groups">Grouped / rows</option><option value="fields">Field-by-field</option></select></label>
           <label><span className="label">Review status</span><select className="field" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as AIReviewStatus | "all")}><option value="pending">Pending</option><option value="approved">Approved</option><option value="edited">Edited</option><option value="rejected">Rejected</option><option value="all">All</option></select></label>
-          <label><span className="label">Evidence type</span><select className="field" value={semanticFilter} onChange={(e) => setSemanticFilter(e.target.value as AISemanticKind | "all")}><option value="all">All</option><option value="fact">Facts</option><option value="opinion">Opinions</option><option value="inference">Inferences</option></select></label>
-          <div className="text-sm text-slate-500">{loading ? "Loading review queue…" : `${total} extraction candidate${total === 1 ? "" : "s"}`}{statusFilter === "pending" && bulkEligible.length ? ` · ${bulkEligible.length} eligible for cautious bulk approval` : ""}</div>
-          {bulkEligible.length ? <button className="secondary-button" onClick={() => setSelected(selected.length === bulkEligible.length ? [] : bulkEligible.map((item) => item.extraction_id))}>{selected.length === bulkEligible.length ? "Clear selection" : "Select eligible"}</button> : null}
+          <label><span className="label">Evidence type</span><select disabled={viewMode === "groups"} className="field disabled:opacity-50" value={semanticFilter} onChange={(e) => setSemanticFilter(e.target.value as AISemanticKind | "all")}><option value="all">All</option><option value="fact">Facts</option><option value="opinion">Opinions</option><option value="inference">Inferences</option></select></label>
+          <div className="text-sm text-slate-500">{loading ? "Loading review queue…" : viewMode === "groups" ? `${groups.length} review group${groups.length === 1 ? "" : "s"} · ${attentionGroups} need attention` : `${total} extraction candidate${total === 1 ? "" : "s"}`}</div>
+          {viewMode === "fields" && bulkEligible.length ? <button className="secondary-button" onClick={() => setSelected(selected.length === bulkEligible.length ? [] : bulkEligible.map((item) => item.extraction_id))}>{selected.length === bulkEligible.length ? "Clear selection" : "Select eligible"}</button> : null}
         </div>
+        {viewMode === "groups" ? <label className="mt-3 inline-flex items-center gap-2 text-xs font-semibold text-slate-600"><input type="checkbox" checked={attentionOnly} onChange={(e) => setAttentionOnly(e.target.checked)} />Show only groups that need judgment</label> : null}
       </section>
 
-      <div className="mt-5 space-y-4">
+      {viewMode === "groups" ? <div className="mt-5 space-y-4">
+        {!loading && groups.length === 0 ? <div className="panel py-16 text-center"><p className="text-sm font-semibold text-slate-800">No grouped review items in this view.</p></div> : null}
+        {groups.map((group) => <article key={`${group.document_id}-${group.group_key}`} className={`panel overflow-hidden ${group.needs_attention ? "ring-1 ring-amber-200" : ""}`}>
+          <div className="flex flex-col justify-between gap-4 border-b border-slate-200 p-5 lg:flex-row lg:items-start">
+            <div><div className="flex flex-wrap items-center gap-2"><span className={`rounded-full px-2 py-1 text-[11px] font-bold uppercase ${group.needs_attention ? "bg-amber-50 text-amber-800" : "bg-emerald-50 text-emerald-700"}`}>{group.needs_attention ? "Needs attention" : "Routine"}</span><span className="text-xs text-slate-400">{Math.round(Number(group.min_confidence) * 100)}% minimum confidence</span></div><h2 className="mt-2 text-base font-semibold text-slate-950">{group.label}</h2><p className="mt-1 text-xs text-slate-500">{group.document_name} · {group.claim_reference} · {group.vessel_name}</p>{group.attention_reasons.length ? <p className="mt-2 text-xs font-medium text-amber-700">{group.attention_reasons.join(" · ")}</p> : null}</div>
+            <div className="flex flex-wrap gap-2"><Link href={`/claims/${group.claim_id}`} className="secondary-button px-3 py-2 text-xs">Open claim</Link>{group.pending_count ? <><button disabled={working} onClick={() => reviewGroup(group, "approve")} className="primary-button px-3 py-2 text-xs">Approve group ({group.pending_count})</button><button disabled={working} onClick={() => reviewGroup(group, "reject")} className="rounded-lg border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-50">Reject group</button></> : null}</div>
+          </div>
+          <div className="overflow-x-auto"><table className="min-w-full text-left text-xs"><thead className="bg-slate-50 text-slate-500"><tr><th className="px-4 py-2 font-semibold">Field</th><th className="px-4 py-2 font-semibold">AI value</th><th className="px-4 py-2 font-semibold">Type</th><th className="px-4 py-2 font-semibold">Confidence</th><th className="px-4 py-2 font-semibold">Evidence</th></tr></thead><tbody className="divide-y divide-slate-100">{group.items.map((item) => <tr key={item.extraction_id}><td className="px-4 py-3 font-semibold text-slate-800">{humanField(item.field_path.replace(`${group.group_key}.`, ""))}</td><td className="px-4 py-3 text-slate-700">{displayValue(item.normalized_value ?? item.ai_value)}</td><td className="px-4 py-3"><span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase ${semanticTone[item.semantic_kind]}`}>{item.semantic_kind}</span></td><td className="px-4 py-3 text-slate-500">{Math.round(Number(item.confidence) * 100)}%</td><td className="max-w-sm px-4 py-3 text-slate-500">{item.source_quote || "No source quote"}{!item.source_verified ? <span className="ml-2 font-semibold text-amber-700">Verify manually</span> : null}</td></tr>)}</tbody></table></div>
+          {group.pending_count ? <div className="border-t border-slate-200 bg-slate-50 p-4"><label><span className="label">Group review note {group.requires_reason ? "(required)" : "(optional)"}</span><input className="field" value={groupReasons[reviewGroupStateKey(group)] ?? ""} onChange={(e) => setGroupReasons((current) => ({ ...current, [reviewGroupStateKey(group)]: e.target.value }))} placeholder={group.requires_reason ? "Record how the unverified source was manually checked." : "Optional note for this row/group."} /></label></div> : null}
+        </article>)}
+      </div> : <div className="mt-5 space-y-4">
         {!loading && items.length === 0 ? <div className="panel py-16 text-center"><p className="text-sm font-semibold text-slate-800">No extraction candidates in this view.</p><p className="mt-2 text-sm text-slate-500">AI-generated values appear here only after document intelligence has completed.</p></div> : null}
         {items.map((item) => {
           const currentSource = source[item.extraction_id];
@@ -247,7 +292,7 @@ export default function AIReviewPage() {
             </article>
           );
         })}
-      </div>
+      </div>}
     </div>
   );
 }

@@ -127,3 +127,35 @@ def test_document_requests_are_tenant_scoped() -> None:
     client.cookies.clear(); login("beta", "beta-handler@example.com")
     assert client.get(f"/api/v1/claims/{claim_id}/tasks").status_code == 404
     assert client.post(f"/api/v1/claims/{claim_id}/document-requests", json={"all_critical": True}).status_code == 404
+
+
+def test_accepting_equivalent_evidence_auto_completes_open_requirement_task() -> None:
+    from uuid import uuid4
+    from app.modules.claims.facts import ClaimFact
+    from app.modules.claims.models import Claim
+
+    result = create_orion_claim(); claim_id = result["claim"]["id"]
+    _set_status(claim_id, ClaimStatus.INVESTIGATION)
+    with TestingSessionLocal() as db:
+        claim = db.get(Claim, UUID(claim_id))
+        fact = ClaimFact(
+            organization_id=claim.organization_id, claim_id=claim.id,
+            field_path="maintenance.recommended_overhaul_interval", value={"value": 12000, "unit": "hours"},
+            source_extraction_id=uuid4(), source_document_id=uuid4(), source_segment_id=None,
+            approved_by_id=None, version=1,
+        )
+        db.add(fact); db.commit(); db.refresh(fact); fact_id=str(fact.id)
+    summary = _evaluate(claim_id)
+    req = next(r for r in summary["requirements"] if r["document_type"] == "maker_recommendation")
+    request = client.post(f"/api/v1/claims/{claim_id}/document-requests", json={"requirement_ids": [req["id"]]})
+    assert request.status_code == 201
+    task_id = request.json()["tasks"][0]["id"]
+    accepted = client.post(
+        f"/api/v1/claims/{claim_id}/rules/requirements/{req['id']}/accept-equivalent",
+        json={"claim_fact_id": fact_id, "note": "Reviewed approved maintenance interval as sufficient equivalent evidence."},
+    )
+    assert accepted.status_code == 200, accepted.text
+    tasks = client.get(f"/api/v1/claims/{claim_id}/tasks").json()["items"]
+    task = next(row for row in tasks if row["id"] == task_id)
+    assert task["status"] == "completed"
+    assert "equivalent evidence" in task["completion_reason"].lower()

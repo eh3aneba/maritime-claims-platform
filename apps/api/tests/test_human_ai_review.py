@@ -459,3 +459,69 @@ def test_review_queue_all_statuses_and_claim_facts_are_tenant_protected() -> Non
     login("beta", "beta@example.com")
     denied = client.get(f"/api/v1/claims/{ids['claim_id']}/facts")
     assert denied.status_code == 404
+
+
+def test_grouped_review_clusters_engine_log_row_and_approves_atomically() -> None:
+    ids = seed_review_candidates()
+    with TestingSessionLocal() as db:
+        maker = db.get(DocumentExtraction, UUID(ids["maker_id"]))
+        assert maker is not None
+        rows = [
+            ("engine_log.events[0].time", "10:52", AISemanticKind.FACT, Decimal("0.970")),
+            ("engine_log.events[0].rpm", {"value": 620, "unit": "rpm", "raw": "620 rpm"}, AISemanticKind.FACT, Decimal("0.960")),
+            ("engine_log.events[0].event_type", "alarm", AISemanticKind.INFERENCE, Decimal("0.910")),
+        ]
+        created = []
+        for field_path, value, kind, confidence in rows:
+            ex = DocumentExtraction(
+                organization_id=maker.organization_id,
+                claim_id=maker.claim_id,
+                document_id=maker.document_id,
+                ai_run_id=maker.ai_run_id,
+                source_segment_id=maker.source_segment_id,
+                field_path=field_path,
+                semantic_kind=kind,
+                raw_value=value,
+                normalized_value=value,
+                confidence=confidence,
+                source_locator_type="document",
+                source_locator_value="body",
+                source_quote="Incident alarm at 10:30 UTC",
+                source_verified=True,
+                human_status=AIReviewStatus.PENDING,
+            )
+            db.add(ex)
+            created.append(ex)
+        db.commit()
+        row_ids = [str(row.id) for row in created]
+
+    login("alpha", "alpha@example.com")
+    grouped = client.get("/api/v1/ai-review/groups")
+    assert grouped.status_code == 200, grouped.text
+    row = next(group for group in grouped.json()["groups"] if group["group_key"] == "engine_log.events[0]")
+    assert row["group_type"] == "engine_log_row"
+    assert len(row["items"]) == 3
+    assert row["needs_attention"] is True  # event_type is an inference and should be exception-first.
+    assert "Opinion or inference requires judgment" in row["attention_reasons"]
+
+    reviewed = client.post(
+        "/api/v1/ai-review/groups/review",
+        json={"extraction_ids": row_ids, "action": "approve", "reason": "Reviewed the complete log row against source."},
+    )
+    assert reviewed.status_code == 200, reviewed.text
+    assert len(reviewed.json()["reviewed"]) == 3
+    with TestingSessionLocal() as db:
+        states = [db.get(DocumentExtraction, UUID(row_id)).human_status for row_id in row_ids]
+        assert states == [AIReviewStatus.APPROVED] * 3
+        assert list(db.scalars(select(ClaimFact).where(ClaimFact.claim_id == UUID(ids["claim_id"]), ClaimFact.field_path.like("engine_log.events[%")))) == []
+
+
+def test_grouped_review_rejects_fields_from_different_rows() -> None:
+    ids = seed_review_candidates()
+    login("alpha", "alpha@example.com")
+    response = client.post(
+        "/api/v1/ai-review/groups/review",
+        json={"extraction_ids": [ids["maker_id"], ids["time_id"]], "action": "approve"},
+    )
+    assert response.status_code == 409
+    assert "same review row" in response.json()["detail"].lower()

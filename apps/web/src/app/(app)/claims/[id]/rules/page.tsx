@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
-import { ApiError, createDocumentRequest, evaluateClaimRules, getClaim, getClaimRules, listClaimTasks, markDocumentRequestSent } from "@/lib/api";
+import { ApiError, acceptEquivalentEvidence, createDocumentRequest, evaluateClaimRules, getClaim, getClaimRules, listClaimTasks, markDocumentRequestSent } from "@/lib/api";
 import { formatDate } from "@/lib/format";
 import type { Claim, ClaimDocumentRequirement, ClaimRuleSummary, ClaimTask, DocumentRequestResult, RequirementPriority } from "@/lib/types";
 
@@ -24,6 +24,14 @@ function severityTone(severity: string) {
   return "border-slate-200 bg-slate-50";
 }
 
+function displayEvidenceValue(value: unknown) {
+  if (value === null || value === undefined) return "—";
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  if (typeof value === "string" || typeof value === "number") return String(value);
+  if (typeof value === "object" && value && "raw" in value) return String((value as { raw?: unknown }).raw ?? JSON.stringify(value));
+  return JSON.stringify(value);
+}
+
 export default function ClaimRulesPage() {
   const { id } = useParams<{ id: string }>();
   const [claim, setClaim] = useState<Claim | null>(null);
@@ -33,6 +41,7 @@ export default function ClaimRulesPage() {
   const [dueDate, setDueDate] = useState("");
   const [recipient, setRecipient] = useState("Shipowner / Assured");
   const [draft, setDraft] = useState<DocumentRequestResult | null>(null);
+  const [equivalentNotes, setEquivalentNotes] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -80,6 +89,18 @@ export default function ClaimRulesPage() {
     finally { setBusy(false); }
   }
 
+  async function acceptEquivalent(requirement: ClaimDocumentRequirement, claimFactId: string) {
+    const note = equivalentNotes[requirement.id]?.trim() ?? "";
+    if (note.length < 5) { setError("Add a short justification before accepting equivalent evidence."); return; }
+    setBusy(true); setError("");
+    try {
+      await acceptEquivalentEvidence(id, requirement.id, claimFactId, note);
+      setEquivalentNotes((current) => { const next = { ...current }; delete next[requirement.id]; return next; });
+      await load();
+    } catch (e) { setError(e instanceof ApiError ? e.detail : "Equivalent evidence could not be accepted."); }
+    finally { setBusy(false); }
+  }
+
   const grouped = useMemo(() => {
     const output = new Map<RequirementPriority, ClaimDocumentRequirement[]>();
     for (const priority of priorityOrder) output.set(priority, []);
@@ -124,7 +145,9 @@ export default function ClaimRulesPage() {
 
     <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1.25fr)_minmax(340px,.75fr)]">
       <section className="panel p-6"><h2 className="section-title">Current-stage document requirements</h2><p className="section-subtitle">Select missing/requested requirements to create a controlled follow-up draft.</p>
-        <div className="mt-5 space-y-6">{priorityOrder.map((priority) => { const items = grouped.get(priority) ?? []; if (!items.length) return null; return <div key={priority}><div className="mb-2 flex items-center gap-2"><h3 className="text-xs font-bold uppercase tracking-[.14em] text-slate-500">{priority}</h3><span className="text-xs text-slate-400">{items.length}</span></div><div className="divide-y divide-slate-200 rounded-xl border border-slate-200">{items.map((item) => <label key={item.id} className="flex cursor-pointer gap-3 p-4"><input type="checkbox" className="mt-1" disabled={!requestable.has(item.status)} checked={selected.includes(item.id)} onChange={(e) => setSelected((current) => e.target.checked ? [...current, item.id] : current.filter((x) => x !== item.id))} /><div className="min-w-0 flex-1"><div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-start"><div><div className="flex flex-wrap items-center gap-2"><p className="text-sm font-semibold text-slate-900">{item.document_label}</p><span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold capitalize ${requirementTone(item.status)}`}>{item.status.replaceAll("_", " ")}</span></div><p className="mt-2 text-xs leading-5 text-slate-500">{item.reason}</p></div><div className="shrink-0 text-right text-[11px] text-slate-400"><div>{item.rule_id} · v{item.rule_version}</div><div>From {item.required_from_status.replaceAll("_", " ")}</div></div></div></div></label>)}</div></div>; })}</div>
+        <div className="mt-5 space-y-6">{priorityOrder.map((priority) => { const items = grouped.get(priority) ?? []; if (!items.length) return null; return <div key={priority}><div className="mb-2 flex items-center gap-2"><h3 className="text-xs font-bold uppercase tracking-[.14em] text-slate-500">{priority}</h3><span className="text-xs text-slate-400">{items.length}</span></div><div className="divide-y divide-slate-200 rounded-xl border border-slate-200">{items.map((item) => <div key={item.id} className="flex gap-3 p-4"><input type="checkbox" className="mt-1" disabled={!requestable.has(item.status)} checked={selected.includes(item.id)} onChange={(e) => setSelected((current) => e.target.checked ? [...current, item.id] : current.filter((x) => x !== item.id))} /><div className="min-w-0 flex-1"><div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-start"><div><div className="flex flex-wrap items-center gap-2"><p className="text-sm font-semibold text-slate-900">{item.document_label}</p><span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold capitalize ${requirementTone(item.status)}`}>{item.status.replaceAll("_", " ")}</span>{item.satisfaction_basis === "equivalent_evidence" ? <span className="rounded-full bg-violet-50 px-2 py-0.5 text-[11px] font-semibold text-violet-700">Equivalent evidence accepted</span> : null}</div><p className="mt-2 text-xs leading-5 text-slate-500">{item.reason}</p>{item.satisfaction_note ? <p className="mt-2 text-xs leading-5 text-violet-700">Basis: {item.satisfaction_note}</p> : null}</div><div className="shrink-0 text-right text-[11px] text-slate-400"><div>{item.rule_id} · v{item.rule_version}</div><div>From {item.required_from_status.replaceAll("_", " ")}</div></div></div>
+                {requestable.has(item.status) && item.equivalent_evidence_candidates.length ? <div className="mt-3 rounded-lg border border-violet-200 bg-violet-50 p-3"><p className="text-[11px] font-bold uppercase tracking-[.12em] text-violet-700">Equivalent evidence candidate</p>{item.equivalent_evidence_candidates.map((candidate) => <div key={candidate.claim_fact_id} className="mt-2 rounded-lg bg-white p-3 ring-1 ring-violet-100"><div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-start"><div><p className="text-xs font-semibold text-slate-800">{candidate.field_path}</p><p className="mt-1 text-sm text-slate-700">{displayEvidenceValue(candidate.value)}</p><p className="mt-1 text-[11px] text-slate-400">Human-approved claim fact · alternative source</p></div><button disabled={busy || (equivalentNotes[item.id]?.trim().length ?? 0) < 5} onClick={() => acceptEquivalent(item, candidate.claim_fact_id)} className="secondary-button px-3 py-2 text-xs">Accept as equivalent</button></div><input className="field mt-3" value={equivalentNotes[item.id] ?? ""} onChange={(e) => setEquivalentNotes((current) => ({ ...current, [item.id]: e.target.value }))} placeholder="Why is this evidence sufficient for this requirement?" /></div>)}</div> : null}
+              </div></div>)}</div></div>; })}</div>
       </section>
 
       <aside className="space-y-6">

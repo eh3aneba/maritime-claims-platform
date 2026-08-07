@@ -31,7 +31,7 @@ from app.modules.rules.models import (
     RequirementStatus,
     RuleEvaluationRun,
 )
-from app.modules.rules.schemas import ReadinessResponse, RuleSummaryResponse
+from app.modules.rules.schemas import DocumentRequirementResponse, ReadinessResponse, RuleSummaryResponse
 from app.modules.users.models import User
 
 
@@ -40,6 +40,12 @@ PRIORITY_WEIGHT = {
     RequirementPriority.CRITICAL: 4,
     RequirementPriority.IMPORTANT: 2,
     RequirementPriority.SUPPORTING: 1,
+}
+
+EQUIVALENT_EVIDENCE_FACTS: dict[str, tuple[str, ...]] = {
+    "maker_recommendation": ("maintenance.recommended_overhaul_interval",),
+    "running_hours_record": ("maintenance.running_hours_since_overhaul",),
+    "overhaul_report": ("maintenance.last_overhaul_date",),
 }
 
 
@@ -154,6 +160,7 @@ def _upsert_requirement(
             reason=rule.reason,
             status=RequirementStatus.RECEIVED if matched else RequirementStatus.MISSING,
             matched_document_id=matched.id if matched else None,
+            satisfaction_basis="direct_document" if matched else None,
             is_active=True,
             last_evaluated_at=now,
         )
@@ -170,11 +177,18 @@ def _upsert_requirement(
     requirement.last_evaluated_at = now
     if matched is not None:
         requirement.matched_document_id = matched.id
-        if requirement.status not in {RequirementStatus.ACCEPTED, RequirementStatus.UNDER_REVIEW}:
+        requirement.satisfaction_basis = "direct_document"
+        requirement.equivalent_claim_fact_id = None
+        requirement.satisfaction_note = None
+        requirement.satisfied_by_id = None
+        requirement.satisfied_at = None
+        if requirement.status not in {RequirementStatus.UNDER_REVIEW}:
             requirement.status = RequirementStatus.RECEIVED
     else:
         requirement.matched_document_id = None
-        if requirement.status not in {RequirementStatus.REQUESTED, RequirementStatus.REJECTED}:
+        if requirement.satisfaction_basis == "equivalent_evidence" and requirement.equivalent_claim_fact_id is not None:
+            requirement.status = RequirementStatus.ACCEPTED
+        elif requirement.status not in {RequirementStatus.REQUESTED, RequirementStatus.REJECTED}:
             requirement.status = RequirementStatus.MISSING
     return requirement
 
@@ -460,6 +474,80 @@ def evaluate_claim_rules(db: Session, *, claim: Claim, user: User, trigger: str 
     return run
 
 
+
+def equivalent_evidence_candidates(db: Session, *, claim: Claim, requirement: ClaimDocumentRequirement) -> list[dict[str, Any]]:
+    allowed = EQUIVALENT_EVIDENCE_FACTS.get(requirement.document_type, ())
+    if not allowed:
+        return []
+    rows = list(db.scalars(select(ClaimFact).where(
+        ClaimFact.organization_id == claim.organization_id,
+        ClaimFact.claim_id == claim.id,
+        ClaimFact.field_path.in_(allowed),
+    )))
+    return [
+        {
+            "claim_fact_id": str(row.id),
+            "field_path": row.field_path,
+            "value": row.value,
+            "source_document_id": str(row.source_document_id),
+            "approved_at": row.approved_at.isoformat() if row.approved_at else None,
+        }
+        for row in rows
+    ]
+
+
+def accept_equivalent_evidence(
+    db: Session,
+    *,
+    claim: Claim,
+    requirement: ClaimDocumentRequirement,
+    claim_fact: ClaimFact,
+    user: User,
+    note: str,
+) -> ClaimDocumentRequirement:
+    if requirement.organization_id != claim.organization_id or requirement.claim_id != claim.id or not requirement.is_active:
+        raise ValueError("Document requirement not found for this claim.")
+    if claim_fact.organization_id != claim.organization_id or claim_fact.claim_id != claim.id:
+        raise ValueError("Equivalent evidence must belong to the same claim and organization.")
+    allowed = EQUIVALENT_EVIDENCE_FACTS.get(requirement.document_type, ())
+    if claim_fact.field_path not in allowed:
+        raise ValueError("The selected approved claim fact is not an accepted equivalent for this requirement.")
+    if len((note or "").strip()) < 5:
+        raise ValueError("A short justification is required when accepting equivalent evidence.")
+    old = {
+        "status": requirement.status.value,
+        "satisfaction_basis": requirement.satisfaction_basis,
+        "equivalent_claim_fact_id": str(requirement.equivalent_claim_fact_id) if requirement.equivalent_claim_fact_id else None,
+    }
+    requirement.status = RequirementStatus.ACCEPTED
+    requirement.satisfaction_basis = "equivalent_evidence"
+    requirement.satisfaction_note = note.strip()
+    requirement.equivalent_claim_fact_id = claim_fact.id
+    requirement.matched_document_id = None
+    requirement.satisfied_by_id = user.id
+    requirement.satisfied_at = datetime.now(UTC)
+    from app.modules.tasks.service import sync_requirement_tasks
+    sync_requirement_tasks(db, claim=claim, user=user)
+    write_audit_log(
+        db,
+        organization_id=claim.organization_id,
+        user_id=user.id,
+        action="ACCEPT_EQUIVALENT_EVIDENCE",
+        entity_type="claim_document_requirement",
+        entity_id=requirement.id,
+        old_values=old,
+        new_values={
+            "status": requirement.status.value,
+            "satisfaction_basis": requirement.satisfaction_basis,
+            "claim_fact_id": str(claim_fact.id),
+            "field_path": claim_fact.field_path,
+            "note": requirement.satisfaction_note,
+        },
+    )
+    db.commit()
+    db.refresh(requirement)
+    return requirement
+
 def get_rule_summary(db: Session, *, claim: Claim) -> RuleSummaryResponse:
     requirements = list(
         db.scalars(
@@ -490,7 +578,12 @@ def get_rule_summary(db: Session, *, claim: Claim) -> RuleSummaryResponse:
         ruleset_version=RULESET_VERSION,
         claim_id=claim.id,
         evaluated_at=latest_run.created_at if latest_run else None,
-        requirements=requirements,
+        requirements=[
+            DocumentRequirementResponse.model_validate(row).model_copy(
+                update={"equivalent_evidence_candidates": equivalent_evidence_candidates(db, claim=claim, requirement=row)}
+            )
+            for row in requirements
+        ],
         issues=issues,
         readiness=calculate_readiness(requirements),
         triggered_rule_ids=list(latest_run.triggered_rule_ids or []) if latest_run else [],

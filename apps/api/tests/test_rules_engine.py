@@ -215,3 +215,59 @@ def test_rule_run_is_audited() -> None:
     with TestingSessionLocal() as db:
         audit = db.scalar(select(AuditLog).where(AuditLog.action == "EVALUATE_CLAIM_RULES", AuditLog.entity_id == UUID(claim_id)))
         assert audit is not None
+
+
+def test_equivalent_evidence_requires_human_acceptance_and_survives_rule_refresh() -> None:
+    result = create_orion_claim()
+    claim_id = result["claim"]["id"]
+    _set_status(claim_id, ClaimStatus.INVESTIGATION)
+    _add_fact(claim_id, "maintenance.recommended_overhaul_interval", {"value": 12000, "unit": "hours", "raw": "12,000 hours"})
+    summary = _evaluate(claim_id)
+    maker = next(item for item in summary["requirements"] if item["document_type"] == "maker_recommendation")
+    assert maker["status"] == "missing"
+    assert len(maker["equivalent_evidence_candidates"]) == 1
+    candidate = maker["equivalent_evidence_candidates"][0]
+    assert candidate["field_path"] == "maintenance.recommended_overhaul_interval"
+
+    accepted = client.post(
+        f"/api/v1/claims/{claim_id}/rules/requirements/{maker['id']}/accept-equivalent",
+        json={"claim_fact_id": candidate["claim_fact_id"], "note": "Reviewed running-hours record expressly states the maker interval."},
+    )
+    assert accepted.status_code == 200, accepted.text
+    requirement = accepted.json()["requirement"]
+    assert requirement["status"] == "accepted"
+    assert requirement["satisfaction_basis"] == "equivalent_evidence"
+    assert requirement["equivalent_claim_fact_id"] == candidate["claim_fact_id"]
+
+    refreshed = _evaluate(claim_id)
+    maker_after = next(item for item in refreshed["requirements"] if item["document_type"] == "maker_recommendation")
+    assert maker_after["status"] == "accepted"
+    assert maker_after["satisfaction_basis"] == "equivalent_evidence"
+    assert refreshed["readiness"]["important_missing_count"] == 0
+    with TestingSessionLocal() as db:
+        audit = db.scalar(select(AuditLog).where(AuditLog.action == "ACCEPT_EQUIVALENT_EVIDENCE"))
+        assert audit is not None
+
+
+def test_direct_document_supersedes_previous_equivalent_evidence(tmp_path: Path) -> None:
+    result = create_orion_claim()
+    claim_id = result["claim"]["id"]
+    _set_status(claim_id, ClaimStatus.INVESTIGATION)
+    _add_fact(claim_id, "maintenance.recommended_overhaul_interval", 12000)
+    summary = _evaluate(claim_id)
+    maker = next(item for item in summary["requirements"] if item["document_type"] == "maker_recommendation")
+    fact_id = maker["equivalent_evidence_candidates"][0]["claim_fact_id"]
+    accepted = client.post(
+        f"/api/v1/claims/{claim_id}/rules/requirements/{maker['id']}/accept-equivalent",
+        json={"claim_fact_id": fact_id, "note": "Interim equivalent evidence accepted pending maker document."},
+    )
+    assert accepted.status_code == 200
+    _configure_storage(tmp_path)
+    uploaded = _upload_pdf(claim_id, "maker_recommendation", "maker_interval")
+    assert uploaded.status_code == 201
+    refreshed = client.get(f"/api/v1/claims/{claim_id}/rules").json()
+    maker_after = next(item for item in refreshed["requirements"] if item["document_type"] == "maker_recommendation")
+    assert maker_after["status"] == "received"
+    assert maker_after["satisfaction_basis"] == "direct_document"
+    assert maker_after["equivalent_claim_fact_id"] is None
+    assert maker_after["matched_document_id"] == uploaded.json()["id"]

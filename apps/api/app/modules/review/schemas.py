@@ -120,3 +120,44 @@ class ExtractionReviewDetail(BaseModel):
     item: ReviewQueueItem
     feedback: list[FeedbackResponse]
     current_claim_fact: ClaimFactResponse | None
+
+
+class ReviewGroup(BaseModel):
+    group_key: str
+    group_type: str
+    label: str
+    claim_id: UUID
+    claim_reference: str
+    vessel_name: str
+    document_id: UUID
+    document_name: str
+    items: list[ReviewQueueItem]
+    pending_count: int
+    needs_attention: bool
+    attention_reasons: list[str]
+    group_approvable: bool
+    requires_reason: bool
+    min_confidence: Decimal
+
+
+class ReviewGroupQueueResponse(BaseModel):
+    groups: list[ReviewGroup]
+    total_groups: int
+    total_extractions: int
+    attention_groups: int
+
+
+class GroupReviewRequest(BaseModel):
+    extraction_ids: list[UUID] = Field(min_length=1, max_length=100)
+    action: Literal["approve", "reject"] = "approve"
+    reason: str | None = Field(default=None, max_length=2000)
+
+    @model_validator(mode="after")
+    def validate_unique_ids(self):
+        if len(set(self.extraction_ids)) != len(self.extraction_ids):
+            raise ValueError("Grouped review cannot contain duplicate extraction IDs.")
+        return self
+
+
+class GroupReviewResponse(BaseModel):
+    reviewed: list[ReviewResult]

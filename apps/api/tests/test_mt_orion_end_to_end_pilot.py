@@ -42,7 +42,7 @@ from app.modules.intelligence.service import (
 from app.modules.organizations.models import Organization
 from app.modules.processing.models import DocumentProcessingJob, ProcessingJobStatus, ProcessingJobType
 from app.modules.processing.service import process_job
-from app.modules.review.service import review_extraction
+from app.modules.review.service import list_review_groups, review_extraction
 from app.modules.rules.models import ClaimIssue, RequirementPriority, RequirementStatus
 from app.modules.rules.service import evaluate_claim_rules, get_rule_summary
 from app.modules.tasks.schemas import DocumentRequestCreate
@@ -454,6 +454,15 @@ def test_mt_orion_full_pilot_workflow(tmp_path):
                 runs.append(run)
             assert len(runs) == 8
             assert all(run.status.value == "completed" for run in runs)
+
+            # Usability hardening groups repeatable rows/line-items so the human review
+            # workload is measured in meaningful evidence units rather than raw fields.
+            candidate_count = len(list(db.scalars(select(DocumentExtraction).where(DocumentExtraction.claim_id == claim.id))))
+            review_groups = list_review_groups(
+                db, organization_id=claim.organization_id, claim_id=claim.id, human_status=None, limit_groups=500
+            )
+            assert len(review_groups) < candidate_count
+            assert candidate_count - len(review_groups) >= 50
 
             # The pilot intentionally rejects one over-confident candidate.
             rejected = db.scalar(select(DocumentExtraction).where(DocumentExtraction.field_path == "maintenance.interval_extension_approved"))

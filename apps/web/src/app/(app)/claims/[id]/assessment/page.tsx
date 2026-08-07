@@ -55,7 +55,7 @@ export default function InitialAssessmentPage() {
     <Link href={`/claims/${id}`} className="text-sm font-semibold text-slate-500 hover:text-slate-800">← Back to claim</Link>
     <div className="mt-5 flex flex-col justify-between gap-4 xl:flex-row xl:items-start">
       <div><p className="eyebrow">{claim.claim_reference}</p><h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">Initial Assessment</h1><p className="mt-2 text-sm text-slate-500">Source-linked structured assessment with section-by-section human approval.</p></div>
-      <div className="flex gap-2"><button disabled={busy} onClick={() => generate(false)} className="secondary-button">Generate draft</button>{assessment ? <button disabled={busy || assessment.status === "approved"} onClick={approveAll} className="primary-button">Approve assessment</button> : null}</div>
+      <div className="flex gap-2"><button disabled={busy} onClick={() => generate(false)} className="secondary-button">Generate draft</button>{assessment ? <button disabled={busy || assessment.status === "approved"} onClick={approveAll} className="primary-button">{assessment.is_preliminary ? "Approve preliminary" : "Approve final assessment"}</button> : null}</div>
     </div>
     {error ? <div className="mt-5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">{error}</div> : null}
 
@@ -67,6 +67,7 @@ export default function InitialAssessmentPage() {
         <div className="panel p-5"><p className="metric-label">Classification</p><p className={`metric-value text-xl ${assessment.is_preliminary ? "text-amber-700" : "text-emerald-700"}`}>{assessment.is_preliminary ? "Preliminary" : "Ready"}</p></div>
       </section>
       {assessment.blocking_items.length ? <section className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-5"><h2 className="text-sm font-semibold text-amber-950">Outstanding blocking evidence</h2><ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-amber-900">{assessment.blocking_items.map((x) => <li key={x}>{x}</li>)}</ul><p className="mt-3 text-xs text-amber-700">This assessment is preliminary and remains subject to the outstanding evidence above.</p></section> : null}
+      {assessment.status === "approved" ? <section className={`mt-5 rounded-xl border p-5 ${assessment.is_preliminary ? "border-amber-300 bg-amber-50" : "border-emerald-300 bg-emerald-50"}`}><h2 className={`text-sm font-semibold ${assessment.is_preliminary ? "text-amber-950" : "text-emerald-950"}`}>{assessment.is_preliminary ? "Approved preliminary assessment — not final" : "Final initial assessment approved"}</h2><p className={`mt-2 text-xs leading-5 ${assessment.is_preliminary ? "text-amber-800" : "text-emerald-800"}`}>{assessment.is_preliminary ? "This version was approved for interim claims handling while blocking evidence remained outstanding. Once the evidence position improves, generate a new version; only a non-preliminary version should be treated as the final Initial Assessment." : "This non-preliminary version passed the readiness gate and all sections were human-reviewed before approval."}</p></section> : null}
       <div className="mt-6 space-y-5">{assessment.sections.map((section) => {
         const text = section.approved_text ?? section.draft_text;
         return <section key={section.id} className="panel p-6"><div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start"><div><p className="eyebrow">{String(section.sort_order / 10).padStart(2, "0")}</p><h2 className="section-title mt-1">{section.title}</h2><p className="mt-1 text-xs font-semibold uppercase tracking-wide text-slate-400">{section.status}</p></div><div className="flex gap-2"><button disabled={busy} onClick={() => review(section.id, "approve")} className="secondary-button">Approve</button><button disabled={busy} onClick={() => { setEditing({ ...editing, [section.id]: editing[section.id] ?? text }); }} className="secondary-button">Edit</button></div></div>
@@ -74,7 +75,7 @@ export default function InitialAssessmentPage() {
           <details className="mt-5 border-t border-slate-200 pt-4"><summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-slate-500">Sources ({section.source_manifest.length})</summary><div className="mt-3 space-y-2">{section.source_manifest.length ? section.source_manifest.map((s, i) => <div key={`${s.id}-${i}`} className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600"><span className="font-semibold">{s.kind}</span> · {s.label}</div>) : <p className="text-xs text-slate-400">No structured source records linked.</p>}</div></details>
         </section>;
       })}</div>
-      <div className="mt-6 flex justify-end"><button disabled={busy || assessment.status === "approved"} onClick={approveAll} className="primary-button">Approve assessment</button></div>
+      <div className="mt-6 flex justify-end"><button disabled={busy || assessment.status === "approved"} onClick={approveAll} className="primary-button">{assessment.is_preliminary ? "Approve preliminary" : "Approve final assessment"}</button></div>
     </>}
   </div>;
 }

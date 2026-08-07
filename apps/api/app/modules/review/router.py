@@ -14,6 +14,9 @@ from app.modules.intelligence.models import AISemanticKind, AIReviewStatus
 from app.modules.review.schemas import (
     BulkApproveRequest,
     BulkApproveResponse,
+    GroupReviewRequest,
+    GroupReviewResponse,
+    ReviewGroupQueueResponse,
     ClaimFactResponse,
     ExtractionReviewDetail,
     FeedbackResponse,
@@ -29,7 +32,9 @@ from app.modules.review.service import (
     get_feedback_history,
     get_source_segment_for_extraction,
     is_bulk_approvable,
+    list_review_groups,
     list_review_queue,
+    validate_same_review_group,
     review_extraction,
 )
 
@@ -82,6 +87,83 @@ def review_queue(
         offset=offset,
     )
     return ReviewQueueResponse(items=items, total=total, limit=limit, offset=offset)
+
+
+@router.get("/groups", response_model=ReviewGroupQueueResponse)
+def review_groups(
+    current_user: CurrentUser,
+    db: Annotated[Session, Depends(get_db)],
+    claim_id: UUID | None = None,
+    document_id: UUID | None = None,
+    review_status: str = "pending",
+    attention_only: bool = False,
+    limit_groups: Annotated[int, Query(ge=1, le=200)] = 100,
+) -> ReviewGroupQueueResponse:
+    if claim_id is not None and get_claim_for_tenant(db, claim_id=claim_id, organization_id=current_user.organization_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Claim not found")
+    if review_status == "all":
+        parsed_status = None
+    else:
+        try:
+            parsed_status = AIReviewStatus(review_status)
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid review status") from exc
+    groups = list_review_groups(
+        db,
+        organization_id=current_user.organization_id,
+        claim_id=claim_id,
+        document_id=document_id,
+        human_status=parsed_status,
+        attention_only=attention_only,
+        limit_groups=limit_groups,
+    )
+    return ReviewGroupQueueResponse(
+        groups=groups,
+        total_groups=len(groups),
+        total_extractions=sum(len(group.items) for group in groups),
+        attention_groups=sum(1 for group in groups if group.needs_attention),
+    )
+
+
+@router.post("/groups/review", response_model=GroupReviewResponse)
+def review_group(
+    payload: GroupReviewRequest,
+    current_user: CurrentUser,
+    db: Annotated[Session, Depends(get_db)],
+) -> GroupReviewResponse:
+    extractions = []
+    for extraction_id in payload.extraction_ids:
+        extraction = get_extraction_for_tenant(db, extraction_id=extraction_id, organization_id=current_user.organization_id)
+        if extraction is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="AI extraction not found")
+        if extraction.human_status != AIReviewStatus.PENDING:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Grouped review only accepts pending extraction fields.")
+        extractions.append(extraction)
+    try:
+        validate_same_review_group(extractions)
+        if payload.action == "approve" and any(not row.source_verified for row in extractions) and not (payload.reason or "").strip():
+            raise ValueError("A reason is required when grouped approval contains an unverified source citation.")
+        reviewed: list[ReviewResult] = []
+        for extraction in extractions:
+            extraction, fact, promoted = review_extraction(
+                db,
+                extraction=extraction,
+                reviewer=current_user,
+                action=payload.action,
+                reason=payload.reason,
+            )
+            reviewed.append(ReviewResult(
+                extraction_id=extraction.id,
+                human_status=extraction.human_status,
+                approved_value=extraction.approved_value,
+                promoted=promoted,
+                claim_fact=ClaimFactResponse.model_validate(fact) if fact else None,
+            ))
+        db.commit()
+        return GroupReviewResponse(reviewed=reviewed)
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
 
 @router.get("/{extraction_id}", response_model=ExtractionReviewDetail)

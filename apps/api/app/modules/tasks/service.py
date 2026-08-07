@@ -211,7 +211,11 @@ def sync_requirement_tasks(db: Session, *, claim: Claim, user: User | None = Non
             task.status = TaskStatus.COMPLETED
             task.completed_at = now
             task.completed_by_id = user.id if user else None
-            task.completion_reason = "Automatically completed because the required document was received."
+            task.completion_reason = (
+                "Automatically completed because human-approved equivalent evidence satisfied the document requirement."
+                if requirement.satisfaction_basis == "equivalent_evidence"
+                else "Automatically completed because the required document was received."
+            )
             count += 1
             write_audit_log(db, organization_id=claim.organization_id, user_id=user.id if user else None, action="AUTO_COMPLETE_DOCUMENT_TASK", entity_type="claim_task", entity_id=task.id, new_values={"requirement_id": str(requirement.id), "status": "completed"})
     return count

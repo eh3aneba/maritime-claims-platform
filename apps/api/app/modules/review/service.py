@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 import json
+import re
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
@@ -15,7 +16,7 @@ from app.modules.claims.models import Claim
 from app.modules.documents.models import Document
 from app.modules.intelligence.models import AIFeedback, AISemanticKind, AIReviewStatus, DocumentExtraction
 from app.modules.processing.models import DocumentTextSegment
-from app.modules.review.schemas import ReviewQueueItem
+from app.modules.review.schemas import ReviewGroup, ReviewQueueItem
 from app.modules.users.models import User
 from app.modules.vessels.models import Vessel
 
@@ -62,6 +63,123 @@ NON_PROMOTABLE_PATH_FRAGMENTS = {
     "invoice.",
 }
 
+
+
+_GROUP_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"^(engine_log\.events\[\d+\])\."), "engine_log_row"),
+    (re.compile(r"^(pms\.records\[\d+\])\."), "pms_row"),
+    (re.compile(r"^((?:quotation|invoice)\.line_items\[\d+\])\."), "commercial_line_item"),
+    (re.compile(r"^(workshop\.damage_findings\[\d+\])\."), "workshop_finding"),
+    (re.compile(r"^(workshop\.repair_options\[\d+\])\."), "workshop_repair_option"),
+    (re.compile(r"^(reported_events\[\d+\])\."), "reported_event"),
+)
+
+_GROUP_LABELS = {
+    "engine_log_row": "Engine Log row",
+    "pms_row": "PMS job row",
+    "commercial_line_item": "Commercial line item",
+    "workshop_finding": "Workshop damage finding",
+    "workshop_repair_option": "Workshop repair option",
+    "reported_event": "Reported event",
+    "single_field": "Single field",
+}
+
+
+def review_group_key(field_path: str) -> tuple[str, str]:
+    for pattern, group_type in _GROUP_PATTERNS:
+        match = pattern.match(field_path)
+        if match:
+            return match.group(1), group_type
+    return field_path, "single_field"
+
+
+def _attention_reasons(items: list[ReviewQueueItem]) -> list[str]:
+    reasons: list[str] = []
+    if any(not item.source_verified for item in items):
+        reasons.append("Unverified source citation")
+    if any(item.validation_warnings for item in items):
+        reasons.append("Validation warning")
+    if any(item.confidence < Decimal("0.800") for item in items):
+        reasons.append("Low confidence")
+    elif any(item.confidence < Decimal("0.900") for item in items):
+        reasons.append("Medium confidence")
+    if any(item.semantic_kind in {AISemanticKind.OPINION, AISemanticKind.INFERENCE} for item in items):
+        reasons.append("Opinion or inference requires judgment")
+    return reasons
+
+
+def list_review_groups(
+    db: Session,
+    *,
+    organization_id: UUID,
+    claim_id: UUID | None = None,
+    document_id: UUID | None = None,
+    human_status: AIReviewStatus | None = AIReviewStatus.PENDING,
+    attention_only: bool = False,
+    limit_groups: int = 100,
+) -> list[ReviewGroup]:
+    items, _ = list_review_queue(
+        db,
+        organization_id=organization_id,
+        claim_id=claim_id,
+        document_id=document_id,
+        human_status=human_status,
+        limit=500,
+        offset=0,
+    )
+    buckets: dict[tuple[UUID, UUID, str], tuple[str, list[ReviewQueueItem]]] = {}
+    for item in items:
+        key, group_type = review_group_key(item.field_path)
+        bucket_key = (item.claim_id, item.document_id, key)
+        if bucket_key not in buckets:
+            buckets[bucket_key] = (group_type, [])
+        buckets[bucket_key][1].append(item)
+
+    groups: list[ReviewGroup] = []
+    for (_, _, key), (group_type, group_items) in buckets.items():
+        group_items.sort(key=lambda item: item.field_path)
+        reasons = _attention_reasons(group_items)
+        pending = [item for item in group_items if item.human_status == AIReviewStatus.PENDING]
+        group = ReviewGroup(
+            group_key=key,
+            group_type=group_type,
+            label=f"{_GROUP_LABELS[group_type]} · {key}",
+            claim_id=group_items[0].claim_id,
+            claim_reference=group_items[0].claim_reference,
+            vessel_name=group_items[0].vessel_name,
+            document_id=group_items[0].document_id,
+            document_name=group_items[0].document_name,
+            items=group_items,
+            pending_count=len(pending),
+            needs_attention=bool(reasons),
+            attention_reasons=reasons,
+            group_approvable=bool(pending),
+            requires_reason=any(not item.source_verified for item in pending),
+            min_confidence=min(item.confidence for item in group_items),
+        )
+        if not attention_only or group.needs_attention:
+            groups.append(group)
+
+    groups.sort(
+        key=lambda group: (
+            0 if group.needs_attention else 1,
+            float(group.min_confidence),
+            group.document_name.lower(),
+            group.group_key,
+        )
+    )
+    return groups[:limit_groups]
+
+
+def validate_same_review_group(extractions: list[DocumentExtraction]) -> tuple[str, str]:
+    if not extractions:
+        raise ValueError("Grouped review requires at least one extraction.")
+    claim_ids = {row.claim_id for row in extractions}
+    document_ids = {row.document_id for row in extractions}
+    keys = {review_group_key(row.field_path) for row in extractions}
+    if len(claim_ids) != 1 or len(document_ids) != 1 or len(keys) != 1:
+        raise ValueError("Grouped review may only contain fields from the same review row/group.")
+    return next(iter(keys))
 
 def is_bulk_approvable(extraction: DocumentExtraction) -> bool:
     return (

@@ -1,7 +1,8 @@
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.modules.rules.models import IssueCategory, IssueSeverity, IssueStatus, RequirementPriority, RequirementStatus
 
@@ -18,6 +19,12 @@ class DocumentRequirementResponse(BaseModel):
     reason: str
     status: RequirementStatus
     matched_document_id: UUID | None
+    equivalent_claim_fact_id: UUID | None
+    satisfaction_basis: str | None
+    satisfaction_note: str | None
+    satisfied_by_id: UUID | None
+    satisfied_at: datetime | None
+    equivalent_evidence_candidates: list[dict[str, Any]] = Field(default_factory=list)
     is_active: bool
     last_evaluated_at: datetime | None
 
@@ -63,3 +70,12 @@ class RuleSummaryResponse(BaseModel):
 class RuleEvaluationResponse(BaseModel):
     run_id: UUID
     summary: RuleSummaryResponse
+
+
+class EquivalentEvidenceRequest(BaseModel):
+    claim_fact_id: UUID
+    note: str
+
+
+class EquivalentEvidenceResponse(BaseModel):
+    requirement: DocumentRequirementResponse
