@@ -3,7 +3,7 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Index, JSON, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import CheckConstraint, DateTime, Enum, ForeignKey, Index, JSON, Numeric, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -107,3 +107,25 @@ class DocumentExtraction(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     approved_value: Mapped[object | None] = mapped_column(JSON, nullable=True)
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class AIFeedback(UUIDPrimaryKeyMixin, Base):
+    """Append-only human review history for AI extraction candidates."""
+
+    __tablename__ = "ai_feedback"
+    __table_args__ = (
+        CheckConstraint("action IN ('approved', 'edited', 'rejected')", name="ck_ai_feedback_action"),
+        Index("ix_ai_feedback_org_extraction_created", "organization_id", "extraction_id", "created_at"),
+    )
+
+    organization_id: Mapped[UUID] = mapped_column(ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False, index=True)
+    claim_id: Mapped[UUID] = mapped_column(ForeignKey("claims.id", ondelete="RESTRICT"), nullable=False, index=True)
+    document_id: Mapped[UUID] = mapped_column(ForeignKey("documents.id", ondelete="RESTRICT"), nullable=False, index=True)
+    extraction_id: Mapped[UUID] = mapped_column(ForeignKey("document_extractions.id", ondelete="RESTRICT"), nullable=False, index=True)
+    reviewer_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+
+    action: Mapped[str] = mapped_column(String(20), nullable=False)
+    ai_value: Mapped[object | None] = mapped_column(JSON, nullable=True)
+    human_value: Mapped[object | None] = mapped_column(JSON, nullable=True)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())

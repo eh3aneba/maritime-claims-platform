@@ -12,6 +12,8 @@ from app.modules.claims.models import ClaimPriority, ClaimStatus
 from app.modules.claims.schemas import (
     ClaimAssign,
     ClaimCreate,
+    ClaimFactListResponse,
+    ClaimFactRead,
     ClaimListResponse,
     ClaimRead,
     ClaimReserveChange,
@@ -28,6 +30,7 @@ from app.modules.claims.service import (
     create_claim,
     get_claim,
     list_claims,
+    list_claim_facts,
     update_claim_details,
     update_current_reserve,
 )
@@ -124,6 +127,19 @@ def get_claim_endpoint(
     except ClaimNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Claim not found") from exc
     return _read(claim)
+
+
+@router.get("/{claim_id}/facts", response_model=ClaimFactListResponse)
+def list_claim_facts_endpoint(
+    claim_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: CurrentUser,
+) -> ClaimFactListResponse:
+    try:
+        facts = list_claim_facts(db, claim_id=claim_id, organization_id=current_user.organization_id)
+    except ClaimNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Claim not found") from exc
+    return ClaimFactListResponse(items=[ClaimFactRead.model_validate(fact) for fact in facts], total=len(facts))
 
 
 @router.patch("/{claim_id}", response_model=ClaimRead)

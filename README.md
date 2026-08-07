@@ -16,7 +16,7 @@ Sprint 2 is complete through Phase G:
 - Tenant-separated persistent local evidence storage with an S3-compatible migration boundary
 - Claim Documents UI with drag-and-drop, upload progress and evidence actions
 
-**Sprint 2 foundation is complete and Sprint 3 is active.** Phase B now supports controlled Chief Engineer Report classification and structured, source-linked AI extraction. Human approval remains separate and is the next phase.
+**Sprint 2 foundation is complete and Sprint 3 is active.** Phase C now completes the first human-in-the-loop AI workflow: source-linked candidates can be approved, corrected or rejected, with append-only feedback history and safe promotion into human-approved claim facts.
 
 ## Prerequisites
 
@@ -143,6 +143,12 @@ The backend now supports an explicit background AI job for Chief Engineer Report
 
 `AI_PROVIDER=disabled` remains the default. The OpenAI adapter uses strict Structured Outputs and requires explicit `AI_MODEL` and `OPENAI_API_KEY` configuration. Restricted documents are not sent to that external provider unless separately enabled.
 
+## Sprint 3 Phase C — Human AI Review
+
+The web app now includes an AI Review queue with source preview, confidence, fact/opinion separation, individual Approve/Edit/Reject actions and cautious bulk approval for low-risk verified metadata.
+
+The backend adds append-only `ai_feedback`, current `claim_facts`, review/audit APIs, source-verification safeguards, and `GET /api/v1/claims/{claim_id}/facts`. Opinions/inferences and sensitive decision fields cannot be promoted into authoritative claim facts.
+
 ## Current milestone
 
-Sprint 3 Phase B complete. Next: Human AI Review (`Approve / Edit / Reject`) and promotion of approved values into the authoritative claim data layer.
+Sprint 3 Phase C complete. Next: Engine Log Intelligence and timestamped machinery-event extraction.

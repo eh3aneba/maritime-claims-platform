@@ -1,4 +1,4 @@
-import type { Claim, ClaimDocument, ClaimListResponse, CurrentUser, DocumentListResponse, Vessel, VesselListResponse } from "./types";
+import type { AIReviewDetail, AIReviewQueueResponse, AIReviewResult, AISourcePreview, Claim, ClaimDocument, ClaimFactListResponse, ClaimListResponse, CurrentUser, DocumentListResponse, Vessel, VesselListResponse } from "./types";
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api/v1";
 
@@ -182,4 +182,39 @@ export function uploadClaimDocument(
     };
     request.send(form);
   });
+}
+
+
+export function listAIReview(params?: URLSearchParams) {
+  const query = params?.toString();
+  return apiFetch<AIReviewQueueResponse>(`/ai-review${query ? `?${query}` : ""}`);
+}
+
+export function reviewAIExtraction(
+  extractionId: string,
+  payload: { action: "approve" | "edit" | "reject"; value?: unknown; reason?: string },
+) {
+  return apiFetch<AIReviewResult>(`/ai-review/${extractionId}`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function bulkApproveAIExtractions(extractionIds: string[], reason?: string) {
+  return apiFetch<{ reviewed: AIReviewResult[] }>("/ai-review/bulk/approve", {
+    method: "POST",
+    body: JSON.stringify({ extraction_ids: extractionIds, reason: reason || null }),
+  });
+}
+
+export function getAISourcePreview(extractionId: string) {
+  return apiFetch<AISourcePreview>(`/ai-review/${extractionId}/source`);
+}
+
+export function getClaimFacts(claimId: string) {
+  return apiFetch<ClaimFactListResponse>(`/claims/${claimId}/facts`);
+}
+
+export function getAIReviewDetail(extractionId: string) {
+  return apiFetch<AIReviewDetail>(`/ai-review/${extractionId}`);
 }

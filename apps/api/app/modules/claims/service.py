@@ -6,6 +6,7 @@ from sqlalchemy import func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session, joinedload
 
+from app.modules.claims.facts import ClaimFact
 from app.modules.claims.models import (
     Claim,
     ClaimPriority,
@@ -321,3 +322,15 @@ def update_current_reserve(db: Session, *, claim: Claim, amount: Decimal) -> Dec
     claim.current_reserve = amount
     db.flush()
     return old_reserve
+
+
+def list_claim_facts(db: Session, *, claim_id: UUID, organization_id: UUID) -> list[ClaimFact]:
+    # Reuse claim access semantics so facts cannot disclose a deleted/cross-tenant claim.
+    get_claim(db, claim_id=claim_id, organization_id=organization_id)
+    return list(
+        db.scalars(
+            select(ClaimFact)
+            .where(ClaimFact.organization_id == organization_id, ClaimFact.claim_id == claim_id)
+            .order_by(ClaimFact.field_path.asc())
+        )
+    )

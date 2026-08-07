@@ -10,6 +10,7 @@ import type { CurrentUser } from "@/lib/types";
 const nav = [
   { href: "/dashboard", label: "Dashboard", mark: "D" },
   { href: "/claims", label: "Claims", mark: "C" },
+  { href: "/ai-review", label: "AI Review", mark: "AI" },
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {

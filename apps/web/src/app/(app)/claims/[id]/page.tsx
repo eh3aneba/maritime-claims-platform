@@ -4,9 +4,9 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
-import { ApiError, changeClaimReserve, changeClaimStatus, getClaim } from "@/lib/api";
+import { ApiError, changeClaimReserve, changeClaimStatus, getClaim, getClaimFacts } from "@/lib/api";
 import { formatDate, formatMoney, priorityLabel, statusLabel } from "@/lib/format";
-import type { Claim, ClaimStatus } from "@/lib/types";
+import type { Claim, ClaimFact, ClaimStatus } from "@/lib/types";
 import { PriorityText, StatusBadge } from "@/components/status-badge";
 import { ClaimDocuments } from "@/components/claim-documents";
 
@@ -15,12 +15,13 @@ const statusFlow: ClaimStatus[] = ["new","triage","awaiting_documents","investig
 export default function ClaimOverviewPage() {
   const { id } = useParams<{ id: string }>();
   const [claim, setClaim] = useState<Claim | null>(null);
+  const [approvedFacts, setApprovedFacts] = useState<ClaimFact[]>([]);
   const [error, setError] = useState("");
   const [updating, setUpdating] = useState(false);
   const [reserve, setReserve] = useState("");
   const [reserveReason, setReserveReason] = useState("");
 
-  function load() { getClaim(id).then((c) => { setClaim(c); setReserve(c.current_reserve ?? ""); }).catch((e) => setError(e instanceof ApiError ? e.detail : "Claim could not be loaded.")); }
+  function load() { Promise.all([getClaim(id), getClaimFacts(id)]).then(([c, facts]) => { setClaim(c); setReserve(c.current_reserve ?? ""); setApprovedFacts(facts.items); }).catch((e) => setError(e instanceof ApiError ? e.detail : "Claim could not be loaded.")); }
   useEffect(() => { load(); }, [id]);
 
   async function advanceStatus() {
@@ -68,10 +69,14 @@ export default function ClaimOverviewPage() {
         <div className="space-y-6">
           <section className="panel p-6"><div className="flex items-center justify-between"><div><h2 className="section-title">Claim overview</h2><p className="section-subtitle">Core incident facts currently recorded in the system.</p></div></div><dl className="mt-6 grid gap-x-10 gap-y-5 sm:grid-cols-2"><div><dt className="detail-label">Status</dt><dd className="detail-value">{statusLabel[claim.status]}</dd></div><div><dt className="detail-label">Handler</dt><dd className="detail-value">{claim.handler?.full_name ?? "Unassigned"}</dd></div><div><dt className="detail-label">Notification date</dt><dd className="detail-value">{formatDate(claim.notification_date)}</dd></div><div><dt className="detail-label">External reference</dt><dd className="detail-value">{claim.external_reference ?? "—"}</dd></div></dl><div className="mt-6 border-t border-slate-200 pt-5"><p className="detail-label">Incident description</p><p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-slate-700">{claim.incident_description}</p></div></section>
 
+          <section className="panel p-6"><div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start"><div><h2 className="section-title">Approved claim facts</h2><p className="section-subtitle">Human-approved structured facts. AI candidates appear here only after explicit review.</p></div><Link href={`/ai-review?claim_id=${claim.id}`} className="secondary-button whitespace-nowrap">Review AI evidence</Link></div>{approvedFacts.length ? <div className="mt-5 overflow-x-auto"><table className="data-table"><thead><tr><th>Field</th><th>Approved value</th><th>Version</th><th>Approved</th></tr></thead><tbody>{approvedFacts.map((fact) => <tr key={fact.id}><td><div className="font-medium text-slate-800">{fact.field_path.replaceAll("_", " ")}</div></td><td><div className="max-w-xl break-words font-medium text-slate-800">{typeof fact.value === "object" ? JSON.stringify(fact.value) : String(fact.value ?? "—")}</div></td><td>v{fact.version}</td><td>{formatDate(fact.approved_at)}</td></tr>)}</tbody></table></div> : <div className="mt-5 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-5 py-8 text-center text-sm text-slate-500">No AI-derived facts have been approved yet.</div>}</section>
+
           <div id="claim-evidence"><ClaimDocuments claimId={claim.id} /></div>
         </div>
 
         <aside className="space-y-5">
+          <section className="panel p-5"><h2 className="text-sm font-semibold text-slate-950">AI evidence review</h2><p className="mt-1 text-xs leading-5 text-slate-500">Review source-linked AI candidates before they become approved claim facts.</p><Link href={`/ai-review?claim_id=${claim.id}`} className="secondary-button mt-4 w-full justify-center">Open AI review queue</Link></section>
+
           <section className="panel p-5"><h2 className="text-sm font-semibold text-slate-950">Workflow</h2><div className="mt-4 space-y-3">{statusFlow.slice(0, 7).map((s) => { const current = s === claim.status; const passed = statusFlow.indexOf(s) < statusFlow.indexOf(claim.status); return <div key={s} className="flex items-center gap-3"><span className={`h-2.5 w-2.5 rounded-full ${current ? "bg-cyan-600 ring-4 ring-cyan-100" : passed ? "bg-emerald-500" : "bg-slate-200"}`} /><span className={`text-sm ${current ? "font-semibold text-slate-950" : passed ? "text-slate-600" : "text-slate-400"}`}>{statusLabel[s]}</span></div>; })}</div></section>
 
           <section className="panel p-5"><h2 className="text-sm font-semibold text-slate-950">Reserve control</h2><p className="mt-1 text-xs leading-5 text-slate-500">Manager/admin controlled. Full reserve history is scheduled for a later financial module.</p><label className="mt-4 block"><span className="label">Amount ({claim.currency})</span><input type="number" min="0" value={reserve} onChange={(e) => setReserve(e.target.value)} className="field" /></label><label className="mt-3 block"><span className="label">Reason</span><textarea rows={3} value={reserveReason} onChange={(e) => setReserveReason(e.target.value)} className="field resize-none" placeholder="e.g. Replacement quotation received" /></label><button onClick={saveReserve} disabled={updating} className="secondary-button mt-3 w-full justify-center">Update reserve</button></section>

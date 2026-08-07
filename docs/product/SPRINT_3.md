@@ -47,5 +47,20 @@ Completed:
 
 No candidate is promoted into official claim facts in Phase B.
 
-### Next — Phase C
-Human AI Review: Approve, Edit, Reject, review audit history, and safe promotion of approved candidate values.
+## Phase C — Human AI Review ✅
+
+Completed:
+- tenant-scoped global/claim-filtered AI review queue
+- source-segment preview
+- Approve / Edit / Reject
+- append-only `ai_feedback` correction history
+- human reviewer + timestamp audit trail
+- authoritative `claim_facts` layer
+- fact-only safe promotion rules
+- non-promotion of opinions/inferences and sensitive decision paths
+- stricter bulk approval for low-risk, high-confidence, source-verified metadata
+- manual-verification reason required for unverified citations
+- claim page display of approved structured facts
+
+### Next — Phase D
+Engine Log Intelligence: table/time-series extraction, machinery events and exact timestamp normalization for chronology.

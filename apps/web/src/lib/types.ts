@@ -108,3 +108,97 @@ export interface DocumentListResponse {
   items: ClaimDocument[];
   total: number;
 }
+
+
+export type AISemanticKind = "fact" | "opinion" | "inference";
+export type AIReviewStatus = "pending" | "approved" | "edited" | "rejected";
+
+export interface AIReviewItem {
+  extraction_id: string;
+  claim_id: string;
+  claim_reference: string;
+  vessel_name: string;
+  document_id: string;
+  document_name: string;
+  field_path: string;
+  semantic_kind: AISemanticKind;
+  ai_value: unknown;
+  normalized_value: unknown;
+  confidence: string;
+  source_locator_type: string | null;
+  source_locator_value: string | null;
+  source_quote: string | null;
+  source_verified: boolean;
+  validation_warnings: string[] | null;
+  human_status: AIReviewStatus;
+  approved_value: unknown;
+  reviewed_at: string | null;
+  bulk_approvable: boolean;
+  created_at: string;
+}
+
+export interface AIReviewQueueResponse {
+  items: AIReviewItem[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface ClaimFact {
+  id: string;
+  claim_id: string;
+  field_path: string;
+  value: unknown;
+  source_extraction_id: string;
+  source_document_id: string;
+  source_segment_id: string | null;
+  approved_by_id: string | null;
+  approved_at: string;
+  version: number;
+}
+
+export interface AIReviewResult {
+  extraction_id: string;
+  human_status: AIReviewStatus;
+  approved_value: unknown;
+  promoted: boolean;
+  claim_fact: ClaimFact | null;
+}
+
+export interface AISourcePreview {
+  extraction_id: string;
+  claim_id: string;
+  document_id: string;
+  document_name: string;
+  field_path: string;
+  source_locator_type: string | null;
+  source_locator_value: string | null;
+  source_quote: string | null;
+  source_verified: boolean;
+  segment_id: string | null;
+  segment_text: string | null;
+}
+
+export interface ClaimFactListResponse {
+  items: ClaimFact[];
+  total: number;
+}
+
+
+export interface AIFeedbackEntry {
+  id: string;
+  action: "approved" | "edited" | "rejected";
+  ai_value: unknown;
+  human_value: unknown;
+  reason: string | null;
+  reviewer_id: string | null;
+  reviewer_name: string | null;
+  reviewer_email: string | null;
+  created_at: string;
+}
+
+export interface AIReviewDetail {
+  item: AIReviewItem;
+  feedback: AIFeedbackEntry[];
+  current_claim_fact: ClaimFact | null;
+}

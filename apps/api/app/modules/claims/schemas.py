@@ -1,6 +1,7 @@
 from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -106,3 +107,23 @@ class ClaimListResponse(BaseModel):
     total: int
     limit: int
     offset: int
+
+
+class ClaimFactRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    claim_id: UUID
+    field_path: str
+    value: Any
+    source_extraction_id: UUID
+    source_document_id: UUID
+    source_segment_id: UUID | None
+    approved_by_id: UUID | None
+    approved_at: datetime
+    version: int
+
+
+class ClaimFactListResponse(BaseModel):
+    items: list[ClaimFactRead]
+    total: int
