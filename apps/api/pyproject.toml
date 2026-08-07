@@ -1,0 +1,13 @@
+[project]
+name = "maritime-claims-api"
+version = "0.1.0"
+description = "Backend API for Maritime Claims & Risk Intelligence Platform"
+requires-python = ">=3.12,<3.14"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
