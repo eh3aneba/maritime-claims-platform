@@ -26,6 +26,7 @@ services:
       SECRET_KEY: ${SECRET_KEY:-replace-with-a-long-random-secret}
       STORAGE_BACKEND: ${STORAGE_BACKEND:-local}
       LOCAL_STORAGE_PATH: ${LOCAL_STORAGE_PATH:-/data/documents}
+      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-25}
     ports:
       - "8000:8000"
     volumes:

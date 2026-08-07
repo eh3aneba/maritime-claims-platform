@@ -8,6 +8,7 @@ import { ApiError, changeClaimReserve, changeClaimStatus, getClaim } from "@/lib
 import { formatDate, formatMoney, priorityLabel, statusLabel } from "@/lib/format";
 import type { Claim, ClaimStatus } from "@/lib/types";
 import { PriorityText, StatusBadge } from "@/components/status-badge";
+import { ClaimDocuments } from "@/components/claim-documents";
 
 const statusFlow: ClaimStatus[] = ["new","triage","awaiting_documents","investigation","technical_review","financial_review","coverage_review","negotiation","settlement","recovery","closed"];
 
@@ -51,7 +52,7 @@ export default function ClaimOverviewPage() {
       <Link href="/claims" className="text-sm font-semibold text-slate-500 hover:text-slate-800">← Back to claims</Link>
       <div className="mt-5 flex flex-col justify-between gap-5 xl:flex-row xl:items-start">
         <div><div className="flex flex-wrap items-center gap-3"><p className="eyebrow">{claim.claim_reference}</p><StatusBadge status={claim.status} /></div><h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950 md:text-4xl">{claim.vessel.name}</h1><p className="mt-2 text-sm text-slate-500">H&M · Machinery Damage{claim.vessel.imo_number ? ` · IMO ${claim.vessel.imo_number}` : ""}</p></div>
-        <div className="flex flex-wrap gap-3">{nextStatus ? <button disabled={updating} onClick={advanceStatus} className="secondary-button">Advance to {statusLabel[nextStatus]}</button> : null}<button className="primary-button" disabled>Upload document · Phase G</button></div>
+        <div className="flex flex-wrap gap-3">{nextStatus ? <button disabled={updating} onClick={advanceStatus} className="secondary-button">Advance to {statusLabel[nextStatus]}</button> : null}<button className="primary-button" onClick={() => document.getElementById("claim-evidence")?.scrollIntoView({ behavior: "smooth" })}>Upload document</button></div>
       </div>
 
       {error ? <div className="mt-5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div> : null}
@@ -67,7 +68,7 @@ export default function ClaimOverviewPage() {
         <div className="space-y-6">
           <section className="panel p-6"><div className="flex items-center justify-between"><div><h2 className="section-title">Claim overview</h2><p className="section-subtitle">Core incident facts currently recorded in the system.</p></div></div><dl className="mt-6 grid gap-x-10 gap-y-5 sm:grid-cols-2"><div><dt className="detail-label">Status</dt><dd className="detail-value">{statusLabel[claim.status]}</dd></div><div><dt className="detail-label">Handler</dt><dd className="detail-value">{claim.handler?.full_name ?? "Unassigned"}</dd></div><div><dt className="detail-label">Notification date</dt><dd className="detail-value">{formatDate(claim.notification_date)}</dd></div><div><dt className="detail-label">External reference</dt><dd className="detail-value">{claim.external_reference ?? "—"}</dd></div></dl><div className="mt-6 border-t border-slate-200 pt-5"><p className="detail-label">Incident description</p><p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-slate-700">{claim.incident_description}</p></div></section>
 
-          <section className="panel p-6"><div className="flex items-center justify-between"><div><h2 className="section-title">Evidence & documents</h2><p className="section-subtitle">Document intelligence is the next build phase.</p></div><span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-500">Phase G</span></div><div className="mt-6 grid gap-3 sm:grid-cols-3">{["Chief Engineer Report","Engine Log","Workshop Report"].map((doc) => <div key={doc} className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4"><p className="text-sm font-medium text-slate-700">{doc}</p><p className="mt-2 text-xs text-slate-400">Not uploaded yet</p></div>)}</div></section>
+          <div id="claim-evidence"><ClaimDocuments claimId={claim.id} /></div>
         </div>
 
         <aside className="space-y-5">

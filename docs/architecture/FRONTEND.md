@@ -8,7 +8,7 @@ The MVP frontend is a Next.js/TypeScript application that communicates with the 
 - `/dashboard` — organization claim summary
 - `/claims` — searchable/filterable claim portfolio
 - `/claims/new` — H&M machinery claim creation and minimal vessel creation
-- `/claims/[id]` — claim overview, workflow status, reserve control, document placeholder
+- `/claims/[id]` — claim overview, workflow status, reserve control, and secure evidence upload/list/download/remove UI
 
 ## Security boundaries
 
@@ -26,4 +26,4 @@ The MVP frontend is a Next.js/TypeScript application that communicates with the 
 
 ## Current limitation
 
-Document upload and AI-derived evidence panels are intentionally placeholders until Sprint 2 Phase G and Sprint 3.
+Secure document handling is active in Phase G. AI-derived classification, extraction, chronology and evidence reasoning remain intentionally deferred to Sprint 3.

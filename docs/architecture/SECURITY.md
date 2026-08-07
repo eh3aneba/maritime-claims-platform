@@ -2,7 +2,7 @@
 
 This document is a living engineering checklist, not a security certification.
 
-## Implemented through Sprint 2 Phase D
+## Implemented through Sprint 2 Phase G
 
 - Secrets are environment-driven; no production secret belongs in source control.
 - Passwords use Argon2 hashes and are never stored as plaintext.
@@ -17,6 +17,13 @@ This document is a living engineering checklist, not a security certification.
 - File metadata includes hashes for integrity/duplicate controls.
 - No sensitive document contents should be written to application logs.
 - Soft-delete and traceability rules preserve claim history.
+
+- Claim evidence uses server-generated storage keys rather than user filenames.
+- Uploads are size/type/signature validated and SHA-256 hashed during streaming.
+- Duplicate evidence inside a claim is rejected by hash.
+- Document list/download/delete operations are claim- and tenant-scoped.
+- Evidence deletion is soft; underlying bytes are retained during the MVP for audit.
+- Upload, download and delete actions are audit logged.
 
 ## Verified security tests
 

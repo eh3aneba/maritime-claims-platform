@@ -16,6 +16,11 @@ class Settings(BaseSettings):
     auth_cookie_name: str = "mcri_access_token"
     storage_backend: str = "local"
     local_storage_path: str = ".local-storage/documents"
+    max_upload_mb: int = 25
+
+    @property
+    def max_upload_bytes(self) -> int:
+        return self.max_upload_mb * 1024 * 1024
 
     model_config = SettingsConfigDict(
         env_file=".env",

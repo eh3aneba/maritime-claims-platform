@@ -4,26 +4,19 @@ Monorepo for the H&M Machinery Claims MVP.
 
 ## Current status
 
-Sprint 2 / Phase D is complete:
+Sprint 2 is complete through Phase G:
 
-- Next.js + TypeScript web app
-- FastAPI backend
-- PostgreSQL 18.4 via Docker Compose
-- SQLAlchemy 2 domain models
-- Alembic migrations
-- Tenant foundation and backend-enforced tenant isolation
-- Claim/vessel/document/audit foundation
-- Environment configuration
-- Health endpoint
-- Organization-aware authentication (organization slug + email + password)
-- Argon2 password hashing and JWT access tokens
-- HttpOnly auth cookie support
-- Role enforcement for admin / claims manager / claims handler
-- Admin-only user creation
-- Cross-tenant claim access guard
-- Architecture and security ADRs
+- Next.js + TypeScript claims UI
+- FastAPI modular-monolith backend
+- PostgreSQL 18.4 + SQLAlchemy/Alembic
+- Organization-aware authentication and backend tenant isolation
+- Claim/vessel APIs, workflow state machine and audit controls
+- Secure claim evidence upload/list/download/soft-delete APIs
+- SHA-256 duplicate detection, file-size/type/signature validation
+- Tenant-separated persistent local evidence storage with an S3-compatible migration boundary
+- Claim Documents UI with drag-and-drop, upload progress and evidence actions
 
-Claims business APIs are implemented in the next Sprint 2 phase. AI remains intentionally deferred until Sprint 3.
+**Sprint 2 foundation is now complete.** OCR, AI classification, structured extraction, RAG and predictive features remain intentionally deferred until Sprint 3, where they will operate on top of the secured evidence source-of-truth.
 
 ## Prerequisites
 
@@ -130,3 +123,12 @@ Frontend routes:
 - `http://localhost:3000/claims/new`
 
 The backend also exposes tenant-scoped `GET/POST /api/v1/vessels` endpoints required by claim creation.
+
+
+## Sprint 2 Phase G — Document Evidence
+
+Claim pages now support secure evidence handling. The backend exposes tenant-scoped document list/upload/download/soft-delete endpoints. Files are persisted outside PostgreSQL using server-generated storage keys, SHA-256 hashes are calculated while streaming uploads, duplicates within a claim are rejected, and basic file signatures are validated. Upload/download/delete actions are audit logged.
+
+The web claim overview includes drag-and-drop multi-file upload, document type/confidentiality metadata, actual upload progress, evidence listing, download and soft removal.
+
+Sprint 3 begins with AI Document Intelligence: `uploaded evidence -> text/OCR -> classification -> structured facts -> human review`.

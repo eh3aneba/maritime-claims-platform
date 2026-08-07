@@ -1,6 +1,6 @@
-import type { Claim, ClaimListResponse, CurrentUser, Vessel, VesselListResponse } from "./types";
+import type { Claim, ClaimDocument, ClaimListResponse, CurrentUser, DocumentListResponse, Vessel, VesselListResponse } from "./types";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api/v1";
+export const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api/v1";
 
 export class ApiError extends Error {
   status: number;
@@ -115,4 +115,71 @@ export function createVessel(payload: {
   flag?: string | null;
 }) {
   return apiFetch<Vessel>("/vessels", { method: "POST", body: JSON.stringify(payload) });
+}
+export function listClaimDocuments(claimId: string) {
+  return apiFetch<DocumentListResponse>(`/claims/${claimId}/documents`);
+}
+
+export function deleteClaimDocument(claimId: string, documentId: string) {
+  return apiFetch<void>(`/claims/${claimId}/documents/${documentId}`, { method: "DELETE" });
+}
+
+export async function downloadClaimDocument(claimId: string, document: ClaimDocument) {
+  const response = await fetch(`${API_BASE}/claims/${claimId}/documents/${document.id}/download`, {
+    credentials: "include",
+  });
+  if (!response.ok) {
+    let detail = `Download failed (${response.status})`;
+    try {
+      const payload = await response.json();
+      detail = typeof payload.detail === "string" ? payload.detail : detail;
+    } catch {}
+    throw new ApiError(response.status, detail);
+  }
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const anchor = window.document.createElement("a");
+  anchor.href = url;
+  anchor.download = document.original_filename;
+  window.document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
+export function uploadClaimDocument(
+  claimId: string,
+  file: File,
+  options: { documentType?: string; confidentiality?: "internal" | "confidential" | "restricted" } = {},
+  onProgress?: (percent: number) => void,
+): Promise<ClaimDocument> {
+  return new Promise((resolve, reject) => {
+    const form = new FormData();
+    form.append("file", file);
+    if (options.documentType) form.append("document_type", options.documentType);
+    form.append("confidentiality_level", options.confidentiality ?? "confidential");
+
+    const request = new XMLHttpRequest();
+    request.open("POST", `${API_BASE}/claims/${claimId}/documents`);
+    request.withCredentials = true;
+    request.upload.onprogress = (event) => {
+      if (event.lengthComputable && onProgress) {
+        onProgress(Math.round((event.loaded / event.total) * 100));
+      }
+    };
+    request.onerror = () => reject(new ApiError(0, "Upload failed because the network request could not be completed."));
+    request.onload = () => {
+      let payload: unknown = null;
+      try { payload = request.responseText ? JSON.parse(request.responseText) : null; } catch {}
+      if (request.status >= 200 && request.status < 300) {
+        resolve(payload as ClaimDocument);
+        return;
+      }
+      const detail = typeof payload === "object" && payload !== null && "detail" in payload
+        ? String((payload as { detail: unknown }).detail)
+        : `Upload failed (${request.status})`;
+      reject(new ApiError(request.status, detail));
+    };
+    request.send(form);
+  });
 }

@@ -84,3 +84,27 @@ export interface VesselListResponse {
   items: Vessel[];
   total: number;
 }
+
+export type DocumentProcessingStatus = "uploaded" | "processing" | "processed" | "failed";
+export type ConfidentialityLevel = "internal" | "confidential" | "restricted";
+
+export interface ClaimDocument {
+  id: string;
+  claim_id: string;
+  filename: string;
+  original_filename: string;
+  document_type: string | null;
+  mime_type: string;
+  file_size_bytes: number;
+  file_hash: string;
+  version_number: number;
+  processing_status: DocumentProcessingStatus;
+  confidentiality_level: ConfidentialityLevel;
+  uploaded_by_id: string | null;
+  created_at: string;
+}
+
+export interface DocumentListResponse {
+  items: ClaimDocument[];
+  total: number;
+}
