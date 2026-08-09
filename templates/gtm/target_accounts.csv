@@ -1,0 +1,3 @@
+account_name,account_type,country,region,machinery_claim_volume_score,pain_intensity_score,buyer_access_score,data_availability_score,security_fit_score,pilot_willingness_score,source,next_step,next_step_due_date
+Example Marine Insurer,marine_insurer,,,0,0,0,0,0,0,warm network,,
+Example Ship Manager,ship_manager,,,0,0,0,0,0,0,industry contact,,

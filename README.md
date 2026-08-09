@@ -180,3 +180,7 @@ Detailed instructions:
 - `docs/operations/BACKUP_RESTORE.md`
 
 The `demo-seed` compose profile populates the synthetic MT ORION case deterministically and never calls an external AI provider.
+
+
+## Design Partner Cohort
+Founder GTM tooling lives under `/api/v1/outreach` and the `/outreach` UI. See `docs/gtm/` for cohort qualification, outreach cadence, and the controlled paid-pilot offer.

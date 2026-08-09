@@ -608,3 +608,28 @@ export interface PilotCommercialScorecard {
   rationale: string[];
   next_step: string | null;
 }
+
+export interface DesignPartnerAccount {
+  id: string;
+  name: string;
+  account_type: "marine_insurer" | "ship_manager" | "p_and_i_correspondent" | "average_adjuster" | "broker" | "other";
+  country: string | null;
+  region: string | null;
+  stage: "prospect" | "contacted" | "discovery" | "demo" | "pilot_qualified" | "pilot_proposed" | "pilot_active" | "paid_pilot" | "customer" | "no_fit";
+  qualification_score: number;
+  qualification_rationale: string | null;
+  next_step: string | null;
+  next_step_due_date: string | null;
+  machinery_claim_volume_score: number;
+  pain_intensity_score: number;
+  buyer_access_score: number;
+  data_availability_score: number;
+  security_fit_score: number;
+  pilot_willingness_score: number;
+  created_at: string;
+}
+export interface CohortAccount extends DesignPartnerAccount { qualification_band: "A" | "B" | "C" | "D"; recommended_action: string; }
+export interface DesignPartnerCohortSummary {
+  target_qualified_partners: number; target_paid_pilots: number; accounts_total: number; a_tier: number; b_tier: number; pilot_qualified: number; paid_pilots: number;
+  target_progress: { qualified: number; paid: number }; accounts: CohortAccount[];
+}

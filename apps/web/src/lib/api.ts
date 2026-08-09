@@ -368,3 +368,13 @@ export function savePilotCommercialValidation(sessionId: string, payload: Record
 export function getPilotCommercialScorecard(sessionId: string) {
   return apiFetch<import("./types").PilotCommercialScorecard>(`/pilot/sessions/${sessionId}/commercial-scorecard`);
 }
+
+export function getDesignPartnerCohort() {
+  return apiFetch<import("./types").DesignPartnerCohortSummary>("/outreach/cohort");
+}
+export function createDesignPartnerAccount(payload: Record<string, unknown>) {
+  return apiFetch<import("./types").DesignPartnerAccount>("/outreach/accounts", { method: "POST", body: JSON.stringify(payload) });
+}
+export function updateDesignPartnerAccount(accountId: string, payload: Record<string, unknown>) {
+  return apiFetch<import("./types").DesignPartnerAccount>(`/outreach/accounts/${accountId}`, { method: "PATCH", body: JSON.stringify(payload) });
+}
