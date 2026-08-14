@@ -117,6 +117,8 @@ def _record_quarantine_and_raise(
     quarantine_status: QuarantineStatus,
     threat_name: str | None = None,
     scan_error: str | None = None,
+    replaces_document: Document | None = None,
+    replacement_reason: str | None = None,
 ) -> Never:
     scanned_at = datetime.now(UTC)
     quarantined = QuarantinedUpload(
@@ -124,6 +126,8 @@ def _record_quarantine_and_raise(
         organization_id=current_user.organization_id,
         claim_id=claim.id,
         uploaded_by_id=current_user.id,
+        replaces_document_id=replaces_document.id if replaces_document else None,
+        replacement_reason=replacement_reason,
         original_filename=original_filename,
         document_type=(document_type.strip()[:100] or None) if document_type else None,
         mime_type=mime_type[:150],
@@ -151,6 +155,7 @@ def _record_quarantine_and_raise(
             "file_hash": file_hash,
             "status": quarantine_status.value,
             "threat_name": threat_name,
+            "replaces_document_id": str(replaces_document.id) if replaces_document else None,
         },
         details="Upload retained outside active evidence storage; download and processing are blocked.",
     )
@@ -183,7 +188,21 @@ async def create_document_from_upload(
     upload: UploadFile,
     document_type: str | None,
     confidentiality_level: ConfidentialityLevel,
+    replaces_document: Document | None = None,
+    replacement_reason: str | None = None,
 ) -> Document:
+    if replaces_document is not None:
+        if replaces_document.deleted_at is not None or not replaces_document.is_current:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Only the current evidence version can be replaced.",
+            )
+        replacement_reason = (replacement_reason or "").strip()
+        if len(replacement_reason) < 20:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="A replacement reason of at least 20 characters is required.",
+            )
     original_filename = normalize_original_filename(upload.filename)
     suffix = validate_upload(original_filename, upload.content_type)
     upload_id = uuid4()
@@ -256,6 +275,8 @@ async def create_document_from_upload(
                 quarantine_key=stored.storage_key,
                 quarantine_status=QuarantineStatus.SCAN_ERROR,
                 scan_error=str(exc)[:1000],
+                replaces_document=replaces_document,
+                replacement_reason=replacement_reason,
             )
         if scan_result.verdict == MalwareScanVerdict.INFECTED:
             _record_quarantine_and_raise(
@@ -273,6 +294,8 @@ async def create_document_from_upload(
                 quarantine_key=stored.storage_key,
                 quarantine_status=QuarantineStatus.INFECTED,
                 threat_name=scan_result.threat_name,
+                replaces_document=replaces_document,
+                replacement_reason=replacement_reason,
             )
         malware_scan_status = DocumentMalwareScanStatus.CLEAN
         malware_scanned_at = datetime.now(UTC)
@@ -301,13 +324,34 @@ async def create_document_from_upload(
             quarantine_key=stored.storage_key,
             quarantine_status=QuarantineStatus.SCAN_ERROR,
             scan_error=f"Storage promotion failed: {type(exc).__name__}",
+            replaces_document=replaces_document,
+            replacement_reason=replacement_reason,
         )
+
+    document_family_id = replaces_document.document_family_id if replaces_document else upload_id
+    version_number = 1
+    if replaces_document is not None:
+        version_number = (
+            db.scalar(
+                select(func.max(Document.version_number)).where(
+                    Document.organization_id == current_user.organization_id,
+                    Document.claim_id == claim.id,
+                    Document.document_family_id == document_family_id,
+                )
+            )
+            or 0
+        ) + 1
 
     document = Document(
         id=upload_id,
         organization_id=current_user.organization_id,
         claim_id=claim.id,
         uploaded_by_id=current_user.id,
+        document_family_id=document_family_id,
+        supersedes_document_id=replaces_document.id if replaces_document else None,
+        version_number=version_number,
+        is_current=True,
+        replacement_reason=replacement_reason,
         filename=original_filename,
         original_filename=original_filename,
         document_type=(document_type.strip()[:100] or None) if document_type else None,
@@ -320,12 +364,16 @@ async def create_document_from_upload(
         malware_scanned_at=malware_scanned_at,
     )
     db.add(document)
+    if replaces_document is not None:
+        replaces_document.is_current = False
+        replaces_document.superseded_at = datetime.now(UTC)
+        replaces_document.superseded_by_id = current_user.id
     enqueue_text_extraction(db, document=document, requested_by_id=current_user.id)
     write_audit_log(
         db,
         organization_id=current_user.organization_id,
         user_id=current_user.id,
-        action="UPLOAD_DOCUMENT",
+        action="REPLACE_DOCUMENT" if replaces_document else "UPLOAD_DOCUMENT",
         entity_type="document",
         entity_id=document.id,
         new_values={
@@ -335,7 +383,20 @@ async def create_document_from_upload(
             "file_hash": stored.file_hash,
             "document_type": document.document_type,
             "malware_scan_status": document.malware_scan_status.value,
+            "document_family_id": str(document.document_family_id),
+            "version_number": document.version_number,
+            "supersedes_document_id": (
+                str(document.supersedes_document_id) if document.supersedes_document_id else None
+            ),
+            "replacement_reason": document.replacement_reason,
         },
+        details=(
+            "A new evidence version was admitted after validation and malware controls. "
+            "Prior evidence bytes, source links and review decisions were preserved; "
+            "human approvals were not transferred."
+            if replaces_document
+            else None
+        ),
     )
     try:
         db.commit()

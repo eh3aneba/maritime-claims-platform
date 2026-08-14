@@ -86,3 +86,19 @@ Every document operation first resolves the parent claim within the authenticate
 ## Sprint 3 boundary
 
 Phase G does **not** classify or understand evidence. Sprint 3 will process an uploaded document through OCR/text extraction, document classification and structured fact extraction while preserving this original evidence record as the immutable source.
+
+## Controlled document versions
+
+A replacement never mutates the original document row or storage object.
+
+- `document_family_id` groups reissued evidence inside one tenant and claim.
+- `version_number` is monotonic within the family.
+- `is_current` is protected by a partial unique index so only one non-deleted version can be current.
+- `supersedes_document_id`, `replacement_reason`, `superseded_at` and `superseded_by_id` preserve the human decision and predecessor chain.
+- the replacement upload uses the same extension/signature, SHA-256 duplicate and malware controls as a new document.
+- quarantine records retain `replaces_document_id` and the human reason; a clean operator retry can complete the transition only if the intended target is still current.
+- superseded versions remain downloadable, source-linked and auditable.
+- existing approved extractions, Claim Facts, chronology evidence, cost review and assessment snapshots are not copied to the new version.
+- deterministic document-requirement evaluation considers current versions only.
+
+This workflow protects evidential provenance while allowing a corrected workshop report, invoice, quotation, engine log or other claim document to become the operator-selected current source.

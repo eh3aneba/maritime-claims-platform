@@ -22,7 +22,13 @@ class DocumentResponse(BaseModel):
     mime_type: str
     file_size_bytes: int
     file_hash: str
+    document_family_id: UUID
+    supersedes_document_id: UUID | None
     version_number: int
+    is_current: bool
+    replacement_reason: str | None
+    superseded_at: datetime | None
+    superseded_by_id: UUID | None
     processing_status: DocumentProcessingStatus
     confidentiality_level: ConfidentialityLevel
     malware_scan_status: DocumentMalwareScanStatus
@@ -37,6 +43,8 @@ class QuarantinedUploadResponse(BaseModel):
     id: UUID
     claim_id: UUID
     source_document_id: UUID | None
+    replaces_document_id: UUID | None
+    replacement_reason: str | None
     original_filename: str
     mime_type: str
     file_size_bytes: int

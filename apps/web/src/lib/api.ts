@@ -239,6 +239,48 @@ export function uploadClaimDocument(
   });
 }
 
+export function replaceClaimDocument(
+  claimId: string,
+  documentId: string,
+  file: File,
+  replacementReason: string,
+  onProgress?: (percent: number) => void,
+): Promise<ClaimDocument> {
+  return new Promise((resolve, reject) => {
+    const form = new FormData();
+    form.append("file", file);
+    form.append("replacement_reason", replacementReason);
+
+    const request = new XMLHttpRequest();
+    request.open(
+      "POST",
+      `${API_BASE}/claims/${claimId}/documents/${documentId}/replacements`,
+    );
+    request.withCredentials = true;
+    request.upload.onprogress = (event) => {
+      if (event.lengthComputable && onProgress) {
+        onProgress(Math.round((event.loaded / event.total) * 100));
+      }
+    };
+    request.onerror = () => reject(
+      new ApiError(0, "Replacement failed because the network request could not be completed."),
+    );
+    request.onload = () => {
+      let payload: unknown = null;
+      try { payload = request.responseText ? JSON.parse(request.responseText) : null; } catch {}
+      if (request.status >= 200 && request.status < 300) {
+        resolve(payload as ClaimDocument);
+        return;
+      }
+      const detail = typeof payload === "object" && payload !== null && "detail" in payload
+        ? String((payload as { detail: unknown }).detail)
+        : `Replacement failed (${request.status})`;
+      reject(new ApiError(request.status, detail));
+    };
+    request.send(form);
+  });
+}
+
 export function queueLegacyEvidenceRescan(claimId: string, limit = 10) {
   return apiFetch<LegacyRescanResponse>(`/claims/${claimId}/documents/rescan-legacy`, {
     method: "POST",

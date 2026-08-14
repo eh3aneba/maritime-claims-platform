@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID, uuid4
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -312,6 +312,21 @@ def retry_quarantined_upload(
         db.commit()
         return None
 
+    replacement_target = None
+    if quarantined.replaces_document_id is not None:
+        replacement_target = db.scalar(
+            select(Document).where(
+                Document.id == quarantined.replaces_document_id,
+                Document.organization_id == quarantined.organization_id,
+                Document.claim_id == quarantined.claim_id,
+                Document.deleted_at.is_(None),
+            )
+        )
+        if replacement_target is None or not replacement_target.is_current:
+            raise EvidenceSecurityError(
+                "The intended replacement target is no longer the current evidence version."
+            )
+
     storage = _storage()
     source = db.get(Document, quarantined.source_document_id) if quarantined.source_document_id else None
     if source is None:
@@ -327,11 +342,31 @@ def retry_quarantined_upload(
                 storage.promote(quarantined.quarantine_key, storage_key)
             except StorageError as exc:
                 raise EvidenceSecurityError("Quarantined bytes could not be promoted.") from exc
+        document_family_id = (
+            replacement_target.document_family_id if replacement_target else quarantined.id
+        )
+        version_number = 1
+        if replacement_target is not None:
+            version_number = (
+                db.scalar(
+                    select(func.max(Document.version_number)).where(
+                        Document.organization_id == quarantined.organization_id,
+                        Document.claim_id == quarantined.claim_id,
+                        Document.document_family_id == document_family_id,
+                    )
+                )
+                or 0
+            ) + 1
         source = Document(
             id=quarantined.id,
             organization_id=quarantined.organization_id,
             claim_id=quarantined.claim_id,
             uploaded_by_id=quarantined.uploaded_by_id,
+            document_family_id=document_family_id,
+            supersedes_document_id=replacement_target.id if replacement_target else None,
+            version_number=version_number,
+            is_current=True,
+            replacement_reason=quarantined.replacement_reason,
             filename=quarantined.original_filename,
             original_filename=quarantined.original_filename,
             document_type=quarantined.document_type,
@@ -344,6 +379,10 @@ def retry_quarantined_upload(
             malware_scanned_at=now,
         )
         db.add(source)
+        if replacement_target is not None:
+            replacement_target.is_current = False
+            replacement_target.superseded_at = now
+            replacement_target.superseded_by_id = current_user.id
         from app.modules.processing.service import enqueue_text_extraction
 
         enqueue_text_extraction(db, document=source, requested_by_id=current_user.id)
@@ -367,15 +406,29 @@ def retry_quarantined_upload(
         db,
         organization_id=quarantined.organization_id,
         user_id=current_user.id,
-        action="RELEASE_QUARANTINE_AFTER_CLEAN_RETRY",
+        action=(
+            "RELEASE_REPLACEMENT_AFTER_CLEAN_RETRY"
+            if replacement_target
+            else "RELEASE_QUARANTINE_AFTER_CLEAN_RETRY"
+        ),
         entity_type="quarantined_upload",
         entity_id=quarantined.id,
         new_values={
             "status": quarantined.status.value,
             "document_id": str(source.id),
             "retry_count": quarantined.retry_count,
+            "replaces_document_id": (
+                str(replacement_target.id) if replacement_target else None
+            ),
+            "document_family_id": str(source.document_family_id),
+            "version_number": source.version_number,
         },
-        details="Release required an explicit operator retry and an authoritative clean verdict.",
+        details=(
+            "The replacement became current only after an explicit operator retry and a clean "
+            "verdict. Prior bytes and approvals remain attached to the superseded version."
+            if replacement_target
+            else "Release required an explicit operator retry and an authoritative clean verdict."
+        ),
     )
     db.commit()
     db.refresh(source)

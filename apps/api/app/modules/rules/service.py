@@ -68,6 +68,7 @@ def _active_documents(db: Session, claim: Claim) -> list[Document]:
                 Document.organization_id == claim.organization_id,
                 Document.claim_id == claim.id,
                 Document.deleted_at.is_(None),
+                Document.is_current.is_(True),
             )
         )
     )
