@@ -65,8 +65,20 @@ alembic upgrade head --sql
 
 ```bash
 cd apps/api
+python -m pip install --require-hashes -r requirements-dev.lock
 pytest
 ```
+
+## Reproducible dependencies
+
+Install committed dependencies from lockfiles rather than resolving new versions during each build:
+
+- API production and Docker: `apps/api/requirements.lock`
+- API tests: `apps/api/requirements-dev.lock`
+- Browser E2E: `tests/browser/requirements.lock`
+- Web application: `apps/web/package-lock.json` with `npm ci`
+
+The Python lockfiles include package hashes, and CI rejects stale lockfiles. Edit the input manifests (`requirements.txt`, `requirements-dev.in`, or `package.json`) rather than editing generated lockfiles manually. Dependabot checks Python, npm, browser and GitHub Actions dependencies every week.
 
 ## Repository structure
 
