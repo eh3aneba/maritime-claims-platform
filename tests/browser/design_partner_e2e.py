@@ -59,6 +59,7 @@ def main() -> None:
             ("Open chronology", "Claim chronology"),
             ("Open technical review", "Technical review matrix"),
             ("Open evidence matrix", "Evidence Matrix"),
+            ("Open claim-pack exports", "Claim Pack Export"),
             ("Open financial review", "Financial review"),
             ("Open initial assessment", "Initial Assessment"),
         ]
@@ -66,6 +67,30 @@ def main() -> None:
             page.goto(f"{BASE_URL}{claim_href}", wait_until="networkidle")
             page.get_by_role("link", name=link_name).click()
             expect(page.get_by_role("heading", name=heading)).to_be_visible()
+
+        page.goto(f"{BASE_URL}{claim_href}", wait_until="networkidle")
+        page.get_by_role("link", name="Open claim-pack exports").click()
+        expect(page.get_by_role("heading", name="Claim Pack Export")).to_be_visible()
+        page.get_by_role(
+            "checkbox",
+            name=re.compile(r"I understand this export is a review aid"),
+        ).check()
+        with page.expect_response(
+            lambda response: "/api/v1/claims/" in response.url
+            and "/claim-pack-exports" in response.url
+            and response.request.method == "POST"
+        ) as export_response_info:
+            page.get_by_role("button", name="Generate PDF").click()
+        export_response = export_response_info.value
+        if not export_response.ok:
+            raise AssertionError(
+                f"Claim-pack generation failed: HTTP {export_response.status}"
+            )
+        expect(page.get_by_text(re.compile(r"PDF snapshot generated"))).to_be_visible()
+        with page.expect_download() as download_info:
+            page.get_by_role("button", name="Download").first.click()
+        if not download_info.value.suggested_filename.endswith(".pdf"):
+            raise AssertionError("Claim-pack download did not return a PDF filename")
 
         page.goto(f"{BASE_URL}{claim_href}", wait_until="networkidle")
         with page.expect_response(
