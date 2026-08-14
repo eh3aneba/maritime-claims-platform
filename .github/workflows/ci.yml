@@ -54,6 +54,82 @@ jobs:
       - name: Run backend test suite
         run: pytest -q
 
+  migrations:
+    name: PostgreSQL migration chain
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:18.4
+        env:
+          POSTGRES_DB: mcri_ci
+          POSTGRES_USER: mcri_ci
+          POSTGRES_PASSWORD: mcri_ci_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U mcri_ci -d mcri_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    defaults:
+      run:
+        working-directory: apps/api
+    env:
+      APP_ENV: test
+      DATABASE_URL: postgresql+psycopg://mcri_ci:mcri_ci_password@127.0.0.1:5432/mcri_ci
+      SECRET_KEY: ci-only-not-a-deployment-secret-change-on-every-run-2026
+      AI_PROVIDER: disabled
+      OPENAI_API_KEY: ""
+      LOCAL_STORAGE_PATH: /tmp/mcri-ci-migration-documents
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: apps/api/requirements.txt
+
+      - name: Install migration dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip check
+
+      - name: Apply Alembic migrations
+        run: alembic upgrade head
+
+      - name: Verify database revision matches Alembic heads
+        run: |
+          python - <<'PY'
+          import os
+
+          from alembic.config import Config
+          from alembic.runtime.migration import MigrationContext
+          from alembic.script import ScriptDirectory
+          from sqlalchemy import create_engine
+
+          config = Config("alembic.ini")
+          expected_heads = set(ScriptDirectory.from_config(config).get_heads())
+          engine = create_engine(os.environ["DATABASE_URL"])
+          with engine.connect() as connection:
+              current_heads = set(MigrationContext.configure(connection).get_current_heads())
+          engine.dispose()
+
+          if current_heads != expected_heads:
+              raise SystemExit(
+                  f"Database revisions {sorted(current_heads)} do not match "
+                  f"Alembic heads {sorted(expected_heads)}"
+              )
+          print(f"Database is at Alembic head: {', '.join(sorted(current_heads))}")
+          PY
+
+      - name: Run application preflight against PostgreSQL
+        run: python -m app.core.preflight
+
   frontend:
     name: Frontend typecheck and build
     runs-on: ubuntu-latest
