@@ -53,6 +53,8 @@ NON_PROMOTABLE_PATH_FRAGMENTS = {
     "rejected",
     "payable",
     "indemnity",
+    "policy.",
+    "contract.",
     "engine_log.events[",
     "reported_events[",
     "pms.records[",
@@ -66,6 +68,7 @@ NON_PROMOTABLE_PATH_FRAGMENTS = {
 
 
 _GROUP_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"^(policy\.[a-z_]+\[\d+\])"), "policy_term"),
     (re.compile(r"^(engine_log\.events\[\d+\])\."), "engine_log_row"),
     (re.compile(r"^(pms\.records\[\d+\])\."), "pms_row"),
     (re.compile(r"^((?:quotation|invoice)\.line_items\[\d+\])\."), "commercial_line_item"),
@@ -75,6 +78,7 @@ _GROUP_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
 )
 
 _GROUP_LABELS = {
+    "policy_term": "Policy / contract term",
     "engine_log_row": "Engine Log row",
     "pms_row": "PMS job row",
     "commercial_line_item": "Commercial line item",
