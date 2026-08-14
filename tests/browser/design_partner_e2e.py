@@ -58,6 +58,7 @@ def main() -> None:
             ("Open requirements", "Requirements & workflow"),
             ("Open chronology", "Claim chronology"),
             ("Open technical review", "Technical review matrix"),
+            ("Open evidence matrix", "Evidence Matrix"),
             ("Open financial review", "Financial review"),
             ("Open initial assessment", "Initial Assessment"),
         ]
