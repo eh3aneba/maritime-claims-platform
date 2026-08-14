@@ -324,3 +324,158 @@ def test_soft_delete_hides_metadata_but_retains_file(tmp_path: Path) -> None:
         assert audit is not None
         document = db.get(Document, UUID(document_id))
         assert document.deleted_at is not None
+
+def test_replacement_creates_immutable_version_history(tmp_path: Path) -> None:
+    ids = seed_claim()
+    configure_storage(tmp_path)
+    login("alpha", "alpha@example.com")
+    first_bytes = b"%PDF-1.4\nworkshop report version one"
+    second_bytes = b"%PDF-1.4\nworkshop report corrected version two"
+
+    first = client.post(
+        f"/api/v1/claims/{ids['alpha_claim']}/documents",
+        files={"file": ("Workshop_Report_v1.pdf", first_bytes, "application/pdf")},
+        data={"document_type": "workshop_report"},
+    )
+    assert first.status_code == 201, first.text
+    first_payload = first.json()
+    assert first_payload["version_number"] == 1
+    assert first_payload["is_current"] is True
+    assert first_payload["supersedes_document_id"] is None
+
+    replacement = client.post(
+        f"/api/v1/claims/{ids['alpha_claim']}/documents/{first_payload['id']}/replacements",
+        files={"file": ("Workshop_Report_v2.pdf", second_bytes, "application/pdf")},
+        data={"replacement_reason": "Corrected workshop findings after surveyor review."},
+    )
+    assert replacement.status_code == 201, replacement.text
+    second_payload = replacement.json()
+    assert second_payload["version_number"] == 2
+    assert second_payload["is_current"] is True
+    assert second_payload["document_family_id"] == first_payload["document_family_id"]
+    assert second_payload["supersedes_document_id"] == first_payload["id"]
+    assert second_payload["replacement_reason"].startswith("Corrected workshop")
+
+    listed = client.get(f"/api/v1/claims/{ids['alpha_claim']}/documents")
+    assert listed.status_code == 200
+    assert listed.json()["total"] == 2
+    by_id = {item["id"]: item for item in listed.json()["items"]}
+    assert by_id[first_payload["id"]]["is_current"] is False
+    assert by_id[first_payload["id"]]["superseded_at"] is not None
+    assert by_id[second_payload["id"]]["is_current"] is True
+
+    old_download = client.get(
+        f"/api/v1/claims/{ids['alpha_claim']}/documents/{first_payload['id']}/download"
+    )
+    new_download = client.get(
+        f"/api/v1/claims/{ids['alpha_claim']}/documents/{second_payload['id']}/download"
+    )
+    assert old_download.status_code == 200
+    assert old_download.content == first_bytes
+    assert new_download.status_code == 200
+    assert new_download.content == second_bytes
+
+    preserved = client.delete(
+        f"/api/v1/claims/{ids['alpha_claim']}/documents/{first_payload['id']}"
+    )
+    assert preserved.status_code == 409
+
+    with TestingSessionLocal() as db:
+        old = db.get(Document, UUID(first_payload["id"]))
+        new = db.get(Document, UUID(second_payload["id"]))
+        assert old is not None and new is not None
+        assert old.is_current is False
+        assert old.superseded_by_id is not None
+        assert new.supersedes_document_id == old.id
+        assert Path(document_service._storage().path_for(old.storage_key)).is_file()
+        assert Path(document_service._storage().path_for(new.storage_key)).is_file()
+        audit = db.scalar(
+            select(AuditLog).where(
+                AuditLog.action == "REPLACE_DOCUMENT",
+                AuditLog.entity_id == new.id,
+            )
+        )
+        assert audit is not None
+
+
+def test_duplicate_replacement_keeps_current_version_unchanged(tmp_path: Path) -> None:
+    ids = seed_claim()
+    configure_storage(tmp_path)
+    login("alpha", "alpha@example.com")
+    content = b"%PDF-1.4\nidentical evidence bytes"
+    first = client.post(
+        f"/api/v1/claims/{ids['alpha_claim']}/documents",
+        files={"file": ("report.pdf", content, "application/pdf")},
+    )
+    assert first.status_code == 201
+
+    duplicate = client.post(
+        f"/api/v1/claims/{ids['alpha_claim']}/documents/{first.json()['id']}/replacements",
+        files={"file": ("report-revised.pdf", content, "application/pdf")},
+        data={"replacement_reason": "Attempted replacement with an identical source file."},
+    )
+    assert duplicate.status_code == 409
+
+    listed = client.get(f"/api/v1/claims/{ids['alpha_claim']}/documents").json()
+    assert listed["total"] == 1
+    assert listed["items"][0]["id"] == first.json()["id"]
+    assert listed["items"][0]["is_current"] is True
+
+
+def test_infected_replacement_does_not_supersede_current_version(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    ids = seed_claim()
+    configure_storage(tmp_path)
+    login("alpha", "alpha@example.com")
+    first = client.post(
+        f"/api/v1/claims/{ids['alpha_claim']}/documents",
+        files={"file": ("safe.pdf", b"%PDF-1.4\nsafe original", "application/pdf")},
+    )
+    assert first.status_code == 201
+
+    document_service.settings.malware_scan_enabled = True
+    monkeypatch.setattr(
+        document_service,
+        "scan_file",
+        lambda *args, **kwargs: MalwareScanResult(
+            MalwareScanVerdict.INFECTED,
+            threat_name="Win.Test.EICAR_HDB-1",
+            raw_response="stream: Win.Test.EICAR_HDB-1 FOUND",
+        ),
+    )
+    blocked = client.post(
+        f"/api/v1/claims/{ids['alpha_claim']}/documents/{first.json()['id']}/replacements",
+        files={"file": ("unsafe.pdf", b"%PDF-1.4\nunsafe replacement", "application/pdf")},
+        data={"replacement_reason": "Replacement supplied after a material report correction."},
+    )
+    assert blocked.status_code == 422
+
+    listed = client.get(f"/api/v1/claims/{ids['alpha_claim']}/documents").json()
+    assert listed["total"] == 1
+    assert listed["items"][0]["id"] == first.json()["id"]
+    assert listed["items"][0]["is_current"] is True
+    assert listed["quarantined_total"] == 1
+    assert listed["quarantined_items"][0]["replaces_document_id"] == first.json()["id"]
+
+
+def test_cross_tenant_replacement_is_hidden(tmp_path: Path) -> None:
+    ids = seed_claim()
+    configure_storage(tmp_path)
+    login("alpha", "alpha@example.com")
+    first = client.post(
+        f"/api/v1/claims/{ids['alpha_claim']}/documents",
+        files={"file": ("alpha.pdf", b"%PDF-1.4\nalpha evidence", "application/pdf")},
+    )
+    assert first.status_code == 201
+
+    client.cookies.clear()
+    login("beta", "beta@example.com")
+    response = client.post(
+        f"/api/v1/claims/{ids['alpha_claim']}/documents/{first.json()['id']}/replacements",
+        files={"file": ("intruder.pdf", b"%PDF-1.4\nbeta attempt", "application/pdf")},
+        data={"replacement_reason": "Cross-tenant replacement must never reveal evidence."},
+    )
+    assert response.status_code == 404
+
