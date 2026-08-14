@@ -75,7 +75,7 @@ export default function FinancialReviewPage() {
 
   return <div>
     <Link href={`/claims/${id}`} className="text-sm font-semibold text-slate-500">← Back to claim</Link>
-    <div className="mt-5"><p className="eyebrow">Cost control intelligence</p><h1 className="mt-2 text-3xl font-semibold text-slate-950">Financial review</h1><p className="mt-2 text-sm text-slate-500">Human-reviewed commercial evidence, deterministic flags and reserve history. No automatic recoverability or supplier selection.</p></div>
+    <div className="mt-5 flex flex-col justify-between gap-4 lg:flex-row lg:items-end"><div><p className="eyebrow">Cost control intelligence</p><h1 className="mt-2 text-3xl font-semibold text-slate-950">Financial review</h1><p className="mt-2 text-sm text-slate-500">Human-reviewed commercial evidence, deterministic flags and reserve history. No automatic recoverability or supplier selection.</p></div><Link href={`/claims/${id}/adjustment`} className="primary-button whitespace-nowrap">Open Adjustment Workspace</Link></div>
     {error ? <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div> : null}
 
     <section className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-5">

@@ -940,3 +940,55 @@ export interface ClaimCorrespondence {
 }
 
 export interface CorrespondenceListResponse { items: ClaimCorrespondence[]; total: number; }
+
+export type AdjustmentStatus = "draft" | "under_review" | "approved" | "rejected";
+export type AdjustmentTreatment = "pending" | "included" | "excluded" | "apportioned" | "credit";
+export type AdjustmentBasis = "unallocated" | "particular_average" | "general_average" | "sue_and_labour" | "rdc" | "other" | "not_applicable";
+
+export interface AdjustmentLine {
+  id: string;
+  statement_id: string;
+  cost_item_id: string | null;
+  source_document_id: string | null;
+  sort_order: number;
+  description: string;
+  supplier: string | null;
+  document_number: string | null;
+  category: string | null;
+  claimed_amount: string;
+  considered_amount: string;
+  treatment: AdjustmentTreatment;
+  basis: AdjustmentBasis;
+  reason: string | null;
+  note: string | null;
+  source_snapshot: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AdjustmentStatement {
+  id: string;
+  claim_id: string;
+  created_by_id: string | null;
+  reviewed_by_id: string | null;
+  version: number;
+  title: string;
+  currency: string;
+  status: AdjustmentStatus;
+  deductible_amount: string;
+  deductible_basis: string | null;
+  other_deduction_amount: string;
+  other_deduction_basis: string | null;
+  gross_claimed: string;
+  gross_considered: string;
+  net_adjusted: string;
+  source_manifest: Array<Record<string, unknown>>;
+  review_note: string | null;
+  content_hash: string | null;
+  reviewed_at: string | null;
+  created_at: string;
+  updated_at: string;
+  lines: AdjustmentLine[];
+}
+
+export interface AdjustmentListResponse { items: AdjustmentStatement[]; total: number; }

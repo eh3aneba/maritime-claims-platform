@@ -62,6 +62,8 @@ def main() -> None:
             ("Open evidence matrix", "Evidence Matrix"),
             ("Open claim-pack exports", "Claim Pack Export"),
             ("Open financial review", "Financial review"),
+            ("Open adjustment workspace", "Adjustment Workspace"),
+            ("Open correspondence centre", "Correspondence Centre"),
             ("Open initial assessment", "Initial Assessment"),
         ]
         for link_name, heading in checks:
