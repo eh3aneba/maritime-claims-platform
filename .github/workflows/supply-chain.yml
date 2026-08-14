@@ -27,6 +27,9 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v6
 
+      - name: Prepare artifact directory
+        run: mkdir -p artifacts
+
       - name: Create SPDX dependency inventory
         uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
         with:
@@ -44,7 +47,6 @@ jobs:
           artifacts/maritime-claims-platform.spdx.json
 
       - name: Upload SBOM
-        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: maritime-claims-platform-sbom
