@@ -35,6 +35,24 @@ def _configure_storage(tmp_path: Path) -> None:
     document_service.settings.max_upload_mb = 1
 
 
+def _approve_and_mark_sent(claim_id: str, batch_id: str) -> dict:
+    items = client.get(f"/api/v1/claims/{claim_id}/correspondence").json()["items"]
+    item = next(row for row in items if row["request_batch_id"] == batch_id)
+    submitted = client.post(f"/api/v1/claims/{claim_id}/correspondence/{item['id']}/submit")
+    assert submitted.status_code == 200, submitted.text
+    approved = client.post(
+        f"/api/v1/claims/{claim_id}/correspondence/{item['id']}/approve",
+        json={"note": "Reviewed against the claim file and approved for dispatch."},
+    )
+    assert approved.status_code == 200, approved.text
+    sent = client.post(
+        f"/api/v1/claims/{claim_id}/correspondence/{item['id']}/mark-sent",
+        json={"confirm_sent": True, "channel": "email", "external_reference": "OUT-2026-001"},
+    )
+    assert sent.status_code == 200, sent.text
+    return sent.json()
+
+
 def test_request_all_critical_creates_draft_and_tasks_then_human_marks_requested() -> None:
     result = create_orion_claim()
     claim_id = result["claim"]["id"]
@@ -58,9 +76,8 @@ def test_request_all_critical_creates_draft_and_tasks_then_human_marks_requested
 
     rules = client.get(f"/api/v1/claims/{claim_id}/rules").json()
     assert {r["status"] for r in rules["requirements"]} == {"missing"}  # Drafting is not the same as sending.
-    marked = client.post(f"/api/v1/claims/{claim_id}/document-requests/{payload['batch']['id']}/mark-sent")
-    assert marked.status_code == 200, marked.text
-    assert marked.json()["status"] == "sent_externally"
+    marked = _approve_and_mark_sent(claim_id, payload["batch"]["id"])
+    assert marked["status"] == "sent_externally"
     rules = client.get(f"/api/v1/claims/{claim_id}/rules").json()
     assert {r["status"] for r in rules["requirements"]} == {"requested"}
     assert rules["readiness"]["critical_missing_count"] == 3  # Requested is not satisfied.
@@ -89,7 +106,7 @@ def test_document_upload_auto_completes_requirement_task(tmp_path: Path) -> None
     request = client.post(f"/api/v1/claims/{claim_id}/document-requests", json={"requirement_ids": [ce["id"]], "due_date": "2026-08-12"})
     task_id = request.json()["tasks"][0]["id"]
     batch_id = request.json()["batch"]["id"]
-    assert client.post(f"/api/v1/claims/{claim_id}/document-requests/{batch_id}/mark-sent").status_code == 200
+    _approve_and_mark_sent(claim_id, batch_id)
 
     upload = client.post(
         f"/api/v1/claims/{claim_id}/documents",

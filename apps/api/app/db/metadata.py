@@ -7,6 +7,7 @@ from app.modules.claim_packs.models import ClaimPackExport  # noqa: F401
 from app.modules.claims.models import Claim, ClaimReferenceSequence  # noqa: F401
 from app.modules.claims.facts import ClaimFact  # noqa: F401
 from app.modules.chronology.models import ChronologyEvent, EventEvidence, EvidenceConflict  # noqa: F401
+from app.modules.correspondence.models import ClaimCorrespondence  # noqa: F401
 from app.modules.documents.models import Document, QuarantinedUpload  # noqa: F401
 from app.modules.intelligence.models import AIFeedback, AIRun, DocumentExtraction  # noqa: F401
 from app.modules.intake.models import ClaimIntakeDraft, ClaimIntakeProcessingJob  # noqa: F401

@@ -65,3 +65,5 @@ def test_rules_engine_tables_exist() -> None:
 def test_rule_driven_task_tables_exist() -> None:
     assert "claim_tasks" in Base.metadata.tables
     assert "document_request_batches" in Base.metadata.tables
+    correspondence = Base.metadata.tables["claim_correspondence"]
+    assert {"organization_id", "claim_id", "status", "content_hash", "request_batch_id"}.issubset(correspondence.c.keys())

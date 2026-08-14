@@ -580,3 +580,56 @@ export function extractPolicyTerms(claimId: string, documentId: string) {
     { method: "POST" },
   );
 }
+
+export function listClaimCorrespondence(claimId: string) {
+  return apiFetch<import("./types").CorrespondenceListResponse>("/claims/" + claimId + "/correspondence");
+}
+
+export function createClaimCorrespondence(claimId: string, payload: {
+  direction: import("./types").CorrespondenceDirection;
+  kind: import("./types").CorrespondenceKind;
+  sensitivity: import("./types").CorrespondenceSensitivity;
+  sender_label?: string | null;
+  recipient_label?: string | null;
+  subject: string;
+  body: string;
+  channel?: import("./types").CorrespondenceChannel | null;
+  external_reference?: string | null;
+}) {
+  return apiFetch<import("./types").ClaimCorrespondence>("/claims/" + claimId + "/correspondence", {
+    method: "POST", body: JSON.stringify(payload),
+  });
+}
+
+export function updateClaimCorrespondence(claimId: string, itemId: string, payload: Partial<{
+  kind: import("./types").CorrespondenceKind;
+  sensitivity: import("./types").CorrespondenceSensitivity;
+  sender_label: string | null;
+  recipient_label: string | null;
+  subject: string;
+  body: string;
+}>) {
+  return apiFetch<import("./types").ClaimCorrespondence>("/claims/" + claimId + "/correspondence/" + itemId, {
+    method: "PATCH", body: JSON.stringify(payload),
+  });
+}
+
+export function submitClaimCorrespondence(claimId: string, itemId: string) {
+  return apiFetch<import("./types").ClaimCorrespondence>("/claims/" + claimId + "/correspondence/" + itemId + "/submit", { method: "POST" });
+}
+
+export function reviewClaimCorrespondence(claimId: string, itemId: string, action: "approve" | "reject", note: string) {
+  return apiFetch<import("./types").ClaimCorrespondence>("/claims/" + claimId + "/correspondence/" + itemId + "/" + action, {
+    method: "POST", body: JSON.stringify({ note }),
+  });
+}
+
+export function markClaimCorrespondenceSent(claimId: string, itemId: string, payload: {
+  confirm_sent: boolean;
+  channel: import("./types").CorrespondenceChannel;
+  external_reference?: string | null;
+}) {
+  return apiFetch<import("./types").ClaimCorrespondence>("/claims/" + claimId + "/correspondence/" + itemId + "/mark-sent", {
+    method: "POST", body: JSON.stringify(payload),
+  });
+}

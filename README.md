@@ -18,8 +18,11 @@ The MVP now includes the full H&M Machinery / Turbocharger design-partner workfl
 - Quarantine-first evidence upload with ClamAV admission scanning and fail-closed handling
 - Controlled legacy-evidence rescan, scanner-error retry and audited administrative purge
 - Human-approved FNOL intake with fail-closed malware scanning, local English/Persian OCR and deterministic field proposals
-- Controlled immutable evidence versions with preserved superseded history and quarantine-safe replacement\n- Unified source-linked Evidence Matrix across approved facts, document versions and active conflicts\n
-**Current phase: Sprint 9A — Human-reviewed Policy & Contract Intelligence.** The repository is prepared for a controlled private walkthrough. A private pilot is not production certification.
+- Controlled immutable evidence versions with preserved superseded history and quarantine-safe replacement
+- Unified source-linked Evidence Matrix across approved facts, document versions and active conflicts
+- Controlled Correspondence Centre with Manager/Admin review and manual external-dispatch recording
+
+**Current phase: Sprint 9B — Controlled Correspondence Centre.** The repository is prepared for a controlled private walkthrough. A private pilot is not production certification.
 
 ## Prerequisites
 
@@ -184,7 +187,7 @@ Engine-log event fields are intentionally not promoted into scalar `claim_facts`
 
 ## Current milestone
 
-Sprint 9 Phase A: policy and contract text can produce local source-linked review candidates; approved terms feed a separate Policy Term Register and explainable issue spots without becoming Claim Facts or an automated coverage conclusion.
+Sprint 9 Phase B: claim communications can be drafted, manager-reviewed and manually recorded as sent externally, with sensitive handling labels and immutable approved content. The platform does not send email or connect to mailboxes.
 
 ## Design-partner pilot
 
