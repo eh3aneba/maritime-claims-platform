@@ -3,7 +3,12 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.modules.documents.models import ConfidentialityLevel, DocumentProcessingStatus
+from app.modules.documents.models import (
+    ConfidentialityLevel,
+    DocumentMalwareScanStatus,
+    DocumentProcessingStatus,
+    QuarantineStatus,
+)
 
 
 class DocumentResponse(BaseModel):
@@ -20,6 +25,24 @@ class DocumentResponse(BaseModel):
     version_number: int
     processing_status: DocumentProcessingStatus
     confidentiality_level: ConfidentialityLevel
+    malware_scan_status: DocumentMalwareScanStatus
+    malware_scanned_at: datetime | None
+    uploaded_by_id: UUID | None
+    created_at: datetime
+
+
+class QuarantinedUploadResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    claim_id: UUID
+    original_filename: str
+    mime_type: str
+    file_size_bytes: int
+    file_hash: str
+    status: QuarantineStatus
+    threat_name: str | None
+    scanned_at: datetime
     uploaded_by_id: UUID | None
     created_at: datetime
 
@@ -27,6 +50,8 @@ class DocumentResponse(BaseModel):
 class DocumentListResponse(BaseModel):
     items: list[DocumentResponse]
     total: int
+    quarantined_items: list[QuarantinedUploadResponse] = Field(default_factory=list)
+    quarantined_total: int = 0
 
 
 class DocumentUploadMetadata(BaseModel):

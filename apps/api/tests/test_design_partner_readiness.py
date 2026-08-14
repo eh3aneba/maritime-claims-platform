@@ -13,6 +13,7 @@ def _settings(monkeypatch, tmp_path: Path, **values):
         "CORS_ALLOWED_ORIGINS": "http://localhost:3000",
         "LOCAL_STORAGE_PATH": str(tmp_path / "evidence"),
         "AI_PROVIDER": "disabled",
+        "MALWARE_SCAN_ENABLED": "false",
     }
     base.update(values)
     for key, value in base.items():
@@ -32,6 +33,31 @@ def test_pilot_preflight_rejects_default_secrets(monkeypatch, tmp_path):
     errors, _ = run_preflight(require_db=False)
     assert any("SECRET_KEY" in error for error in errors)
     assert any("DATABASE_URL" in error for error in errors)
+    assert any("MALWARE_SCAN_ENABLED" in error for error in errors)
+
+
+def test_pilot_preflight_requires_malware_scanning(monkeypatch, tmp_path):
+    _settings(
+        monkeypatch,
+        tmp_path,
+        APP_ENV="pilot",
+        SECRET_KEY="a-secure-random-pilot-secret-with-more-than-32-characters",
+        DATABASE_URL="postgresql+psycopg://maritime:secure-password@localhost:5432/maritime_claims",
+    )
+    errors, _ = run_preflight(require_db=False)
+    assert errors == ["MALWARE_SCAN_ENABLED must be true for pilot, staging and production"]
+
+
+def test_enabled_malware_scanner_is_checked(monkeypatch, tmp_path):
+    calls = []
+    _settings(monkeypatch, tmp_path, MALWARE_SCAN_ENABLED="true", CLAMAV_HOST="clamav")
+    monkeypatch.setattr(
+        "app.core.preflight.ping_clamd",
+        lambda **kwargs: calls.append(kwargs),
+    )
+    errors, _ = run_preflight(require_db=False)
+    assert errors == []
+    assert calls == [{"host": "clamav", "port": 3310, "timeout_seconds": 30.0}]
 
 
 def test_preflight_rejects_wildcard_cors(monkeypatch, tmp_path):

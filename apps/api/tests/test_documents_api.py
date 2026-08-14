@@ -2,14 +2,25 @@ from datetime import date
 from pathlib import Path
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.core.security import hash_password
 from app.modules.audit.models import AuditLog
 from app.modules.claims.models import Claim
-from app.modules.documents.models import Document
 from app.modules.documents import service as document_service
+from app.modules.documents.malware import (
+    MalwareScannerError,
+    MalwareScanResult,
+    MalwareScanVerdict,
+)
+from app.modules.documents.models import (
+    Document,
+    DocumentMalwareScanStatus,
+    QuarantinedUpload,
+    QuarantineStatus,
+)
 from app.modules.organizations.models import Organization
+from app.modules.processing.models import DocumentProcessingJob
 from app.modules.users.models import User, UserRole
 from app.modules.vessels.models import Vessel
 from tests.db_harness import TestingSessionLocal, client, reset_database
@@ -84,6 +95,7 @@ def login(slug: str, email: str) -> None:
 def configure_storage(tmp_path: Path) -> None:
     document_service.settings.local_storage_path = str(tmp_path / "documents")
     document_service.settings.max_upload_mb = 1
+    document_service.settings.malware_scan_enabled = False
 
 
 def test_upload_list_download_and_audit(tmp_path: Path) -> None:
@@ -102,11 +114,13 @@ def test_upload_list_download_and_audit(tmp_path: Path) -> None:
     assert payload["original_filename"] == "CE_Report.pdf"
     assert payload["document_type"] == "chief_engineer_report"
     assert payload["file_size_bytes"] == len(content)
+    assert payload["malware_scan_status"] == "legacy_unscanned"
     assert len(payload["file_hash"]) == 64
 
     listed = client.get(f"/api/v1/claims/{ids['alpha_claim']}/documents")
     assert listed.status_code == 200
     assert listed.json()["total"] == 1
+    assert listed.json()["quarantined_total"] == 0
 
     downloaded = client.get(
         f"/api/v1/claims/{ids['alpha_claim']}/documents/{payload['id']}/download"
@@ -120,6 +134,100 @@ def test_upload_list_download_and_audit(tmp_path: Path) -> None:
         document = db.get(Document, UUID(payload["id"]))
         assert document is not None
         assert Path(document_service._storage().path_for(document.storage_key)).is_file()
+
+
+def test_clean_scan_promotes_upload_and_queues_processing(tmp_path: Path, monkeypatch) -> None:
+    ids = seed_claim()
+    configure_storage(tmp_path)
+    document_service.settings.malware_scan_enabled = True
+    monkeypatch.setattr(
+        document_service,
+        "scan_file",
+        lambda *args, **kwargs: MalwareScanResult(MalwareScanVerdict.CLEAN, raw_response="stream: OK"),
+    )
+    login("alpha", "alpha@example.com")
+
+    response = client.post(
+        f"/api/v1/claims/{ids['alpha_claim']}/documents",
+        files={"file": ("clean.pdf", b"%PDF-1.4\nclean evidence", "application/pdf")},
+    )
+    assert response.status_code == 201, response.text
+    assert response.json()["malware_scan_status"] == "clean"
+    assert response.json()["malware_scanned_at"] is not None
+
+    with TestingSessionLocal() as db:
+        document = db.get(Document, UUID(response.json()["id"]))
+        assert document.malware_scan_status == DocumentMalwareScanStatus.CLEAN
+        assert not document.storage_key.startswith("_quarantine/")
+        assert document_service._storage().path_for(document.storage_key).is_file()
+        assert db.scalar(select(func.count()).select_from(DocumentProcessingJob)) == 1
+        assert db.scalar(select(func.count()).select_from(QuarantinedUpload)) == 0
+
+
+def test_infected_upload_is_blocked_and_retained_in_quarantine(tmp_path: Path, monkeypatch) -> None:
+    ids = seed_claim()
+    configure_storage(tmp_path)
+    document_service.settings.malware_scan_enabled = True
+    monkeypatch.setattr(
+        document_service,
+        "scan_file",
+        lambda *args, **kwargs: MalwareScanResult(
+            MalwareScanVerdict.INFECTED,
+            threat_name="Win.Test.EICAR_HDB-1",
+            raw_response="stream: Win.Test.EICAR_HDB-1 FOUND",
+        ),
+    )
+    login("alpha", "alpha@example.com")
+
+    response = client.post(
+        f"/api/v1/claims/{ids['alpha_claim']}/documents",
+        files={"file": ("blocked.pdf", b"%PDF-1.4\nquarantine test", "application/pdf")},
+    )
+    assert response.status_code == 422, response.text
+    assert "blocked and quarantined" in response.json()["detail"]
+
+    listed = client.get(f"/api/v1/claims/{ids['alpha_claim']}/documents").json()
+    assert listed["total"] == 0
+    assert listed["quarantined_total"] == 1
+    assert listed["quarantined_items"][0]["status"] == "infected"
+    assert listed["quarantined_items"][0]["threat_name"] == "Win.Test.EICAR_HDB-1"
+
+    with TestingSessionLocal() as db:
+        quarantined = db.scalar(select(QuarantinedUpload))
+        assert quarantined is not None
+        assert quarantined.status == QuarantineStatus.INFECTED
+        assert quarantined.quarantine_key.startswith("_quarantine/")
+        assert document_service._storage().path_for(quarantined.quarantine_key).is_file()
+        assert db.scalar(select(func.count()).select_from(Document)) == 0
+        assert db.scalar(select(func.count()).select_from(DocumentProcessingJob)) == 0
+        audit = db.scalar(
+            select(AuditLog).where(AuditLog.action == "QUARANTINE_DOCUMENT_UPLOAD")
+        )
+        assert audit is not None
+
+
+def test_scanner_error_fails_closed_and_retains_quarantine(tmp_path: Path, monkeypatch) -> None:
+    ids = seed_claim()
+    configure_storage(tmp_path)
+    document_service.settings.malware_scan_enabled = True
+
+    def unavailable(*args, **kwargs):
+        raise MalwareScannerError("ClamAV is unavailable")
+
+    monkeypatch.setattr(document_service, "scan_file", unavailable)
+    login("alpha", "alpha@example.com")
+    response = client.post(
+        f"/api/v1/claims/{ids['alpha_claim']}/documents",
+        files={"file": ("pending.pdf", b"%PDF-1.4\nscanner unavailable", "application/pdf")},
+    )
+    assert response.status_code == 503, response.text
+    assert "remains quarantined" in response.json()["detail"]
+
+    with TestingSessionLocal() as db:
+        quarantined = db.scalar(select(QuarantinedUpload))
+        assert quarantined.status == QuarantineStatus.SCAN_ERROR
+        assert db.scalar(select(func.count()).select_from(Document)) == 0
+        assert db.scalar(select(func.count()).select_from(DocumentProcessingJob)) == 0
 
 
 def test_duplicate_upload_is_rejected(tmp_path: Path) -> None:

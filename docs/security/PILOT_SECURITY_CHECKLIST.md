@@ -11,6 +11,9 @@
 - [ ] Pilot host is private/VPN-restricted or bound to an approved internal network.
 - [ ] TLS is used before any staging/production internet exposure.
 - [ ] Evidence storage directory/volume is access-controlled and backed up.
+- [ ] `MALWARE_SCAN_ENABLED=true`; ClamAV health passes before the API accepts pilot traffic.
+- [ ] ClamAV port `3310` remains internal to the Compose network and is not internet/host published.
+- [ ] Clean synthetic upload and isolated EICAR rejection have both been verified.
 - [ ] A database backup is taken before upgrading or restoring pilot data.
 - [ ] Demo credentials are changed from examples and shared out-of-band.
 - [ ] Only synthetic data is used until data-processing terms and retention rules are agreed.
@@ -18,7 +21,8 @@
 ## Current MVP limitations
 
 - Local object storage is suitable for a private single-host pilot, not high availability.
-- No malware/AV scanning service is integrated yet; file signatures and extension/type checks are only the first layer.
+- ClamAV admission scanning covers new uploads only; evidence marked `legacy_unscanned` still needs a controlled rescan workflow.
+- Quarantined bytes require an operator-defined retention, investigation and secure purge procedure.
 - No SSO/SAML, session revocation list or enterprise identity lifecycle yet.
 - No formal penetration test has been completed.
 - No production-grade secrets manager integration yet.

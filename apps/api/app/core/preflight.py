@@ -9,6 +9,7 @@ from sqlalchemy import text
 
 from app.core.config import get_settings
 from app.db.session import create_session
+from app.modules.documents.malware import MalwareScannerError, ping_clamd
 
 DEFAULT_SECRET = "replace-with-a-long-random-secret"
 DEFAULT_DB_PASSWORD_FRAGMENT = "change-me-in-local-env"
@@ -59,6 +60,20 @@ def run_preflight(*, require_db: bool = True) -> tuple[list[str], list[str]]:
             _fail(errors, f"Local evidence storage is not writable: {exc}")
         if strict:
             warnings.append("Local evidence storage is acceptable for a private pilot but not the long-term HA target")
+
+    if settings.malware_scan_enabled:
+        try:
+            ping_clamd(
+                host=settings.clamav_host,
+                port=settings.clamav_port,
+                timeout_seconds=settings.clamav_timeout_seconds,
+            )
+        except MalwareScannerError as exc:
+            _fail(errors, f"Malware scanner connectivity failed: {exc}")
+    elif strict:
+        _fail(errors, "MALWARE_SCAN_ENABLED must be true for pilot, staging and production")
+    else:
+        warnings.append("Malware scanning is disabled; use only synthetic or trusted development files")
 
     if require_db:
         try:

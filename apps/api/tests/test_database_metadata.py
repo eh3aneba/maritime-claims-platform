@@ -15,6 +15,15 @@ def test_documents_have_hash_and_tenant_columns() -> None:
     documents = Base.metadata.tables["documents"]
     assert "organization_id" in documents.c
     assert "file_hash" in documents.c
+    assert "malware_scan_status" in documents.c
+
+
+def test_quarantined_uploads_are_separate_from_active_documents() -> None:
+    quarantined = Base.metadata.tables["quarantined_uploads"]
+    assert "organization_id" in quarantined.c
+    assert "claim_id" in quarantined.c
+    assert "quarantine_key" in quarantined.c
+    assert "status" in quarantined.c
 
 
 def test_audit_log_is_immutable_shape() -> None:

@@ -9,16 +9,20 @@ from app.db.session import get_db
 from app.modules.audit.service import write_audit_log
 from app.modules.auth.dependencies import CurrentUser
 from app.modules.claims.security import get_claim_for_tenant
-from app.modules.documents.models import ConfidentialityLevel
+from app.modules.documents.models import (
+    ConfidentialityLevel,
+    DocumentMalwareScanStatus,
+)
 from app.modules.documents.schemas import DocumentListResponse, DocumentResponse
 from app.modules.documents.security import get_document_for_tenant
-from app.modules.rules.service import evaluate_claim_rules
 from app.modules.documents.service import (
     _storage,
     create_document_from_upload,
     list_documents,
+    list_quarantined_uploads,
     soft_delete_document,
 )
+from app.modules.rules.service import evaluate_claim_rules
 
 router = APIRouter(prefix="/claims/{claim_id}/documents", tags=["documents"])
 
@@ -37,7 +41,15 @@ def list_claim_documents(
     items, total = list_documents(
         db, claim_id=claim.id, organization_id=current_user.organization_id
     )
-    return DocumentListResponse(items=items, total=total)
+    quarantined_items, quarantined_total = list_quarantined_uploads(
+        db, claim_id=claim.id, organization_id=current_user.organization_id
+    )
+    return DocumentListResponse(
+        items=items,
+        total=total,
+        quarantined_items=quarantined_items,
+        quarantined_total=quarantined_total,
+    )
 
 
 @router.post("", response_model=DocumentResponse, status_code=status.HTTP_201_CREATED)
@@ -86,6 +98,14 @@ def download_claim_document(
     )
     if document is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+    if document.malware_scan_status not in {
+        DocumentMalwareScanStatus.CLEAN,
+        DocumentMalwareScanStatus.LEGACY_UNSCANNED,
+    }:
+        raise HTTPException(
+            status_code=status.HTTP_423_LOCKED,
+            detail="Document download is blocked until malware scanning is complete.",
+        )
     try:
         path = _storage().path_for(document.storage_key)
     except FileNotFoundError as exc:
