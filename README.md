@@ -82,7 +82,7 @@ The Python lockfiles include package hashes, and CI rejects stale lockfiles. Edi
 
 ## Supply-chain security
 
-The independent supply-chain workflow audits Python and web production dependencies on every pull request and weekly, and blocks known Python or high/critical npm vulnerabilities. It also publishes a seven-day SPDX JSON SBOM artifact for each run.
+The independent supply-chain workflow audits Python and web production dependencies, scans complete Git history for committed secrets, and scans final API/web Docker images for high or critical vulnerabilities on every pull request and weekly. It also publishes a seven-day SPDX JSON SBOM artifact for each run.
 
 See `docs/security/DEPENDENCY_SECURITY.md` for the enforcement policy, finding-handling rules and local commands.
 
