@@ -6,6 +6,9 @@
 - [ ] `docker compose config` succeeds.
 - [ ] `migrate` service completes successfully.
 - [ ] `preflight` service completes successfully.
+- [ ] `clamav` is healthy and port `3310` is not published to the host/public network.
+- [ ] `MALWARE_SCAN_ENABLED=true` and `CLAMAV_HOST=clamav` in the pilot environment.
+- [ ] Host capacity includes roughly 3–4 GB available memory for ClamAV signature loading.
 - [ ] API health is `200` at `/api/v1/health`.
 - [ ] Web login returns `200`.
 - [ ] Worker is running.
@@ -15,6 +18,8 @@
 - [ ] `demo-seed` completes without external AI.
 - [ ] MT ORION appears once and seed is idempotent on second run.
 - [ ] Browser E2E passes.
+- [ ] A known-clean synthetic file uploads and shows `Malware scan · Clean` before processing.
+- [ ] An EICAR test file is blocked in an isolated test claim and appears only in the quarantine panel; remove it according to the operator retention procedure after validation.
 - [ ] Screenshot artifact is retained for the build under test.
 
 ## Data safety
@@ -23,6 +28,7 @@
 - [ ] Evidence volume backup procedure confirmed.
 - [ ] Synthetic-only label shown/communicated for the demo dataset.
 - [ ] No real customer evidence is loaded without explicit approval.
+- [ ] Legacy records labelled `legacy_unscanned` are identified and accepted for the walkthrough or covered by a controlled rescan plan.
 
 ## Go / no-go
 

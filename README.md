@@ -15,8 +15,9 @@ The MVP now includes the full H&M Machinery / Turbocharger design-partner workfl
 - MT ORION end-to-end regression pilot with P0 findings closed
 - Claims-handler usability hardening and equivalent-evidence workflow
 - Design-partner deployment preflight, deterministic demo seed, browser E2E spec and backup/restore baseline
+- Quarantine-first evidence upload with ClamAV admission scanning and fail-closed handling
 
-**Current phase: Sprint 5D — Design Partner Readiness.** The repository is prepared for a controlled private walkthrough. A private pilot is not production certification.
+**Current phase: Sprint 7B — Evidence Security Hardening.** The repository is prepared for a controlled private walkthrough. A private pilot is not production certification.
 
 ## Prerequisites
 
@@ -31,6 +32,8 @@ The MVP now includes the full H&M Machinery / Turbocharger design-partner workfl
 cp .env.example .env
 docker compose up --build
 ```
+
+The Compose stack starts an internal-only ClamAV service for evidence admission scanning. Allow roughly 3–4 GB of available memory for ClamAV signature loading and do not publish its unauthenticated port `3310` outside the Compose network.
 
 Then open:
 
@@ -145,7 +148,9 @@ The backend also exposes tenant-scoped `GET/POST /api/v1/vessels` endpoints requ
 
 ## Sprint 2 Phase G — Document Evidence
 
-Claim pages now support secure evidence handling. The backend exposes tenant-scoped document list/upload/download/soft-delete endpoints. Files are persisted outside PostgreSQL using server-generated storage keys, SHA-256 hashes are calculated while streaming uploads, duplicates within a claim are rejected, and basic file signatures are validated. Upload/download/delete actions are audit logged.
+Claim pages now support secure evidence handling. The backend exposes tenant-scoped document list/upload/download/soft-delete endpoints. New uploads are first written under a server-generated quarantine key, checked for extension/type/signature consistency and duplicates, then streamed to ClamAV. Only a clean verdict promotes the bytes into active evidence storage and queues document processing. Detected malware and scanner failures remain outside the active claim file with an audit record and no download endpoint.
+
+Existing evidence created before this control is preserved as `legacy_unscanned`; it is not falsely relabelled as clean. Development may explicitly disable scanning for trusted synthetic files, while pilot/staging/production preflight requires `MALWARE_SCAN_ENABLED=true`.
 
 The web claim overview includes drag-and-drop multi-file upload, document type/confidentiality metadata, actual upload progress, evidence listing, download and soft removal.
 
@@ -175,7 +180,7 @@ Engine-log event fields are intentionally not promoted into scalar `claim_facts`
 
 ## Current milestone
 
-Sprint 5 Phase D: Design Partner Readiness. The private synthetic pilot runbook, deployment preflight, demo seed, browser E2E specification and backup/restore baseline are included.
+Sprint 7 Phase B: Evidence Security Hardening. The private synthetic pilot now includes fail-closed malware scanning, quarantine visibility, deployment preflight and explicit legacy-evidence status.
 
 ## Design-partner pilot
 

@@ -1,8 +1,9 @@
 import enum
+from datetime import datetime
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from sqlalchemy import BigInteger, Enum, ForeignKey, Index, Integer, String, UniqueConstraint
+from sqlalchemy import BigInteger, DateTime, Enum, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -26,6 +27,16 @@ class ConfidentialityLevel(str, enum.Enum):
     INTERNAL = "internal"
     CONFIDENTIAL = "confidential"
     RESTRICTED = "restricted"
+
+
+class DocumentMalwareScanStatus(str, enum.Enum):
+    LEGACY_UNSCANNED = "legacy_unscanned"
+    CLEAN = "clean"
+
+
+class QuarantineStatus(str, enum.Enum):
+    INFECTED = "infected"
+    SCAN_ERROR = "scan_error"
 
 
 class Document(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
@@ -69,8 +80,56 @@ class Document(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
         default=ConfidentialityLevel.CONFIDENTIAL,
         server_default=ConfidentialityLevel.CONFIDENTIAL.value,
     )
+    malware_scan_status: Mapped[DocumentMalwareScanStatus] = mapped_column(
+        Enum(
+            DocumentMalwareScanStatus,
+            name="document_malware_scan_status",
+            native_enum=True,
+            values_callable=enum_values,
+        ),
+        nullable=False,
+        default=DocumentMalwareScanStatus.LEGACY_UNSCANNED,
+        server_default=DocumentMalwareScanStatus.LEGACY_UNSCANNED.value,
+    )
+    malware_scanned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     organization: Mapped["Organization"] = relationship(back_populates="documents")
     claim: Mapped["Claim"] = relationship(back_populates="documents")
     uploaded_by: Mapped["User | None"] = relationship(foreign_keys=[uploaded_by_id])
     supersedes: Mapped["Document | None"] = relationship(remote_side="Document.id", uselist=False)
+
+
+class QuarantinedUpload(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "quarantined_uploads"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "claim_id",
+            "file_hash",
+            name="uq_quarantined_uploads_claim_hash",
+        ),
+        Index("ix_quarantined_uploads_org_claim", "organization_id", "claim_id"),
+        Index("ix_quarantined_uploads_org_status", "organization_id", "status"),
+    )
+
+    organization_id: Mapped[UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    claim_id: Mapped[UUID] = mapped_column(
+        ForeignKey("claims.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    uploaded_by_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    mime_type: Mapped[str] = mapped_column(String(150), nullable=False)
+    file_size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    file_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    quarantine_key: Mapped[str] = mapped_column(String(500), nullable=False)
+    status: Mapped[QuarantineStatus] = mapped_column(
+        Enum(QuarantineStatus, name="malware_quarantine_status", native_enum=True, values_callable=enum_values),
+        nullable=False,
+    )
+    threat_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    scan_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    scanned_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

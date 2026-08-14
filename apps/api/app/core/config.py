@@ -18,6 +18,10 @@ class Settings(BaseSettings):
     storage_backend: str = "local"
     local_storage_path: str = ".local-storage/documents"
     max_upload_mb: int = 25
+    malware_scan_enabled: bool = False
+    clamav_host: str = "localhost"
+    clamav_port: int = 3310
+    clamav_timeout_seconds: float = 30.0
     processing_max_attempts: int = 3
     processing_poll_seconds: float = 2.0
     ai_provider: str = "disabled"

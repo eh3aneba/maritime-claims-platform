@@ -87,6 +87,8 @@ export interface VesselListResponse {
 
 export type DocumentProcessingStatus = "uploaded" | "processing" | "processed" | "failed";
 export type ConfidentialityLevel = "internal" | "confidential" | "restricted";
+export type DocumentMalwareScanStatus = "legacy_unscanned" | "clean";
+export type QuarantineStatus = "infected" | "scan_error";
 
 export interface ClaimDocument {
   id: string;
@@ -100,6 +102,22 @@ export interface ClaimDocument {
   version_number: number;
   processing_status: DocumentProcessingStatus;
   confidentiality_level: ConfidentialityLevel;
+  malware_scan_status: DocumentMalwareScanStatus;
+  malware_scanned_at: string | null;
+  uploaded_by_id: string | null;
+  created_at: string;
+}
+
+export interface QuarantinedUpload {
+  id: string;
+  claim_id: string;
+  original_filename: string;
+  mime_type: string;
+  file_size_bytes: number;
+  file_hash: string;
+  status: QuarantineStatus;
+  threat_name: string | null;
+  scanned_at: string;
   uploaded_by_id: string | null;
   created_at: string;
 }
@@ -107,6 +125,8 @@ export interface ClaimDocument {
 export interface DocumentListResponse {
   items: ClaimDocument[];
   total: number;
+  quarantined_items: QuarantinedUpload[];
+  quarantined_total: number;
 }
 
 
