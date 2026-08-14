@@ -17,7 +17,6 @@ depends_on = None
 
 def upgrade() -> None:
     export_format = sa.Enum("pdf", "xlsx", name="claim_pack_format")
-    export_format.create(op.get_bind(), checkfirst=True)
     op.create_table(
         "claim_pack_exports",
         sa.Column("organization_id", sa.Uuid(), nullable=False),
