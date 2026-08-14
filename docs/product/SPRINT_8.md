@@ -44,10 +44,30 @@ Acceptance guardrails:
 - No AI selects an authoritative version and no external AI receives evidence.
 - Cross-tenant and cross-claim replacement attempts remain hidden.
 
+## Phase C — Unified source-linked Evidence Matrix
+
+Goal: give claim handlers a single professional view of approved facts, supporting sources, document-version state and active conflicts without creating a second source of truth.
+
+Delivered scope:
+
+- Read-time tenant-scoped Matrix with Topic / Fact / Supporting Evidence / Conflicting Evidence / Status.
+- Fact column limited to current human-approved Claim Facts.
+- Authoritative and deterministic corroborating source grouping with locator, quote and document version.
+- Active conflicts attached by source extraction, with unlinked conflicts preserved as conflict-only review rows.
+- Explicit warnings when an approved fact still cites superseded evidence.
+- Claims-native UI and MT ORION browser regression coverage.
+- No AI call, automated truth selection or mutation of facts, chronology or approved assessments.
+
+Acceptance guardrails:
+
+- Opinions, inferences and pending AI candidates never populate the Fact column.
+- Conflict state remains a human review state, not a finding about which source is true.
+- Replacing evidence never transfers approval.
+- No causation, coverage, liability, fraud or settlement determination is generated.
+
 ## Next phases
 
-1. Unified Evidence Matrix across technical, chronology, financial and rule review.
-2. Controlled PDF/Excel claim-pack exports.
-3. Email/correspondence ingestion only after provider, consent and retention controls are designed.
+1. Controlled PDF/Excel claim-pack exports.
+2. Email/correspondence ingestion only after provider, consent and retention controls are designed.
 
 The complete ordered capability backlog is tracked in GitHub issue #25.
