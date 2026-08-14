@@ -27,8 +27,27 @@ Acceptance guardrails:
 - policy replacement never transfers approval
 - no external AI receives evidence
 
+## Phase B — Controlled Correspondence Centre
+
+Delivered scope:
+
+- Claim-linked outbound drafts plus manually filed inbound/internal records.
+- Manager/Admin review gate before external-dispatch recording.
+- Immutable approved content hash and append-only audit trail.
+- Standard, Confidential, Privileged & Confidential and Without Prejudice labels.
+- Existing document requirements and follow-up tasks reused without a parallel workflow.
+- Explicit dispatch confirmation; the platform does not send email.
+- Tenant-scoped API and claim-level Correspondence Centre workspace.
+
+Acceptance guardrails:
+
+- no email sending, mailbox reading or synchronization
+- no approval by Claims Handlers
+- no Sent Externally state before approval and explicit confirmation
+- no editing approved or sent content
+- no automatic legal-effect, coverage, causation, liability or settlement determination
+
 ## Next phases
 
-1. Correspondence Centre and controlled draft letters.
-2. Email ingestion only after provider, consent and retention controls are designed.
-3. Advanced financial adjustment controls.
+1. Email ingestion only after provider, consent and retention controls are designed.
+2. Advanced financial adjustment controls.
