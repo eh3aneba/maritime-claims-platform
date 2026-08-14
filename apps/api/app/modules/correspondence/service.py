@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from hashlib import sha256
 from uuid import UUID
 
-from fastapi import HTTPException, status
+from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -13,6 +13,7 @@ from app.modules.claims.models import Claim
 from app.modules.correspondence.models import (
     ClaimCorrespondence,
     CorrespondenceDirection,
+    CorrespondenceKind,
     CorrespondenceSensitivity,
     CorrespondenceStatus,
 )
@@ -127,7 +128,7 @@ def create_from_document_request(db: Session, *, claim: Claim, user: User, batch
         request_batch_id=batch.id,
         created_by_id=user.id,
         direction=CorrespondenceDirection.OUTBOUND,
-        kind="document_request",
+        kind=CorrespondenceKind.DOCUMENT_REQUEST,
         status=CorrespondenceStatus.DRAFT,
         sensitivity=CorrespondenceSensitivity.STANDARD,
         recipient_label=batch.recipient_label,
