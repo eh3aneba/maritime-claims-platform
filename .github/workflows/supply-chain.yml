@@ -73,6 +73,9 @@ jobs:
 
   secret-history:
     name: Secret history scan
+    permissions:
+      contents: read
+      pull-requests: read
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -105,6 +108,8 @@ jobs:
             --tag maritime-claims-web:ci apps/web
 
       - name: Scan API image
+        id: scan-api
+        continue-on-error: true
         uses: anchore/scan-action@e1165082ffb1fe366ebaf02d8526e7c4989ea9d2 # v7
         with:
           image: maritime-claims-api:ci
@@ -114,6 +119,8 @@ jobs:
           cache-db: true
 
       - name: Scan web image
+        id: scan-web
+        continue-on-error: true
         uses: anchore/scan-action@e1165082ffb1fe366ebaf02d8526e7c4989ea9d2 # v7
         with:
           image: maritime-claims-web:ci
@@ -121,3 +128,14 @@ jobs:
           severity-cutoff: high
           output-format: table
           cache-db: true
+
+      - name: Enforce image scan results
+        if: always()
+        env:
+          API_SCAN_OUTCOME: ${{ steps.scan-api.outcome }}
+          WEB_SCAN_OUTCOME: ${{ steps.scan-web.outcome }}
+        run: |
+          echo "API image scan: ${API_SCAN_OUTCOME}"
+          echo "Web image scan: ${WEB_SCAN_OUTCOME}"
+          test "${API_SCAN_OUTCOME}" = "success"
+          test "${WEB_SCAN_OUTCOME}" = "success"
