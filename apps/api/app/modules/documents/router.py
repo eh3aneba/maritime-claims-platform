@@ -96,6 +96,52 @@ async def upload_claim_document(
 
 
 @router.post(
+    "/{document_id}/replacements",
+    response_model=DocumentResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def replace_claim_document(
+    claim_id: UUID,
+    document_id: UUID,
+    current_user: CurrentUser,
+    db: Annotated[Session, Depends(get_db)],
+    file: Annotated[UploadFile, File()],
+    replacement_reason: Annotated[str, Form(min_length=20, max_length=1000)],
+    document_type: Annotated[str | None, Form()] = None,
+    confidentiality_level: Annotated[ConfidentialityLevel | None, Form()] = None,
+) -> DocumentResponse:
+    claim = get_claim_for_tenant(
+        db, claim_id=claim_id, organization_id=current_user.organization_id
+    )
+    if claim is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Claim not found")
+    source_document = get_document_for_tenant(
+        db,
+        document_id=document_id,
+        claim_id=claim.id,
+        organization_id=current_user.organization_id,
+    )
+    if source_document is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+    document = await create_document_from_upload(
+        db,
+        claim=claim,
+        current_user=current_user,
+        upload=file,
+        document_type=document_type if document_type is not None else source_document.document_type,
+        confidentiality_level=(
+            confidentiality_level
+            if confidentiality_level is not None
+            else source_document.confidentiality_level
+        ),
+        replaces_document=source_document,
+        replacement_reason=replacement_reason,
+    )
+    evaluate_claim_rules(db, claim=claim, user=current_user, trigger="document_replacement")
+    return DocumentResponse.model_validate(document)
+
+
+@router.post(
     "/rescan-legacy",
     response_model=LegacyRescanResponse,
     status_code=status.HTTP_202_ACCEPTED,
@@ -291,6 +337,11 @@ def delete_claim_document(
     )
     if document is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+    if not document.is_current:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Superseded evidence versions are preserved and cannot be removed.",
+        )
     if document.malware_scan_status in {
         DocumentMalwareScanStatus.INFECTED_QUARANTINED,
         DocumentMalwareScanStatus.SCAN_ERROR,
