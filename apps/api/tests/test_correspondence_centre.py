@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from sqlalchemy import select
 
 from app.modules.audit.models import AuditLog
@@ -67,7 +69,7 @@ def test_outbound_correspondence_requires_review_and_explicit_dispatch_confirmat
     assert immutable.status_code == 409
 
     with TestingSessionLocal() as db:
-        actions = set(db.scalars(select(AuditLog.action).where(AuditLog.entity_id == item["id"])))
+        actions = set(db.scalars(select(AuditLog.action).where(AuditLog.entity_id == UUID(item["id"]))))
         assert {"CREATE_CORRESPONDENCE", "SUBMIT_CORRESPONDENCE_FOR_REVIEW", "APPROVE_CORRESPONDENCE", "MARK_CORRESPONDENCE_SENT_EXTERNALLY"}.issubset(actions)
 
 
