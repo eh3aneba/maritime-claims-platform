@@ -905,3 +905,38 @@ export interface PolicyExtractionResponse {
   review_required: true;
   external_ai_used: false;
 }
+
+export type CorrespondenceDirection = "outbound" | "inbound" | "internal";
+export type CorrespondenceKind = "document_request" | "follow_up" | "status_update" | "reservation_of_rights" | "settlement" | "general";
+export type CorrespondenceStatus = "draft" | "under_review" | "approved" | "rejected" | "sent_externally" | "received_external" | "filed_internal" | "cancelled";
+export type CorrespondenceSensitivity = "standard" | "confidential" | "privileged_confidential" | "without_prejudice";
+export type CorrespondenceChannel = "email" | "letter" | "portal" | "phone" | "meeting" | "other";
+
+export interface ClaimCorrespondence {
+  id: string;
+  claim_id: string;
+  request_batch_id: string | null;
+  created_by_id: string | null;
+  reviewed_by_id: string | null;
+  sent_by_id: string | null;
+  direction: CorrespondenceDirection;
+  kind: CorrespondenceKind;
+  status: CorrespondenceStatus;
+  sensitivity: CorrespondenceSensitivity;
+  channel: CorrespondenceChannel | null;
+  sender_label: string | null;
+  recipient_label: string | null;
+  subject: string;
+  body: string;
+  requirement_ids: string[];
+  review_note: string | null;
+  external_reference: string | null;
+  content_hash: string | null;
+  occurred_at: string | null;
+  reviewed_at: string | null;
+  sent_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CorrespondenceListResponse { items: ClaimCorrespondence[]; total: number; }
