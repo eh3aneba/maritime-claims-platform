@@ -19,7 +19,7 @@ The MVP now includes the full H&M Machinery / Turbocharger design-partner workfl
 - Controlled legacy-evidence rescan, scanner-error retry and audited administrative purge
 - Human-approved FNOL intake with fail-closed malware scanning, local English/Persian OCR and deterministic field proposals
 - Controlled immutable evidence versions with preserved superseded history and quarantine-safe replacement\n- Unified source-linked Evidence Matrix across approved facts, document versions and active conflicts\n
-**Current phase: Sprint 8D — Controlled PDF/Excel Claim-Pack Exports.** The repository is prepared for a controlled private walkthrough. A private pilot is not production certification.
+**Current phase: Sprint 9A — Human-reviewed Policy & Contract Intelligence.** The repository is prepared for a controlled private walkthrough. A private pilot is not production certification.
 
 ## Prerequisites
 
@@ -184,7 +184,7 @@ Engine-log event fields are intentionally not promoted into scalar `claim_facts`
 
 ## Current milestone
 
-Sprint 8 Phase D: authorized claim handlers can generate immutable PDF and Excel claim-pack snapshots from the same canonical reviewed state. Exports preserve evidence versions, open conflicts, missing-document status, actions and integrity hashes and remain explicitly non-decisional.
+Sprint 9 Phase A: policy and contract text can produce local source-linked review candidates; approved terms feed a separate Policy Term Register and explainable issue spots without becoming Claim Facts or an automated coverage conclusion.
 
 ## Design-partner pilot
 
