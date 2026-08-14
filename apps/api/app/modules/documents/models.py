@@ -1,9 +1,9 @@
 import enum
 from datetime import datetime
 from typing import TYPE_CHECKING
-from uuid import UUID
+from uuid import UUID, uuid4
 
-from sqlalchemy import BigInteger, DateTime, Enum, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, BigInteger, DateTime, Enum, ForeignKey, Index, Integer, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -47,8 +47,24 @@ class Document(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     __tablename__ = "documents"
     __table_args__ = (
         UniqueConstraint("organization_id", "claim_id", "file_hash", name="uq_documents_claim_hash"),
+        UniqueConstraint(
+            "organization_id",
+            "claim_id",
+            "document_family_id",
+            "version_number",
+            name="uq_documents_family_version",
+        ),
         Index("ix_documents_org_claim", "organization_id", "claim_id"),
         Index("ix_documents_org_processing", "organization_id", "processing_status"),
+        Index("ix_documents_org_family", "organization_id", "claim_id", "document_family_id"),
+        Index(
+            "uq_documents_active_family",
+            "organization_id",
+            "claim_id",
+            "document_family_id",
+            unique=True,
+            postgresql_where=text("is_current AND deleted_at IS NULL"),
+        ),
     )
 
     organization_id: Mapped[UUID] = mapped_column(
@@ -63,7 +79,11 @@ class Document(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     supersedes_document_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("documents.id", ondelete="SET NULL"), nullable=True
     )
+    superseded_by_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
 
+    document_family_id: Mapped[UUID] = mapped_column(nullable=False, default=uuid4)
     filename: Mapped[str] = mapped_column(String(255), nullable=False)
     original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
     document_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
@@ -72,6 +92,9 @@ class Document(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     file_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     storage_key: Mapped[str] = mapped_column(String(500), nullable=False)
     version_number: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    is_current: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
+    replacement_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    superseded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     processing_status: Mapped[DocumentProcessingStatus] = mapped_column(
         Enum(DocumentProcessingStatus, name="document_processing_status", native_enum=True, values_callable=enum_values),
         nullable=False,
@@ -100,7 +123,12 @@ class Document(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     organization: Mapped["Organization"] = relationship(back_populates="documents")
     claim: Mapped["Claim"] = relationship(back_populates="documents")
     uploaded_by: Mapped["User | None"] = relationship(foreign_keys=[uploaded_by_id])
-    supersedes: Mapped["Document | None"] = relationship(remote_side="Document.id", uselist=False)
+    superseded_by: Mapped["User | None"] = relationship(foreign_keys=[superseded_by_id])
+    supersedes: Mapped["Document | None"] = relationship(
+        remote_side="Document.id",
+        uselist=False,
+        foreign_keys=[supersedes_document_id],
+    )
 
 
 class QuarantinedUpload(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -128,6 +156,9 @@ class QuarantinedUpload(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     source_document_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("documents.id", ondelete="RESTRICT"), nullable=True, index=True
     )
+    replaces_document_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("documents.id", ondelete="RESTRICT"), nullable=True, index=True
+    )
     resolved_by_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
@@ -143,6 +174,7 @@ class QuarantinedUpload(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     threat_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     scan_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    replacement_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     scanned_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     retry_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     last_retried_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
