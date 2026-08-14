@@ -81,7 +81,7 @@ def main() -> None:
         expect(page.get_by_text("Loading review queue…", exact=True)).to_be_hidden()
         expect(
             page.get_by_text(
-                re.compile(r"\\d+ review groups? · \\d+ need attention"),
+                re.compile(r"\d+ review groups? · \d+ need attention"),
                 exact=True,
             )
         ).to_be_visible()
