@@ -39,11 +39,21 @@ present in Git history.
 A temporary exception is allowed only in a dedicated pull request that records:
 
 1. the vulnerability identifier and affected package;
-2. why the vulnerable code path is not exploitable in this deployment;
+2. why the finding is a false positive or why the vulnerable code path is not
+   exploitable in this deployment;
 3. the accountable owner;
 4. an expiry date and remediation issue.
 
-No temporary exceptions are configured by default.
+## Active scanner exception
+
+| Finding | Exact scope | Justification | Owner | Expires | Tracking |
+| --- | --- | --- | --- | --- | --- |
+| `CVE-2026-15308` | `python` `3.13.15` (`binary`) | The PSF-supplied ranges published by NVD mark Python 3.13 versions earlier than 3.13.15 as affected, while the current Grype database reports 3.13.15. The rule is a scanner-metadata exception, not accepted product risk. | `@eh3aneba` | 2026-09-14 | [Issue #21](https://github.com/eh3aneba/maritime-claims-platform/issues/21) |
+
+The corresponding `.grype.yaml` rule matches the CVE, package name, installed
+version and package type. It does not suppress any other vulnerability. The
+exception must be removed as soon as the scanner database reflects the official
+affected range, and no later than the expiry date.
 
 ## Local commands
 
