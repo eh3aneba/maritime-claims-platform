@@ -807,3 +807,26 @@ export interface EvidenceMatrixResponse {
     superseded_fact_source_count: number;
   };
 }
+
+
+export type ClaimPackFormat = "pdf" | "xlsx";
+
+export interface ClaimPackExport {
+  id: string;
+  claim_id: string;
+  export_format: ClaimPackFormat;
+  snapshot_schema_version: string;
+  snapshot_hash: string;
+  filename: string;
+  mime_type: string;
+  file_hash: string;
+  file_size_bytes: number;
+  generation_note: string | null;
+  generated_by_id: string | null;
+  created_at: string;
+}
+
+export interface ClaimPackExportListResponse {
+  items: ClaimPackExport[];
+  total: number;
+}
