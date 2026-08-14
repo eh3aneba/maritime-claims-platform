@@ -18,7 +18,10 @@ The MVP now includes the full H&M Machinery / Turbocharger design-partner workfl
 - Quarantine-first evidence upload with ClamAV admission scanning and fail-closed handling
 - Controlled legacy-evidence rescan, scanner-error retry and audited administrative purge
 - Human-approved FNOL intake with fail-closed malware scanning, local English/Persian OCR and deterministic field proposals
-- Controlled immutable evidence versions with preserved superseded history and quarantine-safe replacement\n- Unified source-linked Evidence Matrix across approved facts, document versions and active conflicts\n
+- Controlled immutable evidence versions with preserved superseded history and quarantine-safe replacement
+- Unified source-linked Evidence Matrix across approved facts, document versions and active conflicts
+- Controlled Correspondence Centre with Manager/Admin review and manual external-dispatch recording
+
 **Current phase: Sprint 9B — Controlled Correspondence Centre.** The repository is prepared for a controlled private walkthrough. A private pilot is not production certification.
 
 ## Prerequisites
