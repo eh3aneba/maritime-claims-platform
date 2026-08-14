@@ -156,7 +156,13 @@ export interface ClaimDocument {
   mime_type: string;
   file_size_bytes: number;
   file_hash: string;
+  document_family_id: string;
+  supersedes_document_id: string | null;
   version_number: number;
+  is_current: boolean;
+  replacement_reason: string | null;
+  superseded_at: string | null;
+  superseded_by_id: string | null;
   processing_status: DocumentProcessingStatus;
   confidentiality_level: ConfidentialityLevel;
   malware_scan_status: DocumentMalwareScanStatus;
@@ -169,6 +175,8 @@ export interface QuarantinedUpload {
   id: string;
   claim_id: string;
   source_document_id: string | null;
+  replaces_document_id: string | null;
+  replacement_reason: string | null;
   original_filename: string;
   mime_type: string;
   file_size_bytes: number;
