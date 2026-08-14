@@ -21,7 +21,6 @@ from app.modules.adjustments.schemas import AdjustmentCreate, AdjustmentLineUpda
 from app.modules.audit.service import write_audit_log
 from app.modules.claims.models import Claim
 from app.modules.financial.models import CostItem
-from app.modules.financial.service import sync_financial_review
 from app.modules.users.models import User
 
 
@@ -146,8 +145,6 @@ def get_statement(db: Session, *, claim: Claim, statement_id: UUID) -> Adjustmen
 
 def create_statement(db: Session, *, claim: Claim, user: User, payload: AdjustmentCreate) -> AdjustmentStatement:
     currency = payload.currency.strip().upper()
-    sync_financial_review(db, claim=claim, user_id=user.id)
-    db.flush()
     items = list(db.scalars(select(CostItem).where(
         CostItem.organization_id == claim.organization_id,
         CostItem.claim_id == claim.id,
