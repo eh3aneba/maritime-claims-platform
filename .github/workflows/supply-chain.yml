@@ -70,3 +70,54 @@ jobs:
       - name: Audit web production dependencies
         working-directory: apps/web
         run: npm audit --omit=dev --audit-level=high
+
+  secret-history:
+    name: Secret history scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out complete Git history
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Detect committed secrets
+        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_ENABLE_COMMENTS: "false"
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: "false"
+          GITLEAKS_ENABLE_SUMMARY: "false"
+
+  container-images:
+    name: Container image vulnerability scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Build production images
+        run: |
+          docker build --pull --tag maritime-claims-api:ci apps/api
+          docker build --pull \
+            --build-arg NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000/api/v1 \
+            --tag maritime-claims-web:ci apps/web
+
+      - name: Scan API image
+        uses: anchore/scan-action@e1165082ffb1fe366ebaf02d8526e7c4989ea9d2 # v7
+        with:
+          image: maritime-claims-api:ci
+          fail-build: true
+          severity-cutoff: high
+          output-format: table
+          cache-db: true
+
+      - name: Scan web image
+        uses: anchore/scan-action@e1165082ffb1fe366ebaf02d8526e7c4989ea9d2 # v7
+        with:
+          image: maritime-claims-web:ci
+          fail-build: true
+          severity-cutoff: high
+          output-format: table
+          cache-db: true
