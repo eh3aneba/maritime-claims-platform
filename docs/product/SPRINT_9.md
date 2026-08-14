@@ -47,7 +47,31 @@ Acceptance guardrails:
 - no editing approved or sent content
 - no automatic legal-effect, coverage, causation, liability or settlement determination
 
+## Phase C — Advanced Financial Adjustment Controls
+
+Delivered scope:
+
+- Currency-specific versioned adjustment statements from reviewed invoice lines.
+- Frozen Cost Item, Document and AI Run source snapshots.
+- Explicit human treatment: included, excluded, apportioned or credit.
+- Explicit human basis: PA, GA, Sue & Labour, RDC, other or not applicable.
+- Written reasons for exclusions, apportionments, credits and amount differences.
+- Human-entered deductible and other deduction/credit with written basis.
+- Deterministic gross, considered and adjusted arithmetic with no FX conversion.
+- Draft → Manager/Admin review → immutable approved version.
+- Reserve comparison without automatic reserve changes.
+- Claim-level Adjustment Workspace, tenant controls and audit history.
+
+Acceptance guardrails:
+
+- no automatic coverage, recoverability, betterment, maintenance or depreciation decision
+- no quotation double counting
+- no FX conversion
+- no automatic reserve update
+- no settlement offer, payment instruction or payment authorization
+- no editing approved versions
+
 ## Next phases
 
-1. Email ingestion only after provider, consent and retention controls are designed.
-2. Advanced financial adjustment controls.
+1. Controlled settlement and payment authorization ledger.
+2. Email ingestion only after provider, consent and retention controls are designed.
