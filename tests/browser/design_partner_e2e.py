@@ -11,6 +11,7 @@ Environment variables may override the defaults below.
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 
 from playwright.sync_api import expect, sync_playwright
@@ -66,8 +67,24 @@ def main() -> None:
             expect(page.get_by_role("heading", name=heading)).to_be_visible()
 
         page.goto(f"{BASE_URL}{claim_href}", wait_until="networkidle")
-        page.get_by_role("link", name="Open AI review queue").click()
-        expect(page.get_by_text("AI Review", exact=False).first).to_be_visible()
+        with page.expect_response(
+            lambda response: "/api/v1/ai-review/groups?" in response.url
+            and response.request.method == "GET"
+        ) as review_response_info:
+            page.get_by_role("link", name="Open AI review queue").click()
+        review_response = review_response_info.value
+        if not review_response.ok:
+            raise AssertionError(
+                f"AI review groups request failed: HTTP {review_response.status}"
+            )
+        expect(page.get_by_role("heading", name="AI Review")).to_be_visible()
+        expect(page.get_by_text("Loading review queue…", exact=True)).to_be_hidden()
+        expect(
+            page.get_by_text(
+                re.compile(r"\\d+ review groups? · \\d+ need attention"),
+                exact=True,
+            )
+        ).to_be_visible()
 
         page.screenshot(path=str(SCREENSHOT), full_page=True)
         browser.close()
