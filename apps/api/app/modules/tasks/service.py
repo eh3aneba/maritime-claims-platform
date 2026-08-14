@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.modules.audit.service import write_audit_log
 from app.modules.claims.models import Claim
+from app.modules.correspondence.service import create_from_document_request
 from app.modules.rules.models import ClaimDocumentRequirement, RequirementPriority, RequirementStatus
 from app.modules.tasks.models import (
     ClaimTask,
@@ -130,6 +131,8 @@ def create_document_request(db: Session, *, claim: Claim, user: User, payload: D
         db.flush()
         tasks.append(task)
 
+    create_from_document_request(db, claim=claim, user=user, batch=batch)
+
     write_audit_log(
         db,
         organization_id=claim.organization_id,
@@ -152,32 +155,11 @@ def create_document_request(db: Session, *, claim: Claim, user: User, payload: D
 
 
 def mark_request_sent(db: Session, *, claim: Claim, batch: DocumentRequestBatch, user: User) -> DocumentRequestBatch:
-    if batch.status != RequestBatchStatus.DRAFT:
-        raise HTTPException(status_code=409, detail="Only draft document requests can be marked as sent")
-    ids = {UUID(value) for value in (batch.requirement_ids or [])}
-    requirements = list(db.scalars(select(ClaimDocumentRequirement).where(
-        ClaimDocumentRequirement.organization_id == claim.organization_id,
-        ClaimDocumentRequirement.claim_id == claim.id,
-        ClaimDocumentRequirement.id.in_(ids),
-    ))) if ids else []
-    if len(requirements) != len(ids):
-        raise HTTPException(status_code=409, detail="One or more requirements in this draft are no longer available")
-    for requirement in requirements:
-        if requirement.status in {RequirementStatus.MISSING, RequirementStatus.REJECTED}:
-            requirement.status = RequirementStatus.REQUESTED
-    batch.status = RequestBatchStatus.SENT_EXTERNALLY
-    write_audit_log(
-        db,
-        organization_id=claim.organization_id,
-        user_id=user.id,
-        action="MARK_DOCUMENT_REQUEST_SENT",
-        entity_type="document_request_batch",
-        entity_id=batch.id,
-        new_values={"status": batch.status.value, "requirement_ids": [str(x) for x in ids]},
-        details="User confirmed that the request was sent outside the platform.",
+    del db, claim, batch, user
+    raise HTTPException(
+        status_code=409,
+        detail="Use the Correspondence Centre review and explicit Sent Externally confirmation workflow",
     )
-    db.commit(); db.refresh(batch)
-    return batch
 
 
 def complete_task(db: Session, *, task: ClaimTask, user: User, reason: str) -> ClaimTask:
