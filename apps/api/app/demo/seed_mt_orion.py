@@ -25,6 +25,9 @@ from app.modules.chronology.service import build_chronology
 from app.modules.claims.models import Claim, ClaimPriority, ClaimStatus, ClaimType
 from app.modules.claims.schemas import ClaimCreate
 from app.modules.claims.service import change_claim_status, create_claim, update_current_reserve
+from app.modules.correspondence.models import ClaimCorrespondence
+from app.modules.correspondence.schemas import CorrespondenceMarkSent
+from app.modules.correspondence.service import mark_correspondence_sent, review_correspondence, submit_correspondence
 from app.modules.documents.models import ConfidentialityLevel, DocumentProcessingStatus
 from app.modules.documents.service import create_document_from_upload
 from app.modules.financial.models import ReserveHistory
@@ -37,7 +40,7 @@ from app.modules.review.service import review_extraction
 from app.modules.rules.models import RequirementPriority, RequirementStatus
 from app.modules.rules.service import evaluate_claim_rules, get_rule_summary
 from app.modules.tasks.schemas import DocumentRequestCreate
-from app.modules.tasks.service import create_document_request, mark_request_sent
+from app.modules.tasks.service import create_document_request
 from app.modules.users.models import User, UserRole
 from app.modules.vessels.models import Vessel
 
@@ -309,7 +312,26 @@ def main() -> None:
                     recipient_label="Shipowner / Technical Manager",
                 ),
             )
-            mark_request_sent(db, claim=claim, batch=batch, user=manager)
+            correspondence = db.scalar(select(ClaimCorrespondence).where(ClaimCorrespondence.request_batch_id == batch.id))
+            submit_correspondence(db, item=correspondence, user=manager)
+            review_correspondence(
+                db,
+                item=correspondence,
+                user=manager,
+                approve=True,
+                note="Synthetic pilot correspondence reviewed before recorded dispatch.",
+            )
+            mark_correspondence_sent(
+                db,
+                claim=claim,
+                item=correspondence,
+                user=manager,
+                payload=CorrespondenceMarkSent(
+                    confirm_sent=True,
+                    channel="email",
+                    external_reference="SYNTHETIC-DEMO-DISPATCH",
+                ),
+            )
             db.commit()
 
         assessment = generate_assessment(
