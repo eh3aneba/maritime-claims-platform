@@ -17,8 +17,9 @@ The MVP now includes the full H&M Machinery / Turbocharger design-partner workfl
 - Design-partner deployment preflight, deterministic demo seed, browser E2E spec and backup/restore baseline
 - Quarantine-first evidence upload with ClamAV admission scanning and fail-closed handling
 - Controlled legacy-evidence rescan, scanner-error retry and audited administrative purge
+- Human-approved FNOL intake with fail-closed malware scanning, local English/Persian OCR and deterministic field proposals
 
-**Current phase: Sprint 7C — Evidence Security Operations.** The repository is prepared for a controlled private walkthrough. A private pilot is not production certification.
+**Current phase: Sprint 8A — Human-approved FNOL Intake & Local OCR.** The repository is prepared for a controlled private walkthrough. A private pilot is not production certification.
 
 ## Prerequisites
 
@@ -183,7 +184,7 @@ Engine-log event fields are intentionally not promoted into scalar `claim_facts`
 
 ## Current milestone
 
-Sprint 7 Phase C: Evidence Security Operations. The private synthetic pilot now includes bounded legacy rescans, worker priority for security jobs, scanner-error reconciliation and human-controlled purge.
+Sprint 8 Phase A: Human-approved FNOL Intake & Local OCR. A clean PDF/JPG/PNG/DOCX notification can be processed locally, reviewed and edited by a human, matched to an existing tenant vessel, and approved into exactly one claim with its source document. Extracted candidates never become approved Claim Facts automatically.
 
 ## Design-partner pilot
 

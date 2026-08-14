@@ -1,4 +1,4 @@
-import type { AIReviewDetail, AIReviewGroupQueueResponse, AIReviewQueueResponse, AIReviewResult, AISourcePreview, Claim, ClaimDocument, ClaimDocumentRequirement, ClaimFactListResponse, ClaimListResponse, CurrentUser, DocumentListResponse, EngineLogEventsResponse, ClaimChronologyResponse, ClaimRuleSummary, ClaimTaskListResponse, DocumentRequestResult, Vessel, VesselListResponse, TechnicalReviewResponse, FinancialReviewResponse, CostReviewStatus, LegacyRescanResponse, QuarantineRetryResponse } from "./types";
+import type { AIReviewDetail, AIReviewGroupQueueResponse, AIReviewQueueResponse, AIReviewResult, AISourcePreview, Claim, ClaimDocument, ClaimDocumentRequirement, ClaimFactListResponse, ClaimListResponse, CurrentUser, DocumentListResponse, EngineLogEventsResponse, ClaimChronologyResponse, ClaimRuleSummary, ClaimTaskListResponse, DocumentRequestResult, Vessel, VesselListResponse, TechnicalReviewResponse, FinancialReviewResponse, CostReviewStatus, LegacyRescanResponse, QuarantineRetryResponse, ClaimIntakeApprovalResult, ClaimIntakeDraft } from "./types";
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api/v1";
 
@@ -75,6 +75,61 @@ export function createClaim(payload: {
   currency: string;
 }) {
   return apiFetch<Claim>("/claims", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export async function uploadClaimIntakeDraft(file: File): Promise<ClaimIntakeDraft> {
+  const form = new FormData();
+  form.append("file", file);
+  const response = await fetch(`${API_BASE}/claim-intake/drafts`, {
+    method: "POST",
+    body: form,
+    credentials: "include",
+  });
+  if (!response.ok) {
+    let detail = `Intake upload failed (${response.status})`;
+    try {
+      const payload = await response.json();
+      detail = typeof payload.detail === "string" ? payload.detail : detail;
+    } catch {}
+    throw new ApiError(response.status, detail);
+  }
+  return response.json() as Promise<ClaimIntakeDraft>;
+}
+
+export function getClaimIntakeDraft(id: string) {
+  return apiFetch<ClaimIntakeDraft>(`/claim-intake/drafts/${id}`);
+}
+
+export function approveClaimIntakeDraft(
+  id: string,
+  payload: {
+    claim: {
+      vessel_id: string;
+      incident_date: string;
+      notification_date: string;
+      incident_description: string;
+      claim_type: "hull_machinery";
+      claim_subtype: "machinery_damage";
+      priority: "low" | "medium" | "high" | "critical";
+      external_reference?: string | null;
+      estimated_loss?: number | null;
+      currency: string;
+    };
+    document_type: string;
+    review_note: string;
+  },
+) {
+  return apiFetch<ClaimIntakeApprovalResult>(`/claim-intake/drafts/${id}/approve`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function rejectClaimIntakeDraft(id: string, reason: string) {
+  return apiFetch<ClaimIntakeDraft>(`/claim-intake/drafts/${id}/reject`, {
+    method: "POST",
+    body: JSON.stringify({ reason }),
+  });
 }
 
 export function updateClaim(id: string, payload: Partial<{

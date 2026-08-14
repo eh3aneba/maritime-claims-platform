@@ -20,6 +20,7 @@ from app.modules.processing.models import (
     ProcessingJobStatus,
 )
 from app.modules.processing.service import claim_next_job, process_job
+from app.modules.processing import extractors
 from app.modules.users.models import User, UserRole
 from app.modules.vessels.models import Vessel
 from tests.db_harness import TestingSessionLocal, client, reset_database
@@ -166,6 +167,35 @@ def test_image_processing_records_ocr_requirement(tmp_path: Path) -> None:
         assert extraction.requires_ocr is True
         assert extraction.char_count == 0
         assert extraction.warnings
+
+
+def test_local_image_ocr_uses_configured_english_and_persian_languages(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    image_path = tmp_path / "fnol.png"
+    image_path.write_bytes(b"\x89PNG\r\n\x1a\nplaceholder")
+    commands: list[list[str]] = []
+
+    monkeypatch.setattr(extractors.shutil, "which", lambda name: f"/usr/bin/{name}")
+
+    def fake_run(command, **kwargs):
+        del kwargs
+        commands.append(command)
+        return type("Completed", (), {"stdout": "اعلام خسارت Claim Notification"})()
+
+    monkeypatch.setattr(extractors.subprocess, "run", fake_run)
+    result = extractors.extract_document_text(
+        image_path,
+        enable_ocr=True,
+        ocr_languages="eng+fas",
+        ocr_timeout_seconds=5,
+    )
+
+    assert result.requires_ocr is False
+    assert result.method == "tesseract:eng+fas"
+    assert "اعلام خسارت" in result.combined_text
+    assert commands[0][-1] == "eng+fas"
 
 
 def test_processing_summary_is_tenant_protected(tmp_path: Path) -> None:

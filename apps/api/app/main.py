@@ -10,6 +10,7 @@ from app.modules.documents.router import router as documents_router
 from app.modules.health.router import router as health_router
 from app.modules.financial.router import router as financial_router
 from app.modules.intelligence.router import router as intelligence_router
+from app.modules.intake.router import router as intake_router
 from app.modules.processing.router import router as processing_router
 from app.modules.pilot.router import router as pilot_router
 from app.modules.outreach.router import router as outreach_router
@@ -41,6 +42,7 @@ app.include_router(health_router, prefix=settings.api_v1_prefix)
 app.include_router(assessments_router, prefix=settings.api_v1_prefix)
 app.include_router(financial_router, prefix=settings.api_v1_prefix)
 app.include_router(intelligence_router, prefix=settings.api_v1_prefix)
+app.include_router(intake_router, prefix=settings.api_v1_prefix)
 app.include_router(auth_router, prefix=settings.api_v1_prefix)
 app.include_router(claims_router, prefix=settings.api_v1_prefix)
 app.include_router(chronology_router, prefix=settings.api_v1_prefix)

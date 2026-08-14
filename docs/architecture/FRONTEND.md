@@ -7,7 +7,7 @@ The MVP frontend is a Next.js/TypeScript application that communicates with the 
 - `/login` — organization-aware login
 - `/dashboard` — organization claim summary
 - `/claims` — searchable/filterable claim portfolio
-- `/claims/new` — H&M machinery claim creation and minimal vessel creation
+- `/claims/new` — secure notification import/review or manual H&M claim creation, plus explicit vessel matching/creation
 - `/claims/[id]` — claim overview, workflow status, reserve control, and secure evidence upload/list/download/remove UI
 
 ## Security boundaries
@@ -24,6 +24,10 @@ The MVP frontend is a Next.js/TypeScript application that communicates with the 
 - Conservative enterprise styling suitable for insurers, ship managers and P&I workflows.
 - Responsive web for MVP; no native mobile application.
 
+## Claim intake review
+
+The default new-claim flow is `Upload -> Scan/extract -> Review -> Vessel match -> Approve`. Proposed values are visibly non-authoritative and remain editable. The submit action is disabled until the intake reaches `pending_review`, a tenant vessel is selected and a human review note is present. Manual entry remains available as an explicit alternative.
+
 ## Current limitation
 
-Secure document handling is active. Sprint 3 Phase B adds backend CE Report classification/extraction; the human AI review UI, chronology and broader evidence reasoning are still pending.
+The intake client polls a durable backend job for up to 60 seconds. Email-provider ingestion, bulk inbox processing and advanced document-layout understanding remain later milestones.

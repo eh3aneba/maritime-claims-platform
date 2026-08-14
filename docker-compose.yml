@@ -105,6 +105,7 @@ services:
   worker:
     build:
       context: ./apps/api
+      target: worker
     command: ["python", "-m", "app.workers.document_worker"]
     environment:
       APP_ENV: ${APP_ENV:-development}
@@ -118,6 +119,10 @@ services:
       CLAMAV_TIMEOUT_SECONDS: ${CLAMAV_TIMEOUT_SECONDS:-30}
       PROCESSING_MAX_ATTEMPTS: ${PROCESSING_MAX_ATTEMPTS:-3}
       PROCESSING_POLL_SECONDS: ${PROCESSING_POLL_SECONDS:-2}
+      OCR_ENABLED: ${OCR_ENABLED:-true}
+      OCR_LANGUAGES: ${OCR_LANGUAGES:-eng+fas}
+      OCR_MAX_PAGES: ${OCR_MAX_PAGES:-20}
+      OCR_TIMEOUT_SECONDS: ${OCR_TIMEOUT_SECONDS:-120}
       AI_PROVIDER: ${AI_PROVIDER:-disabled}
       AI_MODEL: ${AI_MODEL:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}

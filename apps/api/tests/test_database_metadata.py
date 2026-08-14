@@ -48,6 +48,15 @@ def test_document_processing_foundation_tables_exist() -> None:
     assert expected.issubset(set(Base.metadata.tables))
 
 
+def test_human_reviewed_claim_intake_tables_exist() -> None:
+    expected = {"claim_intake_drafts", "claim_intake_processing_jobs"}
+    assert expected.issubset(set(Base.metadata.tables))
+    drafts = Base.metadata.tables["claim_intake_drafts"]
+    assert {"organization_id", "file_hash", "status", "approved_claim_id", "source_document_id"}.issubset(
+        drafts.c.keys()
+    )
+
+
 def test_rules_engine_tables_exist() -> None:
     expected = {"claim_document_requirements", "claim_issues", "rule_evaluation_runs"}
     assert expected.issubset(set(Base.metadata.tables))
