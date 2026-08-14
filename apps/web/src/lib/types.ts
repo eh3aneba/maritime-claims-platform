@@ -830,3 +830,78 @@ export interface ClaimPackExportListResponse {
   items: ClaimPackExport[];
   total: number;
 }
+
+
+export interface PolicyTermSource {
+  document_id: string;
+  document_family_id: string;
+  document_name: string;
+  document_type: string | null;
+  document_version: number;
+  document_is_current: boolean;
+  source_locator_type: string | null;
+  source_locator_value: string | null;
+  source_quote: string | null;
+  source_verified: boolean;
+}
+
+export interface ReviewedPolicyTerm {
+  extraction_id: string;
+  category: string;
+  title: string;
+  value: unknown;
+  human_status: "approved" | "edited";
+  confidence: string;
+  reviewed_at: string | null;
+  source: PolicyTermSource;
+}
+
+export interface PolicyIssueSpot {
+  code: string;
+  severity: "info" | "low" | "medium" | "high" | "critical";
+  title: string;
+  description: string;
+  trigger: Record<string, unknown>;
+  required_human_action: string;
+  related_extraction_ids: string[];
+}
+
+export interface PolicyIntelligenceResponse {
+  claim_id: string;
+  generated_at: string;
+  terms: ReviewedPolicyTerm[];
+  issue_spots: PolicyIssueSpot[];
+  summary: {
+    reviewed_term_count: number;
+    current_policy_document_count: number;
+    historical_policy_document_count: number;
+    issue_count: number;
+    high_priority_issue_count: number;
+    has_policy_period: boolean;
+    has_insured_value_or_limit: boolean;
+    has_deductible: boolean;
+  };
+  disclaimer: string;
+}
+
+export interface PolicyExtractionResponse {
+  run_id: string;
+  claim_id: string;
+  document_id: string;
+  document_name: string;
+  candidate_count: number;
+  candidates: Array<{
+    extraction_id: string;
+    field_path: string;
+    category: string;
+    title: string;
+    value: unknown;
+    confidence: string;
+    source_locator_type: string | null;
+    source_locator_value: string | null;
+    source_quote: string;
+    human_status: "pending";
+  }>;
+  review_required: true;
+  external_ai_used: false;
+}
