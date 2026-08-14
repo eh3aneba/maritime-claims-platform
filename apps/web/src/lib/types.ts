@@ -735,3 +735,75 @@ export interface DesignPartnerCohortSummary {
   target_qualified_partners: number; target_paid_pilots: number; accounts_total: number; a_tier: number; b_tier: number; pilot_qualified: number; paid_pilots: number;
   target_progress: { qualified: number; paid: number }; accounts: CohortAccount[];
 }
+
+
+export type EvidenceMatrixRowStatus =
+  | "supported"
+  | "conflict_open"
+  | "conflict_reviewed"
+  | "source_superseded"
+  | "source_deleted"
+  | "unsupported"
+  | "conflict_only";
+
+export interface EvidenceMatrixSource {
+  extraction_id: string;
+  document_id: string;
+  document_family_id: string;
+  document_name: string;
+  document_type: string | null;
+  document_version: number;
+  document_is_current: boolean;
+  document_deleted: boolean;
+  authoritative: boolean;
+  semantic_kind: string;
+  human_status: string;
+  source_verified: boolean;
+  source_locator_type: string | null;
+  source_locator_value: string | null;
+  source_quote: string | null;
+}
+
+export interface EvidenceMatrixConflict {
+  id: string;
+  topic: string;
+  conflict_type: string;
+  description: string;
+  value_a: unknown;
+  value_b: unknown;
+  difference_minutes: string | null;
+  materiality: string;
+  status: string;
+  resolution_note: string | null;
+  evidence_a_extraction_id: string | null;
+  evidence_b_extraction_id: string | null;
+}
+
+export interface EvidenceMatrixRow {
+  row_key: string;
+  topic: string;
+  field_path: string | null;
+  fact_id: string | null;
+  fact_value: unknown;
+  fact_version: number | null;
+  approved_at: string | null;
+  supporting_evidence: EvidenceMatrixSource[];
+  conflicting_evidence: EvidenceMatrixConflict[];
+  status: EvidenceMatrixRowStatus;
+}
+
+export interface EvidenceMatrixResponse {
+  claim_id: string;
+  generated_at: string;
+  rows: EvidenceMatrixRow[];
+  summary: {
+    approved_fact_count: number;
+    matrix_row_count: number;
+    supporting_source_count: number;
+    current_source_document_count: number;
+    historical_source_document_count: number;
+    open_conflict_count: number;
+    reviewed_conflict_count: number;
+    superseded_fact_source_count: number;
+  };
+}

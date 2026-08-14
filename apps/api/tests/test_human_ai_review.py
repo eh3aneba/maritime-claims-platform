@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from uuid import UUID
 
@@ -6,6 +6,7 @@ from sqlalchemy import select
 
 from app.core.security import hash_password
 from app.modules.audit.models import AuditLog
+from app.modules.chronology.models import ChronologyMateriality, ConflictStatus, EvidenceConflict
 from app.modules.claims.facts import ClaimFact
 from app.modules.claims.models import Claim
 from app.modules.documents.models import ConfidentialityLevel, Document, DocumentProcessingStatus
@@ -525,3 +526,91 @@ def test_grouped_review_rejects_fields_from_different_rows() -> None:
     )
     assert response.status_code == 409
     assert "same review row" in response.json()["detail"].lower()
+
+
+def test_evidence_matrix_groups_approved_fact_sources_and_open_conflicts() -> None:
+    ids = seed_review_candidates()
+    login("alpha", "alpha@example.com")
+    approved = client.post(
+        f"/api/v1/ai-review/{ids['maker_id']}",
+        json={"action": "approve"},
+    )
+    assert approved.status_code == 200, approved.text
+
+    with TestingSessionLocal() as db:
+        maker = db.get(DocumentExtraction, UUID(ids["maker_id"]))
+        conflict = EvidenceConflict(
+            organization_id=maker.organization_id,
+            claim_id=maker.claim_id,
+            evidence_a_extraction_id=maker.id,
+            conflict_key="matrix-maker-conflict",
+            conflict_type="content",
+            topic="Turbocharger maker",
+            description="A later source records a different maker and requires human review.",
+            value_a="ABB",
+            value_b="MAN",
+            materiality=ChronologyMateriality.HIGH,
+            status=ConflictStatus.OPEN,
+            is_active=True,
+        )
+        db.add(conflict)
+        db.commit()
+
+    response = client.get(
+        f"/api/v1/claims/{ids['claim_id']}/evidence-matrix"
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["summary"]["approved_fact_count"] == 1
+    assert payload["summary"]["open_conflict_count"] == 1
+    assert payload["summary"]["supporting_source_count"] == 1
+
+    row = next(
+        item for item in payload["rows"]
+        if item["field_path"] == "equipment.maker"
+    )
+    assert row["fact_value"] == "ABB"
+    assert row["status"] == "conflict_open"
+    assert row["supporting_evidence"][0]["document_name"] == "CE_Report.docx"
+    assert row["supporting_evidence"][0]["document_version"] == 1
+    assert row["supporting_evidence"][0]["document_is_current"] is True
+    assert row["supporting_evidence"][0]["authoritative"] is True
+    assert row["supporting_evidence"][0]["source_quote"] == "Turbocharger maker ABB"
+    assert row["conflicting_evidence"][0]["value_b"] == "MAN"
+
+    client.cookies.clear()
+    login("beta", "beta@example.com")
+    hidden = client.get(
+        f"/api/v1/claims/{ids['claim_id']}/evidence-matrix"
+    )
+    assert hidden.status_code == 404
+
+
+def test_evidence_matrix_flags_fact_whose_authoritative_source_is_superseded() -> None:
+    ids = seed_review_candidates()
+    login("alpha", "alpha@example.com")
+    approved = client.post(
+        f"/api/v1/ai-review/{ids['maker_id']}",
+        json={"action": "approve"},
+    )
+    assert approved.status_code == 200
+
+    with TestingSessionLocal() as db:
+        document = db.get(Document, UUID(ids["document_id"]))
+        document.is_current = False
+        document.superseded_at = datetime.now(UTC)
+        db.commit()
+
+    response = client.get(
+        f"/api/v1/claims/{ids['claim_id']}/evidence-matrix"
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    row = next(
+        item for item in payload["rows"]
+        if item["field_path"] == "equipment.maker"
+    )
+    assert row["status"] == "source_superseded"
+    assert row["supporting_evidence"][0]["document_is_current"] is False
+    assert payload["summary"]["superseded_fact_source_count"] == 1
+    assert payload["summary"]["historical_source_document_count"] == 1

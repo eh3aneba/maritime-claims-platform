@@ -1,4 +1,5 @@
 import type { AIReviewDetail, AIReviewGroupQueueResponse, AIReviewQueueResponse, AIReviewResult, AISourcePreview, Claim, ClaimDocument, ClaimDocumentRequirement, ClaimFactListResponse, ClaimListResponse, CurrentUser, DocumentListResponse, EngineLogEventsResponse, ClaimChronologyResponse, ClaimRuleSummary, ClaimTaskListResponse, DocumentRequestResult, Vessel, VesselListResponse, TechnicalReviewResponse, FinancialReviewResponse, CostReviewStatus, LegacyRescanResponse, QuarantineRetryResponse, ClaimIntakeApprovalResult, ClaimIntakeDraft } from "./types";
+import type { EvidenceMatrixResponse } from "./types";
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api/v1";
 
@@ -502,4 +503,9 @@ export function createDesignPartnerAccount(payload: Record<string, unknown>) {
 }
 export function updateDesignPartnerAccount(accountId: string, payload: Record<string, unknown>) {
   return apiFetch<import("./types").DesignPartnerAccount>(`/outreach/accounts/${accountId}`, { method: "PATCH", body: JSON.stringify(payload) });
+}
+
+
+export function getEvidenceMatrix(claimId: string) {
+  return apiFetch<EvidenceMatrixResponse>(`/claims/${claimId}/evidence-matrix`);
 }
