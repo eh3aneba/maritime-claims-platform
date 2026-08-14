@@ -76,6 +76,26 @@ def _pdf_lines(snapshot: dict[str, Any]) -> list[str]:
             )
             if source.get("source_quote"):
                 lines.append(f"  Quote: {source['source_quote']}")
+    lines.extend(["", "POLICY AND CONTRACT INTELLIGENCE"])
+    policy = snapshot.get("policy_intelligence")
+    if policy:
+        lines.append(policy["disclaimer"])
+        for term in policy["terms"]:
+            source = term["source"]
+            current = "current" if source["document_is_current"] else "superseded"
+            lines.append(
+                f"{term['title']}: {_display(term['value'])} — "
+                f"{source['document_name']} v{source['document_version']} ({current})"
+            )
+        lines.append("Policy issue spots:")
+        for issue in policy["issue_spots"]:
+            lines.append(
+                f"[{issue['severity']}] {issue['title']}: "
+                f"{issue['required_human_action']}"
+            )
+    else:
+        lines.append("No reviewed policy intelligence is included.")
+
     lines.extend(["", "OPEN CONFLICTS"])
     conflicts = [
         conflict
@@ -290,6 +310,39 @@ def render_xlsx(snapshot: dict[str, Any]) -> bytes:
                 ]
             )
     _style_sheet(evidence_sheet, [28, 36, 20, 32, 10, 10, 24, 60, 60])
+
+    policy_sheet = workbook.create_sheet("Policy Intelligence")
+    policy_sheet.append(
+        ["Kind", "Category", "Reviewed term / issue", "Source", "Version", "Current", "Human action"]
+    )
+    policy = snapshot.get("policy_intelligence")
+    if policy:
+        for term in policy["terms"]:
+            source = term["source"]
+            policy_sheet.append(
+                [
+                    "reviewed_term",
+                    term["category"],
+                    _display(term["value"]),
+                    source["document_name"],
+                    source["document_version"],
+                    source["document_is_current"],
+                    "",
+                ]
+            )
+        for issue in policy["issue_spots"]:
+            policy_sheet.append(
+                [
+                    "issue_spot",
+                    issue["severity"],
+                    issue["title"],
+                    "",
+                    "",
+                    "",
+                    issue["required_human_action"],
+                ]
+            )
+    _style_sheet(policy_sheet, [18, 24, 75, 35, 10, 10, 80])
 
     requirements_sheet = workbook.create_sheet("Outstanding Evidence")
     requirements_sheet.append(["Document", "Priority", "Status", "Reason"])

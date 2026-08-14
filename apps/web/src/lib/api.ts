@@ -562,3 +562,21 @@ export async function downloadClaimPackExport(
   anchor.remove();
   window.URL.revokeObjectURL(url);
 }
+
+
+export function getPolicyIntelligence(claimId: string) {
+  return apiFetch<import("./types").PolicyIntelligenceResponse>(
+    "/claims/" + claimId + "/policy-intelligence",
+  );
+}
+
+export function extractPolicyTerms(claimId: string, documentId: string) {
+  return apiFetch<import("./types").PolicyExtractionResponse>(
+    "/claims/" +
+      claimId +
+      "/policy-intelligence/documents/" +
+      documentId +
+      "/extract",
+    { method: "POST" },
+  );
+}

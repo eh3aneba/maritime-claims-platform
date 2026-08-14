@@ -90,7 +90,6 @@ Acceptance guardrails:
 
 ## Next phases
 
-1. Policy and Contract Intelligence with issue spotting only.
-2. Email/correspondence ingestion only after provider, consent and retention controls are designed.
+Policy and Contract Intelligence continues in Sprint 9. Email/correspondence ingestion remains deferred until provider, consent and retention controls are designed.
 
 The complete ordered capability backlog is tracked in GitHub issue #25.
