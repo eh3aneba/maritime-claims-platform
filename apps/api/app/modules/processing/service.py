@@ -3,12 +3,16 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import delete, select
+from sqlalchemy import case, delete, select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.modules.audit.service import write_audit_log
-from app.modules.documents.models import Document, DocumentProcessingStatus
+from app.modules.documents.models import (
+    Document,
+    DocumentMalwareScanStatus,
+    DocumentProcessingStatus,
+)
 from app.modules.documents.storage import LocalDocumentStorage
 from app.modules.processing.extractors import EXTRACTOR_VERSION, extract_document_text
 from app.modules.processing.models import (
@@ -78,7 +82,13 @@ def claim_next_job(db: Session, *, worker_id: str) -> DocumentProcessingJob | No
             DocumentProcessingJob.available_at <= now,
             DocumentProcessingJob.attempt_count < DocumentProcessingJob.max_attempts,
         )
-        .order_by(DocumentProcessingJob.created_at.asc())
+        .order_by(
+            case(
+                (DocumentProcessingJob.job_type == ProcessingJobType.MALWARE_RESCAN, 0),
+                else_=1,
+            ),
+            DocumentProcessingJob.created_at.asc(),
+        )
         .limit(1)
     )
     if db.bind is not None and db.bind.dialect.name == "postgresql":
@@ -97,6 +107,21 @@ def claim_next_job(db: Session, *, worker_id: str) -> DocumentProcessingJob | No
 
 
 def process_job(db: Session, *, job: DocumentProcessingJob) -> None:
+    document = db.get(Document, job.document_id)
+    if (
+        job.job_type != ProcessingJobType.MALWARE_RESCAN
+        and document is not None
+        and document.malware_scan_status
+        in {
+            DocumentMalwareScanStatus.INFECTED_QUARANTINED,
+            DocumentMalwareScanStatus.SCAN_ERROR,
+        }
+    ):
+        _block_job_for_quarantined_evidence(db, job=job, document=document)
+        return
+    if job.job_type == ProcessingJobType.MALWARE_RESCAN:
+        _process_malware_rescan_job(db, job=job)
+        return
     if job.job_type == ProcessingJobType.EXTRACT_TEXT:
         _process_text_job(db, job=job)
         return
@@ -122,6 +147,84 @@ def process_job(db: Session, *, job: DocumentProcessingJob) -> None:
         _process_named_ai_job(db, job=job, runner_name="run_invoice_intelligence")
         return
     _fail_job(db, job=job, document=db.get(Document, job.document_id), error=f"Unsupported job type: {job.job_type}")
+
+
+def _process_malware_rescan_job(db: Session, *, job: DocumentProcessingJob) -> None:
+    document = db.get(Document, job.document_id)
+    if document is None or document.deleted_at is not None:
+        _fail_job(db, job=job, document=document, error="Document is unavailable or deleted.")
+        return
+    if document.malware_scan_status != DocumentMalwareScanStatus.LEGACY_UNSCANNED:
+        job.status = ProcessingJobStatus.COMPLETED
+        job.completed_at = datetime.now(UTC)
+        job.locked_at = None
+        job.locked_by = None
+        job.result = {
+            "skipped": True,
+            "reason": f"Document status is {document.malware_scan_status.value}",
+        }
+        db.commit()
+        return
+    try:
+        from app.modules.documents.evidence_security import rescan_legacy_document
+
+        outcome = rescan_legacy_document(
+            db,
+            document=document,
+            requested_by_id=job.requested_by_id,
+        )
+        job.status = ProcessingJobStatus.COMPLETED
+        job.completed_at = datetime.now(UTC)
+        job.locked_at = None
+        job.locked_by = None
+        job.last_error = None
+        job.result = {
+            "malware_scan_status": outcome.status.value,
+            "quarantined_upload_id": (
+                str(outcome.quarantined_upload_id) if outcome.quarantined_upload_id else None
+            ),
+            "threat_name": outcome.threat_name,
+        }
+        if outcome.status in {
+            DocumentMalwareScanStatus.INFECTED_QUARANTINED,
+            DocumentMalwareScanStatus.SCAN_ERROR,
+        }:
+            other_jobs = db.scalars(
+                select(DocumentProcessingJob).where(
+                    DocumentProcessingJob.document_id == document.id,
+                    DocumentProcessingJob.id != job.id,
+                    DocumentProcessingJob.status.in_(
+                        [ProcessingJobStatus.PENDING, ProcessingJobStatus.RUNNING]
+                    ),
+                )
+            )
+            for other_job in other_jobs:
+                other_job.status = ProcessingJobStatus.FAILED
+                other_job.completed_at = datetime.now(UTC)
+                other_job.locked_at = None
+                other_job.locked_by = None
+                other_job.last_error = "Evidence was quarantined by malware rescan."
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        refreshed_job = db.get(DocumentProcessingJob, job.id)
+        refreshed_document = db.get(Document, job.document_id)
+        if refreshed_job is not None:
+            _fail_job(db, job=refreshed_job, document=refreshed_document, error=str(exc))
+
+
+def _block_job_for_quarantined_evidence(
+    db: Session,
+    *,
+    job: DocumentProcessingJob,
+    document: Document,
+) -> None:
+    job.status = ProcessingJobStatus.FAILED
+    job.completed_at = datetime.now(UTC)
+    job.locked_at = None
+    job.locked_by = None
+    job.last_error = f"Evidence processing is blocked: {document.malware_scan_status.value}."
+    db.commit()
 
 
 def _process_text_job(db: Session, *, job: DocumentProcessingJob) -> None:

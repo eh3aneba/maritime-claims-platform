@@ -12,6 +12,7 @@ from app.db.types import enum_values
 
 class ProcessingJobType(str, enum.Enum):
     EXTRACT_TEXT = "extract_text"
+    MALWARE_RESCAN = "malware_rescan"
     AI_EXTRACT_CE_REPORT = "ai_extract_ce_report"
     AI_EXTRACT_ENGINE_LOG = "ai_extract_engine_log"
     AI_EXTRACT_RUNNING_HOURS = "ai_extract_running_hours"

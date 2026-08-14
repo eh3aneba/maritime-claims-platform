@@ -36,6 +36,7 @@ class QuarantinedUploadResponse(BaseModel):
 
     id: UUID
     claim_id: UUID
+    source_document_id: UUID | None
     original_filename: str
     mime_type: str
     file_size_bytes: int
@@ -43,6 +44,8 @@ class QuarantinedUploadResponse(BaseModel):
     status: QuarantineStatus
     threat_name: str | None
     scanned_at: datetime
+    retry_count: int
+    last_retried_at: datetime | None
     uploaded_by_id: UUID | None
     created_at: datetime
 
@@ -57,3 +60,37 @@ class DocumentListResponse(BaseModel):
 class DocumentUploadMetadata(BaseModel):
     document_type: str | None = Field(default=None, max_length=100)
     confidentiality_level: ConfidentialityLevel = ConfidentialityLevel.CONFIDENTIAL
+
+
+class LegacyRescanRequest(BaseModel):
+    limit: int = Field(default=10, ge=1, le=25)
+
+
+class LegacyRescanJobResponse(BaseModel):
+    job_id: UUID
+    document_id: UUID
+    status: str
+
+
+class LegacyRescanResponse(BaseModel):
+    queued_count: int
+    skipped_count: int
+    jobs: list[LegacyRescanJobResponse]
+
+
+class QuarantineRetryResponse(BaseModel):
+    quarantine_id: UUID
+    status: QuarantineStatus
+    retry_count: int
+    released_document_id: UUID | None
+    threat_name: str | None
+
+
+class QuarantinePurgeRequest(BaseModel):
+    confirm_upload_id: UUID
+    reason: str = Field(min_length=20, max_length=1000)
+
+
+class QuarantinePurgeResponse(BaseModel):
+    quarantine_id: UUID
+    status: QuarantineStatus

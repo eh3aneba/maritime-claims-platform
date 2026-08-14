@@ -20,6 +20,9 @@
 - [ ] Browser E2E passes.
 - [ ] A known-clean synthetic file uploads and shows `Malware scan · Clean` before processing.
 - [ ] An EICAR test file is blocked in an isolated test claim and appears only in the quarantine panel; remove it according to the operator retention procedure after validation.
+- [ ] A Claims Manager queues a bounded legacy rescan and the worker records clean/quarantine outcomes.
+- [ ] Scanner-error retry is tested after scanner recovery and releases only after a clean verdict.
+- [ ] Administrative purge is tested only with synthetic evidence and retains the audit/provenance record.
 - [ ] Screenshot artifact is retained for the build under test.
 
 ## Data safety
@@ -29,6 +32,7 @@
 - [ ] Synthetic-only label shown/communicated for the demo dataset.
 - [ ] No real customer evidence is loaded without explicit approval.
 - [ ] Legacy records labelled `legacy_unscanned` are identified and accepted for the walkthrough or covered by a controlled rescan plan.
+- [ ] The operator has reviewed `docs/operations/EVIDENCE_QUARANTINE.md` and assigned quarantine investigation ownership.
 
 ## Go / no-go
 

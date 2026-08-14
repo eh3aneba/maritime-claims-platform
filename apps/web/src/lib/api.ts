@@ -1,4 +1,4 @@
-import type { AIReviewDetail, AIReviewGroupQueueResponse, AIReviewQueueResponse, AIReviewResult, AISourcePreview, Claim, ClaimDocument, ClaimDocumentRequirement, ClaimFactListResponse, ClaimListResponse, CurrentUser, DocumentListResponse, EngineLogEventsResponse, ClaimChronologyResponse, ClaimRuleSummary, ClaimTaskListResponse, DocumentRequestResult, Vessel, VesselListResponse, TechnicalReviewResponse, FinancialReviewResponse, CostReviewStatus } from "./types";
+import type { AIReviewDetail, AIReviewGroupQueueResponse, AIReviewQueueResponse, AIReviewResult, AISourcePreview, Claim, ClaimDocument, ClaimDocumentRequirement, ClaimFactListResponse, ClaimListResponse, CurrentUser, DocumentListResponse, EngineLogEventsResponse, ClaimChronologyResponse, ClaimRuleSummary, ClaimTaskListResponse, DocumentRequestResult, Vessel, VesselListResponse, TechnicalReviewResponse, FinancialReviewResponse, CostReviewStatus, LegacyRescanResponse, QuarantineRetryResponse } from "./types";
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api/v1";
 
@@ -182,6 +182,34 @@ export function uploadClaimDocument(
     };
     request.send(form);
   });
+}
+
+export function queueLegacyEvidenceRescan(claimId: string, limit = 10) {
+  return apiFetch<LegacyRescanResponse>(`/claims/${claimId}/documents/rescan-legacy`, {
+    method: "POST",
+    body: JSON.stringify({ limit }),
+  });
+}
+
+export function retryQuarantinedUpload(claimId: string, uploadId: string) {
+  return apiFetch<QuarantineRetryResponse>(
+    `/claims/${claimId}/documents/quarantined-uploads/${uploadId}/retry`,
+    { method: "POST" },
+  );
+}
+
+export function purgeQuarantinedUpload(
+  claimId: string,
+  uploadId: string,
+  reason: string,
+) {
+  return apiFetch<{ quarantine_id: string; status: "purged" }>(
+    `/claims/${claimId}/documents/quarantined-uploads/${uploadId}/purge`,
+    {
+      method: "POST",
+      body: JSON.stringify({ confirm_upload_id: uploadId, reason }),
+    },
+  );
 }
 
 

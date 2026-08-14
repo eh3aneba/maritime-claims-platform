@@ -16,8 +16,9 @@ The MVP now includes the full H&M Machinery / Turbocharger design-partner workfl
 - Claims-handler usability hardening and equivalent-evidence workflow
 - Design-partner deployment preflight, deterministic demo seed, browser E2E spec and backup/restore baseline
 - Quarantine-first evidence upload with ClamAV admission scanning and fail-closed handling
+- Controlled legacy-evidence rescan, scanner-error retry and audited administrative purge
 
-**Current phase: Sprint 7B — Evidence Security Hardening.** The repository is prepared for a controlled private walkthrough. A private pilot is not production certification.
+**Current phase: Sprint 7C — Evidence Security Operations.** The repository is prepared for a controlled private walkthrough. A private pilot is not production certification.
 
 ## Prerequisites
 
@@ -152,6 +153,8 @@ Claim pages now support secure evidence handling. The backend exposes tenant-sco
 
 Existing evidence created before this control is preserved as `legacy_unscanned`; it is not falsely relabelled as clean. Development may explicitly disable scanning for trusted synthetic files, while pilot/staging/production preflight requires `MALWARE_SCAN_ENABLED=true`.
 
+Administrators and Claims Managers can queue bounded background rescans for legacy evidence. A clean verdict promotes the record to `clean`; malware or scanner failure moves the bytes into logical/physical quarantine and blocks downloads and all worker processing. Scanner-error quarantines can be retried explicitly. Only an Administrator can permanently purge retained bytes, with an exact record confirmation and mandatory audit reason; infected evidence has no release endpoint.
+
 The web claim overview includes drag-and-drop multi-file upload, document type/confidentiality metadata, actual upload progress, evidence listing, download and soft removal.
 
 Sprint 3 begins with AI Document Intelligence: `uploaded evidence -> text/OCR -> classification -> structured facts -> human review`.
@@ -180,7 +183,7 @@ Engine-log event fields are intentionally not promoted into scalar `claim_facts`
 
 ## Current milestone
 
-Sprint 7 Phase B: Evidence Security Hardening. The private synthetic pilot now includes fail-closed malware scanning, quarantine visibility, deployment preflight and explicit legacy-evidence status.
+Sprint 7 Phase C: Evidence Security Operations. The private synthetic pilot now includes bounded legacy rescans, worker priority for security jobs, scanner-error reconciliation and human-controlled purge.
 
 ## Design-partner pilot
 

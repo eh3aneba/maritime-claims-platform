@@ -14,6 +14,9 @@
 - [ ] `MALWARE_SCAN_ENABLED=true`; ClamAV health passes before the API accepts pilot traffic.
 - [ ] ClamAV port `3310` remains internal to the Compose network and is not internet/host published.
 - [ ] Clean synthetic upload and isolated EICAR rejection have both been verified.
+- [ ] A bounded legacy rescan has completed and every selected record has a visible verdict.
+- [ ] Claims Managers can retry scanner-error records but cannot purge bytes.
+- [ ] Administrative purge requires an exact quarantine ID, a recorded reason and prior confirmation that no legal/evidentiary hold applies.
 - [ ] A database backup is taken before upgrading or restoring pilot data.
 - [ ] Demo credentials are changed from examples and shared out-of-band.
 - [ ] Only synthetic data is used until data-processing terms and retention rules are agreed.
@@ -21,8 +24,8 @@
 ## Current MVP limitations
 
 - Local object storage is suitable for a private single-host pilot, not high availability.
-- ClamAV admission scanning covers new uploads only; evidence marked `legacy_unscanned` still needs a controlled rescan workflow.
-- Quarantined bytes require an operator-defined retention, investigation and secure purge procedure.
+- Legacy rescan is operator-triggered and bounded; it is not an automatic repository-wide campaign.
+- Legal/evidentiary hold remains an operator check before purge; automated retention-policy enforcement is a later milestone.
 - No SSO/SAML, session revocation list or enterprise identity lifecycle yet.
 - No formal penetration test has been completed.
 - No production-grade secrets manager integration yet.
