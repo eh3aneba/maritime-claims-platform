@@ -67,3 +67,7 @@ def test_rule_driven_task_tables_exist() -> None:
     assert "document_request_batches" in Base.metadata.tables
     correspondence = Base.metadata.tables["claim_correspondence"]
     assert {"organization_id", "claim_id", "status", "content_hash", "request_batch_id"}.issubset(correspondence.c.keys())
+    statement = Base.metadata.tables["adjustment_statements"]
+    line = Base.metadata.tables["adjustment_lines"]
+    assert {"organization_id", "claim_id", "version", "status", "content_hash", "net_adjusted"}.issubset(statement.c.keys())
+    assert {"statement_id", "cost_item_id", "claimed_amount", "considered_amount", "treatment", "basis"}.issubset(line.c.keys())
