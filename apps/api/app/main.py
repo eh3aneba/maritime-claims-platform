@@ -7,6 +7,7 @@ from app.modules.assessments.router import router as assessments_router
 from app.modules.claims.router import router as claims_router
 from app.modules.chronology.router import router as chronology_router
 from app.modules.documents.router import router as documents_router
+from app.modules.evidence_matrix.router import router as evidence_matrix_router
 from app.modules.health.router import router as health_router
 from app.modules.financial.router import router as financial_router
 from app.modules.intelligence.router import router as intelligence_router
@@ -47,6 +48,7 @@ app.include_router(auth_router, prefix=settings.api_v1_prefix)
 app.include_router(claims_router, prefix=settings.api_v1_prefix)
 app.include_router(chronology_router, prefix=settings.api_v1_prefix)
 app.include_router(documents_router, prefix=settings.api_v1_prefix)
+app.include_router(evidence_matrix_router, prefix=settings.api_v1_prefix)
 app.include_router(processing_router, prefix=settings.api_v1_prefix)
 app.include_router(pilot_router, prefix=settings.api_v1_prefix)
 app.include_router(outreach_router, prefix=settings.api_v1_prefix)
