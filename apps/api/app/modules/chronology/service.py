@@ -111,6 +111,18 @@ def _string(value: Any) -> str | None:
     return str(value)
 
 
+def _measurement_text(value: Any) -> str:
+    if isinstance(value, dict):
+        raw = value.get("raw")
+        if raw not in (None, ""):
+            return str(raw)
+        measured = value.get("value")
+        if measured is not None:
+            unit = value.get("unit")
+            return f"{measured}{f' {unit}' if unit else ''}"
+    return str(value)
+
+
 def _truthy(value: Any) -> bool | None:
     if isinstance(value, bool):
         return value
@@ -370,7 +382,7 @@ def _build_engine_candidates(rows: list[tuple[DocumentExtraction, Document]]) ->
         for label, key in (("RPM", "rpm"), ("Load", "engine_load"), ("TC speed", "turbocharger_speed"), ("Exhaust temp", "exhaust_temperature"), ("Lube oil pressure", "lube_oil_pressure")):
             value = values.get(key)
             if value is not None:
-                description_parts.append(f"{label}: {value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)}")
+                description_parts.append(f"{label}: {_measurement_text(value)}")
 
         evidence = [CandidateEvidence(pair[0], pair[1], _approved_value(pair[0])) for pair in fields.values()]
         candidates.append(EventCandidate(event_type, title or "Engine log event", "; ".join(description_parts) or None, event_date, event_time, timezone_label, materiality, 100, evidence))

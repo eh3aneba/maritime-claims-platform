@@ -38,6 +38,52 @@ export function formatMoney(value: string | number | null, currency = "USD") {
 
 export function formatDate(value: string | null | undefined) {
   if (!value) return "—";
-  const date = new Date(`${value}T00:00:00`);
+  const looksLikeDateOnly = /^\d{4}-\d{2}-\d{2}$/.test(value.trim());
+  const date = new Date(looksLikeDateOnly ? `${value.trim()}T00:00:00` : value);
+  if (Number.isNaN(date.getTime())) return "—";
   return new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric" }).format(date);
+}
+
+export function formatDateTime(value: string | null | undefined) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+}
+
+export function humanizeFieldLabel(value: string) {
+  const leaf = value.split(".").at(-1) ?? value;
+  return leaf
+    .replace(/\[(\d+)\]/g, " $1")
+    .replaceAll("_", " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+export function formatStructuredValue(value: unknown): string {
+  if (value === null || value === undefined || value === "") return "—";
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  if (typeof value === "number") return value.toLocaleString("en-US");
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) return value.map(formatStructuredValue).join(", ");
+  if (typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    if (record.raw !== null && record.raw !== undefined && String(record.raw).trim()) return String(record.raw);
+    if (record.value !== null && record.value !== undefined) {
+      const unit = record.unit ? ` ${String(record.unit)}` : "";
+      const rawValue = typeof record.value === "number" ? record.value.toLocaleString("en-US") : String(record.value);
+      return `${rawValue}${unit}`.trim();
+    }
+    const readable = Object.entries(record)
+      .filter(([key]) => !["id", "extraction_id", "document_id"].includes(key))
+      .map(([key, nested]) => `${humanizeFieldLabel(key)}: ${formatStructuredValue(nested)}`)
+      .join(" · ");
+    return readable || "—";
+  }
+  return String(value);
 }

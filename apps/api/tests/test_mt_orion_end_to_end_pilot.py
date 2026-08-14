@@ -527,6 +527,17 @@ def test_mt_orion_full_pilot_workflow(tmp_path):
             assert assessment.is_preliminary is True
             assert len(sections) == 11
             financial_section = next(section for section in sections if section.section_key == "financial")
+            chronology_section = next(section for section in sections if section.section_key == "chronology")
+            documents_section = next(section for section in sections if section.section_key == "documents")
+            actions_section = next(section for section in sections if section.section_key == "actions")
+            damage_section = next(section for section in sections if section.section_key == "damage")
+            assert "Source: Chief Engineer Report" in chronology_section.draft_text
+            assert "Source: Engine Log" in chronology_section.draft_text
+            assert "Chief Engineer Report (02_chief_engineer_report.docx)" in documents_section.draft_text
+            assert actions_section.draft_text.count("Obtain H&M Policy / Wording") == 1
+            assert actions_section.draft_text.count("Obtain Last Overhaul Report") == 1
+            assert "Maintenance context:" in damage_section.draft_text
+            assert "Open technical issues:" in damage_section.draft_text
             assert "Reviewed invoiced/claimed cost: USD 25,000.00" in financial_section.draft_text
             assert "Ocean Turbo Services Q-A-260: USD 260,000.00" in financial_section.draft_text
             assert "Global Turbo Marine Q-B-470: USD 470,000.00" in financial_section.draft_text

@@ -94,3 +94,20 @@ def test_damage_section_includes_human_reviewed_workshop_findings():
         assert "Workshop finding — Turbine rotor" in damage.draft_text
         assert "Blade tips heavily damaged" in damage.draft_text
         assert any(source["kind"] == "document_extraction" for source in damage.source_manifest)
+
+
+def test_approved_assessment_version_is_immutable():
+    cid, uid = seed()
+    with TestingSessionLocal() as db:
+        c = db.get(Claim, cid); u = db.get(User, uid)
+        a = generate_assessment(db, claim=c, user=u, allow_if_not_ready=True, override_reason="Preliminary")
+        _, sections = get_assessment(db, claim=c, assessment_id=a.id)
+        for section in sections:
+            review_section(db, claim=c, section=section, user=u, action="approve", text=None)
+        approve_assessment(db, claim=c, assessment=a, user=u, note="Approved snapshot")
+        try:
+            review_section(db, claim=c, section=sections[0], user=u, action="edit", text="Changed after approval")
+        except HTTPException as exc:
+            assert exc.status_code == 409
+        else:
+            raise AssertionError("approved assessment version should be immutable")

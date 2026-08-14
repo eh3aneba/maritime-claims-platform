@@ -8,17 +8,35 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 revision: str = "0003_document_processing_foundation"
 down_revision: Union[str, None] = "0002_claims_api_foundation"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
-processing_job_type = sa.Enum("extract_text", name="processing_job_type")
-processing_job_status = sa.Enum("pending", "running", "completed", "failed", name="processing_job_status")
+processing_job_type = postgresql.ENUM("extract_text", name="processing_job_type", create_type=False)
+processing_job_status = postgresql.ENUM("pending", "running", "completed", "failed", name="processing_job_status", create_type=False)
 
 
 def upgrade() -> None:
+    # Alembic creates alembic_version.version_num as VARCHAR(32) by default.
+    # Our descriptive revision IDs exceed 32 characters starting with this revision,
+    # so widen the internal version column before Alembic records this revision.
+    op.alter_column(
+        "alembic_version",
+        "version_num",
+        existing_type=sa.String(length=32),
+        type_=sa.String(length=128),
+        existing_nullable=False,
+    )
+
+    # Create PostgreSQL enum types explicitly. Relying on implicit enum creation
+    # inside op.create_table() proved unreliable on a fresh PostgreSQL deployment.
+    bind = op.get_bind()
+    processing_job_type.create(bind, checkfirst=True)
+    processing_job_status.create(bind, checkfirst=True)
+
     op.create_table(
         "document_processing_jobs",
         sa.Column("organization_id", sa.Uuid(), nullable=False),

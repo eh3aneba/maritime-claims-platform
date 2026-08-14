@@ -66,6 +66,30 @@ def _source(kind: str, identifier: Any, label: str) -> dict[str, str]:
     return {"kind": kind, "id": str(identifier), "label": label}
 
 
+DOCUMENT_TYPE_LABELS = {
+    "claim_notification": "Claim Notification",
+    "chief_engineer_report": "Chief Engineer Report",
+    "engine_log": "Engine Log",
+    "running_hours_record": "Running Hours Record",
+    "pms_record": "PMS History",
+    "workshop_report": "Workshop Report",
+    "quotation": "Quotation",
+    "invoice": "Invoice",
+    "policy": "H&M Policy / Wording",
+    "last_overhaul_report": "Last Overhaul Report",
+}
+
+
+def _document_label(document: Document) -> str:
+    return DOCUMENT_TYPE_LABELS.get(document.document_type or "", (document.document_type or "Unclassified document").replace("_", " ").title())
+
+
+def _yes(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"true", "yes", "1"}
+
+
 def _build_sections(db: Session, claim: Claim) -> list[tuple[str, str, int, str, list]]:
     facts = _current_facts(db, claim)
     docs = _docs(db, claim)
@@ -81,14 +105,40 @@ def _build_sections(db: Session, claim: Claim) -> list[tuple[str, str, int, str,
     sections: dict[str, tuple[str, int, str, list]] = {}
     sections["incident"] = ("Incident", 10, f"Claim {claim.claim_reference} concerns {claim.incident_description.strip()} The reported incident date is {claim.incident_date.isoformat()} and notification date is {claim.notification_date.isoformat()}.", [_source("claim", claim.id, claim.claim_reference)])
 
-    status_bits = [f"Claim status: {claim.status.value.replace('_', ' ')}."]
-    for key, label in [("operational_impact.engine_stopped","Engine stopped"),("operational_impact.load_reduced","Load reduced"),("operational_impact.speed_reduced","Speed reduced"),("operational_impact.immobilized","Vessel immobilized"),("operational_impact.towage","Towage"),("operational_impact.deviation","Deviation")]:
-        if key in facts: status_bits.append(f"{label}: {_line(facts[key])}.")
-    sections["vessel_status"] = ("Current Vessel Status", 20, " ".join(status_bits), [_source("claim_fact", fact.id, fact.field_path) for fact in db.scalars(select(ClaimFact).where(ClaimFact.claim_id==claim.id, ClaimFact.organization_id==claim.organization_id, ClaimFact.field_path.like("operational_impact.%")))])
+    operational_facts = list(db.scalars(select(ClaimFact).where(ClaimFact.claim_id==claim.id, ClaimFact.organization_id==claim.organization_id, ClaimFact.field_path.like("operational_impact.%"))))
+    operational_sentences: list[str] = []
+    if _yes(facts.get("operational_impact.load_reduced")):
+        operational_sentences.append("Engine load was reduced in response to the abnormal machinery condition.")
+    if _yes(facts.get("operational_impact.speed_reduced")):
+        operational_sentences.append("Vessel speed was reduced.")
+    if _yes(facts.get("operational_impact.engine_stopped")):
+        operational_sentences.append("The main engine was subsequently stopped for inspection.")
+    if _yes(facts.get("operational_impact.immobilized")):
+        operational_sentences.append("The reviewed evidence records the vessel as immobilized.")
+    if _yes(facts.get("operational_impact.towage")):
+        operational_sentences.append("Towage is recorded in the reviewed evidence.")
+    if _yes(facts.get("operational_impact.deviation")):
+        operational_sentences.append("A vessel deviation is recorded in the reviewed evidence.")
+    if operational_sentences:
+        operational_sentences.append("The vessel's current post-casualty operational and repair status has not been independently established from the reviewed evidence unless updated elsewhere in the claim file.")
+        vessel_status_text = " ".join(operational_sentences)
+    else:
+        vessel_status_text = "The vessel's current operational and repair status has not yet been established from human-reviewed evidence."
+    sections["vessel_status"] = ("Current Vessel Status", 20, vessel_status_text, [_source("claim_fact", fact.id, fact.field_path) for fact in operational_facts])
 
-    damage_lines=[]; damage_sources=[]
-    for fp in ("equipment.type","equipment.name","equipment.maker","equipment.model","maintenance.running_hours_since_overhaul","maintenance.last_overhaul_date"):
-        if fp in facts: damage_lines.append(f"{fp.replace('.', ' / ').replace('_',' ')}: {_line(facts[fp])}.")
+    damage_lines: list[str] = []
+    damage_sources: list[dict[str, str]] = []
+    equipment_bits = []
+    equipment_name = _line(facts.get("equipment.name")) if facts.get("equipment.name") is not None else None
+    equipment_type = _line(facts.get("equipment.type")) if facts.get("equipment.type") is not None else None
+    equipment_maker = _line(facts.get("equipment.maker")) if facts.get("equipment.maker") is not None else None
+    equipment_model = _line(facts.get("equipment.model")) if facts.get("equipment.model") is not None else None
+    if equipment_name: equipment_bits.append(equipment_name)
+    elif equipment_type: equipment_bits.append(equipment_type)
+    if equipment_maker: equipment_bits.append(f"Maker: {equipment_maker}")
+    if equipment_model: equipment_bits.append(f"Model: {equipment_model}")
+    if equipment_bits:
+        damage_lines.append("Equipment:\n- " + "; ".join(equipment_bits))
 
     technical_review = build_technical_review(db, claim_id=claim.id, organization_id=claim.organization_id)
     grouped_findings: dict[str, dict[str, Any]] = {}
@@ -99,32 +149,58 @@ def _build_sections(db: Session, claim: Claim) -> list[tuple[str, str, int, str,
         leaf = field_path.rsplit(".", 1)[-1]
         grouped_findings.setdefault(root, {})[leaf] = finding.get("value")
         grouped_sources.setdefault(root, []).append(_source("document_extraction", finding.get("extraction_id"), field_path))
+    physical_lines: list[str] = []
     for root, values in list(grouped_findings.items())[:8]:
         component = _line(values.get("component")) if values.get("component") is not None else None
         description = _line(values.get("damage_description")) if values.get("damage_description") is not None else None
         extent = _line(values.get("extent")) if values.get("extent") is not None else None
         parts = [part for part in (description, extent) if part and part != "Not established"]
         if component and component != "Not established":
-            text = f"Workshop finding — {component}" + (f": {'; '.join(parts)}" if parts else "") + "."
+            physical_lines.append(f"- Workshop finding — {component}" + (f": {'; '.join(parts)}" if parts else ""))
         elif parts:
-            text = f"Workshop finding: {'; '.join(parts)}."
+            physical_lines.append(f"- {'; '.join(parts)}")
         else:
             continue
-        damage_lines.append(text)
         damage_sources.extend(grouped_sources.get(root, []))
+    if physical_lines:
+        damage_lines.append("Physical findings from reviewed workshop evidence:\n" + "\n".join(physical_lines))
 
-    for issue in issues[:8]:
-        damage_lines.append(f"Review issue: {issue.title} ({issue.severity.value}).")
-        damage_sources.append(_source("claim_issue", issue.id, issue.rule_id))
-    sections["damage"]=("Damage & Technical Findings",30," ".join(damage_lines) if damage_lines else "No human-approved technical findings have yet been established.",damage_sources)
+    maintenance_bits: list[str] = []
+    if facts.get("maintenance.running_hours_since_overhaul") is not None:
+        maintenance_bits.append(f"Running hours since overhaul: {_line(facts['maintenance.running_hours_since_overhaul'])}")
+    if facts.get("maintenance.recommended_overhaul_interval") is not None:
+        maintenance_bits.append(f"Reviewed recommended overhaul interval: {_line(facts['maintenance.recommended_overhaul_interval'])}")
+    if facts.get("maintenance.last_overhaul_date") is not None:
+        maintenance_bits.append(f"Last overhaul date recorded: {_line(facts['maintenance.last_overhaul_date'])}")
+    if maintenance_bits:
+        damage_lines.append("Maintenance context:\n- " + "\n- ".join(maintenance_bits))
 
-    doc_lines=[f"{d.original_filename} — {d.document_type or 'unclassified'}" for d in docs]
-    sections["documents"]=("Documents Received",40,"Received documents:\n"+"\n".join(f"- {x}" for x in doc_lines) if doc_lines else "No active documents are currently recorded.",[_source("document",d.id,d.original_filename) for d in docs])
+    if issues:
+        issue_lines = [f"- {issue.title} — investigation priority {issue.severity.value}; this is not a causation finding." for issue in issues[:8]]
+        damage_lines.append("Open technical issues:\n" + "\n".join(issue_lines))
+        for issue in issues[:8]:
+            damage_sources.append(_source("claim_issue", issue.id, issue.rule_id))
+    sections["damage"]=("Damage & Technical Findings",30,"\n\n".join(damage_lines) if damage_lines else "No human-approved technical findings have yet been established.",damage_sources)
+
+    doc_lines=[f"{_document_label(d)} ({d.original_filename})" for d in docs]
+    sections["documents"]=("Documents Received",40,"Received documents:\n"+"\n".join(f"- {x}" for x in doc_lines) if doc_lines else "No active documents are currently recorded.",[_source("document",d.id,_document_label(d)) for d in docs])
 
     missing=[r for r in rule_summary.requirements if r.status not in {RequirementStatus.RECEIVED,RequirementStatus.UNDER_REVIEW,RequirementStatus.ACCEPTED}]
     critical=[r for r in missing if r.priority==RequirementPriority.CRITICAL]
     outstanding_text="No critical evidence is currently outstanding." if not critical else "Outstanding critical evidence:\n"+"\n".join(f"- {r.document_label}: {r.reason}" for r in critical)
     sections["outstanding"]=("Outstanding Critical Evidence",50,outstanding_text,[_source("document_requirement",r.id,r.rule_id) for r in critical])
+
+    event_document_names: dict[UUID, list[str]] = {}
+    for event_evidence, source_document in db.execute(
+        select(EventEvidence, Document).join(Document, Document.id == EventEvidence.document_id).where(
+            EventEvidence.organization_id == claim.organization_id,
+            EventEvidence.claim_id == claim.id,
+        )
+    ).all():
+        names = event_document_names.setdefault(event_evidence.event_id, [])
+        label = _document_label(source_document)
+        if label not in names:
+            names.append(label)
 
     event_lines=[]; event_sources=[]
     for e in events[:25]:
@@ -135,7 +211,8 @@ def _build_sections(db: Session, claim: Claim) -> list[tuple[str, str, int, str,
             when=f"{e.occurred_on.isoformat()} — time not stated"
         else:
             when="Undated / relative"
-        event_lines.append(f"- {when} — {e.title}")
+        source_suffix = f" — Source: {' / '.join(event_document_names.get(e.id, []))}" if event_document_names.get(e.id) else ""
+        event_lines.append(f"- {when} — {e.title}{source_suffix}")
         event_sources.append(_source("chronology_event",e.id,e.title))
     sections["chronology"]=("Chronology",60,"Chronology:\n"+"\n".join(event_lines) if event_lines else "No reviewed chronology events are currently available.",event_sources)
 
@@ -193,8 +270,27 @@ def _build_sections(db: Session, claim: Claim) -> list[tuple[str, str, int, str,
     sections["reserve"]=("Reserve",100,reserve_text,reserve_sources)
 
     actions=[]; action_sources=[]
-    for r in critical[:10]: actions.append(f"Obtain {r.document_label}."); action_sources.append(_source("document_requirement",r.id,r.rule_id))
-    for t in tasks[:10]: actions.append(f"Complete task: {t.title}" + (f" by {t.due_date.isoformat()}" if t.due_date else "") + "."); action_sources.append(_source("claim_task",t.id,t.title))
+    tasks_by_requirement={t.requirement_id:t for t in tasks if t.requirement_id is not None}
+    included_task_ids:set[UUID]=set()
+    today=datetime.now(UTC).date()
+    for r in critical[:10]:
+        task=tasks_by_requirement.get(r.id)
+        due_text=""
+        if task and task.due_date:
+            overdue=" — OVERDUE" if task.due_date < today else ""
+            due_text=f" — due {task.due_date.isoformat()}{overdue}"
+        actions.append(f"Obtain {r.document_label}{due_text}.")
+        action_sources.append(_source("document_requirement",r.id,r.rule_id))
+        if task:
+            included_task_ids.add(task.id)
+            action_sources.append(_source("claim_task",task.id,task.title))
+    for t in tasks[:10]:
+        if t.id in included_task_ids:
+            continue
+        overdue=" — OVERDUE" if t.due_date and t.due_date < today else ""
+        due=f" — due {t.due_date.isoformat()}{overdue}" if t.due_date else ""
+        actions.append(f"Complete task: {t.title}{due}.")
+        action_sources.append(_source("claim_task",t.id,t.title))
     for c in open_conflicts[:5]: actions.append(f"Review evidence conflict: {c.topic}."); action_sources.append(_source("evidence_conflict",c.id,c.topic))
     for f in fin_flags:
         if f.status==FinancialFlagStatus.OPEN: actions.append(f"Review financial flag: {f.title}."); action_sources.append(_source("financial_flag",f.id,f.title))
@@ -228,10 +324,12 @@ def get_assessment(db: Session, *, claim: Claim, assessment_id: UUID | None=None
 
 def review_section(db:Session,*,claim:Claim,section:AssessmentSection,user:User,action:str,text:str|None)->AssessmentSection:
     if section.claim_id!=claim.id or section.organization_id!=claim.organization_id: raise HTTPException(status_code=404,detail="Assessment section not found")
+    assessment=db.get(InitialAssessment,section.assessment_id)
+    if assessment and assessment.status==AssessmentStatus.APPROVED:
+        raise HTTPException(status_code=409, detail="Approved assessment versions are immutable. Generate a new assessment version before making changes.")
     section.status=AssessmentSectionStatus.EDITED if action=="edit" else AssessmentSectionStatus.APPROVED
     section.approved_text=text.strip() if action=="edit" and text else section.draft_text
     section.reviewed_by_id=user.id;section.reviewed_at=datetime.now(UTC)
-    assessment=db.get(InitialAssessment,section.assessment_id)
     if assessment and assessment.status==AssessmentStatus.DRAFT: assessment.status=AssessmentStatus.UNDER_REVIEW
     write_audit_log(db,organization_id=claim.organization_id,user_id=user.id,action="REVIEW_ASSESSMENT_SECTION",entity_type="assessment_section",entity_id=section.id,new_values={"action":action,"section_key":section.section_key})
     db.commit();db.refresh(section);return section

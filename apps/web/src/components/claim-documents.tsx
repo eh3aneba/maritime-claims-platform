@@ -14,6 +14,7 @@ import {
 import type { ClaimDocument, ConfidentialityLevel } from "@/lib/types";
 
 type UploadState = { name: string; progress: number; status: "uploading" | "done" | "error"; error?: string };
+type DocumentIntelligenceType = Parameters<typeof runDocumentIntelligence>[2];
 
 const documentTypes = [
   ["", "Unclassified"],
@@ -129,7 +130,7 @@ export function ClaimDocuments({ claimId }: { claimId: string }) {
   }
 
   async function analyzeDocument(document: ClaimDocument) {
-    const typeMap: Record<string, string> = {
+    const typeMap: Record<string, DocumentIntelligenceType> = {
       chief_engineer_report: "ce-report",
       engine_log: "engine-log",
       running_hours_record: "running-hours",
