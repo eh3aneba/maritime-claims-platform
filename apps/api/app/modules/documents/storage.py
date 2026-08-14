@@ -63,6 +63,24 @@ class LocalDocumentStorage:
             file_hash=digest.hexdigest(),
         )
 
+    def save_bytes(self, payload: bytes, storage_key: str) -> StoredUpload:
+        import hashlib
+
+        path = self._resolve_key(storage_key)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        digest = hashlib.sha256(payload).hexdigest()
+        try:
+            with path.open("xb") as destination:
+                destination.write(payload)
+        except Exception:
+            path.unlink(missing_ok=True)
+            raise
+        return StoredUpload(
+            storage_key=storage_key,
+            file_size_bytes=len(payload),
+            file_hash=digest,
+        )
+
     def path_for(self, storage_key: str) -> Path:
         path = self._resolve_key(storage_key)
         if not path.is_file():
