@@ -1,0 +1,75 @@
+name: Generate dependency lockfiles
+
+on:
+  push:
+    branches:
+      - agent/reproducible-dependencies
+    paths:
+      - apps/api/requirements.txt
+      - apps/api/requirements-dev.in
+      - apps/web/package.json
+      - tests/browser/requirements.txt
+      - .github/workflows/generate-lockfiles.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: dependency-lock-generation
+  cancel-in-progress: true
+
+jobs:
+  generate:
+    name: Generate Python and Node lockfiles
+    if: github.repository == 'eh3aneba/maritime-claims-platform'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out generation branch
+        uses: actions/checkout@v6
+        with:
+          ref: agent/reproducible-dependencies
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+
+      - name: Generate hashed Python lockfiles
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "pip-tools>=7.5,<8"
+          pip-compile --generate-hashes --strip-extras --resolver=backtracking \
+            --output-file=apps/api/requirements.lock apps/api/requirements.txt
+          pip-compile --generate-hashes --strip-extras --resolver=backtracking \
+            --output-file=apps/api/requirements-dev.lock apps/api/requirements-dev.in
+          pip-compile --generate-hashes --strip-extras --resolver=backtracking \
+            --output-file=tests/browser/requirements.lock tests/browser/requirements.txt
+
+      - name: Generate npm lockfile
+        working-directory: apps/web
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+
+      - name: Verify generated dependency files
+        run: |
+          python -m pip install --require-hashes -r apps/api/requirements-dev.lock
+          python -m pip check
+          npm ci --ignore-scripts --no-audit --no-fund --prefix apps/web
+
+      - name: Commit generated lockfiles
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- apps/api/requirements.lock apps/api/requirements-dev.lock apps/web/package-lock.json tests/browser/requirements.lock
+          git diff --cached --check
+          if git diff --cached --quiet; then
+            echo "Lockfiles are already current."
+            exit 0
+          fi
+          git commit -m "build: generate dependency lockfiles"
+          git push origin HEAD:agent/reproducible-dependencies
