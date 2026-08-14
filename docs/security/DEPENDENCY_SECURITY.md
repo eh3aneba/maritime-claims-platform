@@ -40,8 +40,6 @@ Python production lock:
 ```bash
 pipx run pip-audit \
   --require-hashes \
-  --no-deps \
-  --disable-pip \
   -r apps/api/requirements.lock
 ```
 
