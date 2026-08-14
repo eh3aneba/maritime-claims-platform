@@ -633,3 +633,47 @@ export function markClaimCorrespondenceSent(claimId: string, itemId: string, pay
     method: "POST", body: JSON.stringify(payload),
   });
 }
+
+export function listAdjustmentStatements(claimId: string) {
+  return apiFetch<import("./types").AdjustmentListResponse>("/claims/" + claimId + "/adjustments");
+}
+
+export function createAdjustmentStatement(claimId: string, payload: { currency: string; title?: string | null }) {
+  return apiFetch<import("./types").AdjustmentStatement>("/claims/" + claimId + "/adjustments", {
+    method: "POST", body: JSON.stringify(payload),
+  });
+}
+
+export function updateAdjustmentStatement(claimId: string, statementId: string, payload: Partial<{
+  title: string;
+  deductible_amount: string;
+  deductible_basis: string;
+  other_deduction_amount: string;
+  other_deduction_basis: string;
+}>) {
+  return apiFetch<import("./types").AdjustmentStatement>("/claims/" + claimId + "/adjustments/" + statementId, {
+    method: "PATCH", body: JSON.stringify(payload),
+  });
+}
+
+export function updateAdjustmentLine(claimId: string, statementId: string, lineId: string, payload: {
+  treatment: import("./types").AdjustmentTreatment;
+  basis: import("./types").AdjustmentBasis;
+  considered_amount: string;
+  reason?: string | null;
+  note?: string | null;
+}) {
+  return apiFetch<import("./types").AdjustmentStatement>("/claims/" + claimId + "/adjustments/" + statementId + "/lines/" + lineId, {
+    method: "PATCH", body: JSON.stringify(payload),
+  });
+}
+
+export function submitAdjustmentStatement(claimId: string, statementId: string) {
+  return apiFetch<import("./types").AdjustmentStatement>("/claims/" + claimId + "/adjustments/" + statementId + "/submit", { method: "POST" });
+}
+
+export function reviewAdjustmentStatement(claimId: string, statementId: string, action: "approve" | "reject", note: string) {
+  return apiFetch<import("./types").AdjustmentStatement>("/claims/" + claimId + "/adjustments/" + statementId + "/" + action, {
+    method: "POST", body: JSON.stringify({ note }),
+  });
+}
