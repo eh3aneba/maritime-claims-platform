@@ -1,0 +1,72 @@
+name: Supply Chain Security
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  schedule:
+    - cron: "0 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: supply-chain-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  supply-chain:
+    name: Production dependency audit and SBOM
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Prepare artifact directory
+        run: mkdir -p artifacts
+
+      - name: Create SPDX dependency inventory
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
+        with:
+          path: .
+          format: spdx-json
+          output-file: artifacts/maritime-claims-platform.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+          syft-version: v1.51.0
+
+      - name: Validate SBOM
+        run: >-
+          jq -e
+          '.spdxVersion and (.packages | type == "array") and (.packages | length > 0)'
+          artifacts/maritime-claims-platform.spdx.json
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: maritime-claims-platform-sbom
+          path: artifacts/maritime-claims-platform.spdx.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Audit Python production lock
+        uses: pypa/gh-action-pip-audit@1220774d901786e6f652ae159f7b6bc8fea6d266 # v1.1.0
+        with:
+          inputs: apps/api/requirements.lock
+          require-hashes: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Audit web production dependencies
+        working-directory: apps/web
+        run: npm audit --omit=dev --audit-level=high
