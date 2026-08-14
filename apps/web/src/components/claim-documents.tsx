@@ -11,6 +11,7 @@ import {
   listClaimDocuments,
   purgeQuarantinedUpload,
   queueLegacyEvidenceRescan,
+  replaceClaimDocument,
   retryQuarantinedUpload,
   runDocumentIntelligence,
   uploadClaimDocument,
@@ -84,6 +85,7 @@ function evidenceAvailable(document: ClaimDocument) {
 
 export function ClaimDocuments({ claimId }: { claimId: string }) {
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const replacementInputRef = useRef<HTMLInputElement | null>(null);
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [documents, setDocuments] = useState<ClaimDocument[]>([]);
   const [quarantinedUploads, setQuarantinedUploads] = useState<QuarantinedUpload[]>([]);
@@ -96,9 +98,14 @@ export function ClaimDocuments({ claimId }: { claimId: string }) {
   const [operationMessage, setOperationMessage] = useState("");
   const [operationState, setOperationState] = useState<Record<string, string>>({});
   const [intelligenceState, setIntelligenceState] = useState<Record<string, string>>({});
+  const [replacementTarget, setReplacementTarget] = useState<{
+    document: ClaimDocument;
+    reason: string;
+  } | null>(null);
 
   const canManageEvidence = ["admin", "claims_manager"].includes(currentUser?.role ?? "");
   const isAdmin = currentUser?.role === "admin";
+  const currentDocumentCount = documents.filter((document) => document.is_current).length;
   const legacyCount = documents.filter(
     (document) => document.malware_scan_status === "legacy_unscanned",
   ).length;
@@ -161,6 +168,59 @@ export function ClaimDocuments({ claimId }: { claimId: string }) {
       }
     }
     await refresh();
+  }
+
+  function startReplacement(document: ClaimDocument) {
+    const reason = window.prompt(
+      "Why is this evidence being replaced? Enter at least 20 characters. The prior file and all approvals will remain preserved.",
+    );
+    if (!reason) return;
+    if (reason.trim().length < 20) {
+      setError("A replacement reason of at least 20 characters is required.");
+      return;
+    }
+    if (!window.confirm(
+      `Create a new version of ${document.original_filename}? Existing Claim Facts, reviews and assessment approvals will not transfer automatically.`,
+    )) return;
+    setReplacementTarget({ document, reason: reason.trim() });
+    window.setTimeout(() => replacementInputRef.current?.click(), 0);
+  }
+
+  async function chooseReplacement(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0] ?? null;
+    event.target.value = "";
+    const target = replacementTarget;
+    if (!file || !target) {
+      setReplacementTarget(null);
+      return;
+    }
+    setError("");
+    setOperationMessage("");
+    setOperationState((current) => ({
+      ...current,
+      [target.document.id]: "Replacing · 0%",
+    }));
+    try {
+      const replacement = await replaceClaimDocument(
+        claimId,
+        target.document.id,
+        file,
+        target.reason,
+        (progress) => setOperationState((current) => ({
+          ...current,
+          [target.document.id]: `Replacing · ${progress}%`,
+        })),
+      );
+      setOperationMessage(
+        `Version ${replacement.version_number} is current. Version ${target.document.version_number} and its review history remain preserved.`,
+      );
+      await refresh();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.detail : "Evidence replacement failed.");
+    } finally {
+      setOperationState((current) => ({ ...current, [target.document.id]: "" }));
+      setReplacementTarget(null);
+    }
   }
 
   function chooseFiles(event: ChangeEvent<HTMLInputElement>) {
@@ -289,7 +349,7 @@ export function ClaimDocuments({ claimId }: { claimId: string }) {
           <p className="section-subtitle">Evidence is isolated by tenant, checked by SHA-256 and malware-scanned before processing.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-500">
-          <span className="rounded-full bg-slate-100 px-2.5 py-1">{documents.length} files</span>
+          <span className="rounded-full bg-slate-100 px-2.5 py-1">{currentDocumentCount} current · {documents.length} versions</span>
           {quarantinedUploads.length ? <span className="rounded-full bg-red-50 px-2.5 py-1 text-red-700">{quarantinedUploads.length} quarantined</span> : null}
           {canManageEvidence && legacyCount ? <button type="button" onClick={() => void queueLegacyRescan()} className="rounded-full bg-amber-100 px-2.5 py-1 text-amber-800 hover:bg-amber-200">{operationState.rescan || `Rescan ${legacyCount} legacy`}</button> : null}
           <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-emerald-700">Evidence security active</span>
@@ -302,6 +362,7 @@ export function ClaimDocuments({ claimId }: { claimId: string }) {
       </div>
 
       <input ref={inputRef} type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.docx,.xlsx" className="hidden" onChange={chooseFiles} />
+      <input ref={replacementInputRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.docx,.xlsx" className="hidden" onChange={chooseReplacement} />
       <div onDragOver={(event) => { event.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)} onDrop={onDrop} className={`mt-4 rounded-xl border-2 border-dashed px-5 py-8 text-center transition ${dragging ? "border-cyan-600 bg-cyan-50" : "border-slate-300 bg-slate-50"}`}>
         <p className="text-sm font-semibold text-slate-800">Drop claim evidence here</p>
         <p className="mt-1 text-xs text-slate-500">PDF, JPG, PNG, DOCX or XLSX · maximum 25 MB · scanned before admission</p>
@@ -313,7 +374,7 @@ export function ClaimDocuments({ claimId }: { claimId: string }) {
       {error ? <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div> : null}
 
       <div className="mt-6 overflow-hidden rounded-xl border border-slate-200">
-        {loading ? <div className="p-6 text-sm text-slate-500">Loading documents…</div> : documents.length === 0 ? <div className="p-8 text-center"><p className="text-sm font-medium text-slate-700">No active evidence uploaded yet</p><p className="mt-1 text-xs text-slate-500">Start with the Chief Engineer Report, Engine Log or Workshop Report.</p></div> : <div className="overflow-x-auto"><table className="data-table min-w-[840px]"><thead><tr><th>Document</th><th>Type</th><th>Size</th><th>Integrity</th><th>Access</th><th className="text-right">Actions</th></tr></thead><tbody>{documents.map((document) => { const scan = malwareStatus(document.malware_scan_status); const available = evidenceAvailable(document); return <tr key={document.id}><td><p className="font-medium text-slate-800">{document.original_filename}</p><p className="mt-1 text-xs text-slate-400">Uploaded {new Date(document.created_at).toLocaleString()}</p></td><td>{readableType(document.document_type)}</td><td>{formatBytes(document.file_size_bytes)}</td><td><span title={document.file_hash} className="font-mono text-xs text-slate-500">SHA-256 · {document.file_hash.slice(0, 10)}…</span><p className={`mt-1 text-[11px] font-semibold ${scan.className}`}>{scan.label}</p></td><td><span className="capitalize">{document.confidentiality_level}</span></td><td>{available ? <><div className="flex flex-wrap justify-end gap-2">{document.processing_status === "processed" && ["chief_engineer_report", "engine_log", "running_hours_record", "pms_record", "workshop_report", "quotation", "invoice"].includes(document.document_type ?? "") ? <button onClick={() => void analyzeDocument(document)} className="text-xs font-semibold text-indigo-700 hover:text-indigo-950">{intelligenceState[document.id] || (document.document_type === "engine_log" ? "Analyze log" : document.document_type === "running_hours_record" ? "Analyze hours" : document.document_type === "pms_record" ? "Analyze PMS" : "Analyze report")}</button> : null}<button onClick={() => void download(document)} className="text-xs font-semibold text-cyan-800 hover:text-cyan-950">Download</button><button onClick={() => void removeDocument(document)} className="text-xs font-semibold text-red-600 hover:text-red-800">Remove</button></div>{intelligenceState[document.id] ? <div className="mt-1 text-right"><Link href="/ai-review" className="text-[11px] font-semibold text-slate-500 hover:text-slate-800">Open AI review</Link></div> : null}</> : <p className="text-right text-xs font-semibold text-red-700">Blocked by evidence security</p>}</td></tr>; })}</tbody></table></div>}
+        {loading ? <div className="p-6 text-sm text-slate-500">Loading documents…</div> : documents.length === 0 ? <div className="p-8 text-center"><p className="text-sm font-medium text-slate-700">No active evidence uploaded yet</p><p className="mt-1 text-xs text-slate-500">Start with the Chief Engineer Report, Engine Log or Workshop Report.</p></div> : <div className="overflow-x-auto"><table className="data-table min-w-[840px]"><thead><tr><th>Document</th><th>Type</th><th>Size</th><th>Integrity</th><th>Access</th><th className="text-right">Actions</th></tr></thead><tbody>{documents.map((document) => { const scan = malwareStatus(document.malware_scan_status); const available = evidenceAvailable(document); return <tr key={document.id} className={document.is_current ? "" : "bg-slate-50/70"}><td><div className="flex flex-wrap items-center gap-2"><p className="font-medium text-slate-800">{document.original_filename}</p><span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${document.is_current ? "bg-emerald-100 text-emerald-800" : "bg-slate-200 text-slate-600"}`}>v{document.version_number} · {document.is_current ? "Current" : "Superseded"}</span></div><p className="mt-1 text-xs text-slate-400">Uploaded {new Date(document.created_at).toLocaleString()}</p>{document.replacement_reason ? <p className="mt-1 max-w-md text-xs text-slate-500">Replacement reason: {document.replacement_reason}</p> : null}</td><td>{readableType(document.document_type)}</td><td>{formatBytes(document.file_size_bytes)}</td><td><span title={document.file_hash} className="font-mono text-xs text-slate-500">SHA-256 · {document.file_hash.slice(0, 10)}…</span><p className={`mt-1 text-[11px] font-semibold ${scan.className}`}>{scan.label}</p></td><td><span className="capitalize">{document.confidentiality_level}</span></td><td>{available ? <><div className="flex flex-wrap justify-end gap-2">{document.processing_status === "processed" && ["chief_engineer_report", "engine_log", "running_hours_record", "pms_record", "workshop_report", "quotation", "invoice"].includes(document.document_type ?? "") ? <button onClick={() => void analyzeDocument(document)} className="text-xs font-semibold text-indigo-700 hover:text-indigo-950">{intelligenceState[document.id] || (document.document_type === "engine_log" ? "Analyze log" : document.document_type === "running_hours_record" ? "Analyze hours" : document.document_type === "pms_record" ? "Analyze PMS" : "Analyze report")}</button> : null}<button onClick={() => void download(document)} className="text-xs font-semibold text-cyan-800 hover:text-cyan-950">Download</button>{document.is_current ? <button onClick={() => startReplacement(document)} className="text-xs font-semibold text-indigo-700 hover:text-indigo-950">{operationState[document.id] || "Replace"}</button> : null}{document.is_current ? <button onClick={() => void removeDocument(document)} className="text-xs font-semibold text-red-600 hover:text-red-800">Remove</button> : null}</div>{intelligenceState[document.id] ? <div className="mt-1 text-right"><Link href="/ai-review" className="text-[11px] font-semibold text-slate-500 hover:text-slate-800">Open AI review</Link></div> : null}</> : <p className="text-right text-xs font-semibold text-red-700">Blocked by evidence security</p>}</td></tr>; })}</tbody></table></div>}
       </div>
 
       {quarantinedUploads.length ? <div className="mt-6 overflow-hidden rounded-xl border border-red-200 bg-red-50/40"><div className="border-b border-red-200 px-4 py-3"><h3 className="text-sm font-semibold text-red-900">Quarantined evidence</h3><p className="mt-1 text-xs text-red-700">These bytes are excluded from downloads and document processing. Clean release requires an explicit retry by a manager or administrator.</p></div><div className="overflow-x-auto"><table className="data-table min-w-[820px]"><thead><tr><th>Upload</th><th>Size</th><th>Scan result</th><th>Reference</th><th className="text-right">Operator actions</th></tr></thead><tbody>{quarantinedUploads.map((upload) => <tr key={upload.id}><td><p className="font-medium text-slate-800">{upload.original_filename}</p><p className="mt-1 text-xs text-slate-500">Blocked {new Date(upload.scanned_at).toLocaleString()}</p></td><td>{formatBytes(upload.file_size_bytes)}</td><td><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${upload.status === "infected" ? "bg-red-100 text-red-800" : "bg-amber-100 text-amber-800"}`}>{upload.status === "infected" ? `Malware detected${upload.threat_name ? ` · ${upload.threat_name}` : ""}` : `Scanner unavailable · ${upload.retry_count} retries`}</span></td><td><span className="font-mono text-xs text-slate-500">{upload.id.slice(0, 8)}…</span></td><td><div className="flex flex-wrap justify-end gap-2">{canManageEvidence && upload.status === "scan_error" ? <button type="button" onClick={() => void retryQuarantine(upload)} className="text-xs font-semibold text-cyan-800 hover:text-cyan-950">{operationState[upload.id] || "Retry scan"}</button> : null}{isAdmin ? <button type="button" onClick={() => void purgeQuarantine(upload)} className="text-xs font-semibold text-red-700 hover:text-red-950">Purge bytes</button> : null}{!canManageEvidence ? <span className="text-xs text-slate-500">Manager approval required</span> : null}</div></td></tr>)}</tbody></table></div></div> : null}
