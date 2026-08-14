@@ -64,6 +64,7 @@ class Document(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
             "document_family_id",
             unique=True,
             postgresql_where=text("is_current AND deleted_at IS NULL"),
+            sqlite_where=text("is_current AND deleted_at IS NULL"),
         ),
     )
 
