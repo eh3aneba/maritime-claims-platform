@@ -614,3 +614,79 @@ def test_evidence_matrix_flags_fact_whose_authoritative_source_is_superseded() -
     assert row["supporting_evidence"][0]["document_is_current"] is False
     assert payload["summary"]["superseded_fact_source_count"] == 1
     assert payload["summary"]["historical_source_document_count"] == 1
+
+
+def test_claim_pack_exports_are_controlled_immutable_and_tenant_scoped() -> None:
+    ids = seed_review_candidates()
+    login("alpha", "alpha@example.com")
+    approved = client.post(
+        f"/api/v1/ai-review/{ids['maker_id']}",
+        json={"action": "approve"},
+    )
+    assert approved.status_code == 200, approved.text
+
+    unacknowledged = client.post(
+        f"/api/v1/claims/{ids['claim_id']}/claim-pack-exports",
+        json={"export_format": "pdf", "acknowledge_review_aid": False},
+    )
+    assert unacknowledged.status_code == 422
+
+    pdf = client.post(
+        f"/api/v1/claims/{ids['claim_id']}/claim-pack-exports",
+        json={
+            "export_format": "pdf",
+            "acknowledge_review_aid": True,
+            "generation_note": "Prepared for controlled internal review.",
+        },
+    )
+    assert pdf.status_code == 201, pdf.text
+    pdf_row = pdf.json()
+    assert pdf_row["export_format"] == "pdf"
+    assert pdf_row["mime_type"] == "application/pdf"
+    assert len(pdf_row["snapshot_hash"]) == 64
+    assert len(pdf_row["file_hash"]) == 64
+
+    pdf_download = client.get(
+        f"/api/v1/claims/{ids['claim_id']}/claim-pack-exports/{pdf_row['id']}/download"
+    )
+    assert pdf_download.status_code == 200, pdf_download.text
+    assert pdf_download.content.startswith(b"%PDF-1.4")
+    assert (
+        pdf_download.headers["x-claim-pack-snapshot-sha256"]
+        == pdf_row["snapshot_hash"]
+    )
+    assert pdf_download.headers["cache-control"] == "private, no-store"
+
+    xlsx = client.post(
+        f"/api/v1/claims/{ids['claim_id']}/claim-pack-exports",
+        json={"export_format": "xlsx", "acknowledge_review_aid": True},
+    )
+    assert xlsx.status_code == 201, xlsx.text
+    xlsx_row = xlsx.json()
+    xlsx_download = client.get(
+        f"/api/v1/claims/{ids['claim_id']}/claim-pack-exports/{xlsx_row['id']}/download"
+    )
+    assert xlsx_download.status_code == 200
+    assert xlsx_download.content.startswith(b"PK")
+    assert (
+        xlsx_download.headers["content-type"]
+        == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
+    listing = client.get(
+        f"/api/v1/claims/{ids['claim_id']}/claim-pack-exports"
+    )
+    assert listing.status_code == 200
+    assert listing.json()["total"] == 2
+    assert listing.json()["items"][0]["id"] == xlsx_row["id"]
+
+    client.cookies.clear()
+    login("beta", "beta@example.com")
+    hidden_list = client.get(
+        f"/api/v1/claims/{ids['claim_id']}/claim-pack-exports"
+    )
+    hidden_download = client.get(
+        f"/api/v1/claims/{ids['claim_id']}/claim-pack-exports/{pdf_row['id']}/download"
+    )
+    assert hidden_list.status_code == 404
+    assert hidden_download.status_code == 404

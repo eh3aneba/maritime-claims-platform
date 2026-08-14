@@ -509,3 +509,56 @@ export function updateDesignPartnerAccount(accountId: string, payload: Record<st
 export function getEvidenceMatrix(claimId: string) {
   return apiFetch<EvidenceMatrixResponse>(`/claims/${claimId}/evidence-matrix`);
 }
+
+
+export function listClaimPackExports(claimId: string) {
+  return apiFetch<import("./types").ClaimPackExportListResponse>(
+    "/claims/" + claimId + "/claim-pack-exports",
+  );
+}
+
+export function generateClaimPackExport(
+  claimId: string,
+  payload: {
+    export_format: import("./types").ClaimPackFormat;
+    acknowledge_review_aid: boolean;
+    generation_note?: string | null;
+  },
+) {
+  return apiFetch<import("./types").ClaimPackExport>(
+    "/claims/" + claimId + "/claim-pack-exports",
+    { method: "POST", body: JSON.stringify(payload) },
+  );
+}
+
+export async function downloadClaimPackExport(
+  claimId: string,
+  item: import("./types").ClaimPackExport,
+) {
+  const response = await fetch(
+    API_BASE +
+      "/claims/" +
+      claimId +
+      "/claim-pack-exports/" +
+      item.id +
+      "/download",
+    { credentials: "include" },
+  );
+  if (!response.ok) {
+    let detail = "Claim-pack download failed (" + response.status + ")";
+    try {
+      const payload = await response.json();
+      detail = typeof payload.detail === "string" ? payload.detail : detail;
+    } catch {}
+    throw new ApiError(response.status, detail);
+  }
+  const blob = await response.blob();
+  const url = window.URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = item.filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.URL.revokeObjectURL(url);
+}

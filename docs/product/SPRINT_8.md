@@ -65,9 +65,32 @@ Acceptance guardrails:
 - Replacing evidence never transfers approval.
 - No causation, coverage, liability, fraud or settlement determination is generated.
 
+## Phase D — Controlled PDF/Excel claim-pack exports
+
+Goal: let authorized claim handlers create portable point-in-time claim packs without allowing exported files to hide unresolved review state or drift with later claim changes.
+
+Delivered scope:
+
+- Canonical tenant-scoped snapshot shared by PDF and XLSX renderers.
+- Human-approved Claim Facts and source-version provenance through the Evidence Matrix.
+- Conspicuous open conflicts, outstanding evidence, open actions and financial flags.
+- Latest approved Initial Assessment only; pending sections and draft versions remain excluded.
+- Immutable snapshot/file SHA-256 hashes, protected storage and export history.
+- Explicit review-aid acknowledgement and clear non-decision disclaimer.
+- Audited generation and download with cross-tenant/cross-claim hiding.
+- MT ORION browser generation/download regression coverage.
+
+Acceptance guardrails:
+
+- Export does not mutate live Claim Facts, chronology, rules, financial review or assessments.
+- Pending AI candidates never populate factual sections.
+- No automated coverage, causation, liability, fraud, reserve, recoverability or settlement determination.
+- Failed generation never registers or exposes a partial file.
+- No external AI receives evidence.
+
 ## Next phases
 
-1. Controlled PDF/Excel claim-pack exports.
+1. Policy and Contract Intelligence with issue spotting only.
 2. Email/correspondence ingestion only after provider, consent and retention controls are designed.
 
 The complete ordered capability backlog is tracked in GitHub issue #25.
