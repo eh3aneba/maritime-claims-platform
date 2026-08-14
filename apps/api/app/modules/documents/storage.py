@@ -70,12 +70,17 @@ class LocalDocumentStorage:
         return path
 
     def promote(self, quarantine_key: str, storage_key: str) -> None:
-        source = self.path_for(quarantine_key)
-        destination = self._resolve_key(storage_key)
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        if destination.exists():
-            raise StorageError("Target storage key already exists")
-        source.rename(destination)
+        try:
+            source = self.path_for(quarantine_key)
+            destination = self._resolve_key(storage_key)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            if destination.exists():
+                raise StorageError("Target storage key already exists")
+            source.rename(destination)
+        except StorageError:
+            raise
+        except OSError as exc:
+            raise StorageError(f"Storage move failed: {type(exc).__name__}") from exc
 
     def delete_physical(self, storage_key: str) -> None:
         self._resolve_key(storage_key).unlink(missing_ok=True)

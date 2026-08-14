@@ -87,8 +87,12 @@ export interface VesselListResponse {
 
 export type DocumentProcessingStatus = "uploaded" | "processing" | "processed" | "failed";
 export type ConfidentialityLevel = "internal" | "confidential" | "restricted";
-export type DocumentMalwareScanStatus = "legacy_unscanned" | "clean";
-export type QuarantineStatus = "infected" | "scan_error";
+export type DocumentMalwareScanStatus =
+  | "legacy_unscanned"
+  | "clean"
+  | "infected_quarantined"
+  | "scan_error";
+export type QuarantineStatus = "infected" | "scan_error" | "released" | "purged";
 
 export interface ClaimDocument {
   id: string;
@@ -111,6 +115,7 @@ export interface ClaimDocument {
 export interface QuarantinedUpload {
   id: string;
   claim_id: string;
+  source_document_id: string | null;
   original_filename: string;
   mime_type: string;
   file_size_bytes: number;
@@ -118,6 +123,8 @@ export interface QuarantinedUpload {
   status: QuarantineStatus;
   threat_name: string | null;
   scanned_at: string;
+  retry_count: number;
+  last_retried_at: string | null;
   uploaded_by_id: string | null;
   created_at: string;
 }
@@ -127,6 +134,20 @@ export interface DocumentListResponse {
   total: number;
   quarantined_items: QuarantinedUpload[];
   quarantined_total: number;
+}
+
+export interface LegacyRescanResponse {
+  queued_count: number;
+  skipped_count: number;
+  jobs: Array<{ job_id: string; document_id: string; status: string }>;
+}
+
+export interface QuarantineRetryResponse {
+  quarantine_id: string;
+  status: QuarantineStatus;
+  retry_count: number;
+  released_document_id: string | null;
+  threat_name: string | null;
 }
 
 

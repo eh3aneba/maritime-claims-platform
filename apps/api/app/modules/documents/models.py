@@ -32,11 +32,15 @@ class ConfidentialityLevel(str, enum.Enum):
 class DocumentMalwareScanStatus(str, enum.Enum):
     LEGACY_UNSCANNED = "legacy_unscanned"
     CLEAN = "clean"
+    INFECTED_QUARANTINED = "infected_quarantined"
+    SCAN_ERROR = "scan_error"
 
 
 class QuarantineStatus(str, enum.Enum):
     INFECTED = "infected"
     SCAN_ERROR = "scan_error"
+    RELEASED = "released"
+    PURGED = "purged"
 
 
 class Document(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
@@ -121,7 +125,14 @@ class QuarantinedUpload(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     uploaded_by_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
+    source_document_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("documents.id", ondelete="RESTRICT"), nullable=True, index=True
+    )
+    resolved_by_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
     original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    document_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
     mime_type: Mapped[str] = mapped_column(String(150), nullable=False)
     file_size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
     file_hash: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -133,3 +144,13 @@ class QuarantinedUpload(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     threat_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     scan_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     scanned_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    retry_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    last_retried_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    resolution_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    confidentiality_level: Mapped[ConfidentialityLevel] = mapped_column(
+        Enum(ConfidentialityLevel, name="confidentiality_level", native_enum=True, values_callable=enum_values),
+        nullable=False,
+        default=ConfidentialityLevel.CONFIDENTIAL,
+        server_default=ConfidentialityLevel.CONFIDENTIAL.value,
+    )

@@ -24,6 +24,9 @@ def test_quarantined_uploads_are_separate_from_active_documents() -> None:
     assert "claim_id" in quarantined.c
     assert "quarantine_key" in quarantined.c
     assert "status" in quarantined.c
+    assert "source_document_id" in quarantined.c
+    assert "resolved_by_id" in quarantined.c
+    assert "resolution_note" in quarantined.c
 
 
 def test_audit_log_is_immutable_shape() -> None:

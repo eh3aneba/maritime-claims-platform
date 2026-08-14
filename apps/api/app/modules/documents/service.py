@@ -108,6 +108,8 @@ def _record_quarantine_and_raise(
     claim: Claim,
     current_user: User,
     original_filename: str,
+    document_type: str | None,
+    confidentiality_level: ConfidentialityLevel,
     mime_type: str,
     file_size_bytes: int,
     file_hash: str,
@@ -123,6 +125,7 @@ def _record_quarantine_and_raise(
         claim_id=claim.id,
         uploaded_by_id=current_user.id,
         original_filename=original_filename,
+        document_type=(document_type.strip()[:100] or None) if document_type else None,
         mime_type=mime_type[:150],
         file_size_bytes=file_size_bytes,
         file_hash=file_hash,
@@ -131,6 +134,7 @@ def _record_quarantine_and_raise(
         threat_name=threat_name,
         scan_error=scan_error,
         scanned_at=scanned_at,
+        confidentiality_level=confidentiality_level,
     )
     db.add(quarantined)
     write_audit_log(
@@ -244,6 +248,8 @@ async def create_document_from_upload(
                 claim=claim,
                 current_user=current_user,
                 original_filename=original_filename,
+                document_type=document_type,
+                confidentiality_level=confidentiality_level,
                 mime_type=upload.content_type or "application/octet-stream",
                 file_size_bytes=stored.file_size_bytes,
                 file_hash=stored.file_hash,
@@ -259,6 +265,8 @@ async def create_document_from_upload(
                 claim=claim,
                 current_user=current_user,
                 original_filename=original_filename,
+                document_type=document_type,
+                confidentiality_level=confidentiality_level,
                 mime_type=upload.content_type or "application/octet-stream",
                 file_size_bytes=stored.file_size_bytes,
                 file_hash=stored.file_hash,
@@ -285,6 +293,8 @@ async def create_document_from_upload(
             claim=claim,
             current_user=current_user,
             original_filename=original_filename,
+            document_type=document_type,
+            confidentiality_level=confidentiality_level,
             mime_type=upload.content_type or "application/octet-stream",
             file_size_bytes=stored.file_size_bytes,
             file_hash=stored.file_hash,
@@ -360,6 +370,7 @@ def list_quarantined_uploads(
     conditions = (
         QuarantinedUpload.organization_id == organization_id,
         QuarantinedUpload.claim_id == claim_id,
+        QuarantinedUpload.status.in_([QuarantineStatus.INFECTED, QuarantineStatus.SCAN_ERROR]),
     )
     items = list(
         db.scalars(
