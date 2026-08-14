@@ -80,6 +80,12 @@ Install committed dependencies from lockfiles rather than resolving new versions
 
 The Python lockfiles include package hashes, and CI rejects stale lockfiles. Edit the input manifests (`requirements.txt`, `requirements-dev.in`, or `package.json`) rather than editing generated lockfiles manually. Dependabot checks Python, npm, browser and GitHub Actions dependencies every week.
 
+## Supply-chain security
+
+The independent supply-chain workflow audits Python and web production dependencies on every pull request and weekly, and blocks known Python or high/critical npm vulnerabilities. It also publishes a seven-day SPDX JSON SBOM artifact for each run.
+
+See `docs/security/DEPENDENCY_SECURITY.md` for the enforcement policy, finding-handling rules and local commands.
+
 ## Repository structure
 
 ```text
