@@ -25,6 +25,9 @@ from app.modules.claims.facts import ClaimFact
 from app.modules.claims.models import Claim, ClaimPriority, ClaimStatus, ClaimType
 from app.modules.claims.schemas import ClaimCreate
 from app.modules.claims.service import change_claim_status, create_claim, update_current_reserve
+from app.modules.correspondence.models import ClaimCorrespondence
+from app.modules.correspondence.schemas import CorrespondenceMarkSent
+from app.modules.correspondence.service import mark_correspondence_sent, review_correspondence, submit_correspondence
 from app.modules.documents.models import ConfidentialityLevel, Document, DocumentProcessingStatus
 from app.modules.documents.service import create_document_from_upload
 from app.modules.financial.models import FinancialFlagType, ReserveHistory
@@ -46,7 +49,7 @@ from app.modules.review.service import list_review_groups, review_extraction
 from app.modules.rules.models import ClaimIssue, RequirementPriority, RequirementStatus
 from app.modules.rules.service import evaluate_claim_rules, get_rule_summary
 from app.modules.tasks.schemas import DocumentRequestCreate
-from app.modules.tasks.service import create_document_request, mark_request_sent
+from app.modules.tasks.service import create_document_request
 from app.modules.technical.service import build_technical_review
 from app.modules.users.models import User, UserRole
 from app.modules.vessels.models import Vessel
@@ -518,7 +521,26 @@ def test_mt_orion_full_pilot_workflow(tmp_path):
             assert "H&M Policy / Wording" in missing_labels
             assert "Last Overhaul Report" in missing_labels
             batch, tasks = create_document_request(db, claim=claim, user=manager, payload=DocumentRequestCreate(all_critical=True, due_date=date(2026,7,17), recipient_label="Shipowner / Technical Manager"))
-            mark_request_sent(db, claim=claim, batch=batch, user=manager)
+            correspondence = db.scalar(select(ClaimCorrespondence).where(ClaimCorrespondence.request_batch_id == batch.id))
+            submit_correspondence(db, item=correspondence, user=manager)
+            review_correspondence(
+                db,
+                item=correspondence,
+                user=manager,
+                approve=True,
+                note="Synthetic pilot correspondence reviewed before recorded dispatch.",
+            )
+            mark_correspondence_sent(
+                db,
+                claim=claim,
+                item=correspondence,
+                user=manager,
+                payload=CorrespondenceMarkSent(
+                    confirm_sent=True,
+                    channel="email",
+                    external_reference="SYNTHETIC-DEMO-DISPATCH",
+                ),
+            )
             assert len(tasks) == len(critical_missing)
 
             # Full assessment is correctly blocked; a preliminary assessment is generated.
