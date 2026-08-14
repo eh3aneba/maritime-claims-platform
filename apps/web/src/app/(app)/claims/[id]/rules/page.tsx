@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
-import { ApiError, acceptEquivalentEvidence, createDocumentRequest, evaluateClaimRules, getClaim, getClaimRules, listClaimTasks, markDocumentRequestSent } from "@/lib/api";
+import { ApiError, acceptEquivalentEvidence, createDocumentRequest, evaluateClaimRules, getClaim, getClaimRules, listClaimTasks } from "@/lib/api";
 import { formatDate } from "@/lib/format";
 import type { Claim, ClaimDocumentRequirement, ClaimRuleSummary, ClaimTask, DocumentRequestResult, RequirementPriority } from "@/lib/types";
 
@@ -64,16 +64,7 @@ export default function ClaimRulesPage() {
     finally { setBusy(false); }
   }
 
-  async function markDraftSent() {
-    if (!draft) return;
-    setBusy(true); setError("");
-    try {
-      await markDocumentRequestSent(id, draft.batch.id);
-      setDraft((current) => current ? { ...current, batch: { ...current.batch, status: "sent_externally" } } : current);
-      await load();
-    } catch (e) { setError(e instanceof ApiError ? e.detail : "Request status could not be updated."); }
-    finally { setBusy(false); }
-  }
+
 
   async function requestDocuments(allCritical = false) {
     setBusy(true); setError("");
@@ -138,7 +129,7 @@ export default function ClaimRulesPage() {
         <div className="flex flex-wrap gap-2"><button disabled={busy || criticalRequestable === 0} className="primary-button" onClick={() => requestDocuments(true)}>Request all Critical ({criticalRequestable})</button><button disabled={busy || selected.length === 0} className="secondary-button" onClick={() => requestDocuments(false)}>Draft selected ({selected.length})</button></div>
       </div>
       <div className="mt-4 grid gap-3 sm:grid-cols-2"><label><span className="label">Recipient label</span><input className="field" value={recipient} onChange={(e) => setRecipient(e.target.value)} /></label><label><span className="label">Follow-up due date</span><input className="field" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} /></label></div>
-      {draft ? <div className="mt-5 rounded-xl border border-cyan-200 bg-cyan-50 p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-[.12em] text-cyan-700">Draft created · {draft.tasks.length} task(s)</p><h3 className="mt-1 text-sm font-semibold text-slate-950">{draft.batch.subject}</h3></div><div className="flex flex-wrap gap-2"><button className="secondary-button px-3 py-2 text-xs" onClick={() => navigator.clipboard?.writeText(draft.batch.draft_body)}>Copy draft</button>{draft.batch.status === "draft" ? <button disabled={busy} className="primary-button px-3 py-2 text-xs" onClick={markDraftSent}>Mark as requested</button> : null}</div></div><textarea readOnly className="field mt-3 min-h-64 whitespace-pre-wrap font-mono text-xs" value={draft.batch.draft_body} /><p className="mt-2 text-xs text-slate-500">Status: {draft.batch.status.replaceAll("_", " ")}. Creating a draft does not change Requirement status; use “Mark as requested” only after the correspondence has actually been sent outside the platform.</p></div> : null}
+      {draft ? <div className="mt-5 rounded-xl border border-cyan-200 bg-cyan-50 p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-[.12em] text-cyan-700">Draft created · {draft.tasks.length} task(s)</p><h3 className="mt-1 text-sm font-semibold text-slate-950">{draft.batch.subject}</h3></div><div className="flex flex-wrap gap-2"><button className="secondary-button px-3 py-2 text-xs" onClick={() => navigator.clipboard?.writeText(draft.batch.draft_body)}>Copy draft</button>{draft.batch.status === "draft" ? <Link href={`/claims/${id}/correspondence`} className="primary-button px-3 py-2 text-xs">Review in Correspondence Centre</Link> : null}</div></div><textarea readOnly className="field mt-3 min-h-64 whitespace-pre-wrap font-mono text-xs" value={draft.batch.draft_body} /><p className="mt-2 text-xs text-slate-500">Status: {draft.batch.status.replaceAll("_", " ")}. Creating a draft does not change Requirement status. Manager approval and an explicit external-dispatch confirmation are completed in the Correspondence Centre.</p></div> : null}
     </section>
 
     {summary.readiness.blocking_items.length ? <section className="mt-5 rounded-xl border border-red-200 bg-red-50 p-5"><h2 className="text-sm font-semibold text-red-900">Blocking evidence</h2><p className="mt-1 text-xs leading-5 text-red-700">Requested documents remain blocking until evidence is actually received or otherwise accepted.</p><div className="mt-3 flex flex-wrap gap-2">{summary.readiness.blocking_items.map((item) => <span key={item} className="rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-red-700 ring-1 ring-red-200">{item}</span>)}</div></section> : null}
