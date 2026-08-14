@@ -23,6 +23,7 @@ from app.modules.claims.models import Claim
 from app.modules.claims.service import get_claim
 from app.modules.documents.service import _storage
 from app.modules.evidence_matrix.service import build_evidence_matrix
+from app.modules.policy_intelligence.service import build_policy_intelligence
 from app.modules.financial.models import (
     CostItem,
     FinancialFlag,
@@ -112,6 +113,11 @@ def build_claim_pack_snapshot(
         claim_id=claim.id,
         organization_id=claim.organization_id,
     ).model_dump(mode="json")
+    policy_intelligence = build_policy_intelligence(
+        db,
+        claim_id=claim.id,
+        organization_id=claim.organization_id,
+    ).model_dump(mode="json")
     rule_summary = get_rule_summary(db, claim=claim)
     outstanding = [
         requirement
@@ -194,6 +200,7 @@ def build_claim_pack_snapshot(
             "role": user.role.value,
         },
         "evidence_matrix": matrix,
+        "policy_intelligence": policy_intelligence,
         "outstanding_requirements": [
             {
                 "id": str(item.id),
@@ -257,6 +264,8 @@ def build_claim_pack_snapshot(
             "outstanding_requirement_count": len(outstanding),
             "open_task_count": len(tasks),
             "open_financial_flag_count": len(open_flags),
+            "policy_issue_count": policy_intelligence["summary"]["issue_count"],
+            "high_priority_policy_issue_count": policy_intelligence["summary"]["high_priority_issue_count"],
             "approved_assessment_version": assessment["version"] if assessment else None,
             "assessment_is_preliminary": (
                 assessment["is_preliminary"] if assessment else None
