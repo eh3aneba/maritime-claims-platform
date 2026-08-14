@@ -690,3 +690,166 @@ def test_claim_pack_exports_are_controlled_immutable_and_tenant_scoped() -> None
     )
     assert hidden_list.status_code == 404
     assert hidden_download.status_code == 404
+
+
+def test_policy_intelligence_extracts_review_candidates_and_never_promotes_claim_facts() -> None:
+    ids = seed_review_candidates()
+    with TestingSessionLocal() as db:
+        claim = db.get(Claim, UUID(ids["claim_id"]))
+        user = db.scalar(
+            select(User).where(
+                User.organization_id == claim.organization_id,
+                User.email == "alpha@example.com",
+            )
+        )
+        claim.notification_date = date(2026, 7, 15)
+        policy = Document(
+            organization_id=claim.organization_id,
+            claim_id=claim.id,
+            uploaded_by_id=user.id,
+            filename="server-policy.pdf",
+            original_filename="HM_Policy_Wording.pdf",
+            document_type="policy",
+            mime_type="application/pdf",
+            file_size_bytes=4096,
+            file_hash="d" * 64,
+            storage_key=f"{claim.organization_id}/{claim.id}/policy.pdf",
+            version_number=1,
+            processing_status=DocumentProcessingStatus.PROCESSED,
+            confidentiality_level=ConfidentialityLevel.RESTRICTED,
+        )
+        db.add(policy)
+        db.flush()
+        extracted_text = DocumentTextExtraction(
+            organization_id=claim.organization_id,
+            document_id=policy.id,
+            extraction_method="pypdf",
+            extractor_version="1.0",
+            char_count=800,
+            segment_count=1,
+            requires_ocr=False,
+            text_hash="e" * 64,
+        )
+        db.add(extracted_text)
+        db.flush()
+        policy_text = (
+            "Period of Insurance from 2026-01-01 to 2026-06-30. "
+            "The agreed value and sum insured is USD 5,000,000. "
+            "The deductible is 10% of each and every loss, minimum USD 50,000. "
+            "The Assured shall notify Underwriters within 2 days of any occurrence. "
+            "Any proceedings must be commenced within 12 months. "
+            "This policy is governed by English law. "
+            "Disputes shall be referred to arbitration in London. "
+            "War risks and seizure are excluded. "
+            "Warranted class maintained throughout the policy period. "
+            "General Average shall be adjusted under York-Antwerp Rules 1994. "
+            "Sue and Labour charges are recoverable subject to this wording."
+        )
+        segment = DocumentTextSegment(
+            organization_id=claim.organization_id,
+            document_id=policy.id,
+            extraction_id=extracted_text.id,
+            segment_index=0,
+            locator_type="page",
+            locator_value="1",
+            text=policy_text,
+            char_count=len(policy_text),
+        )
+        db.add(segment)
+        db.commit()
+        policy_id = str(policy.id)
+
+    login("alpha", "alpha@example.com")
+    extraction = client.post(
+        f"/api/v1/claims/{ids['claim_id']}/policy-intelligence/documents/{policy_id}/extract"
+    )
+    assert extraction.status_code == 201, extraction.text
+    payload = extraction.json()
+    assert payload["external_ai_used"] is False
+    assert payload["review_required"] is True
+    assert payload["candidate_count"] >= 9
+    assert all(item["human_status"] == "pending" for item in payload["candidates"])
+    assert all(item["source_quote"] for item in payload["candidates"])
+
+    for candidate in payload["candidates"]:
+        reviewed = client.post(
+            f"/api/v1/ai-review/{candidate['extraction_id']}",
+            json={"action": "approve"},
+        )
+        assert reviewed.status_code == 200, reviewed.text
+        assert reviewed.json()["promoted"] is False
+
+    intelligence = client.get(
+        f"/api/v1/claims/{ids['claim_id']}/policy-intelligence"
+    )
+    assert intelligence.status_code == 200, intelligence.text
+    result = intelligence.json()
+    assert result["summary"]["reviewed_term_count"] >= 9
+    assert result["summary"]["has_policy_period"] is True
+    assert result["summary"]["has_insured_value_or_limit"] is True
+    assert result["summary"]["has_deductible"] is True
+    codes = {item["code"] for item in result["issue_spots"]}
+    assert "incident_date_outside_extracted_policy_period" in codes
+    assert "possible_notice_timing_issue" in codes
+    assert "exclusions_require_applicability_review" in codes
+    assert "warranties_require_compliance_review" in codes
+    assert "time_limits_require_diarising" in codes
+    assert all(
+        "coverage conclusion" not in item["title"].lower()
+        for item in result["issue_spots"]
+    )
+
+    deductible = next(
+        item for item in result["terms"] if item["category"] == "deductible"
+    )
+    assert deductible["value"]["percentage"] == "10"
+    assert deductible["value"]["minimum"] == {
+        "currency": "USD",
+        "amount": "50000",
+    }
+    assert deductible["source"]["document_name"] == "HM_Policy_Wording.pdf"
+    assert deductible["source"]["source_locator_value"] == "1"
+
+    with TestingSessionLocal() as db:
+        policy_fact = db.scalar(
+            select(ClaimFact).where(
+                ClaimFact.claim_id == UUID(ids["claim_id"]),
+                ClaimFact.field_path.like("policy.%"),
+            )
+        )
+        assert policy_fact is None
+        policy = db.get(Document, UUID(policy_id))
+        policy.is_current = False
+        policy.superseded_at = datetime.now(UTC)
+        db.commit()
+
+    historical = client.get(
+        f"/api/v1/claims/{ids['claim_id']}/policy-intelligence"
+    )
+    assert historical.status_code == 200
+    historical_codes = {
+        item["code"] for item in historical.json()["issue_spots"]
+    }
+    assert "reviewed_terms_from_superseded_sources" in historical_codes
+    assert historical.json()["summary"]["current_policy_document_count"] == 0
+
+    client.cookies.clear()
+    login("beta", "beta@example.com")
+    hidden = client.get(
+        f"/api/v1/claims/{ids['claim_id']}/policy-intelligence"
+    )
+    hidden_extract = client.post(
+        f"/api/v1/claims/{ids['claim_id']}/policy-intelligence/documents/{policy_id}/extract"
+    )
+    assert hidden.status_code == 404
+    assert hidden_extract.status_code == 404
+
+
+def test_policy_extraction_requires_policy_classification() -> None:
+    ids = seed_review_candidates()
+    login("alpha", "alpha@example.com")
+    denied = client.post(
+        f"/api/v1/claims/{ids['claim_id']}/policy-intelligence/documents/{ids['document_id']}/extract"
+    )
+    assert denied.status_code == 409
+    assert "classify" in denied.json()["detail"].lower()
