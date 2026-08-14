@@ -12,6 +12,8 @@
 - [ ] API health is `200` at `/api/v1/health`.
 - [ ] Web login returns `200`.
 - [ ] Worker is running.
+- [ ] Worker image contains `tesseract`, `eng`/`fas` language data and `pdftoppm`.
+- [ ] `OCR_ENABLED`, `OCR_LANGUAGES`, `OCR_MAX_PAGES` and `OCR_TIMEOUT_SECONDS` are explicitly reviewed.
 
 ## Demo validation
 
@@ -23,6 +25,10 @@
 - [ ] A Claims Manager queues a bounded legacy rescan and the worker records clean/quarantine outcomes.
 - [ ] Scanner-error retry is tested after scanner recovery and releases only after a clean verdict.
 - [ ] Administrative purge is tested only with synthetic evidence and retains the audit/provenance record.
+- [ ] A clean synthetic English FNOL reaches `pending_review` without creating a Claim.
+- [ ] A clean synthetic Persian image/PDF reaches `pending_review` through local OCR.
+- [ ] Approving the same intake twice returns the same Claim and creates only one source Document.
+- [ ] Rejecting an intake creates no Claim and retains the review audit trail.
 - [ ] Screenshot artifact is retained for the build under test.
 
 ## Data safety

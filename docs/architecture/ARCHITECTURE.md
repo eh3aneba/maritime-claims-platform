@@ -10,6 +10,7 @@ Modular monolith.
 2. FastAPI backend API
 3. PostgreSQL database
 4. File storage abstraction (local in development, S3-compatible later)
+5. PostgreSQL-backed document/intake worker with bounded local OCR
 
 ## Request flow
 
@@ -19,7 +20,7 @@ Browser -> Next.js -> FastAPI -> PostgreSQL
                        -> File storage
 ```
 
-Sprint 3 activates background document workers and controlled AI document intelligence on top of the secured claim/evidence foundation. OCR remains a separate pending capability for scanned evidence.
+The background worker runs secured evidence jobs and human-reviewed claim intake. English/Persian Tesseract OCR runs only in the worker image, after a clean ClamAV verdict, with page and execution bounds. External AI remains independently disabled by default.
 
 ## Guardrails
 
@@ -30,6 +31,8 @@ Sprint 3 activates background document workers and controlled AI document intell
 - Decimal financial amounts
 - Audit logging for sensitive changes
 - Soft deletion for claims/documents where applicable
+- FNOL extraction produces editable candidates, never an automatic Claim or Claim Fact
+- Intake approval is tenant-scoped, audited and idempotent
 
 ## Financial intelligence
 Quotation and invoice AI outputs remain candidate evidence until human review. Reviewed commercial evidence is materialized into the claim cost schedule without promotion into scalar claim facts. Deterministic financial flags identify possible duplicates, pre-casualty invoice dates, betterment/ordinary-maintenance cues and quotation scope differences. These are review prompts only. Reserve changes are append-only in `reserve_history`.

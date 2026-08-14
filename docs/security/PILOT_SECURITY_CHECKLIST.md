@@ -20,6 +20,9 @@
 - [ ] A database backup is taken before upgrading or restoring pilot data.
 - [ ] Demo credentials are changed from examples and shared out-of-band.
 - [ ] Only synthetic data is used until data-processing terms and retention rules are agreed.
+- [ ] FNOL OCR is local-only, bounded and executed only after a clean ClamAV verdict.
+- [ ] Reviewers understand that extracted/classified values are proposals and must be checked before approval.
+- [ ] A cross-tenant intake ID returns `404` for read and approval attempts.
 
 ## Current MVP limitations
 
@@ -30,5 +33,6 @@
 - No formal penetration test has been completed.
 - No production-grade secrets manager integration yet.
 - Backup automation is baseline/manual; retention and off-host encryption must be configured by the operator.
+- OCR is Tesseract-based and does not provide handwriting guarantees or semantic document understanding.
 
 These limitations are acceptable only for a controlled design-partner pilot using synthetic or formally approved data. They are not a claim of production certification.

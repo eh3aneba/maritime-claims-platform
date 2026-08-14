@@ -85,6 +85,59 @@ export interface VesselListResponse {
   total: number;
 }
 
+export type ClaimIntakeStatus =
+  | "processing"
+  | "pending_review"
+  | "approved"
+  | "rejected"
+  | "failed"
+  | "infected"
+  | "scan_error";
+
+export interface ClaimIntakeFields {
+  vessel_name?: string | null;
+  imo_number?: string | null;
+  incident_date?: string | null;
+  notification_date?: string | null;
+  incident_description?: string | null;
+  external_reference?: string | null;
+  claim_type?: "hull_machinery";
+  claim_subtype?: "machinery_damage";
+  priority?: ClaimPriority;
+  currency?: string;
+}
+
+export interface ClaimIntakeDraft {
+  id: string;
+  organization_id: string;
+  original_filename: string;
+  mime_type: string;
+  file_size_bytes: number;
+  file_hash: string;
+  malware_scan_status: DocumentMalwareScanStatus;
+  status: ClaimIntakeStatus;
+  extraction_method: string | null;
+  ocr_languages: string | null;
+  extraction_warnings: string[] | null;
+  classification_candidate: string | null;
+  classification_confidence: number | null;
+  classification_rule: string | null;
+  extracted_fields: ClaimIntakeFields | null;
+  field_evidence: Record<string, { quote?: string | null; confidence?: number; note?: string }> | null;
+  approved_claim_id: string | null;
+  source_document_id: string | null;
+  reviewed_at: string | null;
+  review_note: string | null;
+  uploaded_by_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ClaimIntakeApprovalResult {
+  draft: ClaimIntakeDraft;
+  claim: Claim;
+}
+
 export type DocumentProcessingStatus = "uploaded" | "processing" | "processed" | "failed";
 export type ConfidentialityLevel = "internal" | "confidential" | "restricted";
 export type DocumentMalwareScanStatus =

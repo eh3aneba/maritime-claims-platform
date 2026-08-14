@@ -73,15 +73,23 @@ def enqueue_text_extraction(
     )
 
 
-def claim_next_job(db: Session, *, worker_id: str) -> DocumentProcessingJob | None:
+def claim_next_job(
+    db: Session,
+    *,
+    worker_id: str,
+    security_only: bool = False,
+) -> DocumentProcessingJob | None:
     now = datetime.now(UTC)
+    conditions = [
+        DocumentProcessingJob.status == ProcessingJobStatus.PENDING,
+        DocumentProcessingJob.available_at <= now,
+        DocumentProcessingJob.attempt_count < DocumentProcessingJob.max_attempts,
+    ]
+    if security_only:
+        conditions.append(DocumentProcessingJob.job_type == ProcessingJobType.MALWARE_RESCAN)
     stmt = (
         select(DocumentProcessingJob)
-        .where(
-            DocumentProcessingJob.status == ProcessingJobStatus.PENDING,
-            DocumentProcessingJob.available_at <= now,
-            DocumentProcessingJob.attempt_count < DocumentProcessingJob.max_attempts,
-        )
+        .where(*conditions)
         .order_by(
             case(
                 (DocumentProcessingJob.job_type == ProcessingJobType.MALWARE_RESCAN, 0),
@@ -236,7 +244,13 @@ def _process_text_job(db: Session, *, job: DocumentProcessingJob) -> None:
     db.commit()
     try:
         path = _storage().path_for(document.storage_key)
-        result = extract_document_text(path)
+        result = extract_document_text(
+            path,
+            enable_ocr=settings.ocr_enabled,
+            ocr_languages=settings.ocr_languages,
+            ocr_max_pages=settings.ocr_max_pages,
+            ocr_timeout_seconds=settings.ocr_timeout_seconds,
+        )
         extraction = db.scalar(select(DocumentTextExtraction).where(DocumentTextExtraction.document_id == document.id))
         if extraction is None:
             extraction = DocumentTextExtraction(
