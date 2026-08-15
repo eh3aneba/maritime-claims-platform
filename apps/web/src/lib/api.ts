@@ -730,3 +730,31 @@ export function recordPaymentPaidExternally(claimId: string, itemId: string, pay
     method: "POST", body: JSON.stringify(payload),
   });
 }
+
+export function getEmailIngestionInbox() {
+  return apiFetch<import("./types").EmailIngestionInbox>("/email-ingestion/inbox");
+}
+export function createEmailIngestionConnection(payload: {
+  provider_label: string; mailbox_address: string; consent_confirmed: boolean;
+  consent_basis: string; retention_days: number;
+}) {
+  return apiFetch<import("./types").EmailIngestionConnection>("/email-ingestion/connections", {
+    method: "POST", body: JSON.stringify(payload),
+  });
+}
+export function transitionEmailIngestionConnection(connectionId: string, action: "suspend" | "reactivate" | "revoke", note: string) {
+  return apiFetch<import("./types").EmailIngestionConnection>("/email-ingestion/connections/" + connectionId + "/transition", {
+    method: "POST", body: JSON.stringify({ action, note }),
+  });
+}
+export function reviewIngestedEmail(messageId: string, payload: {
+  action: "link" | "reject"; claim_id?: string; confirm_link?: boolean;
+  sensitivity?: "standard" | "confidential" | "privileged_confidential" | "without_prejudice"; note: string;
+}) {
+  return apiFetch<import("./types").IngestedEmailMessage>("/email-ingestion/messages/" + messageId + "/review", {
+    method: "POST", body: JSON.stringify(payload),
+  });
+}
+export function expireDueIngestedEmail() {
+  return apiFetch<{ expired_count: number }>("/email-ingestion/expire-due", { method: "POST" });
+}
