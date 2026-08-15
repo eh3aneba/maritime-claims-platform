@@ -18,7 +18,7 @@ def _connection() -> tuple[str, dict, str]:
     result = create_orion_claim()
     created = client.post(
         "/api/v1/email-ingestion/connections",
-        json={"provider_label": "Normalized Webhook", "mailbox_address": "claims-intake@alpha.test",
+        json={"provider_label": "Normalized Webhook", "mailbox_address": "claims-intake@alpha-maritime.com",
               "consent_confirmed": True,
               "consent_basis": "Mailbox owner and organization approved claim-email intake.",
               "retention_days": 30},
@@ -31,8 +31,8 @@ def _connection() -> tuple[str, dict, str]:
 
 def _email_payload(claim_reference: str) -> dict:
     return {
-        "provider_message_id": "provider-001", "internet_message_id": "<mail-001@owner.test>",
-        "sender": "master@orion.test", "recipients": ["claims-intake@alpha.test"], "cc": [],
+        "provider_message_id": "provider-001", "internet_message_id": "<mail-001@orion-shipping.com>",
+        "sender": "master@orion-shipping.com", "recipients": ["claims-intake@alpha-maritime.com"], "cc": [],
         "subject": f"{claim_reference} - Turbocharger documents",
         "body_text": "Please find the requested Chief Engineer report attached.",
         "received_at": "2026-08-15T10:00:00Z",
@@ -121,7 +121,7 @@ def test_connection_requires_explicit_consent_and_manager_role() -> None:
     client.cookies.clear(); login("alpha", "alpha-handler@example.com")
     denied = client.post(
         "/api/v1/email-ingestion/connections",
-        json={"provider_label": "Webhook", "mailbox_address": "handler@alpha.test",
+        json={"provider_label": "Webhook", "mailbox_address": "handler@alpha-maritime.com",
               "consent_confirmed": True, "consent_basis": "Valid consent basis recorded here.",
               "retention_days": 14},
     )
@@ -129,7 +129,7 @@ def test_connection_requires_explicit_consent_and_manager_role() -> None:
     client.cookies.clear(); login("alpha", "alpha-manager@example.com")
     missing_consent = client.post(
         "/api/v1/email-ingestion/connections",
-        json={"provider_label": "Webhook", "mailbox_address": "manager@alpha.test",
+        json={"provider_label": "Webhook", "mailbox_address": "manager@alpha-maritime.com",
               "consent_confirmed": False, "consent_basis": "Consent was not actually confirmed.",
               "retention_days": 14},
     )
