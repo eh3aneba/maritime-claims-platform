@@ -1,6 +1,8 @@
 from datetime import datetime
 from uuid import UUID
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
 from app.modules.correspondence.models import CorrespondenceSensitivity
@@ -111,3 +113,76 @@ class EmailInboxResponse(BaseModel):
 
 class ExpiryResponse(BaseModel):
     expired_count: int
+
+
+class EmailAdapterCreate(BaseModel):
+    connection_id: UUID
+    provider_kind: Literal["microsoft_graph", "gmail_api", "provider_webhook"]
+    display_name: str = Field(min_length=2, max_length=100)
+    credential_reference: str = Field(min_length=3, max_length=240, pattern=r"^(env|vault|secret-manager)://")
+    allowed_folder: str = Field(min_length=1, max_length=240)
+    permission_manifest: list[str] = Field(min_length=1, max_length=10)
+    batch_limit: int = Field(default=50, ge=1, le=100)
+    retention_schedule_enabled: bool = True
+
+
+class EmailAdapterResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    connection_id: UUID
+    provider_kind: str
+    display_name: str
+    credential_reference: str
+    allowed_folder: str
+    permission_manifest: list[str]
+    status: str
+    batch_limit: int
+    retention_schedule_enabled: bool
+    next_sync_at: datetime | None
+    last_sync_at: datetime | None
+    checkpoint_hash: str | None
+    revoked_at: datetime | None
+    created_at: datetime
+
+
+class EmailAdapterRunCreate(BaseModel):
+    idempotency_key: str = Field(min_length=8, max_length=120)
+    trigger: Literal["manual", "scheduled", "provider_push"] = "manual"
+    messages_seen: int = Field(default=0, ge=0, le=100)
+    messages_ingested: int = Field(default=0, ge=0, le=100)
+    provider_checkpoint: str | None = Field(default=None, max_length=1000)
+    failure_summary: str | None = Field(default=None, max_length=2000)
+
+
+class EmailAdapterRunResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    adapter_id: UUID
+    idempotency_key: str
+    trigger: str
+    status: str
+    messages_seen: int
+    messages_ingested: int
+    checkpoint_hash: str | None
+    failure_summary: str | None
+    started_at: datetime
+    finished_at: datetime | None
+
+
+class RetentionRunCreate(BaseModel):
+    idempotency_key: str = Field(min_length=8, max_length=120)
+
+
+class RetentionRunResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    idempotency_key: str
+    expired_count: int
+    started_at: datetime
+    finished_at: datetime
+
+
+class EmailAdapterOperations(BaseModel):
+    adapters: list[EmailAdapterResponse]
+    runs: list[EmailAdapterRunResponse]
+    retention_runs: list[RetentionRunResponse]

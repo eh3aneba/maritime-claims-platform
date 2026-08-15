@@ -20,13 +20,17 @@ from app.modules.correspondence.models import (
     CorrespondenceStatus,
 )
 from app.modules.email_ingestion.models import (
-    EmailAttachmentManifest, EmailConnectionStatus, EmailIngestionConnection,
-    EmailMessageStatus, IngestedEmailMessage,
+    EmailAdapterRun, EmailAttachmentManifest, EmailConnectionStatus, EmailIngestionConnection,
+    EmailMessageStatus, EmailProviderAdapter, EmailRetentionRun, IngestedEmailMessage,
 )
-from app.modules.email_ingestion.schemas import EmailConnectionCreate, EmailReview, NormalizedEmailInput
+from app.modules.email_ingestion.schemas import (
+    EmailAdapterCreate, EmailAdapterRunCreate, EmailConnectionCreate, EmailReview,
+    NormalizedEmailInput,
+)
 from app.modules.users.models import User
 
 CLAIM_REFERENCE = re.compile(r"\bMCRI-HM-\d{4}-\d{4}\b", re.IGNORECASE)
+ADAPTER_PERMISSIONS = {"messages.read.allowed_folder", "attachments.metadata.read"}
 
 
 def _audit(db: Session, *, organization_id: UUID, user_id: UUID | None, action: str,
@@ -228,3 +232,132 @@ def expire_due(db: Session, user: User) -> int:
                details="Staging content redacted under the configured retention policy; any separately filed claim correspondence remains.")
     db.commit()
     return len(items)
+
+
+def list_adapter_operations(db: Session, organization_id: UUID):
+    adapters = list(db.scalars(select(EmailProviderAdapter).where(
+        EmailProviderAdapter.organization_id == organization_id,
+    ).order_by(EmailProviderAdapter.created_at.desc())))
+    runs = list(db.scalars(select(EmailAdapterRun).where(
+        EmailAdapterRun.organization_id == organization_id,
+    ).order_by(EmailAdapterRun.started_at.desc()).limit(50)))
+    retention_runs = list(db.scalars(select(EmailRetentionRun).where(
+        EmailRetentionRun.organization_id == organization_id,
+    ).order_by(EmailRetentionRun.started_at.desc()).limit(25)))
+    return adapters, runs, retention_runs
+
+
+def create_adapter(db: Session, user: User, payload: EmailAdapterCreate) -> EmailProviderAdapter:
+    connection = get_connection(db, user.organization_id, payload.connection_id)
+    if connection.status != EmailConnectionStatus.ACTIVE:
+        raise HTTPException(409, "Adapter requires an active consented connection")
+    permissions = set(payload.permission_manifest)
+    if not permissions or not permissions.issubset(ADAPTER_PERMISSIONS):
+        raise HTTPException(422, "Only selected-folder read and attachment-metadata permissions are allowed")
+    item = EmailProviderAdapter(
+        organization_id=user.organization_id, connection_id=connection.id, created_by_id=user.id,
+        provider_kind=payload.provider_kind, display_name=payload.display_name.strip(),
+        credential_reference=payload.credential_reference, allowed_folder=payload.allowed_folder.strip(),
+        permission_manifest=sorted(permissions), status="active", batch_limit=payload.batch_limit,
+        retention_schedule_enabled=payload.retention_schedule_enabled,
+        next_sync_at=datetime.now(UTC),
+    )
+    db.add(item)
+    try:
+        db.flush()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(409, "This connection already has a provider adapter") from exc
+    _audit(db, organization_id=item.organization_id, user_id=user.id, action="CREATE_EMAIL_PROVIDER_ADAPTER",
+           entity_type="email_provider_adapter", entity_id=item.id,
+           values={"provider_kind": item.provider_kind, "allowed_folder": item.allowed_folder,
+                   "permission_manifest": item.permission_manifest, "credential_reference": item.credential_reference},
+           details="Credential reference only; no OAuth access or refresh token stored.")
+    db.commit(); db.refresh(item)
+    return item
+
+
+def get_adapter(db: Session, organization_id: UUID, adapter_id: UUID) -> EmailProviderAdapter:
+    item = db.scalar(select(EmailProviderAdapter).where(
+        EmailProviderAdapter.id == adapter_id, EmailProviderAdapter.organization_id == organization_id,
+    ))
+    if item is None:
+        raise HTTPException(404, "Email provider adapter not found")
+    return item
+
+
+def transition_adapter(db: Session, item: EmailProviderAdapter, user: User, action: str, note: str) -> EmailProviderAdapter:
+    if action not in {"suspend", "reactivate", "revoke"}:
+        raise HTTPException(422, "Action must be suspend, reactivate or revoke")
+    if item.status == "revoked":
+        raise HTTPException(409, "A revoked adapter cannot be changed")
+    connection = get_connection(db, user.organization_id, item.connection_id)
+    if action == "reactivate" and connection.status != EmailConnectionStatus.ACTIVE:
+        raise HTTPException(409, "The consented connection must be active before reactivation")
+    item.status = {"suspend": "suspended", "reactivate": "active", "revoke": "revoked"}[action]
+    if item.status == "revoked":
+        item.revoked_at = datetime.now(UTC); item.next_sync_at = None
+    _audit(db, organization_id=item.organization_id, user_id=user.id,
+           action=f"{action.upper()}_EMAIL_PROVIDER_ADAPTER", entity_type="email_provider_adapter",
+           entity_id=item.id, values={"status": item.status}, details=note.strip())
+    db.commit(); db.refresh(item)
+    return item
+
+
+def record_adapter_run(db: Session, item: EmailProviderAdapter, user: User,
+                       payload: EmailAdapterRunCreate) -> EmailAdapterRun:
+    connection = get_connection(db, user.organization_id, item.connection_id)
+    if item.status != "active" or connection.status != EmailConnectionStatus.ACTIVE:
+        raise HTTPException(409, "Adapter and consented connection must both be active")
+    if payload.messages_seen > item.batch_limit or payload.messages_ingested > payload.messages_seen:
+        raise HTTPException(422, "Run counts exceed the bounded adapter batch")
+    existing = db.scalar(select(EmailAdapterRun).where(
+        EmailAdapterRun.adapter_id == item.id,
+        EmailAdapterRun.idempotency_key == payload.idempotency_key,
+    ))
+    if existing is not None:
+        return existing
+    now = datetime.now(UTC)
+    checkpoint_hash = sha256(payload.provider_checkpoint.encode()).hexdigest() if payload.provider_checkpoint else None
+    run = EmailAdapterRun(
+        organization_id=item.organization_id, adapter_id=item.id, initiated_by_id=user.id,
+        idempotency_key=payload.idempotency_key, trigger=payload.trigger,
+        status="failed" if payload.failure_summary else "succeeded",
+        messages_seen=payload.messages_seen, messages_ingested=payload.messages_ingested,
+        checkpoint_hash=checkpoint_hash, failure_summary=payload.failure_summary,
+        started_at=now, finished_at=now,
+    )
+    db.add(run); db.flush()
+    item.last_sync_at = now; item.next_sync_at = now + timedelta(minutes=15)
+    if checkpoint_hash:
+        item.checkpoint_hash = checkpoint_hash
+    _audit(db, organization_id=item.organization_id, user_id=user.id, action="RECORD_EMAIL_ADAPTER_RUN",
+           entity_type="email_adapter_run", entity_id=run.id,
+           values={"status": run.status, "messages_seen": run.messages_seen,
+                   "messages_ingested": run.messages_ingested, "trigger": run.trigger},
+           details="Provider cursor stored as a one-way hash; message ingestion remains on the normalized gateway.")
+    db.commit(); db.refresh(run)
+    return run
+
+
+def run_retention(db: Session, user: User, idempotency_key: str) -> EmailRetentionRun:
+    existing = db.scalar(select(EmailRetentionRun).where(
+        EmailRetentionRun.organization_id == user.organization_id,
+        EmailRetentionRun.idempotency_key == idempotency_key,
+    ))
+    if existing is not None:
+        return existing
+    started = datetime.now(UTC)
+    count = expire_due(db, user)
+    item = EmailRetentionRun(
+        organization_id=user.organization_id, initiated_by_id=user.id,
+        idempotency_key=idempotency_key, expired_count=count,
+        started_at=started, finished_at=datetime.now(UTC),
+    )
+    db.add(item); db.flush()
+    _audit(db, organization_id=user.organization_id, user_id=user.id,
+           action="RUN_EMAIL_RETENTION_SCHEDULE", entity_type="email_retention_run",
+           entity_id=item.id, values={"expired_count": count, "idempotency_key": idempotency_key},
+           details="Idempotent tenant-scoped retention execution.")
+    db.commit(); db.refresh(item)
+    return item

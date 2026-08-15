@@ -127,3 +127,30 @@ Acceptance guardrails:
 ## Next phase
 
 Operational pilot hardening for controlled email provider adapters and retention scheduling.
+
+## Phase F — Email Provider Adapter Operations
+
+Delivered scope:
+
+- adapter registration only against an active consented connection
+- provider kind, allowlisted folder, deployment secret reference and canonical least-privilege permissions
+- bounded batch size, idempotent run ledger and one-way checkpoint hashes
+- suspended/revoked lifecycle and connection-state enforcement
+- idempotent tenant-scoped retention-run ledger
+- no stored OAuth access/refresh token and no send/write/delete capability
+
+## Phase G — External Collaboration Portal
+
+Delivered scope:
+
+- named, purpose-bound and claim-scoped invitation with 1–168 hour expiry
+- one-time invitation token and expiring session token stored only as SHA-256
+- explicit permission and published-item allowlists
+- claim summary without reserve, adjustment, settlement, audit or AI material
+- staged external messages and attachment manifests with human promote/reject review
+- promotion creates inbound Portal correspondence; attachment bytes remain blocked
+- replay, revocation, expiry and tenant-isolation enforcement
+
+## Next phase
+
+Design-partner deployment runbook, operational monitoring and external-portal usability hardening.

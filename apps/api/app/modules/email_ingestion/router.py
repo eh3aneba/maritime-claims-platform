@@ -7,12 +7,15 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.modules.auth.dependencies import CurrentUser, require_roles
 from app.modules.email_ingestion.schemas import (
-    EmailConnectionCreate, EmailConnectionResponse, EmailConnectionTransition, EmailInboxResponse,
-    EmailReview, ExpiryResponse, IngestedEmailResponse, NormalizedEmailInput,
+    EmailAdapterCreate, EmailAdapterOperations, EmailAdapterResponse, EmailAdapterRunCreate,
+    EmailAdapterRunResponse, EmailConnectionCreate, EmailConnectionResponse,
+    EmailConnectionTransition, EmailInboxResponse, EmailReview, ExpiryResponse,
+    IngestedEmailResponse, NormalizedEmailInput, RetentionRunCreate, RetentionRunResponse,
 )
 from app.modules.email_ingestion.service import (
-    create_connection, expire_due, get_connection, get_message, ingest_email, list_inbox,
-    message_response, review_email, transition_connection,
+    create_adapter, create_connection, expire_due, get_adapter, get_connection, get_message,
+    ingest_email, list_adapter_operations, list_inbox, message_response, record_adapter_run,
+    review_email, run_retention, transition_adapter, transition_connection,
 )
 from app.modules.users.models import User, UserRole
 
@@ -54,3 +57,32 @@ def message_review(message_id: UUID, payload: EmailReview, current_user: Current
 @router.post("/expire-due", response_model=ExpiryResponse)
 def expiry(manager: Manager, db: Annotated[Session, Depends(get_db)]):
     return ExpiryResponse(expired_count=expire_due(db, manager))
+
+
+@router.get("/adapter-operations", response_model=EmailAdapterOperations)
+def adapter_operations(current_user: CurrentUser, db: Annotated[Session, Depends(get_db)]):
+    adapters, runs, retention_runs = list_adapter_operations(db, current_user.organization_id)
+    return EmailAdapterOperations(adapters=adapters, runs=runs, retention_runs=retention_runs)
+
+
+@router.post("/adapters", response_model=EmailAdapterResponse, status_code=201)
+def adapter_create(payload: EmailAdapterCreate, manager: Manager, db: Annotated[Session, Depends(get_db)]):
+    return create_adapter(db, manager, payload)
+
+
+@router.post("/adapters/{adapter_id}/transition", response_model=EmailAdapterResponse)
+def adapter_transition(adapter_id: UUID, payload: EmailConnectionTransition, manager: Manager,
+                       db: Annotated[Session, Depends(get_db)]):
+    return transition_adapter(db, get_adapter(db, manager.organization_id, adapter_id), manager,
+                              payload.action, payload.note)
+
+
+@router.post("/adapters/{adapter_id}/runs", response_model=EmailAdapterRunResponse, status_code=201)
+def adapter_run(adapter_id: UUID, payload: EmailAdapterRunCreate, manager: Manager,
+                db: Annotated[Session, Depends(get_db)]):
+    return record_adapter_run(db, get_adapter(db, manager.organization_id, adapter_id), manager, payload)
+
+
+@router.post("/retention-runs", response_model=RetentionRunResponse, status_code=201)
+def retention_run(payload: RetentionRunCreate, manager: Manager, db: Annotated[Session, Depends(get_db)]):
+    return run_retention(db, manager, payload.idempotency_key)

@@ -58,6 +58,7 @@ export default function EmailIntakePage() {
     <p className="eyebrow mt-5">{claim.claim_reference} · consent-gated intake</p>
     <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">Controlled Email Intake</h1>
     <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-500">Inbound normalized email is staged for human review. Claim references are suggestions only. This workspace does not read an entire mailbox, send email, store provider OAuth tokens or admit attachment bytes as evidence.</p>
+    <Link href={`/claims/${id}/email-adapters`} className="secondary-button mt-4">Open provider adapter operations</Link>
     {error ? <div className="mt-5 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div> : null}
     {oneTimeToken ? <div className="mt-5 rounded-xl border border-amber-300 bg-amber-50 p-5"><p className="font-semibold text-amber-950">Copy the one-time ingestion token now</p><p className="mt-2 break-all font-mono text-xs text-amber-900">{oneTimeToken}</p><p className="mt-2 text-xs text-amber-800">Only its SHA-256 hash is stored; it cannot be displayed again.</p></div> : null}
     <div className="mt-6 grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)]">

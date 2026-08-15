@@ -20,6 +20,32 @@ export interface IngestedEmailMessage {
   attachments: EmailAttachmentManifest[];
 }
 export interface EmailIngestionInbox { connections: EmailIngestionConnection[]; messages: IngestedEmailMessage[]; }
+export interface EmailProviderAdapter {
+  id: string; connection_id: string; provider_kind: string; display_name: string;
+  credential_reference: string; allowed_folder: string; permission_manifest: string[];
+  status: string; batch_limit: number; retention_schedule_enabled: boolean;
+  next_sync_at: string | null; last_sync_at: string | null; checkpoint_hash: string | null;
+  revoked_at: string | null; created_at: string;
+}
+export interface EmailAdapterRun {
+  id: string; adapter_id: string; idempotency_key: string; trigger: string; status: string;
+  messages_seen: number; messages_ingested: number; checkpoint_hash: string | null;
+  failure_summary: string | null; started_at: string; finished_at: string | null;
+}
+export interface EmailRetentionRun { id: string; idempotency_key: string; expired_count: number; started_at: string; finished_at: string; }
+export interface EmailAdapterOperations { adapters: EmailProviderAdapter[]; runs: EmailAdapterRun[]; retention_runs: EmailRetentionRun[]; }
+export interface PortalPublishedItem { id: string; item_type: string; source_id: string; title: string; summary: string | null; created_at: string; }
+export interface PortalInvitation {
+  id: string; claim_id: string; participant_name: string; participant_email: string; purpose: string;
+  permission_manifest: string[]; status: string; expires_at: string; accepted_at: string | null;
+  revoked_at: string | null; created_at: string; invitation_token?: string | null; published_items: PortalPublishedItem[];
+}
+export interface PortalSubmission {
+  id: string; claim_id: string; invitation_id: string; correspondence_id: string | null;
+  subject: string; body: string; attachment_manifests: Array<Record<string, unknown>>;
+  status: string; review_note: string | null; submitted_at: string; reviewed_at: string | null; created_at: string;
+}
+export interface PortalWorkspace { invitations: PortalInvitation[]; submissions: PortalSubmission[]; }
 
 export type SettlementStatus = "draft" | "under_review" | "approved" | "rejected" | "accepted" | "declined" | "withdrawn";
 export type SettlementType = "interim" | "partial" | "final";

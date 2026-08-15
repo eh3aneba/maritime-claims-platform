@@ -24,8 +24,10 @@ The MVP now includes the full H&M Machinery / Turbocharger design-partner workfl
 - Versioned Advanced Financial Adjustment Controls for PA, GA, Sue & Labour and RDC line treatment
 - Controlled Settlement & Payment Ledger with approved-adjustment sourcing and four-eyes authorization
 - Consent-gated Controlled Email Intake with human claim linking and retention controls
+- Least-privilege Email Provider Adapter Operations with bounded run and retention ledgers
+- Claim-scoped External Collaboration Portal with expiring hashed invitations and human-reviewed submissions
 
-**Current phase: Sprint 9E — Controlled Email Intake.** The repository is prepared for a controlled private walkthrough. A private pilot is not production certification.
+**Current phase: Sprint 9G — External Collaboration Portal.** The repository is prepared for a controlled private walkthrough. A private pilot is not production certification.
 
 ## Prerequisites
 
@@ -190,7 +192,7 @@ Engine-log event fields are intentionally not promoted into scalar `claim_facts`
 
 ## Current milestone
 
-Sprint 9 Phase E: normalized inbound email can enter a consent-gated review queue with bounded retention and human-confirmed claim linking. The platform does not synchronize a mailbox, send email or admit attachment bytes outside quarantine controls.
+Sprint 9 Phases F–G: deployment-managed provider adapters can operate the consented intake boundary, and named counterparties can use short-lived claim-scoped collaboration sessions. The platform still cannot send email, expose internal financial/AI/audit material, or admit attachment bytes outside quarantine controls.
 
 ## Design-partner pilot
 
