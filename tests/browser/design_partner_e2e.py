@@ -65,6 +65,7 @@ def main() -> None:
             ("Open adjustment workspace", "Adjustment Workspace"),
             ("Open settlement and payment ledger", "Settlement & Payment Ledger"),
             ("Open correspondence centre", "Correspondence Centre"),
+            ("Open controlled email intake", "Controlled Email Intake"),
             ("Open initial assessment", "Initial Assessment"),
         ]
         for link_name, heading in checks:

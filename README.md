@@ -23,8 +23,9 @@ The MVP now includes the full H&M Machinery / Turbocharger design-partner workfl
 - Controlled Correspondence Centre with Manager/Admin review and manual external-dispatch recording
 - Versioned Advanced Financial Adjustment Controls for PA, GA, Sue & Labour and RDC line treatment
 - Controlled Settlement & Payment Ledger with approved-adjustment sourcing and four-eyes authorization
+- Consent-gated Controlled Email Intake with human claim linking and retention controls
 
-**Current phase: Sprint 9D — Controlled Settlement & Payment Ledger.** The repository is prepared for a controlled private walkthrough. A private pilot is not production certification.
+**Current phase: Sprint 9E — Controlled Email Intake.** The repository is prepared for a controlled private walkthrough. A private pilot is not production certification.
 
 ## Prerequisites
 
@@ -189,7 +190,7 @@ Engine-log event fields are intentionally not promoted into scalar `claim_facts`
 
 ## Current milestone
 
-Sprint 9 Phase D: approved adjustments can feed human-reviewed settlement proposals and four-eyes payment authorization records. The platform does not communicate offers, contact banks or move money.
+Sprint 9 Phase E: normalized inbound email can enter a consent-gated review queue with bounded retention and human-confirmed claim linking. The platform does not synchronize a mailbox, send email or admit attachment bytes outside quarantine controls.
 
 ## Design-partner pilot
 

@@ -99,4 +99,31 @@ Acceptance guardrails:
 
 ## Next phase
 
-Email ingestion only after provider, consent and retention controls are designed.
+## Phase E — Controlled Email Intake
+
+Delivered scope:
+
+- Provider-neutral normalized webhook; no provider OAuth token storage.
+- Manager/Admin connection setup with explicit consent basis and 1–365 day retention.
+- One-time ingestion token stored only as SHA-256.
+- Active, suspended and irrevocably revoked connection lifecycle.
+- Provider-message deduplication, bounded payloads and immutable content hashes.
+- Deterministic claim-reference suggestion without automatic linking.
+- Human link/reject decision with written reason and explicit confirmation.
+- Linked email becomes inbound Correspondence Centre content.
+- Attachment metadata remains blocked pending the existing quarantine and malware path.
+- Audited retention expiry redacts staged message content.
+
+Acceptance guardrails:
+
+- no mailbox-wide synchronization or Gmail/Outlook OAuth in this phase
+- no email sending, reply or forwarding
+- no plaintext ingestion-token or provider access-token storage
+- no automatic claim link, fact promotion or attachment evidence admission
+- no ingestion after suspension, revocation or consent withdrawal
+- no external AI processing
+- no indefinite staging retention
+
+## Next phase
+
+Operational pilot hardening for controlled email provider adapters and retention scheduling.

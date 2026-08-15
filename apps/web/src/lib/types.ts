@@ -1,5 +1,26 @@
 export type UserRole = "admin" | "claims_manager" | "claims_handler";
 
+export type EmailConnectionStatus = "active" | "suspended" | "revoked";
+export type IngestedEmailStatus = "pending_review" | "linked" | "rejected" | "expired";
+export interface EmailIngestionConnection {
+  id: string; provider_label: string; mailbox_address: string; status: EmailConnectionStatus;
+  consent_basis: string; consent_confirmed_at: string; retention_days: number;
+  last_ingested_at: string | null; revoked_at: string | null; created_at: string; ingestion_token?: string | null;
+}
+export interface EmailAttachmentManifest {
+  id: string; filename: string; mime_type: string; file_size_bytes: number;
+  provider_sha256: string | null; admission_status: string;
+}
+export interface IngestedEmailMessage {
+  id: string; connection_id: string; suggested_claim_id: string | null; linked_claim_id: string | null;
+  correspondence_id: string | null; provider_message_id: string; internet_message_id: string | null;
+  sender: string; recipients: string[]; cc: string[]; subject: string; body_text: string;
+  status: IngestedEmailStatus; content_hash: string; review_note: string | null;
+  received_at: string; retain_until: string; reviewed_at: string | null; created_at: string;
+  attachments: EmailAttachmentManifest[];
+}
+export interface EmailIngestionInbox { connections: EmailIngestionConnection[]; messages: IngestedEmailMessage[]; }
+
 export type SettlementStatus = "draft" | "under_review" | "approved" | "rejected" | "accepted" | "declined" | "withdrawn";
 export type SettlementType = "interim" | "partial" | "final";
 export type PaymentStatus = "draft" | "under_review" | "first_approved" | "authorized" | "rejected" | "paid_externally" | "cancelled";

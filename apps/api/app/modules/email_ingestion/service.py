@@ -1,0 +1,230 @@
+from __future__ import annotations
+
+import json
+import re
+import secrets
+from datetime import UTC, datetime, timedelta
+from hashlib import sha256
+from hmac import compare_digest
+from uuid import UUID
+
+from fastapi import HTTPException
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+
+from app.modules.audit.service import write_audit_log
+from app.modules.claims.models import Claim
+from app.modules.correspondence.models import (
+    ClaimCorrespondence, CorrespondenceChannel, CorrespondenceDirection, CorrespondenceKind,
+    CorrespondenceStatus,
+)
+from app.modules.email_ingestion.models import (
+    EmailAttachmentManifest, EmailConnectionStatus, EmailIngestionConnection,
+    EmailMessageStatus, IngestedEmailMessage,
+)
+from app.modules.email_ingestion.schemas import EmailConnectionCreate, EmailReview, NormalizedEmailInput
+from app.modules.users.models import User
+
+CLAIM_REFERENCE = re.compile(r"\bMCRI-HM-\d{4}-\d{4}\b", re.IGNORECASE)
+
+
+def _audit(db: Session, *, organization_id: UUID, user_id: UUID | None, action: str,
+           entity_type: str, entity_id: UUID, values: dict, details: str | None = None) -> None:
+    write_audit_log(db, organization_id=organization_id, user_id=user_id, action=action,
+                    entity_type=entity_type, entity_id=entity_id, new_values=values, details=details)
+
+
+def _attachments(db: Session, message_id: UUID) -> list[EmailAttachmentManifest]:
+    return list(db.scalars(select(EmailAttachmentManifest).where(
+        EmailAttachmentManifest.message_id == message_id,
+    ).order_by(EmailAttachmentManifest.created_at.asc())))
+
+
+def message_response(db: Session, item: IngestedEmailMessage) -> dict:
+    return {**{column.name: getattr(item, column.name) for column in item.__table__.columns
+               if column.name not in {"organization_id", "linked_by_id", "updated_at"}},
+            "attachments": _attachments(db, item.id)}
+
+
+def list_inbox(db: Session, organization_id: UUID) -> tuple[list[EmailIngestionConnection], list[dict]]:
+    connections = list(db.scalars(select(EmailIngestionConnection).where(
+        EmailIngestionConnection.organization_id == organization_id,
+    ).order_by(EmailIngestionConnection.created_at.desc())))
+    messages = list(db.scalars(select(IngestedEmailMessage).where(
+        IngestedEmailMessage.organization_id == organization_id,
+    ).order_by(IngestedEmailMessage.received_at.desc())))
+    return connections, [message_response(db, item) for item in messages]
+
+
+def create_connection(db: Session, user: User, payload: EmailConnectionCreate) -> tuple[EmailIngestionConnection, str]:
+    if not payload.consent_confirmed:
+        raise HTTPException(422, "Explicit mailbox-owner/organization consent is required")
+    token = secrets.token_urlsafe(32)
+    item = EmailIngestionConnection(
+        organization_id=user.organization_id, created_by_id=user.id,
+        provider_label=payload.provider_label.strip(), mailbox_address=str(payload.mailbox_address).lower(),
+        status=EmailConnectionStatus.ACTIVE, consent_basis=payload.consent_basis.strip(),
+        consent_confirmed_at=datetime.now(UTC), retention_days=payload.retention_days,
+        token_hash=sha256(token.encode()).hexdigest(),
+    )
+    db.add(item)
+    try:
+        db.flush()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(409, "This mailbox already has an ingestion connection") from exc
+    _audit(db, organization_id=item.organization_id, user_id=user.id, action="CREATE_EMAIL_INGESTION_CONNECTION",
+           entity_type="email_ingestion_connection", entity_id=item.id,
+           values={"provider_label": item.provider_label, "mailbox_address": item.mailbox_address,
+                   "retention_days": item.retention_days, "status": item.status.value},
+           details="Consent recorded. Ingestion token is displayed once and only its SHA-256 hash is stored.")
+    db.commit(); db.refresh(item)
+    return item, token
+
+
+def get_connection(db: Session, organization_id: UUID, connection_id: UUID) -> EmailIngestionConnection:
+    item = db.scalar(select(EmailIngestionConnection).where(
+        EmailIngestionConnection.id == connection_id,
+        EmailIngestionConnection.organization_id == organization_id,
+    ))
+    if item is None:
+        raise HTTPException(404, "Email ingestion connection not found")
+    return item
+
+
+def transition_connection(db: Session, item: EmailIngestionConnection, user: User, action: str, note: str) -> EmailIngestionConnection:
+    allowed = {"suspend": EmailConnectionStatus.SUSPENDED, "reactivate": EmailConnectionStatus.ACTIVE, "revoke": EmailConnectionStatus.REVOKED}
+    if action not in allowed:
+        raise HTTPException(422, "Action must be suspend, reactivate or revoke")
+    if item.status == EmailConnectionStatus.REVOKED:
+        raise HTTPException(409, "A revoked connection cannot be changed or reactivated")
+    item.status = allowed[action]
+    if item.status == EmailConnectionStatus.REVOKED:
+        item.revoked_at = datetime.now(UTC)
+    _audit(db, organization_id=item.organization_id, user_id=user.id,
+           action=f"{action.upper()}_EMAIL_INGESTION_CONNECTION", entity_type="email_ingestion_connection",
+           entity_id=item.id, values={"status": item.status.value}, details=note.strip())
+    db.commit(); db.refresh(item)
+    return item
+
+
+def _canonical(payload: NormalizedEmailInput) -> str:
+    value = payload.model_dump(mode="json")
+    return json.dumps(value, sort_keys=True, separators=(",", ":"))
+
+
+def ingest_email(db: Session, connection_id: UUID, token: str | None, payload: NormalizedEmailInput) -> IngestedEmailMessage:
+    connection = db.get(EmailIngestionConnection, connection_id)
+    supplied_hash = sha256((token or "").encode()).hexdigest()
+    if connection is None or not token or not compare_digest(supplied_hash, connection.token_hash):
+        raise HTTPException(401, "Invalid email ingestion token")
+    if connection.status != EmailConnectionStatus.ACTIVE:
+        raise HTTPException(409, "Email ingestion connection is not active")
+    existing = db.scalar(select(IngestedEmailMessage).where(
+        IngestedEmailMessage.connection_id == connection.id,
+        IngestedEmailMessage.provider_message_id == payload.provider_message_id,
+    ))
+    if existing is not None:
+        return existing
+    received_at = payload.received_at if payload.received_at.tzinfo else payload.received_at.replace(tzinfo=UTC)
+    text = f"{payload.subject}\n{payload.body_text}"
+    match = CLAIM_REFERENCE.search(text)
+    suggested = db.scalar(select(Claim).where(
+        Claim.organization_id == connection.organization_id,
+        Claim.claim_reference == match.group(0).upper(),
+    )) if match else None
+    now = datetime.now(UTC)
+    item = IngestedEmailMessage(
+        organization_id=connection.organization_id, connection_id=connection.id,
+        provider_message_id=payload.provider_message_id, internet_message_id=payload.internet_message_id,
+        sender=payload.sender.strip(), recipients=[value.strip() for value in payload.recipients],
+        cc=[value.strip() for value in payload.cc], subject=payload.subject.strip(),
+        body_text=payload.body_text, status=EmailMessageStatus.PENDING_REVIEW,
+        content_hash=sha256(_canonical(payload).encode()).hexdigest(), received_at=received_at,
+        retain_until=now + timedelta(days=connection.retention_days),
+        suggested_claim_id=suggested.id if suggested else None,
+    )
+    db.add(item); db.flush()
+    for attachment in payload.attachments:
+        db.add(EmailAttachmentManifest(
+            organization_id=connection.organization_id, message_id=item.id,
+            filename=attachment.filename, mime_type=attachment.mime_type,
+            file_size_bytes=attachment.file_size_bytes,
+            provider_sha256=attachment.sha256.lower() if attachment.sha256 else None,
+            admission_status="blocked_pending_quarantine",
+        ))
+    connection.last_ingested_at = now
+    _audit(db, organization_id=item.organization_id, user_id=None, action="INGEST_EMAIL_PENDING_REVIEW",
+           entity_type="ingested_email_message", entity_id=item.id,
+           values={"provider_message_id": item.provider_message_id,
+                   "suggested_claim_id": str(item.suggested_claim_id) if item.suggested_claim_id else None,
+                   "attachment_count": len(payload.attachments), "retain_until": item.retain_until.isoformat()},
+           details="Normalized inbound message only. Claim linking requires human confirmation; attachment bytes were not accepted.")
+    db.commit(); db.refresh(item)
+    return item
+
+
+def get_message(db: Session, organization_id: UUID, message_id: UUID) -> IngestedEmailMessage:
+    item = db.scalar(select(IngestedEmailMessage).where(
+        IngestedEmailMessage.id == message_id,
+        IngestedEmailMessage.organization_id == organization_id,
+    ))
+    if item is None:
+        raise HTTPException(404, "Ingested email not found")
+    return item
+
+
+def review_email(db: Session, item: IngestedEmailMessage, user: User, payload: EmailReview) -> IngestedEmailMessage:
+    if item.status != EmailMessageStatus.PENDING_REVIEW:
+        raise HTTPException(409, "Only pending email can be reviewed")
+    item.review_note = payload.note.strip(); item.reviewed_at = datetime.now(UTC); item.linked_by_id = user.id
+    if payload.action == "reject":
+        item.status = EmailMessageStatus.REJECTED
+        _audit(db, organization_id=item.organization_id, user_id=user.id, action="REJECT_INGESTED_EMAIL",
+               entity_type="ingested_email_message", entity_id=item.id, values={"status": item.status.value}, details=item.review_note)
+    else:
+        claim = db.scalar(select(Claim).where(
+            Claim.id == payload.claim_id, Claim.organization_id == item.organization_id,
+        ))
+        if claim is None:
+            raise HTTPException(404, "Claim not found")
+        correspondence = ClaimCorrespondence(
+            organization_id=item.organization_id, claim_id=claim.id, created_by_id=user.id,
+            direction=CorrespondenceDirection.INBOUND, kind=CorrespondenceKind.GENERAL,
+            status=CorrespondenceStatus.RECEIVED_EXTERNAL, sensitivity=payload.sensitivity,
+            channel=CorrespondenceChannel.EMAIL, sender_label=item.sender[:180],
+            recipient_label=", ".join(item.recipients)[:180] or None, subject=item.subject[:240],
+            body=item.body_text or "(No plain-text body supplied)", requirement_ids=[],
+            external_reference=(item.internet_message_id or item.provider_message_id)[:240], occurred_at=item.received_at,
+        )
+        db.add(correspondence); db.flush()
+        item.status = EmailMessageStatus.LINKED; item.linked_claim_id = claim.id
+        item.correspondence_id = correspondence.id
+        item.body_text = f"[Promoted to correspondence {correspondence.id}; staging body redacted]"
+        _audit(db, organization_id=item.organization_id, user_id=user.id, action="LINK_INGESTED_EMAIL_TO_CLAIM",
+               entity_type="ingested_email_message", entity_id=item.id,
+               values={"status": item.status.value, "claim_id": str(claim.id), "correspondence_id": str(correspondence.id)},
+               details="Human-confirmed claim link. Attachment manifests remain blocked pending quarantine admission.")
+    db.commit(); db.refresh(item)
+    return item
+
+
+def expire_due(db: Session, user: User) -> int:
+    now = datetime.now(UTC)
+    items = list(db.scalars(select(IngestedEmailMessage).where(
+        IngestedEmailMessage.organization_id == user.organization_id,
+        IngestedEmailMessage.retain_until <= now,
+        IngestedEmailMessage.status != EmailMessageStatus.EXPIRED,
+    )))
+    for item in items:
+        item.status = EmailMessageStatus.EXPIRED; item.sender = "[expired]"; item.recipients = []
+        item.cc = []; item.subject = "[expired by retention policy]"; item.body_text = "[expired]"
+        for attachment in _attachments(db, item.id):
+            attachment.filename = "[expired]"; attachment.admission_status = "expired_manifest"
+        _audit(db, organization_id=item.organization_id, user_id=user.id, action="EXPIRE_INGESTED_EMAIL",
+               entity_type="ingested_email_message", entity_id=item.id,
+               values={"status": item.status.value, "retain_until": item.retain_until.isoformat()},
+               details="Staging content redacted under the configured retention policy; any separately filed claim correspondence remains.")
+    db.commit()
+    return len(items)
