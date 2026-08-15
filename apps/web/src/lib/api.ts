@@ -758,3 +758,44 @@ export function reviewIngestedEmail(messageId: string, payload: {
 export function expireDueIngestedEmail() {
   return apiFetch<{ expired_count: number }>("/email-ingestion/expire-due", { method: "POST" });
 }
+
+export function getEmailAdapterOperations() {
+  return apiFetch<import("./types").EmailAdapterOperations>("/email-ingestion/adapter-operations");
+}
+export function createEmailProviderAdapter(payload: {
+  connection_id: string; provider_kind: "microsoft_graph" | "gmail_api" | "provider_webhook";
+  display_name: string; credential_reference: string; allowed_folder: string;
+  permission_manifest: string[]; batch_limit: number; retention_schedule_enabled: boolean;
+}) {
+  return apiFetch<import("./types").EmailProviderAdapter>("/email-ingestion/adapters", { method: "POST", body: JSON.stringify(payload) });
+}
+export function transitionEmailProviderAdapter(adapterId: string, action: "suspend" | "reactivate" | "revoke", note: string) {
+  return apiFetch<import("./types").EmailProviderAdapter>("/email-ingestion/adapters/" + adapterId + "/transition", { method: "POST", body: JSON.stringify({ action, note }) });
+}
+export function recordEmailAdapterRun(adapterId: string) {
+  return apiFetch<import("./types").EmailAdapterRun>("/email-ingestion/adapters/" + adapterId + "/runs", {
+    method: "POST", body: JSON.stringify({ idempotency_key: crypto.randomUUID(), trigger: "manual", messages_seen: 0, messages_ingested: 0 }),
+  });
+}
+export function runScheduledEmailRetention() {
+  return apiFetch<import("./types").EmailRetentionRun>("/email-ingestion/retention-runs", {
+    method: "POST", body: JSON.stringify({ idempotency_key: crypto.randomUUID() }),
+  });
+}
+export function getPortalWorkspace(claimId: string) {
+  return apiFetch<import("./types").PortalWorkspace>("/claims/" + claimId + "/external-portal");
+}
+export function createPortalInvitation(claimId: string, payload: {
+  participant_name: string; participant_email: string; purpose: string; expires_in_hours: number;
+  permission_manifest: string[]; published_items: Array<Record<string, unknown>>;
+}) {
+  return apiFetch<import("./types").PortalInvitation>("/claims/" + claimId + "/external-portal/invitations", { method: "POST", body: JSON.stringify(payload) });
+}
+export function revokePortalInvitation(claimId: string, invitationId: string, note: string) {
+  return apiFetch<import("./types").PortalInvitation>("/claims/" + claimId + "/external-portal/invitations/" + invitationId + "/revoke", { method: "POST", body: JSON.stringify({ note }) });
+}
+export function reviewPortalSubmission(claimId: string, submissionId: string, action: "promote" | "reject", note: string) {
+  return apiFetch<import("./types").PortalSubmission>("/claims/" + claimId + "/external-portal/submissions/" + submissionId + "/review", {
+    method: "POST", body: JSON.stringify({ action, note, confirm_promotion: action === "promote" }),
+  });
+}

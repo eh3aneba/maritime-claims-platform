@@ -2,7 +2,7 @@ import enum
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -82,3 +82,60 @@ class EmailAttachmentManifest(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     file_size_bytes: Mapped[int] = mapped_column(Integer)
     provider_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
     admission_status: Mapped[str] = mapped_column(String(60), default="blocked_pending_quarantine", server_default="blocked_pending_quarantine")
+
+
+class EmailProviderAdapter(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "email_provider_adapters"
+    __table_args__ = (
+        UniqueConstraint("connection_id", name="uq_email_provider_adapter_connection"),
+        Index("ix_email_provider_adapter_org_status", "organization_id", "status"),
+    )
+
+    organization_id: Mapped[UUID] = mapped_column(ForeignKey("organizations.id", ondelete="RESTRICT"), index=True)
+    connection_id: Mapped[UUID] = mapped_column(ForeignKey("email_ingestion_connections.id", ondelete="RESTRICT"), index=True)
+    created_by_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    provider_kind: Mapped[str] = mapped_column(String(40))
+    display_name: Mapped[str] = mapped_column(String(100))
+    credential_reference: Mapped[str] = mapped_column(String(240))
+    allowed_folder: Mapped[str] = mapped_column(String(240))
+    permission_manifest: Mapped[list] = mapped_column(JSON, default=list)
+    status: Mapped[str] = mapped_column(String(30), default="active", server_default="active")
+    batch_limit: Mapped[int] = mapped_column(Integer, default=50, server_default="50")
+    retention_schedule_enabled: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
+    next_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    last_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    checkpoint_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class EmailAdapterRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "email_adapter_runs"
+    __table_args__ = (
+        UniqueConstraint("adapter_id", "idempotency_key", name="uq_email_adapter_run_idempotency"),
+        Index("ix_email_adapter_run_org_started", "organization_id", "started_at"),
+    )
+
+    organization_id: Mapped[UUID] = mapped_column(ForeignKey("organizations.id", ondelete="RESTRICT"), index=True)
+    adapter_id: Mapped[UUID] = mapped_column(ForeignKey("email_provider_adapters.id", ondelete="RESTRICT"), index=True)
+    initiated_by_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    idempotency_key: Mapped[str] = mapped_column(String(120))
+    trigger: Mapped[str] = mapped_column(String(30))
+    status: Mapped[str] = mapped_column(String(30))
+    messages_seen: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    messages_ingested: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    checkpoint_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    failure_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class EmailRetentionRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "email_retention_runs"
+    __table_args__ = (UniqueConstraint("organization_id", "idempotency_key", name="uq_email_retention_run_idempotency"),)
+
+    organization_id: Mapped[UUID] = mapped_column(ForeignKey("organizations.id", ondelete="RESTRICT"), index=True)
+    initiated_by_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    idempotency_key: Mapped[str] = mapped_column(String(120))
+    expired_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
