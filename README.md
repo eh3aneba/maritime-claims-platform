@@ -22,8 +22,9 @@ The MVP now includes the full H&M Machinery / Turbocharger design-partner workfl
 - Unified source-linked Evidence Matrix across approved facts, document versions and active conflicts
 - Controlled Correspondence Centre with Manager/Admin review and manual external-dispatch recording
 - Versioned Advanced Financial Adjustment Controls for PA, GA, Sue & Labour and RDC line treatment
+- Controlled Settlement & Payment Ledger with approved-adjustment sourcing and four-eyes authorization
 
-**Current phase: Sprint 9C — Advanced Financial Adjustment Controls.** The repository is prepared for a controlled private walkthrough. A private pilot is not production certification.
+**Current phase: Sprint 9D — Controlled Settlement & Payment Ledger.** The repository is prepared for a controlled private walkthrough. A private pilot is not production certification.
 
 ## Prerequisites
 
@@ -188,7 +189,7 @@ Engine-log event fields are intentionally not promoted into scalar `claim_facts`
 
 ## Current milestone
 
-Sprint 9 Phase C: reviewed invoice costs can be arranged into currency-specific, versioned adjustment statements with explicit human PA/GA/Sue & Labour/RDC treatment, deductions and Manager approval. Calculated totals are not automated coverage or payment decisions.
+Sprint 9 Phase D: approved adjustments can feed human-reviewed settlement proposals and four-eyes payment authorization records. The platform does not communicate offers, contact banks or move money.
 
 ## Design-partner pilot
 

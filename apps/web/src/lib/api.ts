@@ -677,3 +677,56 @@ export function reviewAdjustmentStatement(claimId: string, statementId: string, 
     method: "POST", body: JSON.stringify({ note }),
   });
 }
+
+export function getSettlementLedger(claimId: string) {
+  return apiFetch<import("./types").SettlementLedger>("/claims/" + claimId + "/settlement-ledger");
+}
+
+export function createSettlementProposal(claimId: string, payload: {
+  adjustment_statement_id: string; title: string; settlement_type: import("./types").SettlementType;
+  amount: string; terms: string; release_required: boolean; without_prejudice: boolean;
+}) {
+  return apiFetch<import("./types").SettlementProposal>("/claims/" + claimId + "/settlement-ledger/settlements", {
+    method: "POST", body: JSON.stringify(payload),
+  });
+}
+
+export function submitSettlementProposal(claimId: string, itemId: string) {
+  return apiFetch<import("./types").SettlementProposal>("/claims/" + claimId + "/settlement-ledger/settlements/" + itemId + "/submit", { method: "POST" });
+}
+
+export function reviewSettlementProposal(claimId: string, itemId: string, action: "approve" | "reject", note: string) {
+  return apiFetch<import("./types").SettlementProposal>("/claims/" + claimId + "/settlement-ledger/settlements/" + itemId + "/" + action, {
+    method: "POST", body: JSON.stringify({ note }),
+  });
+}
+
+export function recordSettlementDisposition(claimId: string, itemId: string, disposition: "accepted" | "declined" | "withdrawn", note: string) {
+  return apiFetch<import("./types").SettlementProposal>("/claims/" + claimId + "/settlement-ledger/settlements/" + itemId + "/disposition/record", {
+    method: "POST", body: JSON.stringify({ disposition, note }),
+  });
+}
+
+export function createPaymentAuthorization(claimId: string, payload: { settlement_id: string; payee: string; amount: string; purpose: string }) {
+  return apiFetch<import("./types").PaymentAuthorization>("/claims/" + claimId + "/settlement-ledger/payments", {
+    method: "POST", body: JSON.stringify(payload),
+  });
+}
+
+export function submitPaymentAuthorization(claimId: string, itemId: string) {
+  return apiFetch<import("./types").PaymentAuthorization>("/claims/" + claimId + "/settlement-ledger/payments/" + itemId + "/submit", { method: "POST" });
+}
+
+export function reviewPaymentAuthorization(claimId: string, itemId: string, action: "approve" | "reject", note: string) {
+  return apiFetch<import("./types").PaymentAuthorization>("/claims/" + claimId + "/settlement-ledger/payments/" + itemId + "/" + action, {
+    method: "POST", body: JSON.stringify({ note }),
+  });
+}
+
+export function recordPaymentPaidExternally(claimId: string, itemId: string, payload: {
+  confirm_paid_externally: boolean; channel: string; external_reference: string; value_date: string; note?: string;
+}) {
+  return apiFetch<import("./types").PaymentAuthorization>("/claims/" + claimId + "/settlement-ledger/payments/" + itemId + "/record-paid", {
+    method: "POST", body: JSON.stringify(payload),
+  });
+}
