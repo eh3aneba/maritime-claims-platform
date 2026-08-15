@@ -73,5 +73,30 @@ Acceptance guardrails:
 
 ## Next phases
 
-1. Controlled settlement and payment authorization ledger.
-2. Email ingestion only after provider, consent and retention controls are designed.
+## Phase D — Controlled Settlement & Payment Ledger
+
+Delivered scope:
+
+- Versioned settlement proposals sourced only from approved immutable adjustment statements.
+- Same-currency proposal cap at the approved adjusted total with no FX conversion.
+- Draft → Manager/Admin review → immutable approved proposal.
+- Explicit manual accepted, declined or withdrawn outcome recording.
+- Payment authorizations linked only to accepted settlements.
+- Two distinct Manager/Admin approvals; creator cannot approve.
+- Immutable authorization SHA-256 snapshot after the second approval.
+- Explicit paid-externally recording with channel, external reference and value date.
+- Cumulative authorization cap, tenant isolation and append-only audit history.
+
+Acceptance guardrails:
+
+- no automated settlement recommendation, acceptance or coverage decision
+- no offer sending or mailbox integration
+- no bank integration, payment instruction or money movement
+- no single-person payment authorization
+- no FX conversion or automatic reserve change
+- no paid state without explicit confirmation and external execution reference
+- no editing of approved proposals or fully authorized payment content
+
+## Next phase
+
+Email ingestion only after provider, consent and retention controls are designed.

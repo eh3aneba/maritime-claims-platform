@@ -63,6 +63,7 @@ def main() -> None:
             ("Open claim-pack exports", "Claim Pack Export"),
             ("Open financial review", "Financial review"),
             ("Open adjustment workspace", "Adjustment Workspace"),
+            ("Open settlement and payment ledger", "Settlement & Payment Ledger"),
             ("Open correspondence centre", "Correspondence Centre"),
             ("Open initial assessment", "Initial Assessment"),
         ]

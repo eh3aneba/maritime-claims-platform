@@ -1,5 +1,34 @@
 export type UserRole = "admin" | "claims_manager" | "claims_handler";
 
+export type SettlementStatus = "draft" | "under_review" | "approved" | "rejected" | "accepted" | "declined" | "withdrawn";
+export type SettlementType = "interim" | "partial" | "final";
+export type PaymentStatus = "draft" | "under_review" | "first_approved" | "authorized" | "rejected" | "paid_externally" | "cancelled";
+
+export interface SettlementProposal {
+  id: string; claim_id: string; adjustment_statement_id: string;
+  created_by_id: string | null; reviewed_by_id: string | null; disposition_by_id: string | null;
+  version: number; title: string; settlement_type: SettlementType; status: SettlementStatus;
+  currency: string; amount: string; terms: string; release_required: boolean; without_prejudice: boolean;
+  expires_on: string | null; source_adjustment_hash: string; source_snapshot: Record<string, unknown>;
+  review_note: string | null; disposition_note: string | null; content_hash: string | null;
+  reviewed_at: string | null; disposition_at: string | null; created_at: string; updated_at: string;
+}
+
+export interface PaymentAuthorization {
+  id: string; claim_id: string; settlement_id: string; created_by_id: string | null;
+  first_approved_by_id: string | null; second_approved_by_id: string | null; paid_recorded_by_id: string | null;
+  sequence: number; status: PaymentStatus; payee: string; currency: string; amount: string; purpose: string;
+  first_approval_note: string | null; second_approval_note: string | null; rejection_note: string | null;
+  content_hash: string | null; first_approved_at: string | null; second_approved_at: string | null;
+  paid_channel: string | null; external_reference: string | null; value_date: string | null;
+  paid_note: string | null; paid_recorded_at: string | null; created_at: string; updated_at: string;
+}
+
+export interface SettlementLedger {
+  settlements: SettlementProposal[];
+  payments: PaymentAuthorization[];
+}
+
 export interface CurrentUser {
   id: string;
   organization_id: string;
