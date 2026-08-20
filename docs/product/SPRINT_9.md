@@ -187,6 +187,24 @@ Delivered scope:
 - SHA-256 manifest checksum and explicit authorization record
 - manifest generation performs no deletion and makes no regulatory-compliance claim
 
+## Phase L — Design-partner Rehearsal & Readiness Evidence
+
+Delivered scope:
+
+- tenant-scoped rehearsal anchored to an attested readiness snapshot
+- one bounded reference, human summary and pass/fail/not-tested result per required control
+- allowlisted artifact/runbook/ticket/monitor reference schemes with no secret or raw evidence storage
+- remediation finding lifecycle with severity, owner, due date, acknowledgement and resolution
+- all-eight-controls evidence gate before any final decision
+- deterministic block on Go while a control is failed/not tested or a finding remains unresolved
+- Manager/Admin-only immutable Go/No-Go decision hash and audit trail
+
+Acceptance guardrails:
+
+- no automatic control pass, compliance conclusion or production certification
+- no deployment, deletion, notification or secret storage
+- no editing after the completed rehearsal snapshot
+
 ## Next phase
 
-Design-partner rehearsal, evidence collection against the readiness controls, and remediation of findings before any production-go-live decision.
+Time-boxed private-pilot execution against the approved rehearsal runbook, followed by remediation verification and a separately authorized production-go-live decision.

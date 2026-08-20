@@ -77,10 +77,26 @@ export interface PilotExitManifest {
   confirm_manifest_only: boolean; manifest: Record<string, unknown>; manifest_checksum: string;
   status: string; authorized_at: string; created_at: string;
 }
+export interface RehearsalControlEvidence {
+  id: string; rehearsal_id: string; control_key: string; evidence_reference: string;
+  evidence_summary: string; result: string; recorded_at: string; created_at: string;
+}
+export interface RehearsalRemediationFinding {
+  id: string; rehearsal_id: string; evidence_id: string | null; severity: string; title: string;
+  description: string; owner_label: string; due_at: string; status: string;
+  acknowledged_at: string | null; resolved_at: string | null; resolution_note: string | null; created_at: string;
+}
+export interface DesignPartnerRehearsal {
+  id: string; readiness_review_id: string; rehearsal_key: string; name: string; objectives: string[];
+  participant_roles: string[]; status: string; scheduled_for: string; started_at: string | null;
+  completed_at: string | null; outcome: string | null; decision_note: string | null;
+  decision_hash: string | null; evidence: RehearsalControlEvidence[];
+  findings: RehearsalRemediationFinding[]; created_at: string;
+}
 export interface PilotOperationsDashboard {
   readiness_reviews: DeploymentReadinessReview[]; monitor_runs: OperationalMonitorRun[];
   incidents: OperationalIncident[]; governance_profile: PilotGovernanceProfile | null;
-  exit_manifests: PilotExitManifest[];
+  exit_manifests: PilotExitManifest[]; rehearsals: DesignPartnerRehearsal[];
 }
 
 export type SettlementStatus = "draft" | "under_review" | "approved" | "rejected" | "accepted" | "declined" | "withdrawn";

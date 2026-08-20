@@ -125,9 +125,95 @@ class ExitManifestResponse(BaseModel):
     created_at: datetime
 
 
+class RehearsalCreate(BaseModel):
+    readiness_review_id: UUID
+    rehearsal_key: str = Field(min_length=8, max_length=120)
+    name: str = Field(min_length=3, max_length=200)
+    objectives: list[str] = Field(min_length=1, max_length=12)
+    participant_roles: list[str] = Field(min_length=1, max_length=12)
+    scheduled_for: datetime
+
+
+class RehearsalEvidenceWrite(BaseModel):
+    control_key: Literal["tls", "secret_references", "backup_restore", "migrations", "malware_scan", "least_privilege", "retention", "incident_contacts"]
+    evidence_reference: str = Field(min_length=8, max_length=500)
+    evidence_summary: str = Field(min_length=10, max_length=2000)
+    result: Literal["pass", "fail", "not_tested"]
+
+
+class RehearsalEvidenceResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    rehearsal_id: UUID
+    control_key: str
+    evidence_reference: str
+    evidence_summary: str
+    result: str
+    recorded_at: datetime
+    created_at: datetime
+
+
+class RehearsalFindingCreate(BaseModel):
+    evidence_id: UUID | None = None
+    severity: Literal["low", "medium", "high", "critical"]
+    title: str = Field(min_length=3, max_length=200)
+    description: str = Field(min_length=10, max_length=4000)
+    owner_label: str = Field(min_length=2, max_length=180)
+    due_at: datetime
+
+
+class RehearsalFindingTransition(BaseModel):
+    action: Literal["acknowledge", "resolve"]
+    note: str = Field(min_length=5, max_length=4000)
+
+
+class RehearsalFindingResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    rehearsal_id: UUID
+    evidence_id: UUID | None
+    severity: str
+    title: str
+    description: str
+    owner_label: str
+    due_at: datetime
+    status: str
+    acknowledged_at: datetime | None
+    resolved_at: datetime | None
+    resolution_note: str | None
+    created_at: datetime
+
+
+class RehearsalComplete(BaseModel):
+    outcome: Literal["go", "no_go"]
+    confirm_decision: bool
+    note: str = Field(min_length=10, max_length=4000)
+
+
+class RehearsalResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    readiness_review_id: UUID
+    rehearsal_key: str
+    name: str
+    objectives: list
+    participant_roles: list
+    status: str
+    scheduled_for: datetime
+    started_at: datetime | None
+    completed_at: datetime | None
+    outcome: str | None
+    decision_note: str | None
+    decision_hash: str | None
+    evidence: list[RehearsalEvidenceResponse]
+    findings: list[RehearsalFindingResponse]
+    created_at: datetime
+
+
 class PilotOperationsDashboard(BaseModel):
     readiness_reviews: list[ReadinessResponse]
     monitor_runs: list[MonitorRunResponse]
     incidents: list[IncidentResponse]
     governance_profile: GovernanceProfileResponse | None
     exit_manifests: list[ExitManifestResponse]
+    rehearsals: list[RehearsalResponse]
