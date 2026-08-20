@@ -1307,3 +1307,98 @@ export interface AIGovernanceDashboard {
   activation_requests: AIProviderActivation[];
   document_eligibility: AIDocumentEligibility[];
 }
+
+export interface AIEvaluationCase {
+  id: string;
+  suite_id: string;
+  submitted_by_id: string | null;
+  case_key: string;
+  document_type: "chief_engineer_report" | "engine_log";
+  scenario_type: "baseline" | "prompt_injection" | "malformed_input" | "cross_tenant" | "restricted_data";
+  data_mode: "synthetic" | "deidentified";
+  result: "pass" | "fail";
+  field_true_positive: number;
+  field_false_positive: number;
+  field_false_negative: number;
+  extracted_claim_count: number;
+  unsupported_claim_count: number;
+  source_quote_checked_count: number;
+  source_quote_valid_count: number;
+  human_approved_count: number;
+  human_edited_count: number;
+  human_rejected_count: number;
+  latency_ms: number;
+  input_tokens: number;
+  output_tokens: number;
+  observed_provider_cost_microusd: number;
+  boundary_control_passed: boolean;
+  evidence_reference: string;
+  note: string;
+  result_hash: string;
+  executed_at: string;
+  created_at: string;
+}
+
+export interface AIEvaluationReview {
+  id: string;
+  suite_id: string;
+  reviewer_id: string | null;
+  review_role: "quality" | "risk";
+  action: "approve" | "reject";
+  evidence_reference: string | null;
+  note: string;
+  reviewed_at: string;
+  created_at: string;
+}
+
+export interface AIEvaluationSuite {
+  id: string;
+  activation_request_id: string;
+  requested_by_id: string | null;
+  finalized_by_id: string | null;
+  revoked_by_id: string | null;
+  attempt_number: number;
+  suite_key: string;
+  benchmark_profile: "quality_safety_cost_v1";
+  activation_model: string;
+  prompt_bundle_version: string;
+  schema_bundle_version: string;
+  max_input_chars: number;
+  max_output_tokens: number;
+  data_mode: "synthetic_deidentified";
+  thresholds: Record<string, number | string[]>;
+  status: string;
+  outcome: string | null;
+  metrics: Record<string, unknown> | null;
+  failure_reasons: string[];
+  evaluation_hash: string | null;
+  evaluation_note: string | null;
+  evaluated_at: string | null;
+  decision_note: string | null;
+  decision_hash: string | null;
+  decided_at: string | null;
+  promotion_expires_at: string | null;
+  revoked_at: string | null;
+  revocation_note: string | null;
+  summary: {
+    case_count: number;
+    required_case_count: number;
+    thresholds_passed: boolean;
+    independent_reviews_complete: boolean;
+    shared_staging_promotion_recorded: boolean;
+    promotion_active: boolean;
+    raw_content_stored: false;
+    provider_configuration_mutated: false;
+    calculated_provider_billing: false;
+    production_authorized: false;
+    restricted_documents_authorized: false;
+    real_claim_data_authorized: false;
+    autonomous_claim_decisions_authorized: false;
+    human_review_required: true;
+  };
+  cases: AIEvaluationCase[];
+  reviews: AIEvaluationReview[];
+  created_at: string;
+}
+
+export interface AIEvaluationDashboard { suites: AIEvaluationSuite[]; }

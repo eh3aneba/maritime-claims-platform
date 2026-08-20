@@ -12,6 +12,7 @@ const nav = [
   { href: "/claims", label: "Claims", mark: "C" },
   { href: "/ai-review", label: "AI Review", mark: "AI" },
   { href: "/ai-governance", label: "AI Governance", mark: "G" },
+  { href: "/ai-evaluation", label: "AI Evaluation", mark: "E" },
   { href: "/pilot", label: "Pilot", mark: "P" },
   { href: "/outreach", label: "Outreach", mark: "O" },
 ];

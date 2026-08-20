@@ -23,6 +23,8 @@ Exit: after the operational prerequisites and independent activation decision ar
 
 ## Sprint 11B — Quality, Safety & Cost Evaluation
 
+Implementation status: the application now provides the version-pinned, content-free case ledger, deterministic threshold calculation, independent reviews, Admin promotion decision and revocation control. The organization must still execute the controlled synthetic/de-identified benchmark against its authorized staging provider and record the observed evidence before promotion.
+
 - representative synthetic/de-identified CE reports and engine logs
 - field-level precision/recall and unsupported-claim rate
 - source-quote validity and page/segment linkage
@@ -31,7 +33,7 @@ Exit: after the operational prerequisites and independent activation decision ar
 - regression suite pinned to model/prompt/schema versions
 - human-review usability and override measurements
 
-Exit: all agreed thresholds pass; failures block promotion and remain visible.
+Exit: all fixed thresholds pass, Quality/Risk reviews are independently completed and an Admin records the expiring staging promotion. Failures block promotion and remain visible.
 
 ## Sprint 11C — Bounded Real-Document Private Pilot
 
