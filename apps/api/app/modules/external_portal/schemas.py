@@ -114,6 +114,31 @@ class PortalRevoke(BaseModel):
     note: str = Field(min_length=3, max_length=2000)
 
 
+class PublicationProposalCreate(PublishedItemInput):
+    pass
+
+
+class PublicationReview(BaseModel):
+    action: Literal["approve", "reject"]
+    note: str = Field(min_length=3, max_length=2000)
+
+
+class PublicationProposalResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    invitation_id: UUID
+    published_item_id: UUID | None
+    item_type: str
+    source_id: UUID
+    title: str
+    summary: str | None
+    status: str
+    review_note: str | None
+    reviewed_at: datetime | None
+    created_at: datetime
+
+
 class PortalWorkspace(BaseModel):
     invitations: list[PortalInvitationResponse]
     submissions: list[PortalSubmissionResponse]
+    publication_proposals: list[PublicationProposalResponse]

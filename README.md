@@ -27,7 +27,7 @@ The MVP now includes the full H&M Machinery / Turbocharger design-partner workfl
 - Least-privilege Email Provider Adapter Operations with bounded run and retention ledgers
 - Claim-scoped External Collaboration Portal with expiring hashed invitations and human-reviewed submissions
 
-**Current phase: Sprint 9G — External Collaboration Portal.** The repository is prepared for a controlled private walkthrough. A private pilot is not production certification.
+**Current phase: Sprint 9K — Pilot Data Governance & Exit Controls.** The repository now includes deployment-readiness attestation, content-free operational monitoring, incident handling, four-eyes external publication and manifest-only pilot exit controls. A private pilot is not production certification.
 
 ## Prerequisites
 
@@ -192,7 +192,7 @@ Engine-log event fields are intentionally not promoted into scalar `claim_facts`
 
 ## Current milestone
 
-Sprint 9 Phases F–G: deployment-managed provider adapters can operate the consented intake boundary, and named counterparties can use short-lived claim-scoped collaboration sessions. The platform still cannot send email, expose internal financial/AI/audit material, or admit attachment bytes outside quarantine controls.
+Sprint 9 Phases H–K: deployment gates can be attested, operational risks can be monitored without copying claim content, external publication requires a second reviewer, and an approved governance profile can authorize a manifest-only pilot exit record. The platform still cannot certify production readiness, delete pilot data through the exit workspace, send email, expose privileged/internal material, or admit attachment bytes outside quarantine controls.
 
 ## Design-partner pilot
 

@@ -151,6 +151,42 @@ Delivered scope:
 - promotion creates inbound Portal correspondence; attachment bytes remain blocked
 - replay, revocation, expiry and tenant-isolation enforcement
 
+## Phase H — Deployment Readiness Gates
+
+Delivered scope:
+
+- versioned staging/pilot readiness snapshots across eight explicit controls
+- deterministic snapshot hashing and immutable attestation record
+- all-controls-pass rule before readiness; Manager/Admin attestation only
+- evidence of readiness rather than a production-certification claim
+
+## Phase I — Operational Monitoring & Incident Response
+
+Delivered scope:
+
+- idempotent tenant-scoped monitoring runs with count-only metrics
+- deterministic thresholds for adapter failures, intake backlog and expired portal sessions
+- human-owned incident ledger with acknowledge and resolve transitions
+- no email body, evidence text, portal message or secret in telemetry
+
+## Phase J — Four-eyes External Publication
+
+Delivered scope:
+
+- direct publication at invitation creation disabled
+- eligible correspondence/document-metadata proposal queue
+- proposer/reviewer separation and Manager/Admin review
+- privileged correspondence, restricted evidence and unreviewed sources blocked
+
+## Phase K — Pilot Data Governance & Exit Controls
+
+Delivered scope:
+
+- approved purpose, legal basis, owner, retention, residency and exit contact profile
+- claim-scoped, idempotent exit manifests containing counts rather than record content
+- SHA-256 manifest checksum and explicit authorization record
+- manifest generation performs no deletion and makes no regulatory-compliance claim
+
 ## Next phase
 
-Design-partner deployment runbook, operational monitoring and external-portal usability hardening.
+Design-partner rehearsal, evidence collection against the readiness controls, and remediation of findings before any production-go-live decision.

@@ -9,10 +9,12 @@ from app.modules.auth.dependencies import CurrentUser, require_roles
 from app.modules.external_portal.schemas import (
     PortalAccept, PortalInvitationCreate, PortalInvitationResponse, PortalReview, PortalRevoke,
     PortalSessionResponse, PortalSubmissionCreate, PortalSubmissionResponse, PortalView, PortalWorkspace,
+    PublicationProposalCreate, PublicationProposalResponse, PublicationReview,
 )
 from app.modules.external_portal.service import (
     accept_invitation, authenticate_session, create_invitation, create_submission, get_invitation,
-    get_submission, invitation_response, list_workspace, portal_view, review_submission, revoke_invitation,
+    create_publication_proposal, get_publication_proposal, get_submission, invitation_response,
+    list_workspace, portal_view, review_publication_proposal, review_submission, revoke_invitation,
 )
 from app.modules.users.models import User, UserRole
 
@@ -22,8 +24,8 @@ Manager = Annotated[User, Depends(require_roles(UserRole.ADMIN, UserRole.CLAIMS_
 
 @router.get("/claims/{claim_id}/external-portal", response_model=PortalWorkspace)
 def workspace(claim_id: UUID, current_user: CurrentUser, db: Annotated[Session, Depends(get_db)]):
-    invitations, submissions = list_workspace(db, current_user.organization_id, claim_id)
-    return PortalWorkspace(invitations=invitations, submissions=submissions)
+    invitations, submissions, proposals = list_workspace(db, current_user.organization_id, claim_id)
+    return PortalWorkspace(invitations=invitations, submissions=submissions, publication_proposals=proposals)
 
 
 @router.post("/claims/{claim_id}/external-portal/invitations", response_model=PortalInvitationResponse, status_code=201)
@@ -40,6 +42,23 @@ def invitation_revoke(claim_id: UUID, invitation_id: UUID, payload: PortalRevoke
     if item.claim_id != claim_id:
         raise HTTPException(404, "Portal invitation not found")
     return PortalInvitationResponse(**invitation_response(db, revoke_invitation(db, item, manager, payload.note)))
+
+
+@router.post("/claims/{claim_id}/external-portal/invitations/{invitation_id}/publications", response_model=PublicationProposalResponse, status_code=201)
+def publication_propose(claim_id: UUID, invitation_id: UUID, payload: PublicationProposalCreate,
+                        current_user: CurrentUser, db: Annotated[Session, Depends(get_db)]):
+    item = get_invitation(db, current_user.organization_id, invitation_id)
+    if item.claim_id != claim_id: raise HTTPException(404, "Portal invitation not found")
+    return create_publication_proposal(db, current_user, item, payload)
+
+
+@router.post("/claims/{claim_id}/external-portal/publications/{proposal_id}/review", response_model=PublicationProposalResponse)
+def publication_review(claim_id: UUID, proposal_id: UUID, payload: PublicationReview, manager: Manager,
+                       db: Annotated[Session, Depends(get_db)]):
+    item = get_publication_proposal(db, manager.organization_id, proposal_id)
+    invitation = get_invitation(db, manager.organization_id, item.invitation_id)
+    if invitation.claim_id != claim_id: raise HTTPException(404, "Publication proposal not found")
+    return review_publication_proposal(db, manager, item, payload.action, payload.note)
 
 
 @router.post("/claims/{claim_id}/external-portal/submissions/{submission_id}/review", response_model=PortalSubmissionResponse)

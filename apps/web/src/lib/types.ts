@@ -45,7 +45,43 @@ export interface PortalSubmission {
   subject: string; body: string; attachment_manifests: Array<Record<string, unknown>>;
   status: string; review_note: string | null; submitted_at: string; reviewed_at: string | null; created_at: string;
 }
-export interface PortalWorkspace { invitations: PortalInvitation[]; submissions: PortalSubmission[]; }
+export interface PortalPublicationProposal {
+  id: string; invitation_id: string; published_item_id: string | null; item_type: string; source_id: string;
+  title: string; summary: string | null; status: string; review_note: string | null;
+  reviewed_at: string | null; created_at: string;
+}
+export interface PortalWorkspace {
+  invitations: PortalInvitation[]; submissions: PortalSubmission[]; publication_proposals: PortalPublicationProposal[];
+}
+
+export interface DeploymentReadinessReview {
+  id: string; environment: string; review_key: string; controls: Record<string, boolean>; status: string;
+  snapshot_hash: string; attestation_note: string | null; attested_at: string | null; created_at: string;
+}
+export interface OperationalMonitorRun {
+  id: string; idempotency_key: string; metrics: Record<string, number>; alerts: Array<Record<string, unknown>>;
+  status: string; run_at: string; created_at: string;
+}
+export interface OperationalIncident {
+  id: string; monitor_run_id: string | null; severity: string; category: string; title: string; summary: string;
+  owner_label: string; status: string; acknowledged_at: string | null; resolved_at: string | null;
+  resolution_note: string | null; created_at: string;
+}
+export interface PilotGovernanceProfile {
+  id: string; pilot_purpose: string; legal_basis: string; data_owner: string; retention_statement: string;
+  residency_statement: string; exit_contact: string; status: string; approved_at: string | null;
+  created_at: string; updated_at: string;
+}
+export interface PilotExitManifest {
+  id: string; claim_id: string; governance_profile_id: string; idempotency_key: string;
+  confirm_manifest_only: boolean; manifest: Record<string, unknown>; manifest_checksum: string;
+  status: string; authorized_at: string; created_at: string;
+}
+export interface PilotOperationsDashboard {
+  readiness_reviews: DeploymentReadinessReview[]; monitor_runs: OperationalMonitorRun[];
+  incidents: OperationalIncident[]; governance_profile: PilotGovernanceProfile | null;
+  exit_manifests: PilotExitManifest[];
+}
 
 export type SettlementStatus = "draft" | "under_review" | "approved" | "rejected" | "accepted" | "declined" | "withdrawn";
 export type SettlementType = "interim" | "partial" | "final";

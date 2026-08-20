@@ -6,6 +6,7 @@ from uuid import UUID
 
 from fastapi import HTTPException
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.modules.audit.service import write_audit_log
@@ -16,10 +17,12 @@ from app.modules.correspondence.models import (
 )
 from app.modules.documents.models import ConfidentialityLevel, Document, DocumentMalwareScanStatus
 from app.modules.external_portal.models import (
-    ExternalPortalInvitation, ExternalPortalPublishedItem, ExternalPortalSession,
-    ExternalPortalSubmission,
+    ExternalPortalInvitation, ExternalPortalPublicationProposal, ExternalPortalPublishedItem,
+    ExternalPortalSession, ExternalPortalSubmission,
 )
-from app.modules.external_portal.schemas import PortalInvitationCreate, PortalReview, PortalSubmissionCreate
+from app.modules.external_portal.schemas import (
+    PortalInvitationCreate, PortalReview, PortalSubmissionCreate, PublicationProposalCreate,
+)
 from app.modules.users.models import User
 from app.modules.vessels.models import Vessel
 
@@ -65,7 +68,11 @@ def list_workspace(db: Session, organization_id: UUID, claim_id: UUID):
         ExternalPortalSubmission.organization_id == organization_id,
         ExternalPortalSubmission.claim_id == claim_id,
     ).order_by(ExternalPortalSubmission.submitted_at.desc())))
-    return [invitation_response(db, item) for item in invitations], submissions
+    proposals = list(db.scalars(select(ExternalPortalPublicationProposal).where(
+        ExternalPortalPublicationProposal.organization_id == organization_id,
+        ExternalPortalPublicationProposal.invitation_id.in_([item.id for item in invitations]),
+    ).order_by(ExternalPortalPublicationProposal.created_at.desc()))) if invitations else []
+    return [invitation_response(db, item) for item in invitations], submissions, proposals
 
 
 def _validate_published_item(db: Session, claim: Claim, item) -> None:
@@ -95,8 +102,8 @@ def create_invitation(db: Session, user: User, claim_id: UUID,
     permissions = set(payload.permission_manifest)
     if not permissions or not permissions.issubset(PORTAL_PERMISSIONS):
         raise HTTPException(422, "Portal permissions exceed the claim-scoped allowlist")
-    for shared in payload.published_items:
-        _validate_published_item(db, claim, shared)
+    if payload.published_items:
+        raise HTTPException(422, "Direct publication is disabled; create a four-eyes publication proposal after invitation creation")
     token = secrets.token_urlsafe(32); now = datetime.now(UTC)
     item = ExternalPortalInvitation(
         organization_id=user.organization_id, claim_id=claim.id, created_by_id=user.id,
@@ -105,20 +112,70 @@ def create_invitation(db: Session, user: User, claim_id: UUID,
         token_hash=sha256(token.encode()).hexdigest(), expires_at=now + timedelta(hours=payload.expires_in_hours),
     )
     db.add(item); db.flush()
-    for shared in payload.published_items:
-        db.add(ExternalPortalPublishedItem(
-            organization_id=user.organization_id, invitation_id=item.id, published_by_id=user.id,
-            item_type=shared.item_type, source_id=shared.source_id, title=shared.title.strip(),
-            summary=shared.summary.strip() if shared.summary else None,
-        ))
     _audit(db, org=item.organization_id, user=user.id, action="CREATE_EXTERNAL_PORTAL_INVITATION",
            kind="external_portal_invitation", entity=item.id,
            values={"claim_id": str(claim.id), "participant_email": item.participant_email,
-                   "permissions": item.permission_manifest, "published_count": len(payload.published_items),
+                   "permissions": item.permission_manifest, "published_count": 0,
                    "expires_at": item.expires_at.isoformat()},
            details="Invitation token displayed once; only its SHA-256 hash is stored.")
     db.commit(); db.refresh(item)
     return item, token
+
+
+def create_publication_proposal(db: Session, user: User, invitation: ExternalPortalInvitation,
+                                payload: PublicationProposalCreate) -> ExternalPortalPublicationProposal:
+    if invitation.status in {"revoked", "expired"}:
+        raise HTTPException(409, "Publication cannot be proposed for an unavailable invitation")
+    claim = get_claim(db, user.organization_id, invitation.claim_id)
+    _validate_published_item(db, claim, payload)
+    item = ExternalPortalPublicationProposal(
+        organization_id=user.organization_id, invitation_id=invitation.id, created_by_id=user.id,
+        item_type=payload.item_type, source_id=payload.source_id, title=payload.title.strip(),
+        summary=payload.summary.strip() if payload.summary else None, status="under_review",
+    )
+    db.add(item)
+    try: db.flush()
+    except IntegrityError as exc:
+        db.rollback(); raise HTTPException(409, "This source already has a publication proposal") from exc
+    _audit(db, org=item.organization_id, user=user.id, action="PROPOSE_EXTERNAL_PORTAL_PUBLICATION",
+           kind="external_portal_publication_proposal", entity=item.id,
+           values={"invitation_id": str(invitation.id), "item_type": item.item_type, "source_id": str(item.source_id)},
+           details="Publication requires approval by a different Manager/Admin.")
+    db.commit(); db.refresh(item); return item
+
+
+def get_publication_proposal(db: Session, org: UUID, proposal_id: UUID) -> ExternalPortalPublicationProposal:
+    item = db.scalar(select(ExternalPortalPublicationProposal).where(
+        ExternalPortalPublicationProposal.id == proposal_id,
+        ExternalPortalPublicationProposal.organization_id == org,
+    ))
+    if item is None: raise HTTPException(404, "Publication proposal not found")
+    return item
+
+
+def review_publication_proposal(db: Session, user: User, item: ExternalPortalPublicationProposal,
+                                action: str, note: str) -> ExternalPortalPublicationProposal:
+    if item.status != "under_review": raise HTTPException(409, "Only pending publication proposals can be reviewed")
+    if item.created_by_id == user.id: raise HTTPException(409, "The proposal creator cannot approve or reject it")
+    invitation = get_invitation(db, user.organization_id, item.invitation_id)
+    if invitation.status in {"revoked", "expired"}: raise HTTPException(409, "Invitation is unavailable")
+    item.reviewed_by_id = user.id; item.review_note = note.strip(); item.reviewed_at = datetime.now(UTC)
+    if action == "approve":
+        claim = get_claim(db, user.organization_id, invitation.claim_id)
+        _validate_published_item(db, claim, item)
+        published = ExternalPortalPublishedItem(
+            organization_id=user.organization_id, invitation_id=invitation.id, published_by_id=user.id,
+            item_type=item.item_type, source_id=item.source_id, title=item.title, summary=item.summary,
+        )
+        db.add(published); db.flush(); item.published_item_id = published.id; item.status = "approved"
+    elif action == "reject": item.status = "rejected"
+    else: raise HTTPException(422, "Action must be approve or reject")
+    _audit(db, org=item.organization_id, user=user.id,
+           action="APPROVE_EXTERNAL_PORTAL_PUBLICATION" if item.status == "approved" else "REJECT_EXTERNAL_PORTAL_PUBLICATION",
+           kind="external_portal_publication_proposal", entity=item.id,
+           values={"status": item.status, "published_item_id": str(item.published_item_id) if item.published_item_id else None},
+           details=note.strip())
+    db.commit(); db.refresh(item); return item
 
 
 def get_invitation(db: Session, organization_id: UUID, invitation_id: UUID) -> ExternalPortalInvitation:

@@ -25,8 +25,7 @@ def _invite() -> tuple[str, dict]:
         "purpose": "Provide a controlled claim update and receive requested factual material.",
         "expires_in_hours": 48,
         "permission_manifest": ["claim_summary.view", "published_items.view", "submission.create"],
-        "published_items": [{"item_type": "correspondence", "source_id": source.json()["id"],
-                             "title": "Reviewed casualty update", "summary": "Factual status only."}],
+        "published_items": [],
     })
     assert created.status_code == 201, created.text
     return claim_id, created.json()
@@ -35,7 +34,7 @@ def _invite() -> tuple[str, dict]:
 def test_portal_invitation_session_submission_and_human_promotion() -> None:
     claim_id, invitation = _invite()
     token = invitation["invitation_token"]
-    assert len(token) >= 32 and invitation["published_items"][0]["title"] == "Reviewed casualty update"
+    assert len(token) >= 32 and invitation["published_items"] == []
     accepted = client.post("/api/v1/external-portal/accept", json={"invitation_token": token})
     assert accepted.status_code == 200, accepted.text
     session = accepted.json()["session_token"]
