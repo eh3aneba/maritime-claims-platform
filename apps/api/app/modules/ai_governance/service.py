@@ -439,8 +439,17 @@ def require_external_ai_runtime_authorization(
         # Sprint 11C is a separate, narrower authorization path for real but
         # non-restricted documents. Import locally to keep the two control
         # planes independently testable and avoid a module import cycle.
+        from app.modules.ai_private_pilot.models import AIPrivatePilotDocumentEligibility
         from app.modules.ai_private_pilot.service import require_private_pilot_runtime_authorization
 
+        pilot_eligibility = db.scalar(select(AIPrivatePilotDocumentEligibility.id).where(
+            AIPrivatePilotDocumentEligibility.organization_id == organization_id,
+            AIPrivatePilotDocumentEligibility.document_id == document.id,
+            AIPrivatePilotDocumentEligibility.status == "eligible",
+        ))
+        if pilot_eligibility is None:
+            raise HTTPException(
+                409, "Document requires a current synthetic/de-identified eligibility attestation")
         require_private_pilot_runtime_authorization(
             db, organization_id=organization_id, document=document,
             expected_document_type=expected_document_type,

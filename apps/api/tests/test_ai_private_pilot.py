@@ -209,6 +209,9 @@ def test_real_document_pilot_requires_two_approvals_runtime_quota_and_human_revi
         )
         assert run is not None; db.commit(); run_id = str(run.id)
 
+    # TestClient uses secure cookies in staging mode; return only the HTTP test
+    # client to its normal environment while preserving the pinned AI bundle.
+    monkeypatch.setattr(get_settings(), "app_env", "test")
     client.cookies.clear(); login("alpha", "alpha-manager@example.com")
     self_review = client.post(
         f"/api/v1/ai-private-pilot/runs/{run_id}/outcome",
@@ -247,6 +250,7 @@ def test_real_document_pilot_requires_two_approvals_runtime_quota_and_human_revi
     )
     assert paused.status_code == 201 and paused.json()["status"] == "paused"
     incident_id = paused.json()["incidents"][0]["id"]
+    monkeypatch.setattr(get_settings(), "app_env", "staging")
     with TestingSessionLocal() as db:
         document = db.scalar(select(Document).where(Document.id == UUID(document_id)))
         with pytest.raises(HTTPException, match="No active bounded"):
@@ -254,6 +258,7 @@ def test_real_document_pilot_requires_two_approvals_runtime_quota_and_human_revi
                 db, organization_id=document.organization_id, document=document,
                 expected_document_type="chief_engineer_report", input_char_count=2000)
 
+    monkeypatch.setattr(get_settings(), "app_env", "test")
     client.cookies.clear(); login("alpha", "alpha-admin@example.com")
     resolved = client.post(
         f"/api/v1/ai-private-pilot/pilots/{pilot['id']}/incidents/{incident_id}/resolve",
