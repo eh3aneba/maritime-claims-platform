@@ -6,7 +6,9 @@ from uuid import UUID
 from sqlalchemy import case, delete, select
 from sqlalchemy.orm import Session
 
+from app.ai.gateway.registry import get_ai_provider
 from app.core.config import get_settings
+from app.modules.ai_governance.service import require_external_ai_runtime_authorization
 from app.modules.audit.service import write_audit_log
 from app.modules.documents.models import (
     Document,
@@ -70,6 +72,31 @@ def enqueue_text_extraction(
 ) -> DocumentProcessingJob:
     return enqueue_processing_job(
         db, document=document, requested_by_id=requested_by_id, job_type=ProcessingJobType.EXTRACT_TEXT
+    )
+
+
+def _require_ai_job_runtime_authorization(
+    db: Session, *, job: DocumentProcessingJob, document: Document,
+    expected_document_type: str,
+) -> None:
+    """Re-check external-AI authorization immediately before provider execution.
+
+    Queue-time authorization prevents accidental admission. This second check
+    makes revocation, expiry, incident pause and quota/document changes effective
+    even for a job that was already waiting in the worker queue.
+    """
+    if get_ai_provider().name != "openai":
+        return
+    extraction = db.scalar(select(DocumentTextExtraction).where(
+        DocumentTextExtraction.organization_id == document.organization_id,
+        DocumentTextExtraction.document_id == document.id,
+    ))
+    if extraction is None or extraction.char_count <= 0:
+        raise RuntimeError("Document text extraction is unavailable for the runtime AI gate")
+    require_external_ai_runtime_authorization(
+        db, organization_id=document.organization_id, document=document,
+        expected_document_type=expected_document_type,
+        input_char_count=extraction.char_count, requested_by_id=job.requested_by_id,
     )
 
 
@@ -325,6 +352,9 @@ def _process_ce_ai_job(db: Session, *, job: DocumentProcessingJob) -> None:
         _fail_job(db, job=job, document=document, error="Document is unavailable or deleted.")
         return
     try:
+        _require_ai_job_runtime_authorization(
+            db, job=job, document=document,
+            expected_document_type="chief_engineer_report")
         from app.modules.intelligence.service import run_ce_report_intelligence
 
         run = run_ce_report_intelligence(
@@ -358,6 +388,8 @@ def _process_engine_log_ai_job(db: Session, *, job: DocumentProcessingJob) -> No
         _fail_job(db, job=job, document=document, error="Document is unavailable or deleted.")
         return
     try:
+        _require_ai_job_runtime_authorization(
+            db, job=job, document=document, expected_document_type="engine_log")
         from app.modules.intelligence.service import run_engine_log_intelligence
 
         run = run_engine_log_intelligence(
@@ -392,6 +424,16 @@ def _process_named_ai_job(db: Session, *, job: DocumentProcessingJob, runner_nam
         _fail_job(db, job=job, document=document, error="Document is unavailable or deleted.")
         return
     try:
+        expected_document_type = {
+            ProcessingJobType.AI_EXTRACT_RUNNING_HOURS: "running_hours_record",
+            ProcessingJobType.AI_EXTRACT_PMS_HISTORY: "pms_record",
+            ProcessingJobType.AI_EXTRACT_WORKSHOP_REPORT: "workshop_report",
+            ProcessingJobType.AI_EXTRACT_QUOTATION: "quotation",
+            ProcessingJobType.AI_EXTRACT_INVOICE: "invoice",
+        }[job.job_type]
+        _require_ai_job_runtime_authorization(
+            db, job=job, document=document,
+            expected_document_type=expected_document_type)
         from app.modules import intelligence as intelligence_module  # noqa: F401
         from app.modules.intelligence import service as intelligence_service
 

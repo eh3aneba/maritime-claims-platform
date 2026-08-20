@@ -5,6 +5,7 @@ from app.core.config import get_settings
 from app.modules.adjustments.router import router as adjustments_router
 from app.modules.ai_evaluation.router import router as ai_evaluation_router
 from app.modules.ai_governance.router import router as ai_governance_router
+from app.modules.ai_private_pilot.router import router as ai_private_pilot_router
 from app.modules.auth.router import router as auth_router
 from app.modules.assessments.router import router as assessments_router
 from app.modules.claim_packs.router import router as claim_packs_router
@@ -52,6 +53,7 @@ app.add_middleware(
 app.include_router(health_router, prefix=settings.api_v1_prefix)
 app.include_router(ai_evaluation_router, prefix=settings.api_v1_prefix)
 app.include_router(ai_governance_router, prefix=settings.api_v1_prefix)
+app.include_router(ai_private_pilot_router, prefix=settings.api_v1_prefix)
 app.include_router(adjustments_router, prefix=settings.api_v1_prefix)
 app.include_router(assessments_router, prefix=settings.api_v1_prefix)
 app.include_router(financial_router, prefix=settings.api_v1_prefix)
