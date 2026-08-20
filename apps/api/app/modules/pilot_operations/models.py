@@ -282,7 +282,7 @@ class ProductionControlVerificationGate(UUIDPrimaryKeyMixin, TimestampMixin, Bas
     )
 
     organization_id: Mapped[UUID] = mapped_column(ForeignKey("organizations.id", ondelete="RESTRICT"), index=True)
-    architecture_baseline_id: Mapped[UUID] = mapped_column(ForeignKey("production_architecture_baselines.id", ondelete="RESTRICT"), index=True)
+    architecture_baseline_id: Mapped[UUID] = mapped_column(ForeignKey("production_architecture_baselines.id", ondelete="RESTRICT"))
     created_by_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     completed_by_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     gate_key: Mapped[str] = mapped_column(String(120))

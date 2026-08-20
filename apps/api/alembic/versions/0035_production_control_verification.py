@@ -42,7 +42,6 @@ def upgrade() -> None:
         sa.UniqueConstraint("architecture_baseline_id", name="uq_production_control_gate_baseline"),
     )
     op.create_index("ix_production_control_verification_gates_organization_id", "production_control_verification_gates", ["organization_id"])
-    op.create_index("ix_production_control_verification_gates_architecture_baseline_id", "production_control_verification_gates", ["architecture_baseline_id"])
     op.create_index("ix_production_control_gate_org_status", "production_control_verification_gates", ["organization_id", "status", "created_at"])
 
     op.create_table(
@@ -82,6 +81,6 @@ def downgrade() -> None:
     for index in ["ix_production_control_evidence_org_gate", "ix_production_control_evidence_gate_id", "ix_production_control_evidence_organization_id"]:
         op.drop_index(index, table_name="production_control_evidence")
     op.drop_table("production_control_evidence")
-    for index in ["ix_production_control_gate_org_status", "ix_production_control_verification_gates_architecture_baseline_id", "ix_production_control_verification_gates_organization_id"]:
+    for index in ["ix_production_control_gate_org_status", "ix_production_control_verification_gates_organization_id"]:
         op.drop_index(index, table_name="production_control_verification_gates")
     op.drop_table("production_control_verification_gates")
