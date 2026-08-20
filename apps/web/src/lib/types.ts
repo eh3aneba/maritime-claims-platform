@@ -148,6 +148,35 @@ export interface ProductionControlVerificationGate {
   outcome_note: string | null; outcome_hash: string | null; completed_at: string | null;
   summary: ProductionControlVerificationSummary; evidence: ProductionControlEvidence[]; created_at: string;
 }
+export interface OperationalAcceptanceCheck {
+  id: string; acceptance_id: string; check_key: string; result: "pass" | "fail";
+  owner_label: string; evidence_reference: string; note: string; created_at: string;
+}
+export interface OperationalAcceptanceApproval {
+  id: string; acceptance_id: string; approver_id: string | null;
+  approval_role: "operations" | "risk"; action: "approve" | "reject";
+  evidence_reference: string | null; note: string; approved_at: string; created_at: string;
+}
+export interface OperationalAcceptanceSummary {
+  required_check_count: number; recorded_check_count: number; pass_count: number; fail_count: number;
+  independent_approvals_complete: boolean; go_live_authorization_recorded: boolean;
+  authorization_active: boolean; deployment_performed: false; traffic_enabled: false;
+  production_certification: false; external_ai_authorization: false;
+  content_or_secrets_included: false;
+}
+export interface OperationalAcceptance {
+  id: string; control_verification_gate_id: string; requested_by_id: string | null;
+  finalized_by_id: string | null; attempt_number: number; acceptance_key: string;
+  release_identifier: string; target_environment: "production";
+  change_window_start: string; change_window_end: string;
+  release_owner_label: string; rollback_owner_label: string;
+  incident_commander_label: string; support_owner_label: string;
+  status: string; outcome: string | null; decision_note: string | null;
+  decision_hash: string | null; decided_at: string | null;
+  authorization_expires_at: string | null; summary: OperationalAcceptanceSummary;
+  checks: OperationalAcceptanceCheck[]; approvals: OperationalAcceptanceApproval[];
+  created_at: string;
+}
 export interface PilotOperationsDashboard {
   readiness_reviews: DeploymentReadinessReview[]; monitor_runs: OperationalMonitorRun[];
   incidents: OperationalIncident[]; governance_profile: PilotGovernanceProfile | null;
@@ -155,6 +184,7 @@ export interface PilotOperationsDashboard {
   pilot_executions: PrivatePilotExecution[];
   architecture_baselines: ProductionArchitectureBaseline[];
   control_verification_gates: ProductionControlVerificationGate[];
+  operational_acceptances: OperationalAcceptance[];
 }
 
 export type SettlementStatus = "draft" | "under_review" | "approved" | "rejected" | "accepted" | "declined" | "withdrawn";

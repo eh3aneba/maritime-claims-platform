@@ -93,4 +93,31 @@ Acceptance guardrails:
 
 ## Next phase
 
-Perform a separately authorized operational acceptance and go-live decision with named approvers, change-window and rollback ownership, while keeping verification evidence distinct from authorization to enable production traffic.
+## Phase E — Operational Acceptance & Bounded Go-Live Authorization
+
+Goal: turn completed nine-control evidence into a separately accountable and expiring human authorization record without executing deployment, enabling traffic or authorizing an external AI provider.
+
+Delivered scope:
+
+- one append-only attempt at a time from a completed `architecture_v2` gate
+- release identifier, production target and timezone-aware change window of at most 24 hours
+- named release, rollback, incident and support owners
+- exactly seven checks: release artifact, migration plan, backup/restore, observability/alerting, incident response, rollback rehearsal and support coverage
+- bounded evidence references and truthful pass/fail results for every check
+- separate Operations and Risk approvals from different Manager/Admin users, both different from the requester
+- Admin-only Authorize/Hold decision with canonical SHA-256 snapshot
+- authorization expiry at the end of the change window
+- explicit false deployment, traffic, certification and external-AI flags
+
+Acceptance guardrails:
+
+- no acceptance from a historical `foundational_v1` gate or incomplete `architecture_v2` gate
+- no approval while any required check fails
+- no requester self-approval and no single person filling both approval roles
+- no final authorization without two independent approvals
+- no mutation after rejection, hold or authorization; rejection/hold requires a fresh attempt
+- no URL, secret, raw artifact, claim content, deployment command, traffic change or AI-provider activation
+
+## Next phase
+
+Create a separately authorized external-AI provider activation and evaluation gate. It must isolate staging and production, govern keys and data eligibility, pin provider/model/prompt versions, enforce budgets and kill switches, and require measured quality/safety thresholds before any real claim document can leave the platform boundary.

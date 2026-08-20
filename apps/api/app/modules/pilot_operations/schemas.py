@@ -441,6 +441,96 @@ class ControlVerificationGateResponse(BaseModel):
     created_at: datetime
 
 
+class OperationalAcceptanceCheckWrite(BaseModel):
+    check_key: Literal["release_artifact", "migration_plan", "backup_restore",
+                       "observability_alerting", "incident_response",
+                       "rollback_rehearsal", "support_coverage"]
+    result: Literal["pass", "fail"]
+    owner_label: str = Field(min_length=2, max_length=180)
+    evidence_reference: str = Field(min_length=8, max_length=500)
+    note: str = Field(min_length=10, max_length=4000)
+
+
+class OperationalAcceptanceCreate(BaseModel):
+    control_verification_gate_id: UUID
+    acceptance_key: str = Field(min_length=8, max_length=120)
+    release_identifier: str = Field(min_length=3, max_length=160)
+    target_environment: Literal["production"] = "production"
+    change_window_start: datetime
+    change_window_end: datetime
+    release_owner_label: str = Field(min_length=2, max_length=180)
+    rollback_owner_label: str = Field(min_length=2, max_length=180)
+    incident_commander_label: str = Field(min_length=2, max_length=180)
+    support_owner_label: str = Field(min_length=2, max_length=180)
+    checks: list[OperationalAcceptanceCheckWrite] = Field(min_length=7, max_length=7)
+
+
+class OperationalAcceptanceApprovalWrite(BaseModel):
+    approval_role: Literal["operations", "risk"]
+    action: Literal["approve", "reject"]
+    evidence_reference: str | None = Field(default=None, min_length=8, max_length=500)
+    note: str = Field(min_length=10, max_length=4000)
+
+
+class OperationalAcceptanceDecision(BaseModel):
+    outcome: Literal["authorize", "hold"]
+    confirm_decision: bool
+    note: str = Field(min_length=10, max_length=4000)
+
+
+class OperationalAcceptanceCheckResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    acceptance_id: UUID
+    check_key: str
+    result: str
+    owner_label: str
+    evidence_reference: str
+    note: str
+    created_at: datetime
+
+
+class OperationalAcceptanceApprovalResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    acceptance_id: UUID
+    approver_id: UUID | None
+    approval_role: str
+    action: str
+    evidence_reference: str | None
+    note: str
+    approved_at: datetime
+    created_at: datetime
+
+
+class OperationalAcceptanceResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    control_verification_gate_id: UUID
+    requested_by_id: UUID | None
+    finalized_by_id: UUID | None
+    attempt_number: int
+    acceptance_key: str
+    release_identifier: str
+    target_environment: str
+    change_window_start: datetime
+    change_window_end: datetime
+    release_owner_label: str
+    rollback_owner_label: str
+    incident_commander_label: str
+    support_owner_label: str
+    status: str
+    outcome: str | None
+    decision_note: str | None
+    decision_hash: str | None
+    decided_at: datetime | None
+    authorization_expires_at: datetime | None
+    summary: dict
+    checks: list[OperationalAcceptanceCheckResponse]
+    approvals: list[OperationalAcceptanceApprovalResponse]
+    created_at: datetime
+
+
 class PilotOperationsDashboard(BaseModel):
     readiness_reviews: list[ReadinessResponse]
     monitor_runs: list[MonitorRunResponse]
@@ -451,3 +541,4 @@ class PilotOperationsDashboard(BaseModel):
     pilot_executions: list[PilotExecutionResponse]
     architecture_baselines: list[ArchitectureBaselineResponse]
     control_verification_gates: list[ControlVerificationGateResponse]
+    operational_acceptances: list[OperationalAcceptanceResponse]

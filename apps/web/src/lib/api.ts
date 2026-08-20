@@ -936,3 +936,41 @@ export function completeProductionControlVerificationGate(id: string, note: stri
     method: "POST", body: JSON.stringify({ confirm_verified: true, note }),
   });
 }
+export function createOperationalAcceptance(controlVerificationGateId: string) {
+  const checkKeys = ["release_artifact", "migration_plan", "backup_restore",
+    "observability_alerting", "incident_response", "rollback_rehearsal", "support_coverage"];
+  return apiFetch<import("./types").OperationalAcceptance>("/pilot-operations/operational-acceptances", {
+    method: "POST", body: JSON.stringify({
+      control_verification_gate_id: controlVerificationGateId,
+      acceptance_key: `operational-acceptance-${crypto.randomUUID()}`,
+      release_identifier: `release-${crypto.randomUUID()}`,
+      target_environment: "production",
+      change_window_start: new Date(Date.now() + 86400000).toISOString(),
+      change_window_end: new Date(Date.now() + 90000000).toISOString(),
+      release_owner_label: "Release Owner", rollback_owner_label: "Rollback Owner",
+      incident_commander_label: "Incident Commander", support_owner_label: "Support Owner",
+      checks: checkKeys.map((checkKey) => ({ check_key: checkKey, result: "pass",
+        owner_label: "Operational Control Owner",
+        evidence_reference: `artifact://go-live/${checkKey}`,
+        note: `Human-reviewed bounded operational evidence for ${checkKey}.` })),
+    }),
+  });
+}
+export function reviewOperationalAcceptance(id: string, approvalRole: "operations" | "risk",
+  action: "approve" | "reject") {
+  return apiFetch<import("./types").OperationalAcceptance>(`/pilot-operations/operational-acceptances/${id}/approvals`, {
+    method: "POST", body: JSON.stringify({ approval_role: approvalRole, action,
+      evidence_reference: action === "approve" ? `artifact://go-live/${approvalRole}-review` : null,
+      note: action === "approve"
+        ? `Independent ${approvalRole} reviewer confirmed every bounded operational check.`
+        : `${approvalRole} reviewer rejected this attempt; a fresh attempt is required.` }),
+  });
+}
+export function decideOperationalAcceptance(id: string, outcome: "authorize" | "hold") {
+  return apiFetch<import("./types").OperationalAcceptance>(`/pilot-operations/operational-acceptances/${id}/decision`, {
+    method: "POST", body: JSON.stringify({ outcome, confirm_decision: true,
+      note: outcome === "authorize"
+        ? "Administrator recorded a bounded, expiring go-live authorization; deployment and traffic remain separate actions."
+        : "Administrator placed this go-live attempt on hold pending a fresh operational acceptance attempt." }),
+  });
+}

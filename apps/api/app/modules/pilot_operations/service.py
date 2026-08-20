@@ -1,6 +1,6 @@
 import json
 import re
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from uuid import UUID
 
@@ -17,6 +17,7 @@ from app.modules.email_ingestion.models import EmailAdapterRun, EmailMessageStat
 from app.modules.external_portal.models import ExternalPortalInvitation, ExternalPortalSession, ExternalPortalSubmission
 from app.modules.pilot_operations.models import (
     DeploymentReadinessReview, DesignPartnerRehearsal, OperationalIncident, OperationalMonitorRun,
+    OperationalAcceptance, OperationalAcceptanceApproval, OperationalAcceptanceCheck,
     PilotExitManifest, PilotGovernanceProfile, PrivatePilotCaseRun, PrivatePilotExecution,
     ProductGapFinding, ProductionArchitectureBaseline, ProductionArchitectureControl,
     ProductionControlEvidence, ProductionControlVerificationGate,
@@ -25,6 +26,7 @@ from app.modules.pilot_operations.models import (
 from app.modules.pilot_operations.schemas import (
     ArchitectureBaselineCreate, ArchitectureControlWrite, ControlVerificationGateCreate,
     GovernanceProfileWrite, IncidentCreate, MonitorRunCreate, PilotCaseRunWrite,
+    OperationalAcceptanceCreate,
     PilotExecutionCreate, ProductGapCreate, ProductionControlEvidenceSubmit, ReadinessCreate,
     RehearsalCreate, RehearsalEvidenceWrite, RehearsalFindingCreate,
 )
@@ -43,6 +45,10 @@ CONTROL_VERIFICATION_PROFILES = {
 }
 LATEST_CONTROL_VERIFICATION_PROFILE = "architecture_v2"
 EVIDENCE_REFERENCE = re.compile(r"^(artifact|runbook|ticket|monitor)://[A-Za-z0-9._:/-]{3,450}$")
+OPERATIONAL_ACCEPTANCE_CHECKS = {
+    "release_artifact", "migration_plan", "backup_restore", "observability_alerting",
+    "incident_response", "rollback_rehearsal", "support_coverage",
+}
 
 
 def _audit(db: Session, user: User, action: str, kind: str, entity: UUID, values: dict, details: str) -> None:
@@ -64,7 +70,9 @@ def dashboard(db: Session, organization_id: UUID):
     executions = list_pilot_executions(db, organization_id)
     baselines = list_architecture_baselines(db, organization_id)
     verification_gates = list_control_verification_gates(db, organization_id)
-    return readiness, monitors, incidents, profile, exits, rehearsals, executions, baselines, verification_gates
+    acceptances = list_operational_acceptances(db, organization_id)
+    return (readiness, monitors, incidents, profile, exits, rehearsals, executions, baselines,
+            verification_gates, acceptances)
 
 
 def create_readiness(db: Session, user: User, payload: ReadinessCreate) -> DeploymentReadinessReview:
@@ -985,3 +993,252 @@ def complete_control_verification_gate(db: Session, user: User,
            f"{len(required_controls)}-control evidence snapshot only; not a production "
            "certification or go-live authorization. " + item.outcome_note)
     db.commit(); db.refresh(item); return control_verification_gate_response(db, item)
+
+
+def _acceptance_checks(db: Session, acceptance_id: UUID) -> list[OperationalAcceptanceCheck]:
+    return list(db.scalars(select(OperationalAcceptanceCheck).where(
+        OperationalAcceptanceCheck.acceptance_id == acceptance_id
+    ).order_by(OperationalAcceptanceCheck.check_key.asc())))
+
+
+def _acceptance_approvals(db: Session,
+                          acceptance_id: UUID) -> list[OperationalAcceptanceApproval]:
+    return list(db.scalars(select(OperationalAcceptanceApproval).where(
+        OperationalAcceptanceApproval.acceptance_id == acceptance_id
+    ).order_by(OperationalAcceptanceApproval.approval_role.asc())))
+
+
+def _as_utc(value: datetime) -> datetime:
+    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+
+
+def operational_acceptance_response(db: Session, item: OperationalAcceptance) -> dict:
+    checks = _acceptance_checks(db, item.id)
+    approvals = _acceptance_approvals(db, item.id)
+    now = datetime.now(UTC)
+    active = bool(
+        item.status == "authorized" and item.authorization_expires_at
+        and _as_utc(item.change_window_start) <= now <= _as_utc(item.authorization_expires_at)
+    )
+    roles = {approval.approval_role: approval for approval in approvals}
+    independent = bool(
+        set(roles) == {"operations", "risk"}
+        and all(approval.action == "approve" for approval in roles.values())
+        and roles["operations"].approver_id != roles["risk"].approver_id
+        and all(approval.approver_id != item.requested_by_id for approval in roles.values())
+    )
+    return {
+        "id": item.id, "control_verification_gate_id": item.control_verification_gate_id,
+        "requested_by_id": item.requested_by_id, "finalized_by_id": item.finalized_by_id,
+        "attempt_number": item.attempt_number, "acceptance_key": item.acceptance_key,
+        "release_identifier": item.release_identifier,
+        "target_environment": item.target_environment,
+        "change_window_start": item.change_window_start,
+        "change_window_end": item.change_window_end,
+        "release_owner_label": item.release_owner_label,
+        "rollback_owner_label": item.rollback_owner_label,
+        "incident_commander_label": item.incident_commander_label,
+        "support_owner_label": item.support_owner_label,
+        "status": item.status, "outcome": item.outcome,
+        "decision_note": item.decision_note, "decision_hash": item.decision_hash,
+        "decided_at": item.decided_at,
+        "authorization_expires_at": item.authorization_expires_at,
+        "created_at": item.created_at, "checks": checks, "approvals": approvals,
+        "summary": {
+            "required_check_count": len(OPERATIONAL_ACCEPTANCE_CHECKS),
+            "recorded_check_count": len(checks),
+            "pass_count": sum(check.result == "pass" for check in checks),
+            "fail_count": sum(check.result == "fail" for check in checks),
+            "independent_approvals_complete": independent,
+            "go_live_authorization_recorded": item.status == "authorized",
+            "authorization_active": active,
+            "deployment_performed": False,
+            "traffic_enabled": False,
+            "production_certification": False,
+            "external_ai_authorization": False,
+            "content_or_secrets_included": False,
+        },
+    }
+
+
+def list_operational_acceptances(db: Session, organization_id: UUID) -> list[dict]:
+    items = list(db.scalars(select(OperationalAcceptance).where(
+        OperationalAcceptance.organization_id == organization_id
+    ).order_by(OperationalAcceptance.created_at.desc()).limit(25)))
+    return [operational_acceptance_response(db, item) for item in items]
+
+
+def get_operational_acceptance(db: Session, organization_id: UUID,
+                               item_id: UUID) -> OperationalAcceptance:
+    item = db.scalar(select(OperationalAcceptance).where(
+        OperationalAcceptance.id == item_id,
+        OperationalAcceptance.organization_id == organization_id,
+    ))
+    if item is None: raise HTTPException(404, "Operational acceptance not found")
+    return item
+
+
+def create_operational_acceptance(db: Session, user: User,
+                                  payload: OperationalAcceptanceCreate) -> dict:
+    gate = get_control_verification_gate(db, user.organization_id,
+                                         payload.control_verification_gate_id)
+    if gate.status != "completed" or gate.verification_profile != LATEST_CONTROL_VERIFICATION_PROFILE:
+        raise HTTPException(409, "A completed architecture_v2 nine-control gate is required")
+    if payload.change_window_start.tzinfo is None or payload.change_window_start.utcoffset() is None:
+        raise HTTPException(422, "Change-window start must include a timezone")
+    if payload.change_window_end.tzinfo is None or payload.change_window_end.utcoffset() is None:
+        raise HTTPException(422, "Change-window end must include a timezone")
+    now = datetime.now(UTC)
+    start = payload.change_window_start.astimezone(UTC)
+    end = payload.change_window_end.astimezone(UTC)
+    if start <= now or end <= start:
+        raise HTTPException(422, "Change window must start in the future and end after it starts")
+    if end - start > timedelta(hours=24) or start - now > timedelta(days=90):
+        raise HTTPException(422, "Change window must be at most 24 hours and within 90 days")
+    keys = [check.check_key for check in payload.checks]
+    if len(set(keys)) != len(keys) or set(keys) != OPERATIONAL_ACCEPTANCE_CHECKS:
+        raise HTTPException(422, "Operational acceptance requires exactly the seven named checks")
+    for check in payload.checks:
+        if not EVIDENCE_REFERENCE.fullmatch(check.evidence_reference.strip()):
+            raise HTTPException(422, "Each operational check requires a bounded allowlisted reference")
+    attempts = list(db.scalars(select(OperationalAcceptance).where(
+        OperationalAcceptance.organization_id == user.organization_id,
+        OperationalAcceptance.control_verification_gate_id == gate.id,
+    ).order_by(OperationalAcceptance.attempt_number.asc())))
+    if attempts and attempts[-1].status not in {"rejected", "held"}:
+        raise HTTPException(409, "A new attempt is allowed only after rejection or hold")
+    item = OperationalAcceptance(
+        organization_id=user.organization_id, control_verification_gate_id=gate.id,
+        requested_by_id=user.id, attempt_number=len(attempts) + 1,
+        acceptance_key=payload.acceptance_key.strip(),
+        release_identifier=payload.release_identifier.strip(),
+        target_environment=payload.target_environment,
+        change_window_start=start, change_window_end=end,
+        release_owner_label=payload.release_owner_label.strip(),
+        rollback_owner_label=payload.rollback_owner_label.strip(),
+        incident_commander_label=payload.incident_commander_label.strip(),
+        support_owner_label=payload.support_owner_label.strip(),
+        status="pending_approvals",
+    )
+    db.add(item)
+    try: db.flush()
+    except IntegrityError as exc:
+        db.rollback(); raise HTTPException(409, "This acceptance key or attempt already exists") from exc
+    for check in payload.checks:
+        db.add(OperationalAcceptanceCheck(
+            organization_id=user.organization_id, acceptance_id=item.id,
+            check_key=check.check_key, result=check.result,
+            owner_label=check.owner_label.strip(),
+            evidence_reference=check.evidence_reference.strip(), note=check.note.strip(),
+        ))
+    db.flush()
+    _audit(db, user, "CREATE_OPERATIONAL_ACCEPTANCE", "operational_acceptance", item.id,
+           {"gate_id": str(gate.id), "attempt_number": item.attempt_number,
+            "release_identifier": item.release_identifier,
+            "change_window_start": start.isoformat(), "change_window_end": end.isoformat(),
+            "check_results": {check.check_key: check.result for check in payload.checks},
+            "deployment_performed": False, "traffic_enabled": False,
+            "external_ai_authorization": False},
+           "Bounded operational decision request only; no deployment, traffic or AI-provider action.")
+    db.commit(); db.refresh(item); return operational_acceptance_response(db, item)
+
+
+def record_operational_acceptance_approval(
+    db: Session, user: User, item: OperationalAcceptance, approval_role: str,
+    action: str, evidence_reference: str | None, note: str,
+) -> dict:
+    if item.status not in {"pending_approvals", "decision_ready"}:
+        raise HTTPException(409, "This operational acceptance attempt is immutable")
+    if item.requested_by_id == user.id:
+        raise HTTPException(409, "The requester cannot approve this acceptance")
+    approvals = _acceptance_approvals(db, item.id)
+    if any(approval.approval_role == approval_role for approval in approvals):
+        raise HTTPException(409, "This approval role already has a decision")
+    if any(approval.approver_id == user.id for approval in approvals):
+        raise HTTPException(409, "Operations and risk approvals require different people")
+    reference = evidence_reference.strip() if evidence_reference else None
+    if action == "approve" and not reference:
+        raise HTTPException(422, "Approval requires a bounded review reference")
+    if reference and not EVIDENCE_REFERENCE.fullmatch(reference):
+        raise HTTPException(422, "Approval evidence must use an allowlisted bounded reference")
+    checks = _acceptance_checks(db, item.id)
+    if action == "approve" and (
+        {check.check_key for check in checks} != OPERATIONAL_ACCEPTANCE_CHECKS
+        or any(check.result != "pass" for check in checks)
+    ):
+        raise HTTPException(409, "Every operational check must pass before approval")
+    approval = OperationalAcceptanceApproval(
+        organization_id=user.organization_id, acceptance_id=item.id, approver_id=user.id,
+        approval_role=approval_role, action=action, evidence_reference=reference,
+        note=note.strip(), approved_at=datetime.now(UTC),
+    )
+    db.add(approval); db.flush()
+    if action == "reject":
+        item.status = "rejected"; item.outcome = "reject"; item.decision_note = note.strip()
+        item.decided_at = datetime.now(UTC); item.finalized_by_id = user.id
+    else:
+        current = _acceptance_approvals(db, item.id)
+        item.status = "decision_ready" if (
+            {entry.approval_role for entry in current} == {"operations", "risk"}
+            and all(entry.action == "approve" for entry in current)
+        ) else "pending_approvals"
+    _audit(db, user, f"{action.upper()}_OPERATIONAL_ACCEPTANCE", "operational_acceptance",
+           item.id, {"approval_role": approval_role, "action": action,
+                     "evidence_reference": reference, "status": item.status},
+           "Independent human operational acceptance review. " + note.strip())
+    db.commit(); db.refresh(item); return operational_acceptance_response(db, item)
+
+
+def decide_operational_acceptance(db: Session, user: User, item: OperationalAcceptance,
+                                  outcome: str, confirm: bool, note: str) -> dict:
+    if not confirm: raise HTTPException(422, "Explicit operational decision confirmation is required")
+    if item.status != "decision_ready":
+        raise HTTPException(409, "Two independent approvals are required before final decision")
+    if item.requested_by_id == user.id:
+        raise HTTPException(409, "The requester cannot issue the final authorization")
+    approvals = _acceptance_approvals(db, item.id)
+    if len({entry.approver_id for entry in approvals}) != 2:
+        raise HTTPException(409, "Operations and risk approvals must be independently issued")
+    now = datetime.now(UTC)
+    if outcome == "authorize" and now > _as_utc(item.change_window_end):
+        raise HTTPException(409, "The requested change window has expired")
+    checks = _acceptance_checks(db, item.id)
+    snapshot = {
+        "schema": "mcri-operational-acceptance-v1",
+        "acceptance_id": str(item.id), "gate_id": str(item.control_verification_gate_id),
+        "attempt_number": item.attempt_number, "release_identifier": item.release_identifier,
+        "target_environment": item.target_environment,
+        "change_window_start": _as_utc(item.change_window_start).isoformat(),
+        "change_window_end": _as_utc(item.change_window_end).isoformat(),
+        "owners": {"release": item.release_owner_label, "rollback": item.rollback_owner_label,
+                   "incident": item.incident_commander_label, "support": item.support_owner_label},
+        "checks": [{"check_key": check.check_key, "result": check.result,
+                    "owner_label": check.owner_label,
+                    "evidence_reference": check.evidence_reference,
+                    "note": check.note} for check in checks],
+        "approvals": [{"approval_role": approval.approval_role,
+                       "approver_id": str(approval.approver_id),
+                       "evidence_reference": approval.evidence_reference,
+                       "note": approval.note} for approval in approvals],
+        "outcome": outcome, "decision_note": note.strip(),
+        "deployment_performed": False, "traffic_enabled": False,
+        "production_certification": False, "external_ai_authorization": False,
+        "content_or_secrets_included": False,
+    }
+    item.status = "authorized" if outcome == "authorize" else "held"
+    item.outcome = outcome; item.decision_note = note.strip()
+    item.decision_hash = sha256(json.dumps(snapshot, sort_keys=True,
+                                            separators=(",", ":")).encode()).hexdigest()
+    item.decided_at = now; item.finalized_by_id = user.id
+    item.authorization_expires_at = item.change_window_end if outcome == "authorize" else None
+    _audit(db, user, f"{outcome.upper()}_OPERATIONAL_ACCEPTANCE", "operational_acceptance",
+           item.id, {"outcome": outcome, "decision_hash": item.decision_hash,
+                     "authorization_expires_at": (
+                         _as_utc(item.change_window_end).isoformat()
+                         if outcome == "authorize" else None),
+                     "deployment_performed": False, "traffic_enabled": False,
+                     "production_certification": False,
+                     "external_ai_authorization": False},
+           "Bounded, expiring human decision only; no deployment or traffic change occurred. "
+           + note.strip())
+    db.commit(); db.refresh(item); return operational_acceptance_response(db, item)

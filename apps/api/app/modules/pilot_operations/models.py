@@ -318,3 +318,79 @@ class ProductionControlEvidence(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     review_note: Mapped[str | None] = mapped_column(Text, nullable=True)
     submitted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class OperationalAcceptance(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "operational_acceptances"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "acceptance_key", name="uq_operational_acceptance_key"),
+        UniqueConstraint("control_verification_gate_id", "attempt_number",
+                         name="uq_operational_acceptance_attempt"),
+        Index("ix_operational_acceptance_org_status", "organization_id", "status", "created_at"),
+    )
+
+    organization_id: Mapped[UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="RESTRICT"), index=True)
+    control_verification_gate_id: Mapped[UUID] = mapped_column(
+        ForeignKey("production_control_verification_gates.id", ondelete="RESTRICT"), index=True)
+    requested_by_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    finalized_by_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    attempt_number: Mapped[int] = mapped_column(Integer)
+    acceptance_key: Mapped[str] = mapped_column(String(120))
+    release_identifier: Mapped[str] = mapped_column(String(160))
+    target_environment: Mapped[str] = mapped_column(String(30), default="production",
+                                                    server_default="production")
+    change_window_start: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    change_window_end: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    release_owner_label: Mapped[str] = mapped_column(String(180))
+    rollback_owner_label: Mapped[str] = mapped_column(String(180))
+    incident_commander_label: Mapped[str] = mapped_column(String(180))
+    support_owner_label: Mapped[str] = mapped_column(String(180))
+    status: Mapped[str] = mapped_column(String(30), default="pending_approvals",
+                                        server_default="pending_approvals")
+    outcome: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    decision_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    decision_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    authorization_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+
+
+class OperationalAcceptanceCheck(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "operational_acceptance_checks"
+    __table_args__ = (
+        UniqueConstraint("acceptance_id", "check_key", name="uq_operational_acceptance_check"),
+        Index("ix_operational_acceptance_check_org", "organization_id", "acceptance_id", "result"),
+    )
+
+    organization_id: Mapped[UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="RESTRICT"), index=True)
+    acceptance_id: Mapped[UUID] = mapped_column(
+        ForeignKey("operational_acceptances.id", ondelete="CASCADE"), index=True)
+    check_key: Mapped[str] = mapped_column(String(50))
+    result: Mapped[str] = mapped_column(String(20))
+    owner_label: Mapped[str] = mapped_column(String(180))
+    evidence_reference: Mapped[str] = mapped_column(String(500))
+    note: Mapped[str] = mapped_column(Text)
+
+
+class OperationalAcceptanceApproval(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "operational_acceptance_approvals"
+    __table_args__ = (
+        UniqueConstraint("acceptance_id", "approval_role", name="uq_operational_acceptance_role"),
+        Index("ix_operational_acceptance_approval_org", "organization_id", "acceptance_id"),
+    )
+
+    organization_id: Mapped[UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="RESTRICT"), index=True)
+    acceptance_id: Mapped[UUID] = mapped_column(
+        ForeignKey("operational_acceptances.id", ondelete="CASCADE"), index=True)
+    approver_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    approval_role: Mapped[str] = mapped_column(String(30))
+    action: Mapped[str] = mapped_column(String(20))
+    evidence_reference: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    note: Mapped[str] = mapped_column(Text)
+    approved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
