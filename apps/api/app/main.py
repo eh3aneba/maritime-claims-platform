@@ -10,6 +10,7 @@ from app.modules.ai_limited_production_outcomes.router import router as ai_limit
 from app.modules.ai_pilot_outcomes.router import router as ai_pilot_outcomes_router
 from app.modules.ai_private_pilot.router import router as ai_private_pilot_router
 from app.modules.ai_scale_up.router import router as ai_scale_up_router
+from app.modules.ai_scale_up_outcomes.router import router as ai_scale_up_outcomes_router
 from app.modules.auth.router import router as auth_router
 from app.modules.assessments.router import router as assessments_router
 from app.modules.claim_packs.router import router as claim_packs_router
@@ -45,7 +46,6 @@ app = FastAPI(
     description="API foundation for the Maritime Claims & Risk Intelligence Platform.",
 )
 
-# CORS is explicit and environment-configurable. Credentials require concrete origins.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
@@ -62,6 +62,7 @@ app.include_router(ai_pilot_outcomes_router, prefix=settings.api_v1_prefix)
 app.include_router(ai_limited_production_router, prefix=settings.api_v1_prefix)
 app.include_router(ai_limited_production_outcomes_router, prefix=settings.api_v1_prefix)
 app.include_router(ai_scale_up_router, prefix=settings.api_v1_prefix)
+app.include_router(ai_scale_up_outcomes_router, prefix=settings.api_v1_prefix)
 app.include_router(adjustments_router, prefix=settings.api_v1_prefix)
 app.include_router(assessments_router, prefix=settings.api_v1_prefix)
 app.include_router(financial_router, prefix=settings.api_v1_prefix)
