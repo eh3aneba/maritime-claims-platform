@@ -6,6 +6,7 @@ from app.modules.adjustments.router import router as adjustments_router
 from app.modules.ai_evaluation.router import router as ai_evaluation_router
 from app.modules.ai_governance.router import router as ai_governance_router
 from app.modules.ai_limited_production.router import router as ai_limited_production_router
+from app.modules.ai_limited_production_outcomes.router import router as ai_limited_production_outcomes_router
 from app.modules.ai_pilot_outcomes.router import router as ai_pilot_outcomes_router
 from app.modules.ai_private_pilot.router import router as ai_private_pilot_router
 from app.modules.auth.router import router as auth_router
@@ -58,6 +59,7 @@ app.include_router(ai_governance_router, prefix=settings.api_v1_prefix)
 app.include_router(ai_private_pilot_router, prefix=settings.api_v1_prefix)
 app.include_router(ai_pilot_outcomes_router, prefix=settings.api_v1_prefix)
 app.include_router(ai_limited_production_router, prefix=settings.api_v1_prefix)
+app.include_router(ai_limited_production_outcomes_router, prefix=settings.api_v1_prefix)
 app.include_router(adjustments_router, prefix=settings.api_v1_prefix)
 app.include_router(assessments_router, prefix=settings.api_v1_prefix)
 app.include_router(financial_router, prefix=settings.api_v1_prefix)

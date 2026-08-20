@@ -16,6 +16,7 @@ const nav = [
   { href: "/ai-private-pilot", label: "AI Private Pilot", mark: "11C" },
   { href: "/ai-pilot-outcomes", label: "AI Pilot Outcomes", mark: "11D" },
   { href: "/ai-limited-production", label: "AI Limited Production", mark: "11E" },
+  { href: "/ai-limited-production-outcomes", label: "AI Graduation Gate", mark: "11F" },
   { href: "/pilot", label: "Pilot", mark: "P" },
   { href: "/outreach", label: "Outreach", mark: "O" },
 ];
