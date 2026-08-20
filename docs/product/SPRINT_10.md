@@ -48,6 +48,29 @@ Acceptance guardrails:
 - no deployment, infrastructure mutation, compliance claim or go-live authorization
 - no editing after attestation
 
+## Phase C — Production Control Evidence & Independent Verification
+
+Goal: move five foundational architecture domains from stated targets to retained implementation evidence and reproducible human verification without claiming deployment, certification or go-live authority.
+
+Delivered scope:
+
+- one tenant-scoped verification gate per attested architecture baseline
+- exact foundational set: identity/access, secure evidence storage, observability, backup/DR and deployment/IaC
+- versioned append-only submissions containing implementation summary, verification method, rollback plan, owner, completion time and bounded evidence reference
+- a different Manager/Admin must verify or reject each submission
+- rejected submissions remain visible and only a new version can replace the current attempt
+- deterministic completion block until the latest version of all five controls is independently verified
+- immutable canonical SHA-256 completion snapshot and audit trail
+- explicit `production_certification: false`, `go_live_authorization: false` and `content_or_secrets_included: false`
+
+Acceptance guardrails:
+
+- no gate before architecture attestation
+- no self-verification and no automatic conclusion
+- no URL, secret, credential, raw artifact or claim content storage; only bounded allowlisted references
+- no mutation of verified evidence or completed snapshots
+- no deployment action, cloud-provider mutation, compliance claim or production go-live authorization
+
 ## Next phase
 
-Implement and independently verify the production controls represented by this baseline, beginning with identity/access, secure evidence storage, observability, backup/DR and infrastructure-as-code. A separately authorized go-live decision remains required after evidence-based verification.
+Extend verified implementation evidence to application security, data governance, interoperability and AI governance, then perform a separately authorized operational acceptance and go-live decision with explicit rollback ownership.

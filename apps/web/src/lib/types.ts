@@ -127,12 +127,32 @@ export interface ProductionArchitectureBaseline {
   attestation_note: string | null; attested_at: string | null; summary: Record<string, unknown>;
   controls: ProductionArchitectureControl[]; created_at: string;
 }
+export interface ProductionControlEvidence {
+  id: string; gate_id: string; submitted_by_id: string | null; reviewed_by_id: string | null;
+  control_key: string; submission_version: number; implementation_summary: string;
+  verification_method: string; rollback_plan: string; owner_label: string;
+  implementation_completed_at: string; evidence_reference: string;
+  status: "submitted" | "verified" | "rejected"; review_reference: string | null;
+  review_note: string | null; submitted_at: string; reviewed_at: string | null; created_at: string;
+}
+export interface ProductionControlVerificationSummary {
+  required_control_count: number; required_controls: string[]; current_submission_count: number;
+  total_submission_count: number; status_counts: Record<string, number>;
+  all_independently_verified: boolean; production_certification: false;
+  go_live_authorization: false; content_or_secrets_included: false;
+}
+export interface ProductionControlVerificationGate {
+  id: string; architecture_baseline_id: string; gate_key: string; status: string;
+  outcome_note: string | null; outcome_hash: string | null; completed_at: string | null;
+  summary: ProductionControlVerificationSummary; evidence: ProductionControlEvidence[]; created_at: string;
+}
 export interface PilotOperationsDashboard {
   readiness_reviews: DeploymentReadinessReview[]; monitor_runs: OperationalMonitorRun[];
   incidents: OperationalIncident[]; governance_profile: PilotGovernanceProfile | null;
   exit_manifests: PilotExitManifest[]; rehearsals: DesignPartnerRehearsal[];
   pilot_executions: PrivatePilotExecution[];
   architecture_baselines: ProductionArchitectureBaseline[];
+  control_verification_gates: ProductionControlVerificationGate[];
 }
 
 export type SettlementStatus = "draft" | "under_review" | "approved" | "rejected" | "accepted" | "declined" | "withdrawn";

@@ -271,3 +271,48 @@ class ProductionArchitectureControl(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     owner_label: Mapped[str] = mapped_column(String(180))
     target_date: Mapped[date] = mapped_column(Date)
     evidence_reference: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+
+class ProductionControlVerificationGate(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "production_control_verification_gates"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "gate_key", name="uq_production_control_gate_key"),
+        UniqueConstraint("architecture_baseline_id", name="uq_production_control_gate_baseline"),
+        Index("ix_production_control_gate_org_status", "organization_id", "status", "created_at"),
+    )
+
+    organization_id: Mapped[UUID] = mapped_column(ForeignKey("organizations.id", ondelete="RESTRICT"), index=True)
+    architecture_baseline_id: Mapped[UUID] = mapped_column(ForeignKey("production_architecture_baselines.id", ondelete="RESTRICT"), index=True)
+    created_by_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    completed_by_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    gate_key: Mapped[str] = mapped_column(String(120))
+    status: Mapped[str] = mapped_column(String(30), default="collecting", server_default="collecting")
+    outcome_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    outcome_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ProductionControlEvidence(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "production_control_evidence"
+    __table_args__ = (
+        UniqueConstraint("gate_id", "control_key", "submission_version", name="uq_production_control_evidence_version"),
+        Index("ix_production_control_evidence_org_gate", "organization_id", "gate_id", "control_key"),
+    )
+
+    organization_id: Mapped[UUID] = mapped_column(ForeignKey("organizations.id", ondelete="RESTRICT"), index=True)
+    gate_id: Mapped[UUID] = mapped_column(ForeignKey("production_control_verification_gates.id", ondelete="CASCADE"), index=True)
+    submitted_by_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    reviewed_by_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    control_key: Mapped[str] = mapped_column(String(50))
+    submission_version: Mapped[int] = mapped_column(Integer)
+    implementation_summary: Mapped[str] = mapped_column(Text)
+    verification_method: Mapped[str] = mapped_column(Text)
+    rollback_plan: Mapped[str] = mapped_column(Text)
+    owner_label: Mapped[str] = mapped_column(String(180))
+    implementation_completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    evidence_reference: Mapped[str] = mapped_column(String(500))
+    status: Mapped[str] = mapped_column(String(30), default="submitted", server_default="submitted")
+    review_reference: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    review_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    submitted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

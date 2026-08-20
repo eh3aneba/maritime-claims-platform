@@ -28,8 +28,9 @@ The MVP now includes the full H&M Machinery / Turbocharger design-partner workfl
 - Claim-scoped External Collaboration Portal with expiring hashed invitations and human-reviewed submissions
 - Time-boxed private-pilot execution with bounded case measurements, accountable P0–P3 product gaps and an immutable human outcome
 - Human-attested production architecture baseline across nine domains that preserves missing/partial controls and never claims certification
+- Versioned implementation evidence and independent four-eyes verification for five foundational production controls
 
-**Current phase: Sprint 10B — Production Architecture Baseline.** A completed Go rehearsal can now anchor a controlled private-pilot execution, content-free aggregate measurements, accountable product gaps and a separately attested nine-domain production architecture baseline. These records do not deploy infrastructure or certify production readiness.
+**Current phase: Sprint 10C — Production Control Evidence & Independent Verification.** An attested architecture baseline can now anchor versioned implementation evidence for identity/access, evidence storage, observability, backup/DR and deployment/IaC. A different Manager/Admin must verify each control before the snapshot can be frozen; it does not deploy infrastructure, certify production or authorize go-live.
 
 ## Prerequisites
 
@@ -194,7 +195,7 @@ Engine-log event fields are intentionally not promoted into scalar `claim_facts`
 
 ## Current milestone
 
-Sprint 10 Phases A–B: a completed Go rehearsal can anchor a Manager-started private pilot, bounded case-run metrics, an owned product-gap ledger and an immutable Proceed/Pause/Stop outcome. A completed pilot can then anchor a nine-domain production architecture baseline with explicit current state, target design, risk, owner and date. The platform still cannot certify production readiness, deploy infrastructure, store secret evidence, delete pilot data, send email, or expose privileged/internal material.
+Sprint 10 Phases A–C: a completed Go rehearsal can anchor a Manager-started private pilot and immutable human outcome; the pilot can anchor a nine-domain architecture baseline; and that baseline can anchor versioned implementation evidence with independent verification for five foundational controls. The platform still cannot certify production readiness, deploy infrastructure, authorize go-live, store secret evidence, delete pilot data, send email, or expose privileged/internal material.
 
 ## Design-partner pilot
 

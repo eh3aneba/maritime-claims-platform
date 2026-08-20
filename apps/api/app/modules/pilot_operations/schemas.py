@@ -376,6 +376,68 @@ class ArchitectureBaselineResponse(BaseModel):
     created_at: datetime
 
 
+class ControlVerificationGateCreate(BaseModel):
+    architecture_baseline_id: UUID
+    gate_key: str = Field(min_length=8, max_length=120)
+
+
+class ProductionControlEvidenceSubmit(BaseModel):
+    control_key: Literal["identity_access", "evidence_storage", "observability", "backup_dr", "deployment_iac"]
+    implementation_summary: str = Field(min_length=20, max_length=4000)
+    verification_method: str = Field(min_length=20, max_length=4000)
+    rollback_plan: str = Field(min_length=20, max_length=4000)
+    owner_label: str = Field(min_length=2, max_length=180)
+    implementation_completed_at: datetime
+    evidence_reference: str = Field(min_length=8, max_length=500)
+
+
+class ProductionControlEvidenceReview(BaseModel):
+    action: Literal["verify", "reject"]
+    review_reference: str | None = Field(default=None, min_length=8, max_length=500)
+    note: str = Field(min_length=10, max_length=4000)
+
+
+class ProductionControlEvidenceResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    gate_id: UUID
+    submitted_by_id: UUID | None
+    reviewed_by_id: UUID | None
+    control_key: str
+    submission_version: int
+    implementation_summary: str
+    verification_method: str
+    rollback_plan: str
+    owner_label: str
+    implementation_completed_at: datetime
+    evidence_reference: str
+    status: str
+    review_reference: str | None
+    review_note: str | None
+    submitted_at: datetime
+    reviewed_at: datetime | None
+    created_at: datetime
+
+
+class ControlVerificationGateComplete(BaseModel):
+    confirm_verified: bool
+    note: str = Field(min_length=10, max_length=4000)
+
+
+class ControlVerificationGateResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    architecture_baseline_id: UUID
+    gate_key: str
+    status: str
+    outcome_note: str | None
+    outcome_hash: str | None
+    completed_at: datetime | None
+    summary: dict
+    evidence: list[ProductionControlEvidenceResponse]
+    created_at: datetime
+
+
 class PilotOperationsDashboard(BaseModel):
     readiness_reviews: list[ReadinessResponse]
     monitor_runs: list[MonitorRunResponse]
@@ -385,3 +447,4 @@ class PilotOperationsDashboard(BaseModel):
     rehearsals: list[RehearsalResponse]
     pilot_executions: list[PilotExecutionResponse]
     architecture_baselines: list[ArchitectureBaselineResponse]
+    control_verification_gates: list[ControlVerificationGateResponse]

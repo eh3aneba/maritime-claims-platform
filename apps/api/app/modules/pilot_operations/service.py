@@ -19,11 +19,13 @@ from app.modules.pilot_operations.models import (
     DeploymentReadinessReview, DesignPartnerRehearsal, OperationalIncident, OperationalMonitorRun,
     PilotExitManifest, PilotGovernanceProfile, PrivatePilotCaseRun, PrivatePilotExecution,
     ProductGapFinding, ProductionArchitectureBaseline, ProductionArchitectureControl,
+    ProductionControlEvidence, ProductionControlVerificationGate,
     RehearsalControlEvidence, RehearsalRemediationFinding,
 )
 from app.modules.pilot_operations.schemas import (
-    ArchitectureBaselineCreate, ArchitectureControlWrite, GovernanceProfileWrite, IncidentCreate,
-    MonitorRunCreate, PilotCaseRunWrite, PilotExecutionCreate, ProductGapCreate, ReadinessCreate,
+    ArchitectureBaselineCreate, ArchitectureControlWrite, ControlVerificationGateCreate,
+    GovernanceProfileWrite, IncidentCreate, MonitorRunCreate, PilotCaseRunWrite,
+    PilotExecutionCreate, ProductGapCreate, ProductionControlEvidenceSubmit, ReadinessCreate,
     RehearsalCreate, RehearsalEvidenceWrite, RehearsalFindingCreate,
 )
 from app.modules.users.models import User
@@ -33,6 +35,8 @@ READINESS_CONTROLS = {"tls", "secret_references", "backup_restore", "migrations"
 ARCHITECTURE_CONTROLS = {"identity_access", "application_security", "evidence_storage",
                          "observability", "backup_dr", "data_governance", "deployment_iac",
                          "interoperability", "ai_governance"}
+FOUNDATIONAL_PRODUCTION_CONTROLS = {"identity_access", "evidence_storage", "observability",
+                                   "backup_dr", "deployment_iac"}
 EVIDENCE_REFERENCE = re.compile(r"^(artifact|runbook|ticket|monitor)://[A-Za-z0-9._:/-]{3,450}$")
 
 
@@ -54,7 +58,8 @@ def dashboard(db: Session, organization_id: UUID):
     rehearsals = list_rehearsals(db, organization_id)
     executions = list_pilot_executions(db, organization_id)
     baselines = list_architecture_baselines(db, organization_id)
-    return readiness, monitors, incidents, profile, exits, rehearsals, executions, baselines
+    verification_gates = list_control_verification_gates(db, organization_id)
+    return readiness, monitors, incidents, profile, exits, rehearsals, executions, baselines, verification_gates
 
 
 def create_readiness(db: Session, user: User, payload: ReadinessCreate) -> DeploymentReadinessReview:
@@ -740,3 +745,211 @@ def attest_architecture_baseline(db: Session, user: User, item: ProductionArchit
             "state_counts": _architecture_summary(controls)["state_counts"]},
            "Human-reviewed architecture baseline; not a production, regulatory or compliance certification. " + item.attestation_note)
     db.commit(); db.refresh(item); return architecture_baseline_response(db, item)
+
+
+def _control_evidence(db: Session, gate_id: UUID) -> list[ProductionControlEvidence]:
+    return list(db.scalars(select(ProductionControlEvidence).where(
+        ProductionControlEvidence.gate_id == gate_id
+    ).order_by(ProductionControlEvidence.control_key.asc(),
+               ProductionControlEvidence.submission_version.asc())))
+
+
+def _current_control_evidence(items: list[ProductionControlEvidence]) -> dict[str, ProductionControlEvidence]:
+    current: dict[str, ProductionControlEvidence] = {}
+    for item in items:
+        current[item.control_key] = item
+    return current
+
+
+def _control_gate_summary(items: list[ProductionControlEvidence]) -> dict:
+    current = _current_control_evidence(items)
+    status_counts = {key: 0 for key in ("not_submitted", "submitted", "verified", "rejected")}
+    for control in FOUNDATIONAL_PRODUCTION_CONTROLS:
+        item = current.get(control)
+        status_counts[item.status if item else "not_submitted"] += 1
+    return {
+        "required_control_count": len(FOUNDATIONAL_PRODUCTION_CONTROLS),
+        "required_controls": sorted(FOUNDATIONAL_PRODUCTION_CONTROLS),
+        "current_submission_count": len(current),
+        "total_submission_count": len(items),
+        "status_counts": status_counts,
+        "all_independently_verified": (
+            set(current) == FOUNDATIONAL_PRODUCTION_CONTROLS
+            and all(item.status == "verified" and item.reviewed_by_id != item.submitted_by_id
+                    for item in current.values())
+        ),
+        "production_certification": False,
+        "go_live_authorization": False,
+        "content_or_secrets_included": False,
+    }
+
+
+def control_verification_gate_response(db: Session,
+                                       item: ProductionControlVerificationGate) -> dict:
+    evidence = _control_evidence(db, item.id)
+    return {
+        "id": item.id, "architecture_baseline_id": item.architecture_baseline_id,
+        "gate_key": item.gate_key, "status": item.status,
+        "outcome_note": item.outcome_note, "outcome_hash": item.outcome_hash,
+        "completed_at": item.completed_at, "created_at": item.created_at,
+        "summary": _control_gate_summary(evidence), "evidence": evidence,
+    }
+
+
+def list_control_verification_gates(db: Session, organization_id: UUID) -> list[dict]:
+    items = list(db.scalars(select(ProductionControlVerificationGate).where(
+        ProductionControlVerificationGate.organization_id == organization_id
+    ).order_by(ProductionControlVerificationGate.created_at.desc()).limit(25)))
+    return [control_verification_gate_response(db, item) for item in items]
+
+
+def get_control_verification_gate(db: Session, organization_id: UUID,
+                                  item_id: UUID) -> ProductionControlVerificationGate:
+    item = db.scalar(select(ProductionControlVerificationGate).where(
+        ProductionControlVerificationGate.id == item_id,
+        ProductionControlVerificationGate.organization_id == organization_id,
+    ))
+    if item is None: raise HTTPException(404, "Production control verification gate not found")
+    return item
+
+
+def create_control_verification_gate(db: Session, user: User,
+                                     payload: ControlVerificationGateCreate) -> dict:
+    baseline = get_architecture_baseline(db, user.organization_id,
+                                         payload.architecture_baseline_id)
+    if baseline.attested_at is None:
+        raise HTTPException(409, "An attested production architecture baseline is required")
+    item = ProductionControlVerificationGate(
+        organization_id=user.organization_id, architecture_baseline_id=baseline.id,
+        created_by_id=user.id, gate_key=payload.gate_key.strip(), status="collecting",
+    )
+    db.add(item)
+    try: db.flush()
+    except IntegrityError as exc:
+        db.rollback(); raise HTTPException(
+            409, "This verification gate key or architecture baseline is already in use") from exc
+    _audit(db, user, "CREATE_PRODUCTION_CONTROL_VERIFICATION_GATE",
+           "production_control_verification_gate", item.id,
+           {"architecture_baseline_id": str(baseline.id), "gate_key": item.gate_key,
+            "required_controls": sorted(FOUNDATIONAL_PRODUCTION_CONTROLS)},
+           "Verification workflow only; no infrastructure deployment or certification occurred.")
+    db.commit(); db.refresh(item); return control_verification_gate_response(db, item)
+
+
+def submit_production_control_evidence(db: Session, user: User,
+                                       gate: ProductionControlVerificationGate,
+                                       payload: ProductionControlEvidenceSubmit) -> dict:
+    if gate.status == "completed": raise HTTPException(409, "Completed verification gate is immutable")
+    if payload.implementation_completed_at.tzinfo is None or payload.implementation_completed_at.utcoffset() is None:
+        raise HTTPException(422, "Implementation completion time must include a timezone")
+    if payload.implementation_completed_at > datetime.now(UTC):
+        raise HTTPException(422, "Implementation completion time cannot be in the future")
+    reference = payload.evidence_reference.strip()
+    if not EVIDENCE_REFERENCE.fullmatch(reference):
+        raise HTTPException(422, "Implementation evidence must use an allowlisted bounded reference")
+    evidence = _control_evidence(db, gate.id)
+    latest = _current_control_evidence(evidence).get(payload.control_key)
+    if latest is not None and latest.status in {"submitted", "verified"}:
+        raise HTTPException(409, "The current control evidence must be reviewed before resubmission")
+    version = latest.submission_version + 1 if latest else 1
+    item = ProductionControlEvidence(
+        organization_id=user.organization_id, gate_id=gate.id,
+        submitted_by_id=user.id, control_key=payload.control_key,
+        submission_version=version,
+        implementation_summary=payload.implementation_summary.strip(),
+        verification_method=payload.verification_method.strip(),
+        rollback_plan=payload.rollback_plan.strip(), owner_label=payload.owner_label.strip(),
+        implementation_completed_at=payload.implementation_completed_at,
+        evidence_reference=reference, status="submitted", submitted_at=datetime.now(UTC),
+    )
+    db.add(item); gate.status = "collecting"; db.flush()
+    _audit(db, user, "SUBMIT_PRODUCTION_CONTROL_EVIDENCE", "production_control_evidence",
+           item.id, {"gate_id": str(gate.id), "control_key": item.control_key,
+                     "submission_version": item.submission_version,
+                     "owner_label": item.owner_label, "evidence_reference": reference},
+           "Bounded implementation statement only; no secret, raw artifact or claim content stored.")
+    db.commit(); db.refresh(item); return control_verification_gate_response(db, gate)
+
+
+def get_production_control_evidence(db: Session, organization_id: UUID,
+                                    evidence_id: UUID) -> ProductionControlEvidence:
+    item = db.scalar(select(ProductionControlEvidence).where(
+        ProductionControlEvidence.id == evidence_id,
+        ProductionControlEvidence.organization_id == organization_id,
+    ))
+    if item is None: raise HTTPException(404, "Production control evidence not found")
+    return item
+
+
+def review_production_control_evidence(db: Session, user: User,
+                                       gate: ProductionControlVerificationGate,
+                                       evidence: ProductionControlEvidence,
+                                       action: str, review_reference: str | None,
+                                       note: str) -> dict:
+    if gate.status == "completed": raise HTTPException(409, "Completed verification gate is immutable")
+    if evidence.gate_id != gate.id: raise HTTPException(404, "Production control evidence not found")
+    if evidence.status != "submitted": raise HTTPException(409, "Only submitted evidence can be reviewed")
+    if evidence.submitted_by_id == user.id:
+        raise HTTPException(409, "A different Manager or Admin must independently review this evidence")
+    reference = review_reference.strip() if review_reference else None
+    if action == "verify" and not reference:
+        raise HTTPException(422, "Verified control evidence requires a bounded review reference")
+    if reference and not EVIDENCE_REFERENCE.fullmatch(reference):
+        raise HTTPException(422, "Review evidence must use an allowlisted bounded reference")
+    evidence.status = "verified" if action == "verify" else "rejected"
+    evidence.reviewed_by_id = user.id; evidence.review_reference = reference
+    evidence.review_note = note.strip(); evidence.reviewed_at = datetime.now(UTC)
+    db.flush()
+    current = _current_control_evidence(_control_evidence(db, gate.id))
+    gate.status = "review_ready" if (
+        set(current) == FOUNDATIONAL_PRODUCTION_CONTROLS
+        and all(item.status == "verified" for item in current.values())
+    ) else "collecting"
+    _audit(db, user, f"{action.upper()}_PRODUCTION_CONTROL_EVIDENCE",
+           "production_control_evidence", evidence.id,
+           {"gate_id": str(gate.id), "control_key": evidence.control_key,
+            "submission_version": evidence.submission_version, "status": evidence.status,
+            "review_reference": reference},
+           "Independent human review; no automated control conclusion or deployment action. " + note.strip())
+    db.commit(); db.refresh(evidence); return control_verification_gate_response(db, gate)
+
+
+def complete_control_verification_gate(db: Session, user: User,
+                                       item: ProductionControlVerificationGate,
+                                       confirm: bool, note: str) -> dict:
+    if not confirm: raise HTTPException(422, "Explicit verification-gate confirmation is required")
+    if item.status == "completed": raise HTTPException(409, "Verification gate is already complete")
+    evidence = _control_evidence(db, item.id); current = _current_control_evidence(evidence)
+    if set(current) != FOUNDATIONAL_PRODUCTION_CONTROLS or any(
+        entry.status != "verified" or entry.reviewed_by_id == entry.submitted_by_id
+        for entry in current.values()
+    ):
+        raise HTTPException(409, "All five foundational controls require independent verification")
+    snapshot = {
+        "schema": "mcri-production-control-verification-v1", "gate_id": str(item.id),
+        "architecture_baseline_id": str(item.architecture_baseline_id),
+        "gate_key": item.gate_key,
+        "controls": [{"control_key": entry.control_key,
+                      "submission_version": entry.submission_version,
+                      "implementation_summary": entry.implementation_summary,
+                      "verification_method": entry.verification_method,
+                      "rollback_plan": entry.rollback_plan,
+                      "owner_label": entry.owner_label,
+                      "implementation_completed_at": entry.implementation_completed_at.isoformat(),
+                      "evidence_reference": entry.evidence_reference,
+                      "review_reference": entry.review_reference,
+                      "review_note": entry.review_note} for entry in sorted(
+                          current.values(), key=lambda value: value.control_key)],
+        "production_certification": False, "go_live_authorization": False,
+        "content_or_secrets_included": False,
+    }
+    item.status = "completed"; item.outcome_note = note.strip()
+    item.outcome_hash = sha256(json.dumps(snapshot, sort_keys=True,
+                                          separators=(",", ":")).encode()).hexdigest()
+    item.completed_at = datetime.now(UTC); item.completed_by_id = user.id
+    _audit(db, user, "COMPLETE_PRODUCTION_CONTROL_VERIFICATION_GATE",
+           "production_control_verification_gate", item.id,
+           {"outcome_hash": item.outcome_hash, "verified_control_count": len(current),
+            "production_certification": False, "go_live_authorization": False},
+           "Five-control evidence snapshot only; not a production certification or go-live authorization. " + item.outcome_note)
+    db.commit(); db.refresh(item); return control_verification_gate_response(db, item)

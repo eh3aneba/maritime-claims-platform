@@ -8,23 +8,28 @@ from app.db.session import get_db
 from app.modules.auth.dependencies import CurrentUser, require_roles
 from app.modules.pilot_operations.schemas import (
     ArchitectureBaselineAttest, ArchitectureBaselineCreate, ArchitectureBaselineResponse,
-    ArchitectureControlWrite, ExitManifestCreate, ExitManifestResponse, GovernanceApproval,
+    ArchitectureControlWrite, ControlVerificationGateComplete, ControlVerificationGateCreate,
+    ControlVerificationGateResponse, ExitManifestCreate, ExitManifestResponse, GovernanceApproval,
     GovernanceProfileResponse, GovernanceProfileWrite, IncidentCreate, IncidentResponse,
     IncidentTransition, MonitorRunCreate, MonitorRunResponse, PilotCaseRunWrite,
     PilotExecutionComplete, PilotExecutionCreate, PilotExecutionResponse, PilotOperationsDashboard,
-    ProductGapCreate, ProductGapTransition, ReadinessAttest, ReadinessCreate, ReadinessResponse,
+    ProductGapCreate, ProductGapTransition, ProductionControlEvidenceReview,
+    ProductionControlEvidenceSubmit, ReadinessAttest, ReadinessCreate, ReadinessResponse,
     RehearsalComplete, RehearsalCreate,
     RehearsalEvidenceWrite, RehearsalFindingCreate, RehearsalFindingTransition, RehearsalResponse,
 )
 from app.modules.pilot_operations.service import (
     approve_governance, attest_architecture_baseline, attest_readiness,
-    complete_pilot_execution, complete_rehearsal, create_architecture_baseline,
+    complete_control_verification_gate, complete_pilot_execution, complete_rehearsal,
+    create_architecture_baseline, create_control_verification_gate,
     create_exit_manifest, create_incident, create_pilot_execution, create_product_gap,
     create_readiness, create_rehearsal, create_rehearsal_finding, dashboard,
-    get_architecture_baseline, get_governance, get_incident, get_pilot_execution,
-    get_product_gap, get_readiness, get_rehearsal, get_rehearsal_finding, run_monitor,
+    get_architecture_baseline, get_control_verification_gate, get_governance, get_incident,
+    get_pilot_execution, get_product_gap, get_production_control_evidence, get_readiness,
+    get_rehearsal, get_rehearsal_finding, review_production_control_evidence, run_monitor,
     start_pilot_execution, start_rehearsal, transition_incident, transition_product_gap,
-    transition_rehearsal_finding, write_architecture_control, write_governance,
+    submit_production_control_evidence, transition_rehearsal_finding,
+    write_architecture_control, write_governance,
     write_pilot_case_run, write_rehearsal_evidence,
 )
 from app.modules.users.models import User, UserRole
@@ -35,12 +40,13 @@ Manager = Annotated[User, Depends(require_roles(UserRole.ADMIN, UserRole.CLAIMS_
 
 @router.get("", response_model=PilotOperationsDashboard)
 def operations_dashboard(current_user: CurrentUser, db: Annotated[Session, Depends(get_db)]):
-    readiness, monitors, incidents, profile, exits, rehearsals, executions, baselines = dashboard(
+    readiness, monitors, incidents, profile, exits, rehearsals, executions, baselines, gates = dashboard(
         db, current_user.organization_id)
     return PilotOperationsDashboard(readiness_reviews=readiness, monitor_runs=monitors,
                                     incidents=incidents, governance_profile=profile,
                                     exit_manifests=exits, rehearsals=rehearsals,
-                                    pilot_executions=executions, architecture_baselines=baselines)
+                                    pilot_executions=executions, architecture_baselines=baselines,
+                                    control_verification_gates=gates)
 
 
 @router.post("/readiness", response_model=ReadinessResponse, status_code=201)
@@ -191,3 +197,38 @@ def architecture_baseline_attest(item_id: UUID, payload: ArchitectureBaselineAtt
     return attest_architecture_baseline(
         db, manager, get_architecture_baseline(db, manager.organization_id, item_id),
         payload.confirm_reviewed, payload.note)
+
+
+@router.post("/control-verification-gates", response_model=ControlVerificationGateResponse,
+             status_code=201)
+def control_verification_gate_create(payload: ControlVerificationGateCreate, manager: Manager,
+                                     db: Annotated[Session, Depends(get_db)]):
+    return create_control_verification_gate(db, manager, payload)
+
+
+@router.post("/control-verification-gates/{item_id}/evidence",
+             response_model=ControlVerificationGateResponse, status_code=201)
+def production_control_evidence_submit(item_id: UUID, payload: ProductionControlEvidenceSubmit,
+                                       manager: Manager, db: Annotated[Session, Depends(get_db)]):
+    return submit_production_control_evidence(
+        db, manager, get_control_verification_gate(db, manager.organization_id, item_id), payload)
+
+
+@router.post("/control-verification-gates/{item_id}/evidence/{evidence_id}/review",
+             response_model=ControlVerificationGateResponse)
+def production_control_evidence_review(item_id: UUID, evidence_id: UUID,
+                                       payload: ProductionControlEvidenceReview,
+                                       manager: Manager, db: Annotated[Session, Depends(get_db)]):
+    return review_production_control_evidence(
+        db, manager, get_control_verification_gate(db, manager.organization_id, item_id),
+        get_production_control_evidence(db, manager.organization_id, evidence_id),
+        payload.action, payload.review_reference, payload.note)
+
+
+@router.post("/control-verification-gates/{item_id}/complete",
+             response_model=ControlVerificationGateResponse)
+def control_verification_gate_complete(item_id: UUID, payload: ControlVerificationGateComplete,
+                                       manager: Manager, db: Annotated[Session, Depends(get_db)]):
+    return complete_control_verification_gate(
+        db, manager, get_control_verification_gate(db, manager.organization_id, item_id),
+        payload.confirm_verified, payload.note)

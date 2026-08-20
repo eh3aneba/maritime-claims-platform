@@ -7,19 +7,22 @@ import { useEffect, useState } from "react";
 import {
   ApiError, approvePilotGovernance, attestReadiness, createOperationalIncident,
   attestProductionArchitectureBaseline, completeDesignPartnerRehearsal,
-  completePrivatePilotExecution, createDesignPartnerRehearsal, createPilotExitManifest,
-  createPrivatePilotExecution, createProductionArchitectureBaseline, createProductGap,
+  completePrivatePilotExecution, completeProductionControlVerificationGate,
+  createDesignPartnerRehearsal, createPilotExitManifest, createPrivatePilotExecution,
+  createProductionArchitectureBaseline, createProductionControlVerificationGate, createProductGap,
   createReadinessReview, createRehearsalFinding, getClaim, getPilotOperations,
   recordPrivatePilotCaseRun, recordProductionArchitectureControl, recordRehearsalEvidence,
+  reviewProductionControlEvidence,
   runOperationalMonitor, startDesignPartnerRehearsal, startPrivatePilotExecution,
-  transitionOperationalIncident, transitionProductGap, transitionRehearsalFinding,
-  writePilotGovernance,
+  submitProductionControlEvidence, transitionOperationalIncident, transitionProductGap,
+  transitionRehearsalFinding, writePilotGovernance,
 } from "@/lib/api";
 import type { Claim, PilotOperationsDashboard } from "@/lib/types";
 
 const controlKeys = ["tls", "secret_references", "backup_restore", "migrations", "malware_scan", "least_privilege", "retention", "incident_contacts"];
 const architectureControlKeys = ["identity_access", "application_security", "evidence_storage", "observability", "backup_dr", "data_governance", "deployment_iac", "interoperability", "ai_governance"];
-const emptyDashboard: PilotOperationsDashboard = { readiness_reviews: [], monitor_runs: [], incidents: [], governance_profile: null, exit_manifests: [], rehearsals: [], pilot_executions: [], architecture_baselines: [] };
+const foundationalControlKeys = ["identity_access", "evidence_storage", "observability", "backup_dr", "deployment_iac"];
+const emptyDashboard: PilotOperationsDashboard = { readiness_reviews: [], monitor_runs: [], incidents: [], governance_profile: null, exit_manifests: [], rehearsals: [], pilot_executions: [], architecture_baselines: [], control_verification_gates: [] };
 
 export default function PilotOperationsPage() {
   const { id } = useParams<{ id: string }>();
@@ -36,8 +39,8 @@ export default function PilotOperationsPage() {
   const profile = data.governance_profile;
   return <div>
     <Link href={`/claims/${id}`} className="text-sm font-semibold text-slate-500">← Back to claim</Link>
-    <p className="eyebrow mt-5">{claim.claim_reference} · Sprints 9H–10B</p><h1 className="mt-2 text-3xl font-semibold">Pilot Execution &amp; Production Baseline</h1>
-    <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-500">A human-controlled path from readiness and rehearsal into a time-boxed private pilot, accountable product gaps and a truthful production-architecture baseline. No record is deleted, no deployment occurs and no production certification is issued here.</p>
+    <p className="eyebrow mt-5">{claim.claim_reference} · Sprints 9H–10C</p><h1 className="mt-2 text-3xl font-semibold">Pilot Execution &amp; Production Baseline</h1>
+    <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-500">A human-controlled path from readiness and rehearsal into a private pilot, accountable product gaps, a truthful production-architecture baseline and independently reviewed implementation evidence. No record is deleted, no deployment occurs and no production certification or go-live authorization is issued here.</p>
     {error ? <div className="mt-5 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div> : null}
     <div className="mt-6 grid gap-6 xl:grid-cols-2">
       <section className="panel p-5"><p className="eyebrow">9H</p><h2 className="section-title mt-2">Deployment readiness gates</h2><p className="section-subtitle">All eight controls must pass before a Manager/Admin can attest the immutable snapshot.</p><div className="mt-4 grid gap-2 sm:grid-cols-2">{controlKeys.map((key) => <label key={key} className="flex items-center gap-2 rounded-lg border border-slate-200 p-3 text-sm"><input type="checkbox" checked={controls[key]} onChange={(e) => setControls({ ...controls, [key]: e.target.checked })} /><span>{key.replaceAll("_", " ")}</span></label>)}</div><button disabled={busy} className="secondary-button mt-4" onClick={() => run(() => createReadinessReview({ environment: "pilot", review_key: `pilot-${crypto.randomUUID()}`, controls }))}>Capture readiness snapshot</button><div className="mt-4 space-y-2">{data.readiness_reviews.slice(0, 3).map((x) => <div key={x.id} className="rounded-lg bg-slate-50 p-3 text-sm"><div className="flex justify-between"><span className="font-semibold">{x.review_key}</span><span>{x.status}</span></div>{x.status === "draft" ? <button className="secondary-button mt-2" onClick={() => { const note = window.prompt("Attestation note (10+ characters)")?.trim(); if (note) run(() => attestReadiness(x.id, note)); }}>Attest snapshot</button> : null}</div>)}</div></section>
@@ -82,6 +85,29 @@ export default function PilotOperationsPage() {
           {!baseline.attested_at && baseline.controls.length === architectureControlKeys.length ? <button className="primary-button mt-4" disabled={busy} onClick={() => run(() => attestProductionArchitectureBaseline(baseline.id, "All nine production architecture domains were human reviewed; documented gaps remain visible and this is not a production certification."))}>Attest reviewed baseline</button> : null}
           <div className="mt-3 rounded-lg bg-slate-50 p-3 text-sm"><p className="font-semibold">Truthful state summary</p><p className="mt-1 text-xs text-slate-500">{JSON.stringify(baseline.summary)} · production certification: false</p></div>
           {baseline.snapshot_hash ? <p className="mt-3 break-all font-mono text-[10px] text-slate-400">Immutable architecture snapshot hash: {baseline.snapshot_hash}</p> : null}
+        </article>)}</div>
+      </section>
+
+      <section className="panel p-5 xl:col-span-2">
+        <p className="eyebrow">10C</p>
+        <h2 className="section-title mt-2">Production control evidence &amp; independent verification</h2>
+        <p className="section-subtitle">Submit versioned implementation evidence for five foundational controls. A different Manager/Admin must reproduce the check and verify it; rejection remains in history and requires a new submission.</p>
+        {data.architecture_baselines.some((baseline) => baseline.attested_at && !data.control_verification_gates.some((gate) => gate.architecture_baseline_id === baseline.id)) ? <button className="primary-button mt-4" disabled={busy} onClick={() => { const baseline = data.architecture_baselines.find((item) => item.attested_at && !data.control_verification_gates.some((gate) => gate.architecture_baseline_id === item.id)); if (baseline) run(() => createProductionControlVerificationGate(baseline.id)); }}>Create five-control verification gate</button> : null}
+        {!data.architecture_baselines.some((baseline) => baseline.attested_at) ? <p className="mt-4 text-sm text-amber-700">An attested production architecture baseline is required before implementation evidence can be collected.</p> : null}
+        <div className="mt-5 space-y-4">{data.control_verification_gates.map((gate) => <article key={gate.id} className="rounded-xl border border-slate-200 p-4">
+          <div className="flex flex-wrap justify-between gap-3"><div><p className="font-semibold">{gate.gate_key}</p><p className="text-xs text-slate-500">{gate.summary.status_counts.verified}/5 independently verified · {gate.summary.total_submission_count} retained submissions</p></div><span className="text-xs font-semibold">{gate.status}</span></div>
+          <div className="mt-4 grid gap-3 lg:grid-cols-2">{foundationalControlKeys.map((control) => {
+            const versions = gate.evidence.filter((item) => item.control_key === control);
+            const current = versions[versions.length - 1];
+            return <div key={control} className="rounded-lg bg-slate-50 p-3 text-sm"><div className="flex flex-wrap items-center justify-between gap-2"><span className="font-semibold">{control.replaceAll("_", " ")}</span><span>{current ? `v${current.submission_version} · ${current.status}` : "not submitted"}</span></div>
+              {gate.status !== "completed" && (!current || current.status === "rejected") ? <button className="secondary-button mt-3" disabled={busy} onClick={() => { const reference = window.prompt(`${control}: bounded implementation evidence`, `artifact://production/${control}-implementation`)?.trim(); if (reference) run(() => submitProductionControlEvidence(gate.id, { control_key: control, implementation_summary: `Implemented the bounded production design for ${control} with accountable configuration and operating boundaries.`, verification_method: `A different Manager/Admin reproduces the documented ${control} checks and compares results with the bounded reference.`, rollback_plan: `Restore the last approved ${control} configuration, verify service health and keep traffic closed until review.`, owner_label: "Production Control Owner", implementation_completed_at: new Date().toISOString(), evidence_reference: reference })); }}>Submit implementation evidence</button> : null}
+              {gate.status !== "completed" && current?.status === "submitted" ? <div className="mt-3 flex flex-wrap gap-2"><button className="primary-button" disabled={busy} onClick={() => { const reference = window.prompt(`${control}: independent review reference`, `artifact://review/${control}-independent-check`)?.trim(); if (reference) run(() => reviewProductionControlEvidence(gate.id, current.id, "verify", `Independent reviewer reproduced the bounded ${control} verification method.`, reference)); }}>Independent verify</button><button className="secondary-button" disabled={busy} onClick={() => run(() => reviewProductionControlEvidence(gate.id, current.id, "reject", `Independent reviewer rejected the current ${control} evidence; a versioned resubmission is required.`))}>Reject evidence</button></div> : null}
+              {versions.length > 1 ? <p className="mt-2 text-xs text-slate-500">Version history retained: {versions.map((item) => `v${item.submission_version} ${item.status}`).join(" · ")}</p> : null}
+            </div>;
+          })}</div>
+          {gate.status !== "completed" && gate.summary.all_independently_verified ? <button className="primary-button mt-4" disabled={busy} onClick={() => run(() => completeProductionControlVerificationGate(gate.id, "Five foundational controls independently verified; this evidence snapshot is not a production certification or go-live authorization."))}>Freeze verification snapshot</button> : null}
+          <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">Production certification: false · Go-live authorization: false · Content/secrets included: false</div>
+          {gate.outcome_hash ? <p className="mt-3 break-all font-mono text-[10px] text-slate-400">Immutable verification hash: {gate.outcome_hash}</p> : null}
         </article>)}</div>
       </section>
     </div>
