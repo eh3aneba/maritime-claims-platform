@@ -1208,3 +1208,102 @@ export interface AdjustmentStatement {
 }
 
 export interface AdjustmentListResponse { items: AdjustmentStatement[]; total: number; }
+
+export interface AIProviderActivationApproval {
+  id: string;
+  activation_request_id: string;
+  approver_id: string | null;
+  approval_role: "security" | "privacy" | "product";
+  action: "approve" | "reject";
+  evidence_reference: string | null;
+  note: string;
+  approved_at: string;
+  created_at: string;
+}
+
+export interface AIProviderActivationSummary {
+  required_approval_count: number;
+  approval_count: number;
+  independent_approvals_complete: boolean;
+  staging_evaluation_authorized: boolean;
+  authorization_active: boolean;
+  provider_configuration_mutated: false;
+  production_authorized: false;
+  restricted_documents_authorized: false;
+  real_claim_data_authorized: false;
+  human_review_required: true;
+  key_material_stored: false;
+}
+
+export interface AIProviderActivation {
+  id: string;
+  requested_by_id: string | null;
+  finalized_by_id: string | null;
+  revoked_by_id: string | null;
+  attempt_number: number;
+  request_key: string;
+  environment: "staging";
+  provider: "openai";
+  provider_project_label: string;
+  model: string;
+  prompt_bundle_version: string;
+  schema_bundle_version: string;
+  data_mode: "synthetic_deidentified";
+  allowed_document_types: string[];
+  restricted_documents_allowed: false;
+  credential_storage_mode: "environment" | "secret_manager";
+  max_input_chars: number;
+  max_output_tokens: number;
+  requests_per_minute: number;
+  tokens_per_minute: number;
+  monthly_spend_limit_cents: number;
+  spend_alert_thresholds: number[];
+  retention_mode: string;
+  data_residency_region: string;
+  security_owner_label: string;
+  privacy_owner_label: string;
+  product_owner_label: string;
+  incident_owner_label: string;
+  kill_switch_owner_label: string;
+  credential_control_reference: string;
+  spend_limit_reference: string;
+  data_processing_reference: string;
+  kill_switch_reference: string;
+  evaluation_expires_at: string;
+  status: string;
+  outcome: string | null;
+  decision_note: string | null;
+  decision_hash: string | null;
+  decided_at: string | null;
+  revoked_at: string | null;
+  revocation_note: string | null;
+  approvals: AIProviderActivationApproval[];
+  summary: AIProviderActivationSummary;
+  created_at: string;
+}
+
+export interface AIDocumentEligibility {
+  id: string;
+  activation_request_id: string;
+  claim_id: string;
+  document_id: string;
+  attested_by_id: string | null;
+  revoked_by_id: string | null;
+  attestation_number: number;
+  data_mode: "synthetic" | "deidentified";
+  document_type: string;
+  confidentiality_level: string;
+  evidence_reference: string;
+  note: string;
+  snapshot_hash: string;
+  status: string;
+  attested_at: string;
+  revoked_at: string | null;
+  revocation_note: string | null;
+  created_at: string;
+}
+
+export interface AIGovernanceDashboard {
+  activation_requests: AIProviderActivation[];
+  document_eligibility: AIDocumentEligibility[];
+}

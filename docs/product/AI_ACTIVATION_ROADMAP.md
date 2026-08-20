@@ -2,13 +2,15 @@
 
 ## Current capability
 
-The product already has a provider-neutral gateway, an OpenAI adapter using the Responses API and strict Structured Outputs, source-linked extraction candidates, quote verification, confidence fields, append-only feedback and mandatory Approve/Edit/Reject human review. AI candidates never directly update authoritative claim facts. The external provider remains disabled by default, and restricted documents remain blocked unless separately enabled.
+The product already has a provider-neutral gateway, an OpenAI adapter using the Responses API and strict Structured Outputs, source-linked extraction candidates, quote verification, confidence fields, append-only feedback and mandatory Approve/Edit/Reject human review. AI candidates never directly update authoritative claim facts. The external provider remains disabled by default, and Sprint 11A blocks restricted documents entirely.
 
-This means direct AI can be exercised today in a developer environment with synthetic documents after explicit local configuration. That is a technical exercise, not authorization for production or real claim data.
+Deterministic tests may still inject local fake providers, but real OpenAI processing is restricted to a separately governed staging environment. Configuration alone is not authorization.
 
 ## Sprint 11A — Provider Activation & Evaluation Gate
 
-- separate OpenAI staging and production projects and credentials
+Implementation status: the application control plane, independent approval ledger, per-document eligibility gate, kill switch and queue-time enforcement are implemented. Shared staging processing still requires the organization to provision and evidence the separate provider project, secret, spend, privacy and incident controls and then complete an authorized activation attempt.
+
+- separate OpenAI staging and production projects and credentials (operational prerequisite; Sprint 11A authorizes staging only)
 - secret-manager/environment-only key handling; no database, source or log storage
 - explicit document-classification allowlist and restricted-data prohibition by default
 - pinned provider, model, extraction schema and prompt versions
@@ -17,7 +19,7 @@ This means direct AI can be exercised today in a developer environment with synt
 - immutable activation request with independent security/privacy and product approvals
 - no automatic enabling of production or restricted documents
 
-Exit: the staging provider may be enabled for synthetic/de-identified evaluation only.
+Exit: after the operational prerequisites and independent activation decision are complete, the staging provider may be enabled for synthetic/de-identified evaluation only.
 
 ## Sprint 11B — Quality, Safety & Cost Evaluation
 
@@ -44,7 +46,7 @@ Exit: a separately authorized production-AI decision may be considered. Restrict
 
 ## Practical answer
 
-- Synthetic developer use: available now after local provider configuration.
-- Shared staging use: after Sprint 11A.
+- Deterministic developer tests: available now with local fake providers and no external processing.
+- Shared staging use: after Sprint 11A controls are deployed and an activation attempt is independently authorized.
 - Real but non-restricted claim documents: after Sprints 11A and 11B pass and Sprint 11C is explicitly authorized.
 - Broad production or restricted-document use: only after the bounded pilot demonstrates the required quality, safety, privacy, operational and cost thresholds.

@@ -11,6 +11,7 @@ const nav = [
   { href: "/dashboard", label: "Dashboard", mark: "D" },
   { href: "/claims", label: "Claims", mark: "C" },
   { href: "/ai-review", label: "AI Review", mark: "AI" },
+  { href: "/ai-governance", label: "AI Governance", mark: "G" },
   { href: "/pilot", label: "Pilot", mark: "P" },
   { href: "/outreach", label: "Outreach", mark: "O" },
 ];

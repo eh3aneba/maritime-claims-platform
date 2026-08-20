@@ -974,3 +974,102 @@ export function decideOperationalAcceptance(id: string, outcome: "authorize" | "
         : "Administrator placed this go-live attempt on hold pending a fresh operational acceptance attempt." }),
   });
 }
+
+export function getAIGovernance() {
+  return apiFetch<import("./types").AIGovernanceDashboard>("/ai-governance");
+}
+
+export function createAIProviderActivation(model: string) {
+  const expiresAt = new Date(Date.now() + 30 * 86400000).toISOString();
+  return apiFetch<import("./types").AIProviderActivation>("/ai-governance/activations", {
+    method: "POST",
+    body: JSON.stringify({
+      request_key: `openai-staging-${crypto.randomUUID()}`,
+      environment: "staging",
+      provider: "openai",
+      provider_project_label: "MCRI bounded staging evaluation",
+      model,
+      prompt_bundle_version: "2026-08-20.1",
+      schema_bundle_version: "2026-08-20.1",
+      data_mode: "synthetic_deidentified",
+      allowed_document_types: ["chief_engineer_report", "engine_log", "running_hours_record",
+        "pms_record", "workshop_report", "quotation", "invoice"],
+      restricted_documents_allowed: false,
+      credential_storage_mode: "secret_manager",
+      max_input_chars: 60000,
+      max_output_tokens: 2000,
+      requests_per_minute: 10,
+      tokens_per_minute: 50000,
+      monthly_spend_limit_cents: 10000,
+      spend_alert_thresholds: [50, 80],
+      retention_mode: "approved_standard",
+      data_residency_region: "Approved staging region — verify against DPA",
+      security_owner_label: "Security owner",
+      privacy_owner_label: "Privacy owner",
+      product_owner_label: "Product owner",
+      incident_owner_label: "Incident commander",
+      kill_switch_owner_label: "AI operations owner",
+      credential_control_reference: "artifact://ai-governance/staging-secret-control",
+      spend_limit_reference: "monitor://ai-governance/staging-spend-cap",
+      data_processing_reference: "artifact://ai-governance/dpa-review",
+      kill_switch_reference: "runbook://ai-governance/kill-switch",
+      evaluation_expires_at: expiresAt,
+    }),
+  });
+}
+
+export function reviewAIProviderActivation(id: string,
+  approvalRole: "security" | "privacy" | "product", action: "approve" | "reject") {
+  return apiFetch<import("./types").AIProviderActivation>(`/ai-governance/activations/${id}/approvals`, {
+    method: "POST",
+    body: JSON.stringify({
+      approval_role: approvalRole,
+      action,
+      evidence_reference: action === "approve"
+        ? `artifact://ai-governance/${approvalRole}-review`
+        : null,
+      note: action === "approve"
+        ? `Independent ${approvalRole} reviewer approved the bounded staging evaluation.`
+        : `Independent ${approvalRole} reviewer rejected this evaluation attempt.`,
+    }),
+  });
+}
+
+export function decideAIProviderActivation(id: string,
+  outcome: "authorize_staging" | "hold") {
+  return apiFetch<import("./types").AIProviderActivation>(`/ai-governance/activations/${id}/decision`, {
+    method: "POST",
+    body: JSON.stringify({ outcome, confirm_decision: true,
+      note: outcome === "authorize_staging"
+        ? "Administrator authorized the bounded, expiring staging evaluation only."
+        : "Administrator held this attempt; provider execution remains blocked." }),
+  });
+}
+
+export function revokeAIProviderActivation(id: string) {
+  return apiFetch<import("./types").AIProviderActivation>(`/ai-governance/activations/${id}/revoke`, {
+    method: "POST",
+    body: JSON.stringify({ confirm_revoke: true,
+      note: "Manager activated the application kill switch; future external AI queueing is blocked." }),
+  });
+}
+
+export function attestAIDocumentEligibility(payload: {
+  activation_request_id: string; claim_id: string; document_id: string;
+  data_mode: "synthetic" | "deidentified";
+}) {
+  return apiFetch<import("./types").AIDocumentEligibility>("/ai-governance/document-eligibility", {
+    method: "POST",
+    body: JSON.stringify({ ...payload, confirm_eligible: true,
+      evidence_reference: `artifact://ai-governance/document-${payload.document_id}`,
+      note: "Manager attested that this bounded staging document is synthetic or de-identified." }),
+  });
+}
+
+export function revokeAIDocumentEligibility(id: string) {
+  return apiFetch<import("./types").AIDocumentEligibility>(`/ai-governance/document-eligibility/${id}/revoke`, {
+    method: "POST",
+    body: JSON.stringify({ confirm_revoke: true,
+      note: "Manager revoked document eligibility; external AI queueing is blocked for this document." }),
+  });
+}

@@ -44,8 +44,21 @@ def run_preflight(*, require_db: bool = True) -> tuple[list[str], list[str]]:
     if settings.ai_provider.lower() != "disabled":
         if not settings.ai_model.strip():
             _fail(errors, "AI_MODEL is required when AI_PROVIDER is enabled")
-        if settings.ai_provider.lower() == "openai" and not settings.openai_api_key.strip():
-            _fail(errors, "OPENAI_API_KEY is required when AI_PROVIDER=openai")
+        if settings.ai_provider.lower() == "openai":
+            if not settings.openai_api_key.strip():
+                _fail(errors, "OPENAI_API_KEY is required when AI_PROVIDER=openai")
+            if env != "staging":
+                _fail(errors, "Sprint 11A permits AI_PROVIDER=openai only in staging")
+            if settings.allow_external_ai_restricted:
+                _fail(errors, "Restricted documents cannot be enabled for external AI in Sprint 11A")
+            if not 1000 <= settings.ai_max_input_chars <= 60000:
+                _fail(errors, "AI_MAX_INPUT_CHARS must be between 1000 and 60000")
+            if not 128 <= settings.ai_max_output_tokens <= 4096:
+                _fail(errors, "AI_MAX_OUTPUT_TOKENS must be between 128 and 4096")
+            if not settings.ai_prompt_bundle_version.strip():
+                _fail(errors, "AI_PROMPT_BUNDLE_VERSION is required for external AI")
+            if not settings.ai_schema_bundle_version.strip():
+                _fail(errors, "AI_SCHEMA_BUNDLE_VERSION is required for external AI")
     else:
         warnings.append("AI_PROVIDER is disabled; deterministic demo data can still be used")
 
