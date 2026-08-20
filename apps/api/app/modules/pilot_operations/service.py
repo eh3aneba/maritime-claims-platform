@@ -17,16 +17,22 @@ from app.modules.email_ingestion.models import EmailAdapterRun, EmailMessageStat
 from app.modules.external_portal.models import ExternalPortalInvitation, ExternalPortalSession, ExternalPortalSubmission
 from app.modules.pilot_operations.models import (
     DeploymentReadinessReview, DesignPartnerRehearsal, OperationalIncident, OperationalMonitorRun,
-    PilotExitManifest, PilotGovernanceProfile, RehearsalControlEvidence, RehearsalRemediationFinding,
+    PilotExitManifest, PilotGovernanceProfile, PrivatePilotCaseRun, PrivatePilotExecution,
+    ProductGapFinding, ProductionArchitectureBaseline, ProductionArchitectureControl,
+    RehearsalControlEvidence, RehearsalRemediationFinding,
 )
 from app.modules.pilot_operations.schemas import (
-    GovernanceProfileWrite, IncidentCreate, MonitorRunCreate, ReadinessCreate,
+    ArchitectureBaselineCreate, ArchitectureControlWrite, GovernanceProfileWrite, IncidentCreate,
+    MonitorRunCreate, PilotCaseRunWrite, PilotExecutionCreate, ProductGapCreate, ReadinessCreate,
     RehearsalCreate, RehearsalEvidenceWrite, RehearsalFindingCreate,
 )
 from app.modules.users.models import User
 
 READINESS_CONTROLS = {"tls", "secret_references", "backup_restore", "migrations", "malware_scan",
                       "least_privilege", "retention", "incident_contacts"}
+ARCHITECTURE_CONTROLS = {"identity_access", "application_security", "evidence_storage",
+                         "observability", "backup_dr", "data_governance", "deployment_iac",
+                         "interoperability", "ai_governance"}
 EVIDENCE_REFERENCE = re.compile(r"^(artifact|runbook|ticket|monitor)://[A-Za-z0-9._:/-]{3,450}$")
 
 
@@ -46,7 +52,9 @@ def dashboard(db: Session, organization_id: UUID):
     exits = list(db.scalars(select(PilotExitManifest).where(
         PilotExitManifest.organization_id == organization_id).order_by(PilotExitManifest.created_at.desc()).limit(25)))
     rehearsals = list_rehearsals(db, organization_id)
-    return readiness, monitors, incidents, profile, exits, rehearsals
+    executions = list_pilot_executions(db, organization_id)
+    baselines = list_architecture_baselines(db, organization_id)
+    return readiness, monitors, incidents, profile, exits, rehearsals, executions, baselines
 
 
 def create_readiness(db: Session, user: User, payload: ReadinessCreate) -> DeploymentReadinessReview:
@@ -376,3 +384,359 @@ def complete_rehearsal(db: Session, user: User, item: DesignPartnerRehearsal,
             "evidence_count": len(evidence), "finding_count": len(findings)},
            "Human go/no-go decision snapshot; not a production certification or deployment action. " + item.decision_note)
     db.commit(); db.refresh(item); return rehearsal_response(db, item)
+
+
+def _case_runs(db: Session, execution_id: UUID) -> list[PrivatePilotCaseRun]:
+    return list(db.scalars(select(PrivatePilotCaseRun).where(
+        PrivatePilotCaseRun.execution_id == execution_id
+    ).order_by(PrivatePilotCaseRun.recorded_at.asc())))
+
+
+def _product_gaps(db: Session, execution_id: UUID) -> list[ProductGapFinding]:
+    return list(db.scalars(select(ProductGapFinding).where(
+        ProductGapFinding.execution_id == execution_id
+    ).order_by(ProductGapFinding.created_at.asc())))
+
+
+def _aggregate_pilot_metrics(case_runs: list[PrivatePilotCaseRun],
+                             gaps: list[ProductGapFinding]) -> dict:
+    outcome_counts = {key: 0 for key in ("completed", "blocked", "abandoned")}
+    priority_counts = {key: 0 for key in ("p0", "p1", "p2", "p3")}
+    open_priority_counts = {key: 0 for key in ("p0", "p1", "p2", "p3")}
+    totals = {
+        "triage_minutes": 0, "evidence_review_minutes": 0, "assessment_minutes": 0,
+        "adjustment_minutes": 0, "ai_candidates_reviewed": 0, "ai_accepted": 0,
+        "ai_edited": 0, "ai_rejected": 0, "rule_findings_reviewed": 0,
+        "rule_findings_helpful": 0, "open_conflicts": 0, "open_requirements": 0,
+    }
+    for item in case_runs:
+        outcome_counts[item.case_outcome] = outcome_counts.get(item.case_outcome, 0) + 1
+        for field in totals:
+            totals[field] += getattr(item, field) or 0
+    for gap in gaps:
+        priority_counts[gap.priority] = priority_counts.get(gap.priority, 0) + 1
+        if gap.status != "resolved":
+            open_priority_counts[gap.priority] = open_priority_counts.get(gap.priority, 0) + 1
+    return {
+        "schema": "mcri-private-pilot-baseline-v1", "case_run_count": len(case_runs),
+        "case_outcomes": outcome_counts, "totals": totals,
+        "product_gap_count": len(gaps), "priority_counts": priority_counts,
+        "open_priority_counts": open_priority_counts,
+        "content_included": False,
+    }
+
+
+def pilot_execution_response(db: Session, item: PrivatePilotExecution) -> dict:
+    case_runs = _case_runs(db, item.id); gaps = _product_gaps(db, item.id)
+    return {
+        "id": item.id, "rehearsal_id": item.rehearsal_id, "execution_key": item.execution_key,
+        "design_partner_label": item.design_partner_label, "data_mode": item.data_mode,
+        "data_authorization_reference": item.data_authorization_reference,
+        "objectives": item.objectives, "target_case_runs": item.target_case_runs,
+        "status": item.status, "started_at": item.started_at, "completed_at": item.completed_at,
+        "outcome": item.outcome, "outcome_note": item.outcome_note,
+        "outcome_hash": item.outcome_hash, "created_at": item.created_at,
+        "aggregate_metrics": _aggregate_pilot_metrics(case_runs, gaps),
+        "case_runs": case_runs, "product_gaps": gaps,
+    }
+
+
+def list_pilot_executions(db: Session, organization_id: UUID) -> list[dict]:
+    items = list(db.scalars(select(PrivatePilotExecution).where(
+        PrivatePilotExecution.organization_id == organization_id
+    ).order_by(PrivatePilotExecution.created_at.desc()).limit(25)))
+    return [pilot_execution_response(db, item) for item in items]
+
+
+def get_pilot_execution(db: Session, organization_id: UUID, item_id: UUID) -> PrivatePilotExecution:
+    item = db.scalar(select(PrivatePilotExecution).where(
+        PrivatePilotExecution.id == item_id,
+        PrivatePilotExecution.organization_id == organization_id,
+    ))
+    if item is None: raise HTTPException(404, "Private pilot execution not found")
+    return item
+
+
+def create_pilot_execution(db: Session, user: User, payload: PilotExecutionCreate) -> dict:
+    rehearsal = get_rehearsal(db, user.organization_id, payload.rehearsal_id)
+    if rehearsal.status != "completed" or rehearsal.outcome != "go":
+        raise HTTPException(409, "A completed Go rehearsal is required before private pilot execution")
+    reference = payload.data_authorization_reference.strip() if payload.data_authorization_reference else None
+    if reference and not EVIDENCE_REFERENCE.fullmatch(reference):
+        raise HTTPException(422, "Authorization reference must use an allowlisted bounded scheme")
+    if payload.data_mode == "approved_real":
+        profile = db.scalar(select(PilotGovernanceProfile).where(
+            PilotGovernanceProfile.organization_id == user.organization_id))
+        if profile is None or profile.status != "approved" or not reference:
+            raise HTTPException(409, "Approved governance and a bounded authorization reference are required for real data")
+    objectives = list(dict.fromkeys(value.strip() for value in payload.objectives if value.strip()))
+    if not objectives: raise HTTPException(422, "Pilot objectives cannot be blank")
+    item = PrivatePilotExecution(
+        organization_id=user.organization_id, rehearsal_id=rehearsal.id, created_by_id=user.id,
+        execution_key=payload.execution_key.strip(),
+        design_partner_label=payload.design_partner_label.strip(), data_mode=payload.data_mode,
+        data_authorization_reference=reference, objectives=objectives,
+        target_case_runs=payload.target_case_runs, status="draft",
+    )
+    db.add(item)
+    try: db.flush()
+    except IntegrityError as exc:
+        db.rollback(); raise HTTPException(409, "This execution key or rehearsal is already in use") from exc
+    _audit(db, user, "CREATE_PRIVATE_PILOT_EXECUTION", "private_pilot_execution", item.id,
+           {"rehearsal_id": str(rehearsal.id), "data_mode": item.data_mode,
+            "target_case_runs": item.target_case_runs, "authorization_reference": reference},
+           "Execution plan only; no pilot, notification or evidence processing started automatically.")
+    db.commit(); db.refresh(item); return pilot_execution_response(db, item)
+
+
+def start_pilot_execution(db: Session, user: User, item: PrivatePilotExecution) -> dict:
+    if item.status != "draft": raise HTTPException(409, "Only a draft pilot execution can be started")
+    item.status = "in_progress"; item.started_at = datetime.now(UTC)
+    _audit(db, user, "START_PRIVATE_PILOT_EXECUTION", "private_pilot_execution", item.id,
+           {"status": item.status, "started_at": item.started_at.isoformat()},
+           "Human-authorized private pilot execution started; no external notification was sent.")
+    db.commit(); db.refresh(item); return pilot_execution_response(db, item)
+
+
+def write_pilot_case_run(db: Session, user: User, execution: PrivatePilotExecution,
+                         payload: PilotCaseRunWrite) -> dict:
+    if execution.status == "draft":
+        raise HTTPException(409, "A Manager or Admin must start the pilot execution before case runs")
+    if execution.status == "completed": raise HTTPException(409, "Completed pilot execution is immutable")
+    if not EVIDENCE_REFERENCE.fullmatch(payload.evidence_reference.strip()):
+        raise HTTPException(422, "Case-run evidence must use an allowlisted bounded reference")
+    if payload.ai_accepted + payload.ai_edited + payload.ai_rejected != payload.ai_candidates_reviewed:
+        raise HTTPException(422, "AI review decisions must equal the reviewed candidate count")
+    if payload.rule_findings_helpful > payload.rule_findings_reviewed:
+        raise HTTPException(422, "Helpful rule findings cannot exceed reviewed rule findings")
+    claim = db.scalar(select(Claim).where(
+        Claim.id == payload.claim_id, Claim.organization_id == user.organization_id,
+        Claim.deleted_at.is_(None),
+    ))
+    if claim is None: raise HTTPException(404, "Claim not found")
+    item = db.scalar(select(PrivatePilotCaseRun).where(
+        PrivatePilotCaseRun.execution_id == execution.id,
+        PrivatePilotCaseRun.claim_id == claim.id,
+    ))
+    action = "UPDATE_PRIVATE_PILOT_CASE_RUN" if item else "RECORD_PRIVATE_PILOT_CASE_RUN"
+    if item is None:
+        item = PrivatePilotCaseRun(organization_id=user.organization_id,
+                                   execution_id=execution.id, claim_id=claim.id)
+        db.add(item)
+    for field, value in payload.model_dump(exclude={"claim_id"}).items():
+        setattr(item, field, value.strip() if isinstance(value, str) else value)
+    item.recorded_by_id = user.id; item.recorded_at = datetime.now(UTC); db.flush()
+    _audit(db, user, action, "private_pilot_case_run", item.id,
+           {"execution_id": str(execution.id), "claim_id": str(claim.id),
+            "case_outcome": item.case_outcome, "ai_candidates_reviewed": item.ai_candidates_reviewed,
+            "rule_findings_reviewed": item.rule_findings_reviewed,
+            "evidence_reference": item.evidence_reference},
+           "Bounded workflow measurements only; no claim narrative, evidence text or personal data stored.")
+    db.commit(); db.refresh(item); return pilot_execution_response(db, execution)
+
+
+def create_product_gap(db: Session, user: User, execution: PrivatePilotExecution,
+                       payload: ProductGapCreate) -> dict:
+    if execution.status == "draft":
+        raise HTTPException(409, "A Manager or Admin must start the pilot execution before product gaps")
+    if execution.status == "completed": raise HTTPException(409, "Completed pilot execution is immutable")
+    if payload.evidence_reference and not EVIDENCE_REFERENCE.fullmatch(payload.evidence_reference.strip()):
+        raise HTTPException(422, "Gap evidence must use an allowlisted bounded reference")
+    if payload.case_run_id:
+        case_run = db.scalar(select(PrivatePilotCaseRun).where(
+            PrivatePilotCaseRun.id == payload.case_run_id,
+            PrivatePilotCaseRun.execution_id == execution.id,
+            PrivatePilotCaseRun.organization_id == user.organization_id,
+        ))
+        if case_run is None: raise HTTPException(404, "Pilot case run not found")
+    item = ProductGapFinding(
+        organization_id=user.organization_id, execution_id=execution.id,
+        case_run_id=payload.case_run_id, created_by_id=user.id, updated_by_id=user.id,
+        priority=payload.priority, category=payload.category, title=payload.title.strip(),
+        summary=payload.summary.strip(), owner_label=payload.owner_label.strip(),
+        due_at=payload.due_at,
+        evidence_reference=payload.evidence_reference.strip() if payload.evidence_reference else None,
+        status="open",
+    )
+    db.add(item); db.flush()
+    _audit(db, user, "OPEN_PRODUCT_GAP", "product_gap_finding", item.id,
+           {"execution_id": str(execution.id), "priority": item.priority,
+            "category": item.category, "owner_label": item.owner_label,
+            "evidence_reference": item.evidence_reference},
+           item.summary)
+    db.commit(); db.refresh(item); return pilot_execution_response(db, execution)
+
+
+def get_product_gap(db: Session, organization_id: UUID, gap_id: UUID) -> ProductGapFinding:
+    item = db.scalar(select(ProductGapFinding).where(
+        ProductGapFinding.id == gap_id, ProductGapFinding.organization_id == organization_id,
+    ))
+    if item is None: raise HTTPException(404, "Product gap not found")
+    return item
+
+
+def transition_product_gap(db: Session, user: User, execution: PrivatePilotExecution,
+                           gap: ProductGapFinding, action: str, note: str) -> dict:
+    if gap.execution_id != execution.id: raise HTTPException(404, "Product gap not found")
+    if execution.status == "completed": raise HTTPException(409, "Completed pilot execution is immutable")
+    allowed = {"accept": "accepted", "resolve": "resolved", "wont_fix": "wont_fix"}
+    if action not in allowed or gap.status in {"resolved", "wont_fix"}:
+        raise HTTPException(409, "Product-gap transition is not allowed from the current state")
+    gap.status = allowed[action]; gap.resolution_note = note.strip(); gap.updated_by_id = user.id
+    if gap.status in {"resolved", "wont_fix"}: gap.resolved_at = datetime.now(UTC)
+    _audit(db, user, f"{action.upper()}_PRODUCT_GAP", "product_gap_finding", gap.id,
+           {"status": gap.status}, note.strip())
+    db.commit(); db.refresh(gap); return pilot_execution_response(db, execution)
+
+
+def complete_pilot_execution(db: Session, user: User, item: PrivatePilotExecution,
+                             outcome: str, confirm: bool, note: str) -> dict:
+    if not confirm: raise HTTPException(422, "Explicit pilot outcome confirmation is required")
+    if item.status == "completed": raise HTTPException(409, "Pilot execution is already complete")
+    case_runs = _case_runs(db, item.id); gaps = _product_gaps(db, item.id)
+    if len(case_runs) < item.target_case_runs:
+        raise HTTPException(409, "The target number of pilot case runs has not been recorded")
+    blocking_p0 = [gap for gap in gaps if gap.priority == "p0" and gap.status != "resolved"]
+    if outcome == "proceed" and blocking_p0:
+        raise HTTPException(409, "Proceed is blocked until every P0 product gap is resolved")
+    metrics = _aggregate_pilot_metrics(case_runs, gaps)
+    snapshot = {
+        "schema": "mcri-private-pilot-outcome-v1", "execution_id": str(item.id),
+        "rehearsal_id": str(item.rehearsal_id), "execution_key": item.execution_key,
+        "data_mode": item.data_mode, "outcome": outcome, "outcome_note": note.strip(),
+        "aggregate_metrics": metrics,
+        "product_gaps": [{"id": str(gap.id), "priority": gap.priority,
+                          "category": gap.category, "status": gap.status} for gap in gaps],
+    }
+    item.status = "completed"; item.outcome = outcome; item.outcome_note = note.strip()
+    item.completed_at = datetime.now(UTC); item.completed_by_id = user.id
+    item.outcome_hash = sha256(json.dumps(snapshot, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    _audit(db, user, "COMPLETE_PRIVATE_PILOT_EXECUTION", "private_pilot_execution", item.id,
+           {"outcome": item.outcome, "outcome_hash": item.outcome_hash,
+            "case_run_count": len(case_runs), "product_gap_count": len(gaps)},
+           "Human pilot outcome snapshot; not a production certification. " + item.outcome_note)
+    db.commit(); db.refresh(item); return pilot_execution_response(db, item)
+
+
+def _architecture_controls(db: Session, baseline_id: UUID) -> list[ProductionArchitectureControl]:
+    return list(db.scalars(select(ProductionArchitectureControl).where(
+        ProductionArchitectureControl.baseline_id == baseline_id
+    ).order_by(ProductionArchitectureControl.control_key.asc())))
+
+
+def _architecture_summary(controls: list[ProductionArchitectureControl]) -> dict:
+    states = {key: 0 for key in ("missing", "partial", "implemented", "not_applicable")}
+    for item in controls: states[item.current_state] = states.get(item.current_state, 0) + 1
+    return {"required_control_count": len(ARCHITECTURE_CONTROLS),
+            "documented_control_count": len(controls), "state_counts": states,
+            "production_certification": False}
+
+
+def architecture_baseline_response(db: Session, item: ProductionArchitectureBaseline) -> dict:
+    controls = _architecture_controls(db, item.id)
+    return {
+        "id": item.id, "pilot_execution_id": item.pilot_execution_id,
+        "baseline_key": item.baseline_key, "deployment_model": item.deployment_model,
+        "data_residency_region": item.data_residency_region, "status": item.status,
+        "snapshot_hash": item.snapshot_hash, "attestation_note": item.attestation_note,
+        "attested_at": item.attested_at, "created_at": item.created_at,
+        "summary": _architecture_summary(controls), "controls": controls,
+    }
+
+
+def list_architecture_baselines(db: Session, organization_id: UUID) -> list[dict]:
+    items = list(db.scalars(select(ProductionArchitectureBaseline).where(
+        ProductionArchitectureBaseline.organization_id == organization_id
+    ).order_by(ProductionArchitectureBaseline.created_at.desc()).limit(25)))
+    return [architecture_baseline_response(db, item) for item in items]
+
+
+def get_architecture_baseline(db: Session, organization_id: UUID,
+                              item_id: UUID) -> ProductionArchitectureBaseline:
+    item = db.scalar(select(ProductionArchitectureBaseline).where(
+        ProductionArchitectureBaseline.id == item_id,
+        ProductionArchitectureBaseline.organization_id == organization_id,
+    ))
+    if item is None: raise HTTPException(404, "Production architecture baseline not found")
+    return item
+
+
+def create_architecture_baseline(db: Session, user: User,
+                                 payload: ArchitectureBaselineCreate) -> dict:
+    execution = get_pilot_execution(db, user.organization_id, payload.pilot_execution_id)
+    if execution.status != "completed":
+        raise HTTPException(409, "A completed private pilot execution is required before architecture baseline")
+    item = ProductionArchitectureBaseline(
+        organization_id=user.organization_id, pilot_execution_id=execution.id,
+        created_by_id=user.id, baseline_key=payload.baseline_key.strip(),
+        deployment_model=payload.deployment_model,
+        data_residency_region=payload.data_residency_region.strip(), status="draft",
+    )
+    db.add(item)
+    try: db.flush()
+    except IntegrityError as exc:
+        db.rollback(); raise HTTPException(409, "This production architecture baseline key already exists") from exc
+    _audit(db, user, "CREATE_PRODUCTION_ARCHITECTURE_BASELINE", "production_architecture_baseline", item.id,
+           {"pilot_execution_id": str(execution.id), "deployment_model": item.deployment_model,
+            "data_residency_region": item.data_residency_region},
+           "Architecture design baseline only; no infrastructure was deployed or certified.")
+    db.commit(); db.refresh(item); return architecture_baseline_response(db, item)
+
+
+def write_architecture_control(db: Session, user: User, baseline: ProductionArchitectureBaseline,
+                               payload: ArchitectureControlWrite) -> dict:
+    if baseline.attested_at is not None:
+        raise HTTPException(409, "Attested architecture baseline is immutable")
+    reference = payload.evidence_reference.strip() if payload.evidence_reference else None
+    if reference and not EVIDENCE_REFERENCE.fullmatch(reference):
+        raise HTTPException(422, "Architecture evidence must use an allowlisted bounded reference")
+    item = db.scalar(select(ProductionArchitectureControl).where(
+        ProductionArchitectureControl.baseline_id == baseline.id,
+        ProductionArchitectureControl.control_key == payload.control_key,
+    ))
+    if item is None:
+        item = ProductionArchitectureControl(
+            organization_id=user.organization_id, baseline_id=baseline.id,
+            control_key=payload.control_key,
+        ); db.add(item)
+    item.recorded_by_id = user.id; item.current_state = payload.current_state
+    item.target_architecture = payload.target_architecture.strip()
+    item.risk_note = payload.risk_note.strip(); item.owner_label = payload.owner_label.strip()
+    item.target_date = payload.target_date; item.evidence_reference = reference
+    db.flush()
+    recorded_keys = {entry.control_key for entry in _architecture_controls(db, baseline.id)}
+    baseline.status = "review_ready" if recorded_keys == ARCHITECTURE_CONTROLS else "draft"
+    _audit(db, user, "RECORD_PRODUCTION_ARCHITECTURE_CONTROL", "production_architecture_control", item.id,
+           {"baseline_id": str(baseline.id), "control_key": item.control_key,
+            "current_state": item.current_state, "owner_label": item.owner_label,
+            "target_date": item.target_date.isoformat(), "evidence_reference": reference},
+           "Current gap and target design recorded; no compliance or readiness conclusion generated.")
+    db.commit(); db.refresh(item); return architecture_baseline_response(db, baseline)
+
+
+def attest_architecture_baseline(db: Session, user: User, item: ProductionArchitectureBaseline,
+                                 confirm: bool, note: str) -> dict:
+    if not confirm: raise HTTPException(422, "Explicit architecture review confirmation is required")
+    if item.attested_at is not None: raise HTTPException(409, "Architecture baseline is already attested")
+    controls = _architecture_controls(db, item.id)
+    if {entry.control_key for entry in controls} != ARCHITECTURE_CONTROLS:
+        raise HTTPException(409, "All nine production architecture controls must be documented")
+    snapshot = {
+        "schema": "mcri-production-architecture-baseline-v1", "baseline_id": str(item.id),
+        "pilot_execution_id": str(item.pilot_execution_id), "baseline_key": item.baseline_key,
+        "deployment_model": item.deployment_model, "data_residency_region": item.data_residency_region,
+        "controls": [{"control_key": entry.control_key, "current_state": entry.current_state,
+                      "target_architecture": entry.target_architecture, "risk_note": entry.risk_note,
+                      "owner_label": entry.owner_label, "target_date": entry.target_date.isoformat(),
+                      "evidence_reference": entry.evidence_reference} for entry in controls],
+        "production_certification": False,
+    }
+    has_gaps = any(entry.current_state in {"missing", "partial"} for entry in controls)
+    item.status = "attested_with_gaps" if has_gaps else "attested_baseline"
+    item.snapshot_hash = sha256(json.dumps(snapshot, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    item.attestation_note = note.strip(); item.attested_at = datetime.now(UTC); item.attested_by_id = user.id
+    _audit(db, user, "ATTEST_PRODUCTION_ARCHITECTURE_BASELINE", "production_architecture_baseline", item.id,
+           {"status": item.status, "snapshot_hash": item.snapshot_hash,
+            "state_counts": _architecture_summary(controls)["state_counts"]},
+           "Human-reviewed architecture baseline; not a production, regulatory or compliance certification. " + item.attestation_note)
+    db.commit(); db.refresh(item); return architecture_baseline_response(db, item)

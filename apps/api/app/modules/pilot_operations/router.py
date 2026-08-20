@@ -7,18 +7,25 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.modules.auth.dependencies import CurrentUser, require_roles
 from app.modules.pilot_operations.schemas import (
-    ExitManifestCreate, ExitManifestResponse, GovernanceApproval, GovernanceProfileResponse,
-    GovernanceProfileWrite, IncidentCreate, IncidentResponse, IncidentTransition,
-    MonitorRunCreate, MonitorRunResponse, PilotOperationsDashboard, ReadinessAttest,
-    ReadinessCreate, ReadinessResponse, RehearsalComplete, RehearsalCreate,
+    ArchitectureBaselineAttest, ArchitectureBaselineCreate, ArchitectureBaselineResponse,
+    ArchitectureControlWrite, ExitManifestCreate, ExitManifestResponse, GovernanceApproval,
+    GovernanceProfileResponse, GovernanceProfileWrite, IncidentCreate, IncidentResponse,
+    IncidentTransition, MonitorRunCreate, MonitorRunResponse, PilotCaseRunWrite,
+    PilotExecutionComplete, PilotExecutionCreate, PilotExecutionResponse, PilotOperationsDashboard,
+    ProductGapCreate, ProductGapTransition, ReadinessAttest, ReadinessCreate, ReadinessResponse,
+    RehearsalComplete, RehearsalCreate,
     RehearsalEvidenceWrite, RehearsalFindingCreate, RehearsalFindingTransition, RehearsalResponse,
 )
 from app.modules.pilot_operations.service import (
-    approve_governance, attest_readiness, create_exit_manifest, create_incident, create_readiness,
-    complete_rehearsal, create_rehearsal, create_rehearsal_finding, dashboard, get_governance,
-    get_incident, get_readiness, get_rehearsal, get_rehearsal_finding, run_monitor,
-    start_rehearsal, transition_incident, transition_rehearsal_finding, write_governance,
-    write_rehearsal_evidence,
+    approve_governance, attest_architecture_baseline, attest_readiness,
+    complete_pilot_execution, complete_rehearsal, create_architecture_baseline,
+    create_exit_manifest, create_incident, create_pilot_execution, create_product_gap,
+    create_readiness, create_rehearsal, create_rehearsal_finding, dashboard,
+    get_architecture_baseline, get_governance, get_incident, get_pilot_execution,
+    get_product_gap, get_readiness, get_rehearsal, get_rehearsal_finding, run_monitor,
+    start_pilot_execution, start_rehearsal, transition_incident, transition_product_gap,
+    transition_rehearsal_finding, write_architecture_control, write_governance,
+    write_pilot_case_run, write_rehearsal_evidence,
 )
 from app.modules.users.models import User, UserRole
 
@@ -28,10 +35,12 @@ Manager = Annotated[User, Depends(require_roles(UserRole.ADMIN, UserRole.CLAIMS_
 
 @router.get("", response_model=PilotOperationsDashboard)
 def operations_dashboard(current_user: CurrentUser, db: Annotated[Session, Depends(get_db)]):
-    readiness, monitors, incidents, profile, exits, rehearsals = dashboard(db, current_user.organization_id)
+    readiness, monitors, incidents, profile, exits, rehearsals, executions, baselines = dashboard(
+        db, current_user.organization_id)
     return PilotOperationsDashboard(readiness_reviews=readiness, monitor_runs=monitors,
                                     incidents=incidents, governance_profile=profile,
-                                    exit_manifests=exits, rehearsals=rehearsals)
+                                    exit_manifests=exits, rehearsals=rehearsals,
+                                    pilot_executions=executions, architecture_baselines=baselines)
 
 
 @router.post("/readiness", response_model=ReadinessResponse, status_code=201)
@@ -112,3 +121,73 @@ def rehearsal_complete(item_id: UUID, payload: RehearsalComplete, manager: Manag
                        db: Annotated[Session, Depends(get_db)]):
     return complete_rehearsal(db, manager, get_rehearsal(db, manager.organization_id, item_id),
                               payload.outcome, payload.confirm_decision, payload.note)
+
+
+@router.post("/pilot-executions", response_model=PilotExecutionResponse, status_code=201)
+def pilot_execution_create(payload: PilotExecutionCreate, current_user: CurrentUser,
+                           db: Annotated[Session, Depends(get_db)]):
+    return create_pilot_execution(db, current_user, payload)
+
+
+@router.post("/pilot-executions/{item_id}/start", response_model=PilotExecutionResponse)
+def pilot_execution_start(item_id: UUID, manager: Manager,
+                          db: Annotated[Session, Depends(get_db)]):
+    return start_pilot_execution(
+        db, manager, get_pilot_execution(db, manager.organization_id, item_id))
+
+
+@router.put("/pilot-executions/{item_id}/case-runs", response_model=PilotExecutionResponse)
+def pilot_case_run_write(item_id: UUID, payload: PilotCaseRunWrite, current_user: CurrentUser,
+                         db: Annotated[Session, Depends(get_db)]):
+    return write_pilot_case_run(
+        db, current_user, get_pilot_execution(db, current_user.organization_id, item_id), payload)
+
+
+@router.post("/pilot-executions/{item_id}/gaps", response_model=PilotExecutionResponse,
+             status_code=201)
+def product_gap_create(item_id: UUID, payload: ProductGapCreate, current_user: CurrentUser,
+                       db: Annotated[Session, Depends(get_db)]):
+    return create_product_gap(
+        db, current_user, get_pilot_execution(db, current_user.organization_id, item_id), payload)
+
+
+@router.post("/pilot-executions/{item_id}/gaps/{gap_id}/transition",
+             response_model=PilotExecutionResponse)
+def product_gap_transition(item_id: UUID, gap_id: UUID, payload: ProductGapTransition,
+                           current_user: CurrentUser,
+                           db: Annotated[Session, Depends(get_db)]):
+    return transition_product_gap(
+        db, current_user, get_pilot_execution(db, current_user.organization_id, item_id),
+        get_product_gap(db, current_user.organization_id, gap_id), payload.action, payload.note)
+
+
+@router.post("/pilot-executions/{item_id}/complete", response_model=PilotExecutionResponse)
+def pilot_execution_complete(item_id: UUID, payload: PilotExecutionComplete, manager: Manager,
+                             db: Annotated[Session, Depends(get_db)]):
+    return complete_pilot_execution(
+        db, manager, get_pilot_execution(db, manager.organization_id, item_id),
+        payload.outcome, payload.confirm_outcome, payload.note)
+
+
+@router.post("/architecture-baselines", response_model=ArchitectureBaselineResponse,
+             status_code=201)
+def architecture_baseline_create(payload: ArchitectureBaselineCreate, manager: Manager,
+                                 db: Annotated[Session, Depends(get_db)]):
+    return create_architecture_baseline(db, manager, payload)
+
+
+@router.put("/architecture-baselines/{item_id}/controls",
+            response_model=ArchitectureBaselineResponse)
+def architecture_control_write(item_id: UUID, payload: ArchitectureControlWrite,
+                               manager: Manager, db: Annotated[Session, Depends(get_db)]):
+    return write_architecture_control(
+        db, manager, get_architecture_baseline(db, manager.organization_id, item_id), payload)
+
+
+@router.post("/architecture-baselines/{item_id}/attest",
+             response_model=ArchitectureBaselineResponse)
+def architecture_baseline_attest(item_id: UUID, payload: ArchitectureBaselineAttest,
+                                 manager: Manager, db: Annotated[Session, Depends(get_db)]):
+    return attest_architecture_baseline(
+        db, manager, get_architecture_baseline(db, manager.organization_id, item_id),
+        payload.confirm_reviewed, payload.note)

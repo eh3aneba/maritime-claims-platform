@@ -207,4 +207,4 @@ Acceptance guardrails:
 
 ## Next phase
 
-Time-boxed private-pilot execution against the approved rehearsal runbook, followed by remediation verification and a separately authorized production-go-live decision.
+Delivered in Sprint 10A–10B: time-boxed private-pilot execution, accountable product-gap baseline and a truthful production-architecture baseline. See `docs/product/SPRINT_10.md`.

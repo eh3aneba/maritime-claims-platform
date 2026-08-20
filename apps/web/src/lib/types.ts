@@ -93,10 +93,46 @@ export interface DesignPartnerRehearsal {
   decision_hash: string | null; evidence: RehearsalControlEvidence[];
   findings: RehearsalRemediationFinding[]; created_at: string;
 }
+export interface PrivatePilotCaseRun {
+  id: string; execution_id: string; claim_id: string; case_outcome: string;
+  evidence_reference: string; triage_minutes: number | null; evidence_review_minutes: number | null;
+  assessment_minutes: number | null; adjustment_minutes: number | null;
+  ai_candidates_reviewed: number; ai_accepted: number; ai_edited: number; ai_rejected: number;
+  rule_findings_reviewed: number; rule_findings_helpful: number;
+  open_conflicts: number; open_requirements: number; recorded_at: string; created_at: string;
+}
+export interface ProductGapFinding {
+  id: string; execution_id: string; case_run_id: string | null; priority: string; category: string;
+  title: string; summary: string; owner_label: string; due_at: string;
+  evidence_reference: string | null; status: string; resolution_note: string | null;
+  resolved_at: string | null; created_at: string;
+}
+export interface PrivatePilotExecution {
+  id: string; rehearsal_id: string; execution_key: string; design_partner_label: string;
+  data_mode: string; data_authorization_reference: string | null; objectives: string[];
+  target_case_runs: number; status: string; started_at: string | null; completed_at: string | null;
+  outcome: string | null; outcome_note: string | null; outcome_hash: string | null;
+  aggregate_metrics: Record<string, unknown>; case_runs: PrivatePilotCaseRun[];
+  product_gaps: ProductGapFinding[]; created_at: string;
+}
+export interface ProductionArchitectureControl {
+  id: string; baseline_id: string; control_key: string;
+  current_state: "missing" | "partial" | "implemented" | "not_applicable";
+  target_architecture: string; risk_note: string; owner_label: string;
+  target_date: string; evidence_reference: string | null; created_at: string; updated_at: string;
+}
+export interface ProductionArchitectureBaseline {
+  id: string; pilot_execution_id: string; baseline_key: string; deployment_model: string;
+  data_residency_region: string; status: string; snapshot_hash: string | null;
+  attestation_note: string | null; attested_at: string | null; summary: Record<string, unknown>;
+  controls: ProductionArchitectureControl[]; created_at: string;
+}
 export interface PilotOperationsDashboard {
   readiness_reviews: DeploymentReadinessReview[]; monitor_runs: OperationalMonitorRun[];
   incidents: OperationalIncident[]; governance_profile: PilotGovernanceProfile | null;
   exit_manifests: PilotExitManifest[]; rehearsals: DesignPartnerRehearsal[];
+  pilot_executions: PrivatePilotExecution[];
+  architecture_baselines: ProductionArchitectureBaseline[];
 }
 
 export type SettlementStatus = "draft" | "under_review" | "approved" | "rejected" | "accepted" | "declined" | "withdrawn";
