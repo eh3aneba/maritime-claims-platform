@@ -21,7 +21,6 @@ import type { Claim, PilotOperationsDashboard } from "@/lib/types";
 
 const controlKeys = ["tls", "secret_references", "backup_restore", "migrations", "malware_scan", "least_privilege", "retention", "incident_contacts"];
 const architectureControlKeys = ["identity_access", "application_security", "evidence_storage", "observability", "backup_dr", "data_governance", "deployment_iac", "interoperability", "ai_governance"];
-const foundationalControlKeys = ["identity_access", "evidence_storage", "observability", "backup_dr", "deployment_iac"];
 const emptyDashboard: PilotOperationsDashboard = { readiness_reviews: [], monitor_runs: [], incidents: [], governance_profile: null, exit_manifests: [], rehearsals: [], pilot_executions: [], architecture_baselines: [], control_verification_gates: [] };
 
 export default function PilotOperationsPage() {
@@ -39,7 +38,7 @@ export default function PilotOperationsPage() {
   const profile = data.governance_profile;
   return <div>
     <Link href={`/claims/${id}`} className="text-sm font-semibold text-slate-500">← Back to claim</Link>
-    <p className="eyebrow mt-5">{claim.claim_reference} · Sprints 9H–10C</p><h1 className="mt-2 text-3xl font-semibold">Pilot Execution &amp; Production Baseline</h1>
+    <p className="eyebrow mt-5">{claim.claim_reference} · Sprints 9H–10D</p><h1 className="mt-2 text-3xl font-semibold">Pilot Execution &amp; Production Baseline</h1>
     <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-500">A human-controlled path from readiness and rehearsal into a private pilot, accountable product gaps, a truthful production-architecture baseline and independently reviewed implementation evidence. No record is deleted, no deployment occurs and no production certification or go-live authorization is issued here.</p>
     {error ? <div className="mt-5 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div> : null}
     <div className="mt-6 grid gap-6 xl:grid-cols-2">
@@ -89,14 +88,14 @@ export default function PilotOperationsPage() {
       </section>
 
       <section className="panel p-5 xl:col-span-2">
-        <p className="eyebrow">10C</p>
+        <p className="eyebrow">10C–10D</p>
         <h2 className="section-title mt-2">Production control evidence &amp; independent verification</h2>
-        <p className="section-subtitle">Submit versioned implementation evidence for five foundational controls. A different Manager/Admin must reproduce the check and verify it; rejection remains in history and requires a new submission.</p>
-        {data.architecture_baselines.some((baseline) => baseline.attested_at && !data.control_verification_gates.some((gate) => gate.architecture_baseline_id === baseline.id)) ? <button className="primary-button mt-4" disabled={busy} onClick={() => { const baseline = data.architecture_baselines.find((item) => item.attested_at && !data.control_verification_gates.some((gate) => gate.architecture_baseline_id === item.id)); if (baseline) run(() => createProductionControlVerificationGate(baseline.id)); }}>Create five-control verification gate</button> : null}
+        <p className="section-subtitle">New gates require versioned implementation evidence for all nine architecture controls. A different Manager/Admin must reproduce each check and verify it; rejected versions and completed five-control Sprint 10C gates remain historically intact.</p>
+        {data.architecture_baselines.some((baseline) => baseline.attested_at && !data.control_verification_gates.some((gate) => gate.architecture_baseline_id === baseline.id)) ? <button className="primary-button mt-4" disabled={busy} onClick={() => { const baseline = data.architecture_baselines.find((item) => item.attested_at && !data.control_verification_gates.some((gate) => gate.architecture_baseline_id === item.id)); if (baseline) run(() => createProductionControlVerificationGate(baseline.id)); }}>Create nine-control verification gate</button> : null}
         {!data.architecture_baselines.some((baseline) => baseline.attested_at) ? <p className="mt-4 text-sm text-amber-700">An attested production architecture baseline is required before implementation evidence can be collected.</p> : null}
         <div className="mt-5 space-y-4">{data.control_verification_gates.map((gate) => <article key={gate.id} className="rounded-xl border border-slate-200 p-4">
-          <div className="flex flex-wrap justify-between gap-3"><div><p className="font-semibold">{gate.gate_key}</p><p className="text-xs text-slate-500">{gate.summary.status_counts.verified}/5 independently verified · {gate.summary.total_submission_count} retained submissions</p></div><span className="text-xs font-semibold">{gate.status}</span></div>
-          <div className="mt-4 grid gap-3 lg:grid-cols-2">{foundationalControlKeys.map((control) => {
+          <div className="flex flex-wrap justify-between gap-3"><div><p className="font-semibold">{gate.gate_key}</p><p className="text-xs text-slate-500">{gate.summary.status_counts.verified}/{gate.summary.required_control_count} independently verified · {gate.summary.total_submission_count} retained submissions · {gate.verification_profile}</p></div><span className="text-xs font-semibold">{gate.status}</span></div>
+          <div className="mt-4 grid gap-3 lg:grid-cols-2">{gate.summary.required_controls.map((control) => {
             const versions = gate.evidence.filter((item) => item.control_key === control);
             const current = versions[versions.length - 1];
             return <div key={control} className="rounded-lg bg-slate-50 p-3 text-sm"><div className="flex flex-wrap items-center justify-between gap-2"><span className="font-semibold">{control.replaceAll("_", " ")}</span><span>{current ? `v${current.submission_version} · ${current.status}` : "not submitted"}</span></div>
@@ -105,7 +104,7 @@ export default function PilotOperationsPage() {
               {versions.length > 1 ? <p className="mt-2 text-xs text-slate-500">Version history retained: {versions.map((item) => `v${item.submission_version} ${item.status}`).join(" · ")}</p> : null}
             </div>;
           })}</div>
-          {gate.status !== "completed" && gate.summary.all_independently_verified ? <button className="primary-button mt-4" disabled={busy} onClick={() => run(() => completeProductionControlVerificationGate(gate.id, "Five foundational controls independently verified; this evidence snapshot is not a production certification or go-live authorization."))}>Freeze verification snapshot</button> : null}
+          {gate.status !== "completed" && gate.summary.all_independently_verified ? <button className="primary-button mt-4" disabled={busy} onClick={() => run(() => completeProductionControlVerificationGate(gate.id, "All controls in this immutable verification profile were independently verified; this evidence snapshot is not a production certification or go-live authorization."))}>Freeze verification snapshot</button> : null}
           <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">Production certification: false · Go-live authorization: false · Content/secrets included: false</div>
           {gate.outcome_hash ? <p className="mt-3 break-all font-mono text-[10px] text-slate-400">Immutable verification hash: {gate.outcome_hash}</p> : null}
         </article>)}</div>

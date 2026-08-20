@@ -382,7 +382,9 @@ class ControlVerificationGateCreate(BaseModel):
 
 
 class ProductionControlEvidenceSubmit(BaseModel):
-    control_key: Literal["identity_access", "evidence_storage", "observability", "backup_dr", "deployment_iac"]
+    control_key: Literal["identity_access", "application_security", "evidence_storage",
+                         "observability", "backup_dr", "data_governance", "deployment_iac",
+                         "interoperability", "ai_governance"]
     implementation_summary: str = Field(min_length=20, max_length=4000)
     verification_method: str = Field(min_length=20, max_length=4000)
     rollback_plan: str = Field(min_length=20, max_length=4000)
@@ -429,6 +431,7 @@ class ControlVerificationGateResponse(BaseModel):
     id: UUID
     architecture_baseline_id: UUID
     gate_key: str
+    verification_profile: str
     status: str
     outcome_note: str | None
     outcome_hash: str | None

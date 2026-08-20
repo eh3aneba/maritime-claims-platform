@@ -136,13 +136,15 @@ export interface ProductionControlEvidence {
   review_note: string | null; submitted_at: string; reviewed_at: string | null; created_at: string;
 }
 export interface ProductionControlVerificationSummary {
-  required_control_count: number; required_controls: string[]; current_submission_count: number;
+  verification_profile: string; required_control_count: number; required_controls: string[];
+  current_submission_count: number;
   total_submission_count: number; status_counts: Record<string, number>;
   all_independently_verified: boolean; production_certification: false;
   go_live_authorization: false; content_or_secrets_included: false;
 }
 export interface ProductionControlVerificationGate {
-  id: string; architecture_baseline_id: string; gate_key: string; status: string;
+  id: string; architecture_baseline_id: string; gate_key: string; verification_profile: string;
+  status: string;
   outcome_note: string | null; outcome_hash: string | null; completed_at: string | null;
   summary: ProductionControlVerificationSummary; evidence: ProductionControlEvidence[]; created_at: string;
 }
