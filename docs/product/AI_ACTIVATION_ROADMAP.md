@@ -63,10 +63,31 @@ Implementation status: the application now provides an append-only assessment an
 
 Exit: a limited-production evaluation control plane may be designed only after a positive recommendation. That later control plane and its authorization remain separate decisions.
 
+## Sprint 11E — Limited-Production Evaluation
+
+Implementation status: the application now provides the separate authorization chain, exact-bundle pinning, deterministic 1–10% document rollout, fixed time/cohort quotas, document-level eligibility, queue and worker enforcement, different-human run review, live quality/cost/latency monitoring, incident rollback, Admin recovery, expiry, completion and kill switch. Actual Production evaluation still requires the organization to provision the isolated provider controls, supply the bounded evidence, complete four independent approvals and explicitly authorize the attempt.
+
+- positive Sprint 11D recommendation as an anchor, not an authorization
+- isolated Production deployment/project/credential/data-processing/change evidence
+- non-Restricted CE Report and Engine Log allowlist only
+- deterministic rollout plus claim, document, user and provider-run caps
+- fixed rollback SLO, monitor cadence and review/quality/latency/cost thresholds
+- 100% different-human review and content-free outcome ledger
+- fail-closed pause on monitor failure or incident
+- separate incident resolution, recovery monitor and Admin resume
+- no automatic Production-wide, Restricted-data or autonomous-decision permission
+
+Exit: the bounded evaluation may be completed only after every run is reviewed, incidents are resolved and a fresh monitor passes. Completion creates no wider authorization.
+
+## Sprint 11F — Limited-Production Outcome Gate
+
+Planned: measure the completed 11E cohort, operational drift, incidents, rollback performance, quality, latency, observed cost and human effort; then require independent review before an Admin records stop, extend or consider-graduation. Any wider rollout remains a later, separate authorization.
+
 ## Practical answer
 
 - Deterministic developer tests: available now with local fake providers and no external processing.
 - Shared staging use: after Sprint 11A controls are deployed and an activation attempt is independently authorized.
 - Real but non-restricted CE reports and engine logs: after Sprints 11A and 11B pass, Sprint 11C is deployed, its independent approvals are complete and an Admin explicitly authorizes the bounded cohort and document.
 - Pilot exit recommendation: after Sprint 11D passes every fixed outcome threshold, three independent reviews complete and an Admin records the recommendation.
-- Limited or broad production and restricted-document use: still unauthorized; each requires a separate future control plane and explicit decision.
+- Limited 1–10% Production evaluation: after Sprint 11E is deployed, its isolated operational evidence and four independent approvals are complete, an Admin authorizes the exact attempt, and each document is separately eligible.
+- Production-wide and Restricted-document use: still unauthorized; each requires a separate future control plane and explicit decision.

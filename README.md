@@ -33,8 +33,9 @@ The MVP now includes the full H&M Machinery / Turbocharger design-partner workfl
 - Version-pinned AI benchmark promotion with deterministic quality/safety/cost thresholds and immutable failures
 - Bounded real-document private AI pilot with independent data-owner approval, quotas, mandatory human review and incident rollback
 - Measured private-pilot exit gate with workflow scorecards, cost/incident trends and three independent reviews
+- Separately authorized limited-production AI evaluation with deterministic rollout, live monitors, expiry and rollback
 
-**Current phase: Sprint 11D — Measured Private-Pilot Exit.** A completed 11C pilot can now be assessed against fixed workflow coverage, human action, usefulness, effort, latency, cost and incident thresholds. Product, Quality and Risk must independently approve before an Admin records an exit recommendation. The recommendation is not Production authorization; Production-wide use and Restricted documents remain blocked.
+**Current phase: Sprint 11E — Limited-Production AI Evaluation.** A positive 11D recommendation may now anchor a new, separately approved Production evaluation for the exact model bundle and a deterministic 1–10% cohort. Four independent reviews, document-level eligibility, mandatory different-human review, fixed caps, live monitoring, expiry, pause/rollback and Admin recovery are enforced. Production-wide use and Restricted documents remain blocked.
 
 ## Prerequisites
 
@@ -199,9 +200,9 @@ Engine-log event fields are intentionally not promoted into scalar `claim_facts`
 
 ## Current milestone
 
-Sprint 11A adds the separately authorized provider control plane; Sprint 11B requires measured synthetic/de-identified promotion evidence; Sprint 11C adds the organization/data-owner decision for a small real non-restricted cohort; Sprint 11D freezes measured cohort outcomes and independent exit reviews. These stages remain content-minimizing, and none provisions a provider key or grants Production authorization.
+Sprint 11A adds the separately authorized provider control plane; Sprint 11B requires measured synthetic/de-identified promotion evidence; Sprint 11C adds the organization/data-owner decision for a small real non-restricted cohort; Sprint 11D freezes measured cohort outcomes and independent exit reviews; Sprint 11E adds a separately authorized, expiring 1–10% Production evaluation with fixed monitoring and rollback controls. These stages remain content-minimizing, and none provisions a provider key or grants Production-wide authorization.
 
-Next, Sprint 11E will design a separately authorized limited-production evaluation control plane with environment isolation, allowlists, rollout caps, monitoring, expiry and rollback. Production-wide and Restricted-document AI remain unauthorized. Full English/Persian UI localization remains deferred until the product reaches a stable post-evaluation stage.
+Next, Sprint 11F will measure the completed limited-production cohort and record a separate stop, extend or consider-graduation recommendation. It will not widen the rollout automatically. Production-wide and Restricted-document AI remain unauthorized. Full English/Persian UI localization remains deferred until the product reaches a stable post-evaluation stage.
 
 ## Design-partner pilot
 

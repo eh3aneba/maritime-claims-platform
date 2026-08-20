@@ -72,9 +72,28 @@ Delivered application controls:
 
 The application records an evidence-backed exit recommendation only. It does not enable Production, expand the cohort or admit Restricted documents.
 
-## Sprint 11E — Next
+## Sprint 11E — Limited-production AI evaluation
 
-Design the separately authorized limited-production evaluation control plane: deployment/environment isolation, tenant and document allowlists, rollout percentage, rollback SLOs, live quality/cost monitors, expiry and an independent authorization decision. Sprint 11D recommendation alone must remain insufficient.
+Goal: permit a small, observable evaluation of the exact recommended bundle in Production without turning a pilot recommendation into broad authorization.
+
+Delivered application controls:
+
+- append-only tenant-scoped authorization attempts anchored to a positive Sprint 11D recommendation
+- exact pinned model/prompt/schema/input/output bundle and seven bounded operational references
+- four distinct Security/Privacy/Product/Operations reviewers plus Admin final decision
+- deterministic 1–10% document rollout, fixed case/document/user/run caps and a maximum 14-day window
+- non-Restricted CE Report and Engine Log allowlist with per-document legal-basis and data-minimization attestations
+- queue-time and worker-time fail-closed gates for bundle, cohort, quotas, expiry, incidents and monitor freshness
+- content-free run ledger with mandatory review by a different human
+- fixed live review/quality/latency/cost monitors whose failures pause execution and require rollback
+- incident pause, separate Admin resolution, fresh-monitor recovery, explicit resume, kill switch and completion gate
+- dashboard, API, migration, audit events, tests, architecture document and ADR
+
+Sprint 11E does not authorize Production-wide traffic, Restricted documents, automatic scope expansion, autonomous decisions or authoritative-fact updates.
+
+## Sprint 11F — Next
+
+Measure the completed limited-production cohort against fixed workflow, quality, privacy/security, drift, availability, latency, cost, rollback and operator-effort thresholds. Freeze a content-free outcome package for independent review and an Admin stop/extend/consider-graduation recommendation. No outcome may automatically widen rollout or authorize Restricted documents.
 
 ## Deferred localization
 

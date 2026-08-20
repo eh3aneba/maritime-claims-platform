@@ -1308,5 +1308,137 @@ export function decideAIPilotOutcome(id: string, outcome:
           : outcome === "extend_private_pilot"
             ? "Administrator requires a new bounded private-pilot attempt and additional evidence."
             : "Administrator stops AI progression; no production authorization is granted." }),
+  });
+}
+
+export function getAILimitedProduction() {
+  return apiFetch<import("./types").AILimitedProductionDashboard>("/ai-limited-production");
+}
+
+export function createAILimitedProduction(outcomeAssessmentId: string) {
+  return apiFetch<import("./types").AILimitedProductionAuthorization>(
+    "/ai-limited-production/authorizations", {
+      method: "POST", body: JSON.stringify({
+        outcome_assessment_id: outcomeAssessmentId,
+        authorization_key: `limited-production-${crypto.randomUUID()}`,
+        allowed_document_types: ["chief_engineer_report", "engine_log"],
+        rollout_percentage: 10, max_claims: 5, max_documents: 15,
+        max_users: 5, max_provider_runs: 50,
+        starts_at: new Date().toISOString(),
+        expires_at: new Date(Date.now() + 7 * 86400000).toISOString(),
+        deployment_isolation_reference: "artifact://ai-limited-production/deployment-isolation",
+        provider_project_reference: "artifact://ai-limited-production/provider-project",
+        credential_control_reference: "artifact://ai-limited-production/credential-control",
+        data_processing_reference: "artifact://ai-limited-production/data-processing-approval",
+        monitoring_reference: "monitor://ai-limited-production/live-quality-cost",
+        rollback_reference: "runbook://ai-limited-production/rollback-15-minutes",
+        change_ticket_reference: "ticket://ai-limited-production/change-approval",
+        confirm_separate_limited_production_evaluation: true,
+      }),
+    });
+}
+
+export function reviewAILimitedProduction(id: string,
+  approvalRole: "security" | "privacy" | "product" | "operations",
+  action: "approve" | "reject") {
+  return apiFetch<import("./types").AILimitedProductionAuthorization>(
+    `/ai-limited-production/authorizations/${id}/approvals`, {
+      method: "POST", body: JSON.stringify({ approval_role: approvalRole, action,
+        evidence_reference: action === "approve"
+          ? `artifact://ai-limited-production/${approvalRole}-review` : null,
+        note: action === "approve"
+          ? `Independent ${approvalRole} reviewer approved the exact expiring rollout and rollback controls.`
+          : `Independent ${approvalRole} reviewer rejected this authorization attempt.` }),
+    });
+}
+
+export function decideAILimitedProduction(id: string,
+  outcome: "authorize_limited_evaluation" | "hold") {
+  return apiFetch<import("./types").AILimitedProductionAuthorization>(
+    `/ai-limited-production/authorizations/${id}/decision`, {
+      method: "POST", body: JSON.stringify({ outcome, confirm_decision: true,
+        note: outcome === "authorize_limited_evaluation"
+          ? "Administrator authorized only the exact expiring limited-production evaluation; Production-wide use remains blocked."
+          : "Administrator held the attempt; all Production AI remains blocked." }),
+    });
+}
+
+export function attestAILimitedProductionDocument(id: string, payload: {
+  claim_id: string; document_id: string; note: string;
+}) {
+  return apiFetch<import("./types").AILimitedProductionAuthorization>(
+    `/ai-limited-production/authorizations/${id}/documents`, {
+      method: "POST", body: JSON.stringify({ ...payload,
+        legal_basis_reference: `artifact://ai-limited-production/document-${payload.document_id}-legal-basis`,
+        data_minimization_reference: `artifact://ai-limited-production/document-${payload.document_id}-minimization`,
+        change_ticket_reference: `ticket://ai-limited-production/document-${payload.document_id}`,
+        confirm_non_restricted_rollout_document: true }),
+    });
+}
+
+export function reviewAILimitedProductionRun(runId: string,
+  action: "approve" | "edit" | "reject") {
+  return apiFetch<import("./types").AILimitedProductionAuthorization>(
+    `/ai-limited-production/runs/${runId}/outcome`, {
+      method: "POST", body: JSON.stringify({ human_review_action: action,
+        output_candidate_count: 1, human_edit_count: action === "edit" ? 1 : 0,
+        latency_ms: 1, observed_provider_cost_microusd: 0,
+        evidence_reference: `artifact://ai-limited-production/run-${runId}-review`,
+        note: "Different human verified the candidate output and recorded content-free observed metrics.",
+        confirm_human_review: true }),
+    });
+}
+
+export function monitorAILimitedProduction(id: string) {
+  return apiFetch<import("./types").AILimitedProductionAuthorization>(
+    `/ai-limited-production/authorizations/${id}/monitors`, {
+      method: "POST", body: JSON.stringify({
+        monitor_key: `live-monitor-${crypto.randomUUID()}`,
+        note: "Operator froze the current human-review, quality, latency, cost and incident snapshot.",
+        confirm_live_monitor_snapshot: true }),
+    });
+}
+
+export function reportAILimitedProductionIncident(id: string) {
+  return apiFetch<import("./types").AILimitedProductionAuthorization>(
+    `/ai-limited-production/authorizations/${id}/incidents`, {
+      method: "POST", body: JSON.stringify({ severity: "high", category: "quality",
+        evidence_reference: `ticket://ai-limited-production/incident-${crypto.randomUUID()}`,
+        note: "Operator reported a high-severity issue and triggered immediate pause and rollback.",
+        confirm_pause_and_rollback: true }),
+    });
+}
+
+export function resolveAILimitedProductionIncident(id: string, incidentId: string) {
+  return apiFetch<import("./types").AILimitedProductionAuthorization>(
+    `/ai-limited-production/authorizations/${id}/incidents/${incidentId}/resolve`, {
+      method: "POST", body: JSON.stringify({
+        resolution_reference: `artifact://ai-limited-production/incident-${incidentId}-resolution`,
+        resolution_note: "Administrator verified remediation; a new passing monitor is required before resume.",
+        resume_authorization: false, confirm_resolution: true }),
+    });
+}
+
+export function resumeAILimitedProduction(id: string) {
+  return apiFetch<import("./types").AILimitedProductionAuthorization>(
+    `/ai-limited-production/authorizations/${id}/resume`, {
+      method: "POST", body: JSON.stringify({ confirm_resume: true,
+        note: "Administrator verified resolved incidents and a fresh passing monitor before resume." }),
+    });
+}
+
+export function revokeAILimitedProduction(id: string) {
+  return apiFetch<import("./types").AILimitedProductionAuthorization>(
+    `/ai-limited-production/authorizations/${id}/revoke`, {
+      method: "POST", body: JSON.stringify({ confirm_revoke: true,
+        note: "Manager activated the immediate limited-production AI kill switch." }),
+    });
+}
+
+export function completeAILimitedProduction(id: string) {
+  return apiFetch<import("./types").AILimitedProductionAuthorization>(
+    `/ai-limited-production/authorizations/${id}/complete`, {
+      method: "POST", body: JSON.stringify({ confirm_complete: true,
+        note: "Every bounded run is reviewed, incidents are resolved and the latest monitor passes." }),
     });
 }

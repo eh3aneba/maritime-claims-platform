@@ -4,8 +4,9 @@ from app.db.base import Base
 from app.modules.adjustments.models import AdjustmentLine, AdjustmentStatement  # noqa: F401
 from app.modules.ai_evaluation.models import AIEvaluationCaseResult, AIEvaluationReview, AIEvaluationSuite  # noqa: F401
 from app.modules.ai_governance.models import AIDocumentEligibilityAttestation, AIProviderActivationApproval, AIProviderActivationRequest  # noqa: F401
-from app.modules.ai_private_pilot.models import AIPrivatePilotApproval, AIPrivatePilotAuthorization, AIPrivatePilotDocumentEligibility, AIPrivatePilotIncident, AIPrivatePilotRun  # noqa: F401
+from app.modules.ai_limited_production.models import AILimitedProductionApproval, AILimitedProductionAuthorization, AILimitedProductionDocumentEligibility, AILimitedProductionIncident, AILimitedProductionMonitor, AILimitedProductionRun  # noqa: F401
 from app.modules.ai_pilot_outcomes.models import AIPilotOutcomeAssessment, AIPilotOutcomeReview, AIPilotWorkflowObservation  # noqa: F401
+from app.modules.ai_private_pilot.models import AIPrivatePilotApproval, AIPrivatePilotAuthorization, AIPrivatePilotDocumentEligibility, AIPrivatePilotIncident, AIPrivatePilotRun  # noqa: F401
 from app.modules.audit.models import AuditLog  # noqa: F401
 from app.modules.assessments.models import InitialAssessment, AssessmentSection  # noqa: F401
 from app.modules.claim_packs.models import ClaimPackExport  # noqa: F401
