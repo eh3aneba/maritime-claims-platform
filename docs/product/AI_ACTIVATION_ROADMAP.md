@@ -37,12 +37,15 @@ Exit: all fixed thresholds pass, Quality/Risk reviews are independently complete
 
 ## Sprint 11C — Bounded Real-Document Private Pilot
 
+Implementation status: the application now provides the append-only pilot authorization, independent organization/data-owner approvals, Admin decision, document-level eligibility, queue-time enforcement, content-free run ledger, mandatory different-human review, incident pause/resume, quota enforcement, completion gate and kill switch. Actual real-document processing still requires the organization to supply the bounded evidence, obtain the approvals and authorize the cohort; code deployment alone is not data-processing authorization.
+
 - explicit organization and data-owner authorization
 - allowlisted non-restricted document types only
 - small case/time/user cohort with mandatory human review
 - monitoring, incident response, immediate provider kill switch and rollback
 - no autonomous liability, coverage, reserve, settlement or payment decision
 - outcome review before any scope expansion
+- content-free run/outcome ledger with a different human reviewer for every provider run
 
 Exit: a separately authorized production-AI decision may be considered. Restricted documents remain a later explicit decision.
 
@@ -50,5 +53,5 @@ Exit: a separately authorized production-AI decision may be considered. Restrict
 
 - Deterministic developer tests: available now with local fake providers and no external processing.
 - Shared staging use: after Sprint 11A controls are deployed and an activation attempt is independently authorized.
-- Real but non-restricted claim documents: after Sprints 11A and 11B pass and Sprint 11C is explicitly authorized.
+- Real but non-restricted CE reports and engine logs: after Sprints 11A and 11B pass, Sprint 11C is deployed, its independent approvals are complete and an Admin explicitly authorizes the bounded cohort and document.
 - Broad production or restricted-document use: only after the bounded pilot demonstrates the required quality, safety, privacy, operational and cost thresholds.

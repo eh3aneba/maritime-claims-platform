@@ -1402,3 +1402,70 @@ export interface AIEvaluationSuite {
 }
 
 export interface AIEvaluationDashboard { suites: AIEvaluationSuite[]; }
+
+export interface AIPrivatePilotApproval {
+  id: string; pilot_id: string; approver_id: string | null;
+  approval_role: "organization_owner" | "data_owner";
+  action: "approve" | "reject"; evidence_reference: string | null;
+  note: string; approved_at: string; created_at: string;
+}
+
+export interface AIPrivatePilotDocumentEligibility {
+  id: string; pilot_id: string; claim_id: string; document_id: string;
+  attested_by_id: string | null; revoked_by_id: string | null;
+  attestation_number: number; document_type: "chief_engineer_report" | "engine_log";
+  confidentiality_level: string;
+  authorization_basis: "organization_and_data_owner" | "explicit_data_owner_consent";
+  authorization_reference: string; data_minimization_reference: string;
+  note: string; snapshot_hash: string; status: string; attested_at: string;
+  revoked_at: string | null; revocation_note: string | null; created_at: string;
+}
+
+export interface AIPrivatePilotRun {
+  id: string; pilot_id: string; eligibility_id: string; claim_id: string;
+  document_id: string; requested_by_id: string | null; reviewed_by_id: string | null;
+  run_key: string; processing_job_id: string; task_type: string; status: string;
+  human_review_action: "approve" | "edit" | "reject" | null;
+  output_candidate_count: number | null; human_edit_count: number | null;
+  latency_ms: number | null; observed_provider_cost_microusd: number | null;
+  evidence_reference: string | null; note: string | null; outcome_hash: string | null;
+  queued_at: string; reviewed_at: string | null; created_at: string;
+}
+
+export interface AIPrivatePilotIncident {
+  id: string; pilot_id: string; reported_by_id: string | null;
+  resolved_by_id: string | null; severity: "low" | "medium" | "high" | "critical";
+  category: string; evidence_reference: string; note: string; status: "open" | "resolved";
+  reported_at: string; resolved_at: string | null; resolution_reference: string | null;
+  resolution_note: string | null; created_at: string;
+}
+
+export interface AIPrivatePilot {
+  id: string; activation_request_id: string; evaluation_suite_id: string;
+  requested_by_id: string | null; finalized_by_id: string | null; revoked_by_id: string | null;
+  attempt_number: number; pilot_key: string; data_mode: "real_non_restricted";
+  allowed_document_types: Array<"chief_engineer_report" | "engine_log">;
+  max_claims: number; max_documents: number; max_users: number; max_provider_runs: number;
+  starts_at: string; expires_at: string; organization_authorization_reference: string;
+  data_owner_authorization_reference: string; monitoring_reference: string;
+  incident_runbook_reference: string; rollback_reference: string; status: string;
+  outcome: string | null; decision_note: string | null; decision_hash: string | null;
+  decided_at: string | null; completed_at: string | null; completion_note: string | null;
+  revoked_at: string | null; revocation_note: string | null;
+  approvals: AIPrivatePilotApproval[];
+  document_eligibility: AIPrivatePilotDocumentEligibility[];
+  runs: AIPrivatePilotRun[]; incidents: AIPrivatePilotIncident[];
+  summary: {
+    independent_approvals_complete: boolean; authorization_active: boolean;
+    active_claim_count: number; active_document_count: number; participating_user_count: number;
+    provider_run_count: number; human_reviewed_run_count: number;
+    pending_human_review_count: number; open_incident_count: number;
+    real_non_restricted_documents_authorized: boolean;
+    restricted_documents_authorized: false; production_wide_authorized: false;
+    autonomous_claim_decisions_authorized: false; authoritative_facts_auto_updated: false;
+    human_review_required: true; raw_content_stored_in_control_ledger: false;
+  };
+  created_at: string;
+}
+
+export interface AIPrivatePilotDashboard { pilots: AIPrivatePilot[]; }

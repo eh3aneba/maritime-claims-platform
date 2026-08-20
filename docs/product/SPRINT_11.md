@@ -38,9 +38,26 @@ Delivered application controls:
 
 The application does not run the external benchmark or calculate provider billing. Operators run the controlled synthetic/de-identified corpus, retain it in the approved artifact system and record only aggregate observations plus bounded references.
 
-## Sprint 11C — Next
+## Sprint 11C — Bounded real-document private pilot
 
-Create the separately authorized bounded real-document private pilot. It must require organization/data-owner approval, a small non-restricted cohort, current 11A activation and 11B promotion, mandatory human review, monitoring and immediate rollback. No real claim document is authorized by Sprints 11A or 11B.
+Goal: admit a small set of real non-restricted CE reports and engine logs without turning a successful benchmark into broad data-processing authorization.
+
+Delivered application controls:
+
+- append-only tenant-scoped pilot attempts anchored to current 11A activation and 11B promotion
+- different organization-owner and data-owner approvers plus Admin-only final authorization
+- fixed claim, document, user and provider-run caps with a maximum 30-day window
+- document-level authorization/data-minimization attestations and Restricted-data prohibition
+- queue-time checks for environment, pinned bundle, anchors, cohort, eligibility and quotas
+- content-free provider-run ledger and mandatory review by a different human
+- incident-triggered pause, Admin resolution/resume, immediate revocation and fail-closed completion
+- dashboard, API, migration, audit events, tests, architecture document and ADR
+
+The application does not grant the operational authorization automatically. The organization must provide real approval evidence and make the recorded decisions before any real document is eligible. Completion does not grant production-wide or Restricted-data authorization.
+
+## Sprint 11D — Next
+
+Execute and measure the private pilot: add cohort outcome scorecards, per-workflow usability evidence, incident/cost trend review and an explicit pilot exit recommendation. Any production-AI authorization remains a separate later decision.
 
 ## Deferred localization
 

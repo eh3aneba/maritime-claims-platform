@@ -13,6 +13,7 @@ const nav = [
   { href: "/ai-review", label: "AI Review", mark: "AI" },
   { href: "/ai-governance", label: "AI Governance", mark: "G" },
   { href: "/ai-evaluation", label: "AI Evaluation", mark: "E" },
+  { href: "/ai-private-pilot", label: "AI Private Pilot", mark: "11C" },
   { href: "/pilot", label: "Pilot", mark: "P" },
   { href: "/outreach", label: "Outreach", mark: "O" },
 ];

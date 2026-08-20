@@ -10,6 +10,7 @@ from app.ai.gateway.registry import get_ai_provider
 from app.core.config import get_settings
 from app.db.session import get_db
 from app.modules.ai_governance.service import require_external_ai_runtime_authorization
+from app.modules.ai_private_pilot.service import reserve_run_if_private_pilot
 from app.modules.auth.dependencies import CurrentUser
 from app.modules.claims.security import get_claim_for_tenant
 from app.modules.documents.models import ConfidentialityLevel
@@ -95,6 +96,7 @@ def enqueue_ce_report_intelligence(
             document=document,
             expected_document_type="chief_engineer_report",
             input_char_count=text_extraction.char_count,
+            requested_by_id=current_user.id,
         )
     job = enqueue_processing_job(
         db,
@@ -102,6 +104,13 @@ def enqueue_ce_report_intelligence(
         requested_by_id=current_user.id,
         job_type=ProcessingJobType.AI_EXTRACT_CE_REPORT,
     )
+    if provider.name == "openai":
+        db.flush()
+        reserve_run_if_private_pilot(
+            db, user=current_user, document=document,
+            expected_document_type="chief_engineer_report",
+            input_char_count=text_extraction.char_count, processing_job_id=job.id,
+        )
     db.commit()
     db.refresh(job)
     return {"job_id": str(job.id), "status": job.status.value}
@@ -158,6 +167,7 @@ def enqueue_engine_log_intelligence(
             document=document,
             expected_document_type="engine_log",
             input_char_count=text_extraction.char_count,
+            requested_by_id=current_user.id,
         )
     job = enqueue_processing_job(
         db,
@@ -165,6 +175,13 @@ def enqueue_engine_log_intelligence(
         requested_by_id=current_user.id,
         job_type=ProcessingJobType.AI_EXTRACT_ENGINE_LOG,
     )
+    if provider.name == "openai":
+        db.flush()
+        reserve_run_if_private_pilot(
+            db, user=current_user, document=document,
+            expected_document_type="engine_log",
+            input_char_count=text_extraction.char_count, processing_job_id=job.id,
+        )
     db.commit()
     db.refresh(job)
     return {"job_id": str(job.id), "status": job.status.value}
@@ -236,6 +253,7 @@ def _enqueue_specialized_intelligence(
             document=document,
             expected_document_type=expected_document_type,
             input_char_count=text_extraction.char_count,
+            requested_by_id=current_user.id,
         )
     job = enqueue_processing_job(db, document=document, requested_by_id=current_user.id, job_type=job_type)
     db.commit(); db.refresh(job)

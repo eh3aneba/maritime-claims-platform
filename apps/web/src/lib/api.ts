@@ -1141,3 +1141,112 @@ export function revokeAIEvaluationPromotion(id: string) {
       note: "Manager revoked the evaluation promotion; shared staging use is blocked." }),
   });
 }
+
+export function getAIPrivatePilot() {
+  return apiFetch<import("./types").AIPrivatePilotDashboard>("/ai-private-pilot");
+}
+
+export function createAIPrivatePilot(evaluationSuiteId: string, anchorExpiresAt?: string | null) {
+  const sevenDays = Date.now() + 7 * 86400000;
+  const anchorLimit = anchorExpiresAt ? new Date(anchorExpiresAt).getTime() - 60000 : sevenDays;
+  const expiresAt = new Date(Math.min(sevenDays, anchorLimit)).toISOString();
+  return apiFetch<import("./types").AIPrivatePilot>("/ai-private-pilot/pilots", {
+    method: "POST", body: JSON.stringify({
+      evaluation_suite_id: evaluationSuiteId,
+      pilot_key: `real-document-pilot-${crypto.randomUUID()}`,
+      allowed_document_types: ["chief_engineer_report", "engine_log"],
+      max_claims: 3, max_documents: 10, max_users: 5, max_provider_runs: 30,
+      starts_at: new Date().toISOString(),
+      expires_at: expiresAt,
+      organization_authorization_reference: "artifact://ai-pilot/organization-authorization",
+      data_owner_authorization_reference: "artifact://ai-pilot/data-owner-authorization",
+      monitoring_reference: "monitor://ai-pilot/private-cohort",
+      incident_runbook_reference: "runbook://ai-pilot/incident-response",
+      rollback_reference: "runbook://ai-pilot/immediate-rollback",
+      confirm_bounded_real_document_pilot: true,
+    }),
+  });
+}
+
+export function reviewAIPrivatePilot(id: string,
+  approvalRole: "organization_owner" | "data_owner", action: "approve" | "reject") {
+  return apiFetch<import("./types").AIPrivatePilot>(`/ai-private-pilot/pilots/${id}/approvals`, {
+    method: "POST", body: JSON.stringify({ approval_role: approvalRole, action,
+      evidence_reference: action === "approve" ? `artifact://ai-pilot/${approvalRole}-review` : null,
+      note: action === "approve"
+        ? `Independent ${approvalRole} approved the exact cohort, document classes and expiry.`
+        : `Independent ${approvalRole} rejected this private-pilot attempt.` }),
+  });
+}
+
+export function decideAIPrivatePilot(id: string, outcome: "authorize_pilot" | "hold") {
+  return apiFetch<import("./types").AIPrivatePilot>(`/ai-private-pilot/pilots/${id}/decision`, {
+    method: "POST", body: JSON.stringify({ outcome, confirm_decision: true,
+      note: outcome === "authorize_pilot"
+        ? "Administrator authorized only this bounded real non-restricted document cohort."
+        : "Administrator held the pilot; real-document provider execution remains blocked." }),
+  });
+}
+
+export function attestAIPrivatePilotDocument(id: string, payload: {
+  claim_id: string; document_id: string;
+  authorization_basis: "organization_and_data_owner" | "explicit_data_owner_consent";
+  authorization_reference: string; data_minimization_reference: string; note: string;
+}) {
+  return apiFetch<import("./types").AIPrivatePilot>(`/ai-private-pilot/pilots/${id}/documents`, {
+    method: "POST", body: JSON.stringify({ ...payload, confirm_real_non_restricted: true }),
+  });
+}
+
+export function revokeAIPrivatePilotDocument(pilotId: string, eligibilityId: string) {
+  return apiFetch<import("./types").AIPrivatePilot>(
+    `/ai-private-pilot/pilots/${pilotId}/documents/${eligibilityId}/revoke`, {
+      method: "POST", body: JSON.stringify({ confirm_revoke: true,
+        note: "Manager revoked document eligibility; further provider runs are blocked." }),
+    });
+}
+
+export function reviewAIPrivatePilotRun(runId: string,
+  humanReviewAction: "approve" | "edit" | "reject") {
+  return apiFetch<import("./types").AIPrivatePilot>(`/ai-private-pilot/runs/${runId}/outcome`, {
+    method: "POST", body: JSON.stringify({ human_review_action: humanReviewAction,
+      output_candidate_count: 1, human_edit_count: humanReviewAction === "edit" ? 1 : 0,
+      latency_ms: 1, observed_provider_cost_microusd: 0,
+      evidence_reference: `artifact://ai-pilot/run-${runId}-human-review`,
+      note: "Human reviewer verified candidate output; replace sample metrics with observed evidence.",
+      confirm_human_review: true }),
+  });
+}
+
+export function reportAIPrivatePilotIncident(id: string) {
+  return apiFetch<import("./types").AIPrivatePilot>(`/ai-private-pilot/pilots/${id}/incidents`, {
+    method: "POST", body: JSON.stringify({ severity: "high", category: "quality",
+      evidence_reference: `ticket://ai-pilot/${crypto.randomUUID()}`,
+      note: "Operator reported a high-severity observation and activated the immediate pilot pause.",
+      confirm_pause: true }),
+  });
+}
+
+export function resolveAIPrivatePilotIncident(pilotId: string, incidentId: string) {
+  return apiFetch<import("./types").AIPrivatePilot>(
+    `/ai-private-pilot/pilots/${pilotId}/incidents/${incidentId}/resolve`, {
+      method: "POST", body: JSON.stringify({
+        resolution_reference: `artifact://ai-pilot/incident-${incidentId}-resolution`,
+        resolution_note: "Administrator verified remediation and monitoring recovery before resume.",
+        resume_pilot: true, confirm_resolution: true }),
+    });
+}
+
+export function revokeAIPrivatePilot(id: string) {
+  return apiFetch<import("./types").AIPrivatePilot>(`/ai-private-pilot/pilots/${id}/revoke`, {
+    method: "POST", body: JSON.stringify({ confirm_revoke: true,
+      note: "Manager activated the immediate private-pilot kill switch." }),
+  });
+}
+
+export function completeAIPrivatePilot(id: string) {
+  return apiFetch<import("./types").AIPrivatePilot>(`/ai-private-pilot/pilots/${id}/complete`, {
+    method: "POST", body: JSON.stringify({ confirm_complete: true,
+      note: "Every bounded provider run has human review and every incident is resolved." }),
+  });
+}

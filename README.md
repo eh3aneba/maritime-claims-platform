@@ -31,8 +31,9 @@ The MVP now includes the full H&M Machinery / Turbocharger design-partner workfl
 - Versioned implementation evidence and independent four-eyes verification for all nine production architecture controls
 - Expiring external-AI staging activation with three independent reviews, per-document eligibility and a runtime kill switch
 - Version-pinned AI benchmark promotion with deterministic quality/safety/cost thresholds and immutable failures
+- Bounded real-document private AI pilot with independent data-owner approval, quotas, mandatory human review and incident rollback
 
-**Current phase: Sprint 11B — Measured AI Evaluation Promotion.** A Sprint 11A staging authorization can now anchor a content-free benchmark ledger. Promotion requires 12+ cases, CE/Engine Log coverage, passing quality and source-grounding thresholds, four adversarial/boundary checks, bounded latency/cost/override measurements, independent Quality/Risk reviews and an Admin decision. Production, restricted documents and real claim data remain blocked.
+**Current phase: Sprint 11C — Bounded Real-Document Private Pilot.** Real non-restricted CE reports and engine logs can become eligible only after active 11A/11B anchors, different organization/data-owner approvals, an Admin decision, document-level authorization, cohort quotas and mandatory different-human review. Code deployment alone grants no data-processing authorization. Production-wide use and Restricted documents remain blocked.
 
 ## Prerequisites
 
@@ -181,7 +182,7 @@ Background document processing, page/sheet-aware text extraction, and the provid
 
 The backend now supports an explicit background AI job for Chief Engineer Reports. It persists versioned `ai_runs` and source-linked `document_extractions`, separates facts from source opinions, verifies source quotes against extracted segments, and leaves every candidate in `pending` human-review state.
 
-`AI_PROVIDER=disabled` remains the default. The OpenAI adapter uses strict Structured Outputs and requires explicit `AI_MODEL` and `OPENAI_API_KEY` configuration. Sprint 11A additionally permits OpenAI only in staging and requires an active governance decision plus document eligibility. Restricted documents remain blocked.
+`AI_PROVIDER=disabled` remains the default. The OpenAI adapter uses strict Structured Outputs and requires explicit `AI_MODEL` and `OPENAI_API_KEY` configuration. Sprint 11A permits synthetic/de-identified OpenAI use only in staging. Sprint 11C adds the narrower real-document path, which also requires active 11B promotion, a separately approved private pilot and per-document eligibility. Restricted documents remain blocked.
 
 ## Sprint 3 Phase C — Human AI Review
 
@@ -197,9 +198,9 @@ Engine-log event fields are intentionally not promoted into scalar `claim_facts`
 
 ## Current milestone
 
-Sprint 11A adds the separately authorized control plane in front of the existing provider-neutral gateway and mandatory human-review queue. Sprint 11B adds the independent evidence that the exact model/prompt/schema bundle meets fixed quality, safety, source-grounding, latency, cost and human-override thresholds. Both stages remain staging-only, content-minimizing and revocable; neither provisions the provider or stores a key.
+Sprint 11A adds the separately authorized provider control plane; Sprint 11B requires measured quality, safety, source-grounding, latency, cost and override evidence; Sprint 11C adds the independent organization/data-owner decision for a small monitored real non-restricted cohort. All three remain staging-only, content-minimizing and revocable, and none provisions a provider key.
 
-Next, Sprint 11C will add the separate organization/data-owner decision for a small, monitored, non-restricted real-document cohort. Real claim documents remain unauthorized until that gate is built and explicitly approved. Full English/Persian UI localization remains deferred until the product reaches a stable post-evaluation stage.
+Next, Sprint 11D will measure actual cohort outcomes and prepare an explicit exit recommendation. Production-wide and Restricted-document AI remain unauthorized. Full English/Persian UI localization remains deferred until the product reaches a stable post-evaluation stage.
 
 ## Design-partner pilot
 
