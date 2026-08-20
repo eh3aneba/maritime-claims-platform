@@ -71,6 +71,26 @@ Acceptance guardrails:
 - no mutation of verified evidence or completed snapshots
 - no deployment action, cloud-provider mutation, compliance claim or production go-live authorization
 
+## Phase D — Complete Production Control Verification
+
+Goal: extend the evidence and independent-review contract to every domain in the attested production architecture while preserving completed five-control snapshots as truthful historical records.
+
+Delivered scope:
+
+- new `architecture_v2` gates require identity/access, application security, evidence storage, observability, backup/DR, data governance, deployment/IaC, interoperability and AI governance
+- application security, data governance, interoperability and AI governance use the same versioned submission, rejection/resubmission and four-eyes review lifecycle
+- each gate carries an immutable verification profile; existing `foundational_v1` gates retain their original five-control scope
+- deterministic completion block until the latest version of all controls in the gate profile is independently verified
+- adaptive UI reports the profile, required count and exact control set instead of assuming a fixed scope
+- canonical v2 SHA-256 snapshot includes the nine-control profile and preserves the explicit false certification/go-live flags
+
+Acceptance guardrails:
+
+- no retroactive expansion or re-hashing of a completed Sprint 10C snapshot
+- no control may be submitted outside the gate's immutable profile
+- no weakening of independent review, bounded-reference, tenant, role or append-only constraints
+- no infrastructure mutation, production certification, compliance conclusion or traffic enablement
+
 ## Next phase
 
-Extend verified implementation evidence to application security, data governance, interoperability and AI governance, then perform a separately authorized operational acceptance and go-live decision with explicit rollback ownership.
+Perform a separately authorized operational acceptance and go-live decision with named approvers, change-window and rollback ownership, while keeping verification evidence distinct from authorization to enable production traffic.

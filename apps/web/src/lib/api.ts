@@ -913,7 +913,7 @@ export function attestProductionArchitectureBaseline(id: string, note: string) {
 export function createProductionControlVerificationGate(architectureBaselineId: string) {
   return apiFetch<import("./types").ProductionControlVerificationGate>("/pilot-operations/control-verification-gates", {
     method: "POST", body: JSON.stringify({ architecture_baseline_id: architectureBaselineId,
-      gate_key: `foundation-verification-${crypto.randomUUID()}` }),
+      gate_key: `architecture-verification-${crypto.randomUUID()}` }),
   });
 }
 export function submitProductionControlEvidence(id: string, payload: {

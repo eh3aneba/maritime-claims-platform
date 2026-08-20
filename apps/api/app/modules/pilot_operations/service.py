@@ -37,6 +37,11 @@ ARCHITECTURE_CONTROLS = {"identity_access", "application_security", "evidence_st
                          "interoperability", "ai_governance"}
 FOUNDATIONAL_PRODUCTION_CONTROLS = {"identity_access", "evidence_storage", "observability",
                                    "backup_dr", "deployment_iac"}
+CONTROL_VERIFICATION_PROFILES = {
+    "foundational_v1": FOUNDATIONAL_PRODUCTION_CONTROLS,
+    "architecture_v2": ARCHITECTURE_CONTROLS,
+}
+LATEST_CONTROL_VERIFICATION_PROFILE = "architecture_v2"
 EVIDENCE_REFERENCE = re.compile(r"^(artifact|runbook|ticket|monitor)://[A-Za-z0-9._:/-]{3,450}$")
 
 
@@ -761,22 +766,33 @@ def _current_control_evidence(items: list[ProductionControlEvidence]) -> dict[st
     return current
 
 
-def _control_gate_summary(items: list[ProductionControlEvidence]) -> dict:
+def _required_production_controls(item: ProductionControlVerificationGate) -> set[str]:
+    required = CONTROL_VERIFICATION_PROFILES.get(item.verification_profile)
+    if required is None:
+        raise HTTPException(409, "The verification gate uses an unsupported control profile")
+    return required
+
+
+def _control_gate_summary(gate: ProductionControlVerificationGate,
+                          items: list[ProductionControlEvidence]) -> dict:
+    required_controls = _required_production_controls(gate)
     current = _current_control_evidence(items)
     status_counts = {key: 0 for key in ("not_submitted", "submitted", "verified", "rejected")}
-    for control in FOUNDATIONAL_PRODUCTION_CONTROLS:
+    for control in required_controls:
         item = current.get(control)
         status_counts[item.status if item else "not_submitted"] += 1
     return {
-        "required_control_count": len(FOUNDATIONAL_PRODUCTION_CONTROLS),
-        "required_controls": sorted(FOUNDATIONAL_PRODUCTION_CONTROLS),
-        "current_submission_count": len(current),
+        "verification_profile": gate.verification_profile,
+        "required_control_count": len(required_controls),
+        "required_controls": sorted(required_controls),
+        "current_submission_count": sum(control in current for control in required_controls),
         "total_submission_count": len(items),
         "status_counts": status_counts,
         "all_independently_verified": (
-            set(current) == FOUNDATIONAL_PRODUCTION_CONTROLS
-            and all(item.status == "verified" and item.reviewed_by_id != item.submitted_by_id
-                    for item in current.values())
+            set(current) == required_controls
+            and all(current[control].status == "verified"
+                    and current[control].reviewed_by_id != current[control].submitted_by_id
+                    for control in required_controls)
         ),
         "production_certification": False,
         "go_live_authorization": False,
@@ -789,10 +805,11 @@ def control_verification_gate_response(db: Session,
     evidence = _control_evidence(db, item.id)
     return {
         "id": item.id, "architecture_baseline_id": item.architecture_baseline_id,
-        "gate_key": item.gate_key, "status": item.status,
+        "gate_key": item.gate_key, "verification_profile": item.verification_profile,
+        "status": item.status,
         "outcome_note": item.outcome_note, "outcome_hash": item.outcome_hash,
         "completed_at": item.completed_at, "created_at": item.created_at,
-        "summary": _control_gate_summary(evidence), "evidence": evidence,
+        "summary": _control_gate_summary(item, evidence), "evidence": evidence,
     }
 
 
@@ -822,6 +839,7 @@ def create_control_verification_gate(db: Session, user: User,
     item = ProductionControlVerificationGate(
         organization_id=user.organization_id, architecture_baseline_id=baseline.id,
         created_by_id=user.id, gate_key=payload.gate_key.strip(), status="collecting",
+        verification_profile=LATEST_CONTROL_VERIFICATION_PROFILE,
     )
     db.add(item)
     try: db.flush()
@@ -831,7 +849,8 @@ def create_control_verification_gate(db: Session, user: User,
     _audit(db, user, "CREATE_PRODUCTION_CONTROL_VERIFICATION_GATE",
            "production_control_verification_gate", item.id,
            {"architecture_baseline_id": str(baseline.id), "gate_key": item.gate_key,
-            "required_controls": sorted(FOUNDATIONAL_PRODUCTION_CONTROLS)},
+            "verification_profile": item.verification_profile,
+            "required_controls": sorted(_required_production_controls(item))},
            "Verification workflow only; no infrastructure deployment or certification occurred.")
     db.commit(); db.refresh(item); return control_verification_gate_response(db, item)
 
@@ -847,6 +866,8 @@ def submit_production_control_evidence(db: Session, user: User,
     reference = payload.evidence_reference.strip()
     if not EVIDENCE_REFERENCE.fullmatch(reference):
         raise HTTPException(422, "Implementation evidence must use an allowlisted bounded reference")
+    if payload.control_key not in _required_production_controls(gate):
+        raise HTTPException(409, "This control is not part of the gate's immutable verification profile")
     evidence = _control_evidence(db, gate.id)
     latest = _current_control_evidence(evidence).get(payload.control_key)
     if latest is not None and latest.status in {"submitted", "verified"}:
@@ -901,9 +922,10 @@ def review_production_control_evidence(db: Session, user: User,
     evidence.review_note = note.strip(); evidence.reviewed_at = datetime.now(UTC)
     db.flush()
     current = _current_control_evidence(_control_evidence(db, gate.id))
+    required_controls = _required_production_controls(gate)
     gate.status = "review_ready" if (
-        set(current) == FOUNDATIONAL_PRODUCTION_CONTROLS
-        and all(item.status == "verified" for item in current.values())
+        set(current) == required_controls
+        and all(current[control].status == "verified" for control in required_controls)
     ) else "collecting"
     _audit(db, user, f"{action.upper()}_PRODUCTION_CONTROL_EVIDENCE",
            "production_control_evidence", evidence.id,
@@ -920,13 +942,19 @@ def complete_control_verification_gate(db: Session, user: User,
     if not confirm: raise HTTPException(422, "Explicit verification-gate confirmation is required")
     if item.status == "completed": raise HTTPException(409, "Verification gate is already complete")
     evidence = _control_evidence(db, item.id); current = _current_control_evidence(evidence)
-    if set(current) != FOUNDATIONAL_PRODUCTION_CONTROLS or any(
-        entry.status != "verified" or entry.reviewed_by_id == entry.submitted_by_id
-        for entry in current.values()
+    required_controls = _required_production_controls(item)
+    if set(current) != required_controls or any(
+        current[control].status != "verified"
+        or current[control].reviewed_by_id == current[control].submitted_by_id
+        for control in required_controls
     ):
-        raise HTTPException(409, "All five foundational controls require independent verification")
+        raise HTTPException(
+            409, f"All {len(required_controls)} profile controls require independent verification")
     snapshot = {
-        "schema": "mcri-production-control-verification-v1", "gate_id": str(item.id),
+        "schema": ("mcri-production-control-verification-v1"
+                   if item.verification_profile == "foundational_v1"
+                   else "mcri-production-control-verification-v2"),
+        "gate_id": str(item.id),
         "architecture_baseline_id": str(item.architecture_baseline_id),
         "gate_key": item.gate_key,
         "controls": [{"control_key": entry.control_key,
@@ -943,6 +971,8 @@ def complete_control_verification_gate(db: Session, user: User,
         "production_certification": False, "go_live_authorization": False,
         "content_or_secrets_included": False,
     }
+    if item.verification_profile != "foundational_v1":
+        snapshot["verification_profile"] = item.verification_profile
     item.status = "completed"; item.outcome_note = note.strip()
     item.outcome_hash = sha256(json.dumps(snapshot, sort_keys=True,
                                           separators=(",", ":")).encode()).hexdigest()
@@ -950,6 +980,8 @@ def complete_control_verification_gate(db: Session, user: User,
     _audit(db, user, "COMPLETE_PRODUCTION_CONTROL_VERIFICATION_GATE",
            "production_control_verification_gate", item.id,
            {"outcome_hash": item.outcome_hash, "verified_control_count": len(current),
+            "verification_profile": item.verification_profile,
             "production_certification": False, "go_live_authorization": False},
-           "Five-control evidence snapshot only; not a production certification or go-live authorization. " + item.outcome_note)
+           f"{len(required_controls)}-control evidence snapshot only; not a production "
+           "certification or go-live authorization. " + item.outcome_note)
     db.commit(); db.refresh(item); return control_verification_gate_response(db, item)

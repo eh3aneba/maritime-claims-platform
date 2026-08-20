@@ -286,6 +286,8 @@ class ProductionControlVerificationGate(UUIDPrimaryKeyMixin, TimestampMixin, Bas
     created_by_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     completed_by_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     gate_key: Mapped[str] = mapped_column(String(120))
+    verification_profile: Mapped[str] = mapped_column(
+        String(40), default="architecture_v2", server_default="architecture_v2")
     status: Mapped[str] = mapped_column(String(30), default="collecting", server_default="collecting")
     outcome_note: Mapped[str | None] = mapped_column(Text, nullable=True)
     outcome_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)

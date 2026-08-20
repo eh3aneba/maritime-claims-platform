@@ -1,9 +1,11 @@
 from datetime import UTC, date, datetime, timedelta
+from uuid import UUID
 
 from sqlalchemy import select
 
 from app.core.security import hash_password
 from app.modules.organizations.models import Organization
+from app.modules.pilot_operations.models import ProductionControlVerificationGate
 from app.modules.users.models import User, UserRole
 from tests.db_harness import TestingSessionLocal, client, reset_database
 from tests.test_claims_api import TEST_PASSWORD, login
@@ -12,9 +14,10 @@ from tests.test_private_pilot_production_baseline import (
 )
 
 
-FOUNDATIONAL_CONTROLS = [
+PRODUCTION_CONTROLS = ARCHITECTURE_CONTROLS
+FOUNDATIONAL_CONTROLS = {
     "identity_access", "evidence_storage", "observability", "backup_dr", "deployment_iac",
-]
+}
 
 
 def setup_function() -> None:
@@ -69,7 +72,7 @@ def _attested_baseline() -> dict:
 
 def _create_gate(baseline_id: str) -> dict:
     response = client.post("/api/v1/pilot-operations/control-verification-gates", json={
-        "architecture_baseline_id": baseline_id, "gate_key": "foundation-verification-one",
+        "architecture_baseline_id": baseline_id, "gate_key": "architecture-verification-one",
     })
     assert response.status_code == 201, response.text
     return response.json()
@@ -90,6 +93,9 @@ def _evidence_payload(control: str, version: int = 1) -> dict:
 def test_control_gate_requires_independent_review_preserves_rejections_and_freezes() -> None:
     baseline = _attested_baseline()
     gate = _create_gate(baseline["id"])
+    assert gate["verification_profile"] == "architecture_v2"
+    assert gate["summary"]["required_control_count"] == 9
+    assert set(gate["summary"]["required_controls"]) == set(PRODUCTION_CONTROLS)
     first = client.post(
         f"/api/v1/pilot-operations/control-verification-gates/{gate['id']}/evidence",
         json=_evidence_payload("identity_access"),
@@ -125,7 +131,9 @@ def test_control_gate_requires_independent_review_preserves_rejections_and_freez
                          if item["control_key"] == "identity_access"]
     assert identity_versions == [1, 2]
     current = resubmitted.json()
-    for control in FOUNDATIONAL_CONTROLS[1:]:
+    for control in PRODUCTION_CONTROLS:
+        if control == "identity_access":
+            continue
         response = client.post(
             f"/api/v1/pilot-operations/control-verification-gates/{gate['id']}/evidence",
             json=_evidence_payload(control),
@@ -137,7 +145,7 @@ def test_control_gate_requires_independent_review_preserves_rejections_and_freez
     latest = {}
     for item in current["evidence"]:
         latest[item["control_key"]] = item
-    for control in FOUNDATIONAL_CONTROLS:
+    for control in PRODUCTION_CONTROLS:
         response = client.post(
             f"/api/v1/pilot-operations/control-verification-gates/{gate['id']}/evidence/{latest[control]['id']}/review",
             json={"action": "verify",
@@ -152,7 +160,7 @@ def test_control_gate_requires_independent_review_preserves_rejections_and_freez
     completed = client.post(
         f"/api/v1/pilot-operations/control-verification-gates/{gate['id']}/complete",
         json={"confirm_verified": True,
-              "note": "Five foundational controls independently verified; this is not a go-live authorization."},
+              "note": "All nine architecture controls independently verified; this is not a go-live authorization."},
     )
     assert completed.status_code == 200, completed.text
     result = completed.json()
@@ -202,3 +210,34 @@ def test_control_gate_is_manager_only_tenant_scoped_and_rejects_unbounded_refere
         json=_evidence_payload("observability"),
     )
     assert cross_tenant.status_code == 404
+
+
+def test_legacy_foundational_profile_remains_five_control_and_rejects_scope_expansion() -> None:
+    baseline = _attested_baseline()
+    with TestingSessionLocal() as db:
+        alpha = db.scalar(select(Organization).where(Organization.slug == "alpha"))
+        admin = db.scalar(select(User).where(User.email == "alpha-admin@example.com"))
+        assert alpha is not None and admin is not None
+        legacy = ProductionControlVerificationGate(
+            organization_id=alpha.id,
+            architecture_baseline_id=UUID(baseline["id"]),
+            created_by_id=admin.id,
+            gate_key="legacy-foundational-verification",
+            verification_profile="foundational_v1",
+            status="collecting",
+        )
+        db.add(legacy); db.commit(); legacy_id = str(legacy.id)
+
+    dashboard = client.get("/api/v1/pilot-operations")
+    assert dashboard.status_code == 200, dashboard.text
+    gate = next(item for item in dashboard.json()["control_verification_gates"]
+                if item["id"] == legacy_id)
+    assert gate["verification_profile"] == "foundational_v1"
+    assert gate["summary"]["required_control_count"] == 5
+    assert set(gate["summary"]["required_controls"]) == FOUNDATIONAL_CONTROLS
+
+    out_of_scope = client.post(
+        f"/api/v1/pilot-operations/control-verification-gates/{legacy_id}/evidence",
+        json=_evidence_payload("application_security"),
+    )
+    assert out_of_scope.status_code == 409
