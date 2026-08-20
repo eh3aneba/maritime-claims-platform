@@ -910,3 +910,29 @@ export function recordProductionArchitectureControl(id: string, payload: {
 export function attestProductionArchitectureBaseline(id: string, note: string) {
   return apiFetch<import("./types").ProductionArchitectureBaseline>(`/pilot-operations/architecture-baselines/${id}/attest`, { method: "POST", body: JSON.stringify({ confirm_reviewed: true, note }) });
 }
+export function createProductionControlVerificationGate(architectureBaselineId: string) {
+  return apiFetch<import("./types").ProductionControlVerificationGate>("/pilot-operations/control-verification-gates", {
+    method: "POST", body: JSON.stringify({ architecture_baseline_id: architectureBaselineId,
+      gate_key: `foundation-verification-${crypto.randomUUID()}` }),
+  });
+}
+export function submitProductionControlEvidence(id: string, payload: {
+  control_key: string; implementation_summary: string; verification_method: string;
+  rollback_plan: string; owner_label: string; implementation_completed_at: string;
+  evidence_reference: string;
+}) {
+  return apiFetch<import("./types").ProductionControlVerificationGate>(`/pilot-operations/control-verification-gates/${id}/evidence`, {
+    method: "POST", body: JSON.stringify(payload),
+  });
+}
+export function reviewProductionControlEvidence(id: string, evidenceId: string,
+  action: "verify" | "reject", note: string, reviewReference?: string) {
+  return apiFetch<import("./types").ProductionControlVerificationGate>(`/pilot-operations/control-verification-gates/${id}/evidence/${evidenceId}/review`, {
+    method: "POST", body: JSON.stringify({ action, note, review_reference: reviewReference || null }),
+  });
+}
+export function completeProductionControlVerificationGate(id: string, note: string) {
+  return apiFetch<import("./types").ProductionControlVerificationGate>(`/pilot-operations/control-verification-gates/${id}/complete`, {
+    method: "POST", body: JSON.stringify({ confirm_verified: true, note }),
+  });
+}

@@ -19,7 +19,7 @@ from app.modules.organizations.models import Organization  # noqa: F401
 from app.modules.outreach.models import DesignPartnerAccount, DesignPartnerContact, OutreachTouch, PaidPilotOffer  # noqa: F401
 from app.modules.processing.models import DocumentProcessingJob, DocumentTextExtraction, DocumentTextSegment  # noqa: F401
 from app.modules.pilot.models import PilotCommercialValidation, PilotEvent, PilotFeedback, PilotSession  # noqa: F401
-from app.modules.pilot_operations.models import DeploymentReadinessReview, DesignPartnerRehearsal, OperationalIncident, OperationalMonitorRun, PilotExitManifest, PilotGovernanceProfile, PrivatePilotCaseRun, PrivatePilotExecution, ProductGapFinding, ProductionArchitectureBaseline, ProductionArchitectureControl, RehearsalControlEvidence, RehearsalRemediationFinding  # noqa: F401
+from app.modules.pilot_operations.models import DeploymentReadinessReview, DesignPartnerRehearsal, OperationalIncident, OperationalMonitorRun, PilotExitManifest, PilotGovernanceProfile, PrivatePilotCaseRun, PrivatePilotExecution, ProductGapFinding, ProductionArchitectureBaseline, ProductionArchitectureControl, ProductionControlEvidence, ProductionControlVerificationGate, RehearsalControlEvidence, RehearsalRemediationFinding  # noqa: F401
 from app.modules.rules.models import ClaimDocumentRequirement, ClaimIssue, RuleEvaluationRun  # noqa: F401
 from app.modules.settlements.models import PaymentAuthorization, SettlementProposal  # noqa: F401
 from app.modules.tasks.models import ClaimTask, DocumentRequestBatch  # noqa: F401
