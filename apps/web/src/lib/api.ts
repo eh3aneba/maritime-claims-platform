@@ -1073,3 +1073,71 @@ export function revokeAIDocumentEligibility(id: string) {
       note: "Manager revoked document eligibility; external AI queueing is blocked for this document." }),
   });
 }
+
+export function getAIEvaluation() {
+  return apiFetch<import("./types").AIEvaluationDashboard>("/ai-evaluation");
+}
+
+export function createAIEvaluationSuite(activationRequestId: string) {
+  return apiFetch<import("./types").AIEvaluationSuite>("/ai-evaluation/suites", {
+    method: "POST",
+    body: JSON.stringify({ activation_request_id: activationRequestId,
+      suite_key: `quality-safety-cost-${crypto.randomUUID()}`, confirm_content_free: true }),
+  });
+}
+
+export function recordAIEvaluationCase(suiteId: string, payload: {
+  case_key: string;
+  document_type: "chief_engineer_report" | "engine_log";
+  scenario_type: "baseline" | "prompt_injection" | "malformed_input" | "cross_tenant" | "restricted_data";
+  data_mode: "synthetic" | "deidentified";
+  result: "pass" | "fail";
+  field_true_positive: number; field_false_positive: number; field_false_negative: number;
+  extracted_claim_count: number; unsupported_claim_count: number;
+  source_quote_checked_count: number; source_quote_valid_count: number;
+  human_approved_count: number; human_edited_count: number; human_rejected_count: number;
+  latency_ms: number; input_tokens: number; output_tokens: number;
+  observed_provider_cost_microusd: number; boundary_control_passed: boolean;
+  evidence_reference: string; note: string;
+}) {
+  return apiFetch<import("./types").AIEvaluationSuite>(`/ai-evaluation/suites/${suiteId}/cases`, {
+    method: "POST",
+    body: JSON.stringify({ ...payload, executed_at: new Date().toISOString(),
+      confirm_content_free: true }),
+  });
+}
+
+export function finalizeAIEvaluationSuite(id: string) {
+  return apiFetch<import("./types").AIEvaluationSuite>(`/ai-evaluation/suites/${id}/finalize`, {
+    method: "POST", body: JSON.stringify({ confirm_finalize: true,
+      note: "Manager finalized the immutable content-free benchmark and deterministic thresholds." }),
+  });
+}
+
+export function reviewAIEvaluationSuite(id: string, reviewRole: "quality" | "risk",
+  action: "approve" | "reject") {
+  return apiFetch<import("./types").AIEvaluationSuite>(`/ai-evaluation/suites/${id}/reviews`, {
+    method: "POST", body: JSON.stringify({ review_role: reviewRole, action,
+      evidence_reference: action === "approve" ? `artifact://ai-evaluation/${reviewRole}-review` : null,
+      note: action === "approve"
+        ? `Independent ${reviewRole} reviewer reproduced the benchmark evidence and thresholds.`
+        : `Independent ${reviewRole} reviewer rejected this evaluation attempt.` }),
+  });
+}
+
+export function decideAIEvaluationPromotion(id: string,
+  outcome: "promote_staging" | "hold") {
+  return apiFetch<import("./types").AIEvaluationSuite>(`/ai-evaluation/suites/${id}/decision`, {
+    method: "POST", body: JSON.stringify({ outcome, confirm_decision: true,
+      note: outcome === "promote_staging"
+        ? "Administrator promoted only the evaluated synthetic/de-identified staging bundle."
+        : "Administrator held this evaluation; shared staging promotion remains blocked." }),
+  });
+}
+
+export function revokeAIEvaluationPromotion(id: string) {
+  return apiFetch<import("./types").AIEvaluationSuite>(`/ai-evaluation/suites/${id}/revoke`, {
+    method: "POST", body: JSON.stringify({ confirm_revoke: true,
+      note: "Manager revoked the evaluation promotion; shared staging use is blocked." }),
+  });
+}

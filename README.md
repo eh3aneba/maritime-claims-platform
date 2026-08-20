@@ -30,8 +30,9 @@ The MVP now includes the full H&M Machinery / Turbocharger design-partner workfl
 - Human-attested production architecture baseline across nine domains that preserves missing/partial controls and never claims certification
 - Versioned implementation evidence and independent four-eyes verification for all nine production architecture controls
 - Expiring external-AI staging activation with three independent reviews, per-document eligibility and a runtime kill switch
+- Version-pinned AI benchmark promotion with deterministic quality/safety/cost thresholds and immutable failures
 
-**Current phase: Sprint 11A — Controlled External AI Activation.** The application now requires a tenant-scoped, expiring staging authorization, three independent Security/Privacy/Product reviewers, an Admin final decision and a current synthetic/de-identified document attestation before OpenAI work can enter the queue. Keys and provider controls remain outside the database; production, restricted documents and real claim data remain blocked.
+**Current phase: Sprint 11B — Measured AI Evaluation Promotion.** A Sprint 11A staging authorization can now anchor a content-free benchmark ledger. Promotion requires 12+ cases, CE/Engine Log coverage, passing quality and source-grounding thresholds, four adversarial/boundary checks, bounded latency/cost/override measurements, independent Quality/Risk reviews and an Admin decision. Production, restricted documents and real claim data remain blocked.
 
 ## Prerequisites
 
@@ -196,9 +197,9 @@ Engine-log event fields are intentionally not promoted into scalar `claim_facts`
 
 ## Current milestone
 
-Sprint 11A adds the separately authorized control plane in front of the existing provider-neutral gateway and mandatory human-review queue. A configured key is no longer sufficient: every OpenAI queue path requires an active, version-pinned staging authorization and a current synthetic/de-identified eligibility attestation for the exact document. The decision ledger never provisions a provider, stores a key, authorizes production/restricted/real-claim data or changes an authoritative claim fact.
+Sprint 11A adds the separately authorized control plane in front of the existing provider-neutral gateway and mandatory human-review queue. Sprint 11B adds the independent evidence that the exact model/prompt/schema bundle meets fixed quality, safety, source-grounding, latency, cost and human-override thresholds. Both stages remain staging-only, content-minimizing and revocable; neither provisions the provider or stores a key.
 
-Next, Sprint 11B will measure quality, safety, source grounding, prompt-injection resistance, latency and cost against versioned thresholds. Real non-restricted claim documents still require the later data-policy, evaluation and bounded-private-pilot approvals in `docs/product/AI_ACTIVATION_ROADMAP.md`. Full English/Persian UI localization is deferred until the product reaches a stable post-evaluation stage.
+Next, Sprint 11C will add the separate organization/data-owner decision for a small, monitored, non-restricted real-document cohort. Real claim documents remain unauthorized until that gate is built and explicitly approved. Full English/Persian UI localization remains deferred until the product reaches a stable post-evaluation stage.
 
 ## Design-partner pilot
 

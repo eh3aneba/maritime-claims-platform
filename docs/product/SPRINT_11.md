@@ -19,11 +19,29 @@ Delivered control-plane capabilities:
 
 Non-goals remain explicit: no key storage, provider mutation, production activation, restricted or real-claim authorization, autonomous claim decision or human-review bypass.
 
-## Sprint 11B — Next
+## Sprint 11B — Quality, safety and cost promotion gate
 
-Build a versioned evaluation harness and promotion gate for representative synthetic/de-identified CE reports, engine logs, maintenance records and financial documents. Measure field-level accuracy, unsupported claims, source-link validity, prompt-injection resistance, tenant isolation, latency, tokens, cost and human-review overrides. Every threshold must be pinned to the activation’s model/prompt/schema bundle and a failure must block promotion.
+Goal: prevent a scoped provider activation from being mistaken for evidence that the pinned AI bundle is safe or useful.
+
+Delivered application controls:
+
+- append-only evaluation suites anchored to an active Sprint 11A activation
+- server-owned `quality_safety_cost_v1` threshold profile
+- content-free, SHA-256 case-result ledger
+- deterministic precision, recall, unsupported-claim, quote-validity, override, latency and observed-cost metrics
+- mandatory CE report and engine-log representation
+- mandatory prompt-injection, malformed-input, cross-tenant and restricted-data cases
+- immutable failure reasons; failed or incomplete attempts cannot be reviewed into a pass
+- independent Quality/Risk reviews plus Admin-only Promote/Hold
+- expiring staging promotion and explicit revocation
+- tenant-safe dashboard, API, migration, tests, audit events and ADR
+
+The application does not run the external benchmark or calculate provider billing. Operators run the controlled synthetic/de-identified corpus, retain it in the approved artifact system and record only aggregate observations plus bounded references.
+
+## Sprint 11C — Next
+
+Create the separately authorized bounded real-document private pilot. It must require organization/data-owner approval, a small non-restricted cohort, current 11A activation and 11B promotion, mandatory human review, monitoring and immediate rollback. No real claim document is authorized by Sprints 11A or 11B.
 
 ## Deferred localization
 
 Full English/Persian UI localization is deliberately deferred until the product reaches a stable post-evaluation stage. OCR continues to support English and Persian; this deferral concerns complete user-interface translation, locale formatting and RTL behavior.
-
