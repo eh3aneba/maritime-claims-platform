@@ -19,6 +19,7 @@ from app.modules.intelligence.router import router as intelligence_router
 from app.modules.intake.router import router as intake_router
 from app.modules.processing.router import router as processing_router
 from app.modules.pilot.router import router as pilot_router
+from app.modules.pilot_operations.router import router as pilot_operations_router
 from app.modules.policy_intelligence.router import router as policy_intelligence_router
 from app.modules.outreach.router import router as outreach_router
 from app.modules.review.router import router as review_router
@@ -63,6 +64,7 @@ app.include_router(external_portal_router, prefix=settings.api_v1_prefix)
 app.include_router(evidence_matrix_router, prefix=settings.api_v1_prefix)
 app.include_router(processing_router, prefix=settings.api_v1_prefix)
 app.include_router(pilot_router, prefix=settings.api_v1_prefix)
+app.include_router(pilot_operations_router, prefix=settings.api_v1_prefix)
 app.include_router(policy_intelligence_router, prefix=settings.api_v1_prefix)
 app.include_router(outreach_router, prefix=settings.api_v1_prefix)
 app.include_router(review_router, prefix=settings.api_v1_prefix)

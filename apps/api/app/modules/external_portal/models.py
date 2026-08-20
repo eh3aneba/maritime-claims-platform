@@ -69,3 +69,24 @@ class ExternalPortalSubmission(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     review_note: Mapped[str | None] = mapped_column(Text, nullable=True)
     submitted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ExternalPortalPublicationProposal(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "external_portal_publication_proposals"
+    __table_args__ = (
+        UniqueConstraint("invitation_id", "item_type", "source_id", name="uq_external_portal_publication_source"),
+        Index("ix_external_portal_publication_org_status", "organization_id", "status"),
+    )
+
+    organization_id: Mapped[UUID] = mapped_column(ForeignKey("organizations.id", ondelete="RESTRICT"), index=True)
+    invitation_id: Mapped[UUID] = mapped_column(ForeignKey("external_portal_invitations.id", ondelete="CASCADE"), index=True)
+    created_by_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    reviewed_by_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    published_item_id: Mapped[UUID | None] = mapped_column(ForeignKey("external_portal_published_items.id", ondelete="SET NULL"), nullable=True)
+    item_type: Mapped[str] = mapped_column(String(30))
+    source_id: Mapped[UUID] = mapped_column()
+    title: Mapped[str] = mapped_column(String(240))
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(30), default="under_review", server_default="under_review")
+    review_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

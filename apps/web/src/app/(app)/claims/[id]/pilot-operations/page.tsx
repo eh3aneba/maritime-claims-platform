@@ -1,0 +1,45 @@
+"use client";
+
+import Link from "next/link";
+import { useParams } from "next/navigation";
+import { useEffect, useState } from "react";
+
+import {
+  ApiError, approvePilotGovernance, attestReadiness, createOperationalIncident,
+  createPilotExitManifest, createReadinessReview, getClaim, getPilotOperations,
+  runOperationalMonitor, transitionOperationalIncident, writePilotGovernance,
+} from "@/lib/api";
+import type { Claim, PilotOperationsDashboard } from "@/lib/types";
+
+const controlKeys = ["tls", "secret_references", "backup_restore", "migrations", "malware_scan", "least_privilege", "retention", "incident_contacts"];
+const emptyDashboard: PilotOperationsDashboard = { readiness_reviews: [], monitor_runs: [], incidents: [], governance_profile: null, exit_manifests: [] };
+
+export default function PilotOperationsPage() {
+  const { id } = useParams<{ id: string }>();
+  const [claim, setClaim] = useState<Claim | null>(null); const [data, setData] = useState(emptyDashboard);
+  const [controls, setControls] = useState<Record<string, boolean>>(Object.fromEntries(controlKeys.map((key) => [key, false])));
+  const [error, setError] = useState(""); const [busy, setBusy] = useState(false);
+  const [governance, setGovernance] = useState({ pilot_purpose: "Operate a controlled design-partner pilot for maritime claims handling.", legal_basis: "Documented contractual and legitimate-interest basis for the approved pilot.", data_owner: "Pilot data owner", retention_statement: "Pilot records follow the documented retention schedule and approved legal holds.", residency_statement: "Data remains within the approved pilot hosting region.", exit_contact: "pilot-owner@example.com" });
+
+  async function load() { try { const [c, d] = await Promise.all([getClaim(id), getPilotOperations()]); setClaim(c); setData(d); setError(""); } catch (e) { setError(e instanceof ApiError ? e.detail : "Pilot operations could not be loaded."); } }
+  useEffect(() => { load(); }, [id]);
+  async function run(task: () => Promise<unknown>) { setBusy(true); setError(""); try { await task(); await load(); } catch (e) { setError(e instanceof ApiError ? e.detail : "Operation failed."); } finally { setBusy(false); } }
+
+  if (!claim) return <div className="panel p-6">{error || "Loading…"}</div>;
+  const profile = data.governance_profile;
+  return <div>
+    <Link href={`/claims/${id}`} className="text-sm font-semibold text-slate-500">← Back to claim</Link>
+    <p className="eyebrow mt-5">{claim.claim_reference} · Sprints 9H–9K</p><h1 className="mt-2 text-3xl font-semibold">Pilot Operational Hardening</h1>
+    <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-500">A human-controlled path from deployment readiness through content-free monitoring and incident response to approved governance and a manifest-only pilot exit. No record is deleted by this workspace.</p>
+    {error ? <div className="mt-5 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div> : null}
+    <div className="mt-6 grid gap-6 xl:grid-cols-2">
+      <section className="panel p-5"><p className="eyebrow">9H</p><h2 className="section-title mt-2">Deployment readiness gates</h2><p className="section-subtitle">All eight controls must pass before a Manager/Admin can attest the immutable snapshot.</p><div className="mt-4 grid gap-2 sm:grid-cols-2">{controlKeys.map((key) => <label key={key} className="flex items-center gap-2 rounded-lg border border-slate-200 p-3 text-sm"><input type="checkbox" checked={controls[key]} onChange={(e) => setControls({ ...controls, [key]: e.target.checked })} /><span>{key.replaceAll("_", " ")}</span></label>)}</div><button disabled={busy} className="secondary-button mt-4" onClick={() => run(() => createReadinessReview({ environment: "pilot", review_key: `pilot-${crypto.randomUUID()}`, controls }))}>Capture readiness snapshot</button><div className="mt-4 space-y-2">{data.readiness_reviews.slice(0, 3).map((x) => <div key={x.id} className="rounded-lg bg-slate-50 p-3 text-sm"><div className="flex justify-between"><span className="font-semibold">{x.review_key}</span><span>{x.status}</span></div>{x.status === "draft" ? <button className="secondary-button mt-2" onClick={() => { const note = window.prompt("Attestation note (10+ characters)")?.trim(); if (note) run(() => attestReadiness(x.id, note)); }}>Attest snapshot</button> : null}</div>)}</div></section>
+
+      <section className="panel p-5"><p className="eyebrow">9I</p><h2 className="section-title mt-2">Monitoring &amp; incident response</h2><p className="section-subtitle">Runs collect bounded counts and deterministic alerts only—never email, evidence or portal content.</p><button disabled={busy} className="primary-button mt-4" onClick={() => run(runOperationalMonitor)}>Run operational monitor</button><div className="mt-4 space-y-2">{data.monitor_runs.slice(0, 3).map((x) => <div key={x.id} className="rounded-lg bg-slate-50 p-3 text-sm"><div className="flex justify-between"><span className="font-semibold">{x.status}</span><span>{new Date(x.run_at).toLocaleString()}</span></div><p className="mt-1 text-xs text-slate-500">{JSON.stringify(x.metrics)}</p></div>)}</div><button className="secondary-button mt-4" onClick={() => { const title = window.prompt("Incident title")?.trim(); if (title) run(() => createOperationalIncident({ severity: "medium", category: "availability", title, summary: "Human-recorded pilot operational incident requiring investigation.", owner_label: "Pilot operations owner" })); }}>Record incident</button><div className="mt-3 space-y-2">{data.incidents.slice(0, 4).map((x) => <div key={x.id} className="rounded-lg border border-slate-200 p-3 text-sm"><div className="flex justify-between"><span className="font-semibold">{x.title}</span><span>{x.status}</span></div>{x.status !== "resolved" ? <button className="secondary-button mt-2" onClick={() => { const action = x.status === "open" ? "acknowledge" : "resolve"; run(() => transitionOperationalIncident(x.id, action, `${action} by the pilot operations owner.`)); }}>{x.status === "open" ? "Acknowledge" : "Resolve"}</button> : null}</div>)}</div></section>
+
+      <section className="panel p-5"><p className="eyebrow">9J</p><h2 className="section-title mt-2">Four-eyes external publication</h2><p className="section-subtitle">A separate reviewer must approve eligible material before it appears in an external invitation.</p><Link href={`/claims/${id}/external-portal`} className="secondary-button mt-4">Open publication queue</Link></section>
+
+      <section className="panel p-5"><p className="eyebrow">9K</p><h2 className="section-title mt-2">Governance &amp; pilot exit</h2><p className="section-subtitle">Approve purpose, basis, ownership, retention, residency and exit contact before producing a claim-scoped manifest.</p><div className="mt-4 grid gap-3">{Object.entries(governance).map(([key, value]) => <label key={key}><span className="label">{key.replaceAll("_", " ")}</span><input className="field" type={key === "exit_contact" ? "email" : "text"} value={value} onChange={(e) => setGovernance({ ...governance, [key]: e.target.value })} /></label>)}</div><div className="mt-4 flex flex-wrap gap-2"><button disabled={busy} className="secondary-button" onClick={() => run(() => writePilotGovernance(governance))}>Save governance profile</button>{profile?.status === "draft" ? <button className="primary-button" onClick={() => run(() => approvePilotGovernance("Approved for the bounded design-partner pilot."))}>Approve profile</button> : null}{profile?.status === "approved" ? <button className="primary-button" onClick={() => run(() => createPilotExitManifest(id))}>Create manifest-only exit record</button> : null}</div>{profile ? <p className="mt-3 text-sm">Profile status: <strong>{profile.status}</strong></p> : null}<div className="mt-3 space-y-2">{data.exit_manifests.filter((x) => x.claim_id === id).map((x) => <div key={x.id} className="rounded-lg bg-slate-50 p-3 text-xs"><p className="font-semibold">Manifest authorized · no deletion performed</p><p className="mt-1 break-all text-slate-500">SHA-256 {x.manifest_checksum}</p></div>)}</div></section>
+    </div>
+  </div>;
+}

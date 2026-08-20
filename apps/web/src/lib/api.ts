@@ -799,3 +799,43 @@ export function reviewPortalSubmission(claimId: string, submissionId: string, ac
     method: "POST", body: JSON.stringify({ action, note, confirm_promotion: action === "promote" }),
   });
 }
+export function proposePortalPublication(claimId: string, invitationId: string, payload: {
+  item_type: "correspondence" | "document_metadata"; source_id: string; title: string; summary?: string;
+}) {
+  return apiFetch<import("./types").PortalPublicationProposal>(`/claims/${claimId}/external-portal/invitations/${invitationId}/publications`, {
+    method: "POST", body: JSON.stringify(payload),
+  });
+}
+export function reviewPortalPublication(claimId: string, proposalId: string, action: "approve" | "reject", note: string) {
+  return apiFetch<import("./types").PortalPublicationProposal>(`/claims/${claimId}/external-portal/publications/${proposalId}/review`, {
+    method: "POST", body: JSON.stringify({ action, note }),
+  });
+}
+
+export function getPilotOperations() {
+  return apiFetch<import("./types").PilotOperationsDashboard>("/pilot-operations");
+}
+export function createReadinessReview(payload: { environment: "staging" | "pilot"; review_key: string; controls: Record<string, boolean> }) {
+  return apiFetch<import("./types").DeploymentReadinessReview>("/pilot-operations/readiness", { method: "POST", body: JSON.stringify(payload) });
+}
+export function attestReadiness(id: string, note: string) {
+  return apiFetch<import("./types").DeploymentReadinessReview>(`/pilot-operations/readiness/${id}/attest`, { method: "POST", body: JSON.stringify({ confirm_ready: true, note }) });
+}
+export function runOperationalMonitor() {
+  return apiFetch<import("./types").OperationalMonitorRun>("/pilot-operations/monitor-runs", { method: "POST", body: JSON.stringify({ idempotency_key: crypto.randomUUID() }) });
+}
+export function createOperationalIncident(payload: { severity: string; category: string; title: string; summary: string; owner_label: string }) {
+  return apiFetch<import("./types").OperationalIncident>("/pilot-operations/incidents", { method: "POST", body: JSON.stringify(payload) });
+}
+export function transitionOperationalIncident(id: string, action: "acknowledge" | "resolve", note: string) {
+  return apiFetch<import("./types").OperationalIncident>(`/pilot-operations/incidents/${id}/transition`, { method: "POST", body: JSON.stringify({ action, note }) });
+}
+export function writePilotGovernance(payload: { pilot_purpose: string; legal_basis: string; data_owner: string; retention_statement: string; residency_statement: string; exit_contact: string }) {
+  return apiFetch<import("./types").PilotGovernanceProfile>("/pilot-operations/governance", { method: "PUT", body: JSON.stringify(payload) });
+}
+export function approvePilotGovernance(note: string) {
+  return apiFetch<import("./types").PilotGovernanceProfile>("/pilot-operations/governance/approve", { method: "POST", body: JSON.stringify({ confirm_approved: true, note }) });
+}
+export function createPilotExitManifest(claimId: string) {
+  return apiFetch<import("./types").PilotExitManifest>(`/pilot-operations/claims/${claimId}/exit-manifests`, { method: "POST", body: JSON.stringify({ idempotency_key: crypto.randomUUID(), confirm_manifest_only: true }) });
+}
