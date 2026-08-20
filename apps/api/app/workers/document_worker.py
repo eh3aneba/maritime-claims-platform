@@ -7,8 +7,19 @@ import time
 from app.core.config import get_settings
 from app.db import metadata as _metadata  # noqa: F401 - register all ORM models for standalone worker
 from app.db.session import create_session
-from app.modules.processing.service import claim_next_job, process_job
+from app.modules import ai_runtime
+from app.modules import processing as _processing_package  # noqa: F401
 from app.modules.intake.service import claim_next_intake_job, process_intake_job
+from app.modules.processing import service as processing_service
+
+# Worker-time AI authorization must use the newest applicable control plane.
+# Assign before importing the public processing helpers so queued work cannot
+# fall back to an older Production authorization after Sprint 11G exists.
+processing_service.require_external_ai_runtime_authorization = (
+    ai_runtime.require_external_ai_runtime_authorization
+)
+claim_next_job = processing_service.claim_next_job
+process_job = processing_service.process_job
 
 
 def run_once(worker_id: str) -> bool:
