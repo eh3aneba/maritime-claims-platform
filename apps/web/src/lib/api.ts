@@ -863,3 +863,50 @@ export function transitionRehearsalFinding(id: string, findingId: string, action
 export function completeDesignPartnerRehearsal(id: string, outcome: "go" | "no_go", note: string) {
   return apiFetch<import("./types").DesignPartnerRehearsal>(`/pilot-operations/rehearsals/${id}/complete`, { method: "POST", body: JSON.stringify({ outcome, confirm_decision: true, note }) });
 }
+export function createPrivatePilotExecution(rehearsalId: string) {
+  return apiFetch<import("./types").PrivatePilotExecution>("/pilot-operations/pilot-executions", {
+    method: "POST", body: JSON.stringify({ rehearsal_id: rehearsalId,
+      execution_key: `private-pilot-${crypto.randomUUID()}`, design_partner_label: "Bounded design partner",
+      data_mode: "synthetic", objectives: ["Measure the human-reviewed claims workflow", "Capture accountable product gaps"],
+      target_case_runs: 1 }),
+  });
+}
+export function startPrivatePilotExecution(id: string) {
+  return apiFetch<import("./types").PrivatePilotExecution>(`/pilot-operations/pilot-executions/${id}/start`, { method: "POST" });
+}
+export function recordPrivatePilotCaseRun(id: string, payload: {
+  claim_id: string; case_outcome: "completed" | "blocked" | "abandoned"; evidence_reference: string;
+  triage_minutes?: number; evidence_review_minutes?: number; assessment_minutes?: number; adjustment_minutes?: number;
+  ai_candidates_reviewed: number; ai_accepted: number; ai_edited: number; ai_rejected: number;
+  rule_findings_reviewed: number; rule_findings_helpful: number; open_conflicts: number; open_requirements: number;
+}) {
+  return apiFetch<import("./types").PrivatePilotExecution>(`/pilot-operations/pilot-executions/${id}/case-runs`, { method: "PUT", body: JSON.stringify(payload) });
+}
+export function createProductGap(id: string, payload: {
+  case_run_id?: string; priority: "p0" | "p1" | "p2" | "p3"; category: string;
+  title: string; summary: string; owner_label: string; due_at: string; evidence_reference?: string;
+}) {
+  return apiFetch<import("./types").PrivatePilotExecution>(`/pilot-operations/pilot-executions/${id}/gaps`, { method: "POST", body: JSON.stringify(payload) });
+}
+export function transitionProductGap(id: string, gapId: string, action: "accept" | "resolve" | "wont_fix", note: string) {
+  return apiFetch<import("./types").PrivatePilotExecution>(`/pilot-operations/pilot-executions/${id}/gaps/${gapId}/transition`, { method: "POST", body: JSON.stringify({ action, note }) });
+}
+export function completePrivatePilotExecution(id: string, outcome: "proceed" | "pause" | "stop", note: string) {
+  return apiFetch<import("./types").PrivatePilotExecution>(`/pilot-operations/pilot-executions/${id}/complete`, { method: "POST", body: JSON.stringify({ outcome, confirm_outcome: true, note }) });
+}
+export function createProductionArchitectureBaseline(pilotExecutionId: string) {
+  return apiFetch<import("./types").ProductionArchitectureBaseline>("/pilot-operations/architecture-baselines", {
+    method: "POST", body: JSON.stringify({ pilot_execution_id: pilotExecutionId,
+      baseline_key: `production-baseline-${crypto.randomUUID()}`, deployment_model: "single_tenant_managed",
+      data_residency_region: "Approved region — confirm before deployment" }),
+  });
+}
+export function recordProductionArchitectureControl(id: string, payload: {
+  control_key: string; current_state: "missing" | "partial" | "implemented" | "not_applicable";
+  target_architecture: string; risk_note: string; owner_label: string; target_date: string; evidence_reference?: string;
+}) {
+  return apiFetch<import("./types").ProductionArchitectureBaseline>(`/pilot-operations/architecture-baselines/${id}/controls`, { method: "PUT", body: JSON.stringify(payload) });
+}
+export function attestProductionArchitectureBaseline(id: string, note: string) {
+  return apiFetch<import("./types").ProductionArchitectureBaseline>(`/pilot-operations/architecture-baselines/${id}/attest`, { method: "POST", body: JSON.stringify({ confirm_reviewed: true, note }) });
+}

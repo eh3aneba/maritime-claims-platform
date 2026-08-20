@@ -26,8 +26,10 @@ The MVP now includes the full H&M Machinery / Turbocharger design-partner workfl
 - Consent-gated Controlled Email Intake with human claim linking and retention controls
 - Least-privilege Email Provider Adapter Operations with bounded run and retention ledgers
 - Claim-scoped External Collaboration Portal with expiring hashed invitations and human-reviewed submissions
+- Time-boxed private-pilot execution with bounded case measurements, accountable P0–P3 product gaps and an immutable human outcome
+- Human-attested production architecture baseline across nine domains that preserves missing/partial controls and never claims certification
 
-**Current phase: Sprint 9L — Design-partner Rehearsal & Readiness Evidence.** The repository now turns an attested readiness snapshot into an evidence-backed rehearsal, remediation ledger and immutable human Go/No-Go record. A private pilot is not production certification.
+**Current phase: Sprint 10B — Production Architecture Baseline.** A completed Go rehearsal can now anchor a controlled private-pilot execution, content-free aggregate measurements, accountable product gaps and a separately attested nine-domain production architecture baseline. These records do not deploy infrastructure or certify production readiness.
 
 ## Prerequisites
 
@@ -192,7 +194,7 @@ Engine-log event fields are intentionally not promoted into scalar `claim_facts`
 
 ## Current milestone
 
-Sprint 9 Phase L: an attested readiness snapshot can anchor a design-partner rehearsal with bounded evidence references for all eight controls, owned remediation findings and a hashed human Go/No-Go decision. The platform still cannot certify production readiness, deploy infrastructure, store secret evidence, delete pilot data, send email, or expose privileged/internal material.
+Sprint 10 Phases A–B: a completed Go rehearsal can anchor a Manager-started private pilot, bounded case-run metrics, an owned product-gap ledger and an immutable Proceed/Pause/Stop outcome. A completed pilot can then anchor a nine-domain production architecture baseline with explicit current state, target design, risk, owner and date. The platform still cannot certify production readiness, deploy infrastructure, store secret evidence, delete pilot data, send email, or expose privileged/internal material.
 
 ## Design-partner pilot
 

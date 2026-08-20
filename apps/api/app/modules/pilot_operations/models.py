@@ -1,7 +1,7 @@
-from datetime import datetime
+from datetime import date, datetime
 from uuid import UUID
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, JSON, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -157,3 +157,117 @@ class RehearsalRemediationFinding(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     resolution_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class PrivatePilotExecution(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "private_pilot_executions"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "execution_key", name="uq_private_pilot_execution_key"),
+        UniqueConstraint("rehearsal_id", name="uq_private_pilot_execution_rehearsal"),
+        Index("ix_private_pilot_execution_org_status", "organization_id", "status", "created_at"),
+    )
+
+    organization_id: Mapped[UUID] = mapped_column(ForeignKey("organizations.id", ondelete="RESTRICT"), index=True)
+    rehearsal_id: Mapped[UUID] = mapped_column(ForeignKey("design_partner_rehearsals.id", ondelete="RESTRICT"), index=True)
+    created_by_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    completed_by_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    execution_key: Mapped[str] = mapped_column(String(120))
+    design_partner_label: Mapped[str] = mapped_column(String(200))
+    data_mode: Mapped[str] = mapped_column(String(30))
+    data_authorization_reference: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    objectives: Mapped[list] = mapped_column(JSON)
+    target_case_runs: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(30), default="draft", server_default="draft")
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    outcome: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    outcome_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    outcome_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
+class PrivatePilotCaseRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "private_pilot_case_runs"
+    __table_args__ = (
+        UniqueConstraint("execution_id", "claim_id", name="uq_private_pilot_case_claim"),
+        Index("ix_private_pilot_case_org_execution", "organization_id", "execution_id", "recorded_at"),
+    )
+
+    organization_id: Mapped[UUID] = mapped_column(ForeignKey("organizations.id", ondelete="RESTRICT"), index=True)
+    execution_id: Mapped[UUID] = mapped_column(ForeignKey("private_pilot_executions.id", ondelete="CASCADE"), index=True)
+    claim_id: Mapped[UUID] = mapped_column(ForeignKey("claims.id", ondelete="RESTRICT"), index=True)
+    recorded_by_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    case_outcome: Mapped[str] = mapped_column(String(30))
+    evidence_reference: Mapped[str] = mapped_column(String(500))
+    triage_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    evidence_review_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    assessment_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    adjustment_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    ai_candidates_reviewed: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    ai_accepted: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    ai_edited: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    ai_rejected: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    rule_findings_reviewed: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    rule_findings_helpful: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    open_conflicts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    open_requirements: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class ProductGapFinding(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "product_gap_findings"
+    __table_args__ = (Index("ix_product_gap_org_execution_status", "organization_id", "execution_id", "status"),)
+
+    organization_id: Mapped[UUID] = mapped_column(ForeignKey("organizations.id", ondelete="RESTRICT"), index=True)
+    execution_id: Mapped[UUID] = mapped_column(ForeignKey("private_pilot_executions.id", ondelete="CASCADE"), index=True)
+    case_run_id: Mapped[UUID | None] = mapped_column(ForeignKey("private_pilot_case_runs.id", ondelete="SET NULL"), nullable=True)
+    created_by_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    updated_by_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    priority: Mapped[str] = mapped_column(String(10))
+    category: Mapped[str] = mapped_column(String(50))
+    title: Mapped[str] = mapped_column(String(200))
+    summary: Mapped[str] = mapped_column(Text)
+    owner_label: Mapped[str] = mapped_column(String(180))
+    due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    evidence_reference: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    status: Mapped[str] = mapped_column(String(30), default="open", server_default="open")
+    resolution_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ProductionArchitectureBaseline(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "production_architecture_baselines"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "baseline_key", name="uq_production_architecture_baseline_key"),
+        Index("ix_production_architecture_org_status", "organization_id", "status", "created_at"),
+    )
+
+    organization_id: Mapped[UUID] = mapped_column(ForeignKey("organizations.id", ondelete="RESTRICT"), index=True)
+    pilot_execution_id: Mapped[UUID] = mapped_column(ForeignKey("private_pilot_executions.id", ondelete="RESTRICT"), index=True)
+    created_by_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    attested_by_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    baseline_key: Mapped[str] = mapped_column(String(120))
+    deployment_model: Mapped[str] = mapped_column(String(40))
+    data_residency_region: Mapped[str] = mapped_column(String(120))
+    status: Mapped[str] = mapped_column(String(30), default="draft", server_default="draft")
+    snapshot_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    attestation_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    attested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ProductionArchitectureControl(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "production_architecture_controls"
+    __table_args__ = (
+        UniqueConstraint("baseline_id", "control_key", name="uq_production_architecture_control"),
+        Index("ix_production_architecture_control_org", "organization_id", "baseline_id", "current_state"),
+    )
+
+    organization_id: Mapped[UUID] = mapped_column(ForeignKey("organizations.id", ondelete="RESTRICT"), index=True)
+    baseline_id: Mapped[UUID] = mapped_column(ForeignKey("production_architecture_baselines.id", ondelete="CASCADE"), index=True)
+    recorded_by_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    control_key: Mapped[str] = mapped_column(String(50))
+    current_state: Mapped[str] = mapped_column(String(30))
+    target_architecture: Mapped[str] = mapped_column(Text)
+    risk_note: Mapped[str] = mapped_column(Text)
+    owner_label: Mapped[str] = mapped_column(String(180))
+    target_date: Mapped[date] = mapped_column(Date)
+    evidence_reference: Mapped[str | None] = mapped_column(String(500), nullable=True)
