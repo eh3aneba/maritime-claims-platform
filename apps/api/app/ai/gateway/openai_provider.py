@@ -9,7 +9,7 @@ from app.ai.gateway.base import AIProviderUnavailable, AIRequest, AIResponse
 class OpenAIProvider:
     name = "openai"
 
-    def __init__(self, *, api_key: str, model: str) -> None:
+    def __init__(self, *, api_key: str, model: str, max_output_tokens: int = 2000) -> None:
         if not api_key:
             raise AIProviderUnavailable("OPENAI_API_KEY is not configured.")
         if not model:
@@ -20,6 +20,7 @@ class OpenAIProvider:
             raise AIProviderUnavailable("The openai Python package is not installed.") from exc
         self._client = OpenAI(api_key=api_key)
         self._model = model
+        self._max_output_tokens = max_output_tokens
 
     def generate(self, request: AIRequest) -> AIResponse:
         if request.output_schema is None or request.schema_name is None:
@@ -29,6 +30,7 @@ class OpenAIProvider:
             model=self._model,
             instructions=request.system_instructions,
             input=request.input_text,
+            max_output_tokens=getattr(self, "_max_output_tokens", 2000),
             text={
                 "format": {
                     "type": "json_schema",

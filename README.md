@@ -29,8 +29,9 @@ The MVP now includes the full H&M Machinery / Turbocharger design-partner workfl
 - Time-boxed private-pilot execution with bounded case measurements, accountable P0–P3 product gaps and an immutable human outcome
 - Human-attested production architecture baseline across nine domains that preserves missing/partial controls and never claims certification
 - Versioned implementation evidence and independent four-eyes verification for all nine production architecture controls
+- Expiring external-AI staging activation with three independent reviews, per-document eligibility and a runtime kill switch
 
-**Current phase: Sprint 10D — Complete Production Control Verification.** New gates now require versioned implementation evidence and a different Manager/Admin's verification for all nine architecture controls. A versioned profile preserves completed five-control Sprint 10C snapshots without retroactive reinterpretation; neither profile deploys infrastructure, certifies production or authorizes go-live.
+**Current phase: Sprint 11A — Controlled External AI Activation.** The application now requires a tenant-scoped, expiring staging authorization, three independent Security/Privacy/Product reviewers, an Admin final decision and a current synthetic/de-identified document attestation before OpenAI work can enter the queue. Keys and provider controls remain outside the database; production, restricted documents and real claim data remain blocked.
 
 ## Prerequisites
 
@@ -179,7 +180,7 @@ Background document processing, page/sheet-aware text extraction, and the provid
 
 The backend now supports an explicit background AI job for Chief Engineer Reports. It persists versioned `ai_runs` and source-linked `document_extractions`, separates facts from source opinions, verifies source quotes against extracted segments, and leaves every candidate in `pending` human-review state.
 
-`AI_PROVIDER=disabled` remains the default. The OpenAI adapter uses strict Structured Outputs and requires explicit `AI_MODEL` and `OPENAI_API_KEY` configuration. Restricted documents are not sent to that external provider unless separately enabled.
+`AI_PROVIDER=disabled` remains the default. The OpenAI adapter uses strict Structured Outputs and requires explicit `AI_MODEL` and `OPENAI_API_KEY` configuration. Sprint 11A additionally permits OpenAI only in staging and requires an active governance decision plus document eligibility. Restricted documents remain blocked.
 
 ## Sprint 3 Phase C — Human AI Review
 
@@ -195,9 +196,9 @@ Engine-log event fields are intentionally not promoted into scalar `claim_facts`
 
 ## Current milestone
 
-Sprint 10 Phases A–E: a completed Go rehearsal can anchor a Manager-started private pilot and immutable human outcome; the pilot can anchor a nine-domain architecture baseline; and that baseline can anchor versioned implementation evidence with independent verification across all nine controls. A completed `architecture_v2` gate can now anchor a seven-check operational acceptance with named release, rollback, incident and support owners, independent Operations/Risk approvals, and an Admin-only expiring Authorize/Hold decision. Historical five-control gates retain their original profile. The workflow never deploys infrastructure, enables traffic, certifies production, authorizes an external AI provider, stores secret evidence, deletes pilot data, sends email, or exposes privileged/internal material.
+Sprint 11A adds the separately authorized control plane in front of the existing provider-neutral gateway and mandatory human-review queue. A configured key is no longer sufficient: every OpenAI queue path requires an active, version-pinned staging authorization and a current synthetic/de-identified eligibility attestation for the exact document. The decision ledger never provisions a provider, stores a key, authorizes production/restricted/real-claim data or changes an authoritative claim fact.
 
-The provider-neutral AI gateway, OpenAI Responses API adapter, strict Structured Outputs and mandatory human-review queue are already implemented. `AI_PROVIDER=disabled` remains the safe default. Synthetic or de-identified staging evaluation can begin after Sprint 11A's separate provider-activation gate; real claim documents require the later data-policy, evaluation and private-pilot approvals described in `docs/product/AI_ACTIVATION_ROADMAP.md`.
+Next, Sprint 11B will measure quality, safety, source grounding, prompt-injection resistance, latency and cost against versioned thresholds. Real non-restricted claim documents still require the later data-policy, evaluation and bounded-private-pilot approvals in `docs/product/AI_ACTIVATION_ROADMAP.md`. Full English/Persian UI localization is deferred until the product reaches a stable post-evaluation stage.
 
 ## Design-partner pilot
 

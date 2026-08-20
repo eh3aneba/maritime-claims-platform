@@ -10,5 +10,9 @@ def get_ai_provider() -> AIProvider:
     if settings.ai_provider == "openai":
         from app.ai.gateway.openai_provider import OpenAIProvider
 
-        return OpenAIProvider(api_key=settings.openai_api_key, model=settings.ai_model)
+        return OpenAIProvider(
+            api_key=settings.openai_api_key,
+            model=settings.ai_model,
+            max_output_tokens=settings.ai_max_output_tokens,
+        )
     raise RuntimeError(f"Unsupported AI provider: {settings.ai_provider}")

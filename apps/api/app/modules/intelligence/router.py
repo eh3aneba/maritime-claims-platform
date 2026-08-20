@@ -9,6 +9,7 @@ from app.ai.gateway.base import AIProviderUnavailable
 from app.ai.gateway.registry import get_ai_provider
 from app.core.config import get_settings
 from app.db.session import get_db
+from app.modules.ai_governance.service import require_external_ai_runtime_authorization
 from app.modules.auth.dependencies import CurrentUser
 from app.modules.claims.security import get_claim_for_tenant
 from app.modules.documents.models import ConfidentialityLevel
@@ -87,6 +88,14 @@ def enqueue_ce_report_intelligence(
             status_code=status.HTTP_409_CONFLICT,
             detail="Restricted documents cannot be sent to the configured external AI provider unless explicitly enabled.",
         )
+    if provider.name == "openai":
+        require_external_ai_runtime_authorization(
+            db,
+            organization_id=current_user.organization_id,
+            document=document,
+            expected_document_type="chief_engineer_report",
+            input_char_count=text_extraction.char_count,
+        )
     job = enqueue_processing_job(
         db,
         document=document,
@@ -141,6 +150,14 @@ def enqueue_engine_log_intelligence(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Restricted documents cannot be sent to the configured external AI provider unless explicitly enabled.",
+        )
+    if provider.name == "openai":
+        require_external_ai_runtime_authorization(
+            db,
+            organization_id=current_user.organization_id,
+            document=document,
+            expected_document_type="engine_log",
+            input_char_count=text_extraction.char_count,
         )
     job = enqueue_processing_job(
         db,
@@ -205,6 +222,21 @@ def _enqueue_specialized_intelligence(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     if document.confidentiality_level == ConfidentialityLevel.RESTRICTED and provider.name == "openai" and not settings.allow_external_ai_restricted:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Restricted documents cannot be sent to the configured external AI provider unless explicitly enabled.")
+    if provider.name == "openai":
+        expected_document_type = {
+            ProcessingJobType.AI_EXTRACT_RUNNING_HOURS: "running_hours_record",
+            ProcessingJobType.AI_EXTRACT_PMS_HISTORY: "pms_record",
+            ProcessingJobType.AI_EXTRACT_WORKSHOP_REPORT: "workshop_report",
+            ProcessingJobType.AI_EXTRACT_QUOTATION: "quotation",
+            ProcessingJobType.AI_EXTRACT_INVOICE: "invoice",
+        }[job_type]
+        require_external_ai_runtime_authorization(
+            db,
+            organization_id=current_user.organization_id,
+            document=document,
+            expected_document_type=expected_document_type,
+            input_char_count=text_extraction.char_count,
+        )
     job = enqueue_processing_job(db, document=document, requested_by_id=current_user.id, job_type=job_type)
     db.commit(); db.refresh(job)
     return {"job_id": str(job.id), "status": job.status.value}

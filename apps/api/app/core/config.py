@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     ai_model: str = ""
     openai_api_key: str = ""
     ai_max_input_chars: int = 60000
+    ai_max_output_tokens: int = 2000
+    ai_prompt_bundle_version: str = "2026-08-20.1"
+    ai_schema_bundle_version: str = "2026-08-20.1"
     allow_external_ai_restricted: bool = False
 
     @property
