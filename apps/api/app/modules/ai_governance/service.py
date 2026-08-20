@@ -399,10 +399,22 @@ def require_external_ai_runtime_authorization(
     db: Session, *, organization_id: UUID, document: Document,
     expected_document_type: str, input_char_count: int,
     requested_by_id: UUID | None = None,
-) -> AIProviderActivationRequest:
+) -> object:
     settings = get_settings()
+    if settings.app_env.lower().strip() == "production":
+        from app.modules.ai_limited_production.service import (
+            require_limited_production_runtime_authorization,
+        )
+
+        authorization, _ = require_limited_production_runtime_authorization(
+            db, organization_id=organization_id, document=document,
+            expected_document_type=expected_document_type,
+            input_char_count=input_char_count, requested_by_id=requested_by_id,
+        )
+        return authorization
     if settings.app_env.lower().strip() != "staging":
-        raise HTTPException(409, "External AI is authorized only in the staging environment")
+        raise HTTPException(
+            409, "External AI requires a separately authorized staging or production evaluation")
     item = db.scalar(select(AIProviderActivationRequest).where(
         AIProviderActivationRequest.organization_id == organization_id,
         AIProviderActivationRequest.environment == "staging",

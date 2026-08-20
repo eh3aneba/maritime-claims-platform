@@ -10,6 +10,7 @@ from app.ai.gateway.registry import get_ai_provider
 from app.core.config import get_settings
 from app.db.session import get_db
 from app.modules.ai_governance.service import require_external_ai_runtime_authorization
+from app.modules.ai_limited_production.service import reserve_run_if_limited_production
 from app.modules.ai_private_pilot.service import reserve_run_if_private_pilot
 from app.modules.auth.dependencies import CurrentUser
 from app.modules.claims.security import get_claim_for_tenant
@@ -106,11 +107,16 @@ def enqueue_ce_report_intelligence(
     )
     if provider.name == "openai":
         db.flush()
-        reserve_run_if_private_pilot(
-            db, user=current_user, document=document,
-            expected_document_type="chief_engineer_report",
-            input_char_count=text_extraction.char_count, processing_job_id=job.id,
-        )
+        if settings.app_env.lower().strip() == "production":
+            reserve_run_if_limited_production(
+                db, user=current_user, document=document,
+                expected_document_type="chief_engineer_report",
+                input_char_count=text_extraction.char_count, processing_job_id=job.id)
+        else:
+            reserve_run_if_private_pilot(
+                db, user=current_user, document=document,
+                expected_document_type="chief_engineer_report",
+                input_char_count=text_extraction.char_count, processing_job_id=job.id)
     db.commit()
     db.refresh(job)
     return {"job_id": str(job.id), "status": job.status.value}
@@ -177,11 +183,16 @@ def enqueue_engine_log_intelligence(
     )
     if provider.name == "openai":
         db.flush()
-        reserve_run_if_private_pilot(
-            db, user=current_user, document=document,
-            expected_document_type="engine_log",
-            input_char_count=text_extraction.char_count, processing_job_id=job.id,
-        )
+        if settings.app_env.lower().strip() == "production":
+            reserve_run_if_limited_production(
+                db, user=current_user, document=document,
+                expected_document_type="engine_log",
+                input_char_count=text_extraction.char_count, processing_job_id=job.id)
+        else:
+            reserve_run_if_private_pilot(
+                db, user=current_user, document=document,
+                expected_document_type="engine_log",
+                input_char_count=text_extraction.char_count, processing_job_id=job.id)
     db.commit()
     db.refresh(job)
     return {"job_id": str(job.id), "status": job.status.value}
