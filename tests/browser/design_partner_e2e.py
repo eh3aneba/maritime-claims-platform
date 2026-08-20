@@ -68,7 +68,7 @@ def main() -> None:
             ("Open controlled email intake", "Controlled Email Intake"),
             ("Open email adapter operations", "Email Provider Adapter Operations"),
             ("Open external collaboration portal", "External Collaboration Portal"),
-            ("Open pilot operations", "Pilot Operational Hardening"),
+            ("Open pilot operations", "Pilot Execution & Production Baseline"),
             ("Open initial assessment", "Initial Assessment"),
         ]
         for link_name, heading in checks:
