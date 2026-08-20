@@ -8,6 +8,7 @@ from app.modules.ai_limited_production.models import AILimitedProductionApproval
 from app.modules.ai_limited_production_outcomes.models import AILimitedProductionOutcomeAssessment, AILimitedProductionOutcomeObservation, AILimitedProductionOutcomeReview  # noqa: F401
 from app.modules.ai_pilot_outcomes.models import AIPilotOutcomeAssessment, AIPilotOutcomeReview, AIPilotWorkflowObservation  # noqa: F401
 from app.modules.ai_private_pilot.models import AIPrivatePilotApproval, AIPrivatePilotAuthorization, AIPrivatePilotDocumentEligibility, AIPrivatePilotIncident, AIPrivatePilotRun  # noqa: F401
+from app.modules.ai_scale_up.models import AIScaleUpApproval, AIScaleUpAuthorization, AIScaleUpDocumentEligibility, AIScaleUpIncident, AIScaleUpMonitor, AIScaleUpRun  # noqa: F401
 from app.modules.audit.models import AuditLog  # noqa: F401
 from app.modules.assessments.models import InitialAssessment, AssessmentSection  # noqa: F401
 from app.modules.claim_packs.models import ClaimPackExport  # noqa: F401
