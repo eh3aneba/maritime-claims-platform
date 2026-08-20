@@ -1250,3 +1250,63 @@ export function completeAIPrivatePilot(id: string) {
       note: "Every bounded provider run has human review and every incident is resolved." }),
   });
 }
+
+export function getAIPilotOutcomes() {
+  return apiFetch<import("./types").AIPilotOutcomeDashboard>("/ai-pilot-outcomes");
+}
+
+export function createAIPilotOutcomeAssessment(pilotId: string) {
+  return apiFetch<import("./types").AIPilotOutcomeAssessment>(
+    "/ai-pilot-outcomes/assessments", {
+      method: "POST", body: JSON.stringify({ pilot_id: pilotId,
+        assessment_key: `private-pilot-exit-${crypto.randomUUID()}`,
+        confirm_content_free_assessment: true }),
+    });
+}
+
+export function recordAIPilotWorkflowObservation(assessmentId: string, payload: {
+  pilot_run_id: string; usefulness_rating: number; review_seconds: number;
+  workflow_completed: boolean; boundary_control_passed: boolean;
+  evidence_reference: string; note: string;
+}) {
+  return apiFetch<import("./types").AIPilotOutcomeAssessment>(
+    `/ai-pilot-outcomes/assessments/${assessmentId}/observations`, {
+      method: "POST", body: JSON.stringify({ ...payload,
+        confirm_content_free_observation: true }),
+    });
+}
+
+export function finalizeAIPilotOutcomeAssessment(id: string) {
+  return apiFetch<import("./types").AIPilotOutcomeAssessment>(
+    `/ai-pilot-outcomes/assessments/${id}/finalize`, {
+      method: "POST", body: JSON.stringify({ confirm_finalize: true,
+        note: "The completed cohort, per-workflow usability evidence, incidents and observed cost trend were verified before freezing this scorecard." }),
+    });
+}
+
+export function reviewAIPilotOutcomeAssessment(id: string,
+  reviewRole: "product" | "quality" | "risk", action: "approve" | "reject") {
+  return apiFetch<import("./types").AIPilotOutcomeAssessment>(
+    `/ai-pilot-outcomes/assessments/${id}/reviews`, {
+      method: "POST", body: JSON.stringify({ review_role: reviewRole, action,
+        evidence_reference: action === "approve"
+          ? `artifact://ai-pilot-outcomes/${reviewRole}-review` : null,
+        note: action === "approve"
+          ? `Independent ${reviewRole} reviewer reproduced the content-free scorecard and exit boundary.`
+          : `Independent ${reviewRole} reviewer rejected the private-pilot exit evidence.` }),
+    });
+}
+
+export function decideAIPilotOutcome(id: string, outcome:
+  "recommend_limited_production_evaluation" | "extend_private_pilot" | "stop_ai_progression") {
+  return apiFetch<import("./types").AIPilotOutcomeAssessment>(
+    `/ai-pilot-outcomes/assessments/${id}/decision`, {
+      method: "POST", body: JSON.stringify({ outcome,
+        confirm_recommendation_only: true,
+        note: outcome === "recommend_limited_production_evaluation"
+          ? "Administrator records a recommendation to design a separate limited-production evaluation authorization; this decision grants no production access."
+          : outcome === "extend_private_pilot"
+            ? "Administrator requires a new bounded private-pilot attempt and additional evidence."
+            : "Administrator stops AI progression; no production authorization is granted." }),
+    });
+}

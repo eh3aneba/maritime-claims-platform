@@ -1469,3 +1469,40 @@ export interface AIPrivatePilot {
 }
 
 export interface AIPrivatePilotDashboard { pilots: AIPrivatePilot[]; }
+
+export interface AIPilotWorkflowObservation {
+  id: string; assessment_id: string; pilot_run_id: string;
+  observed_by_id: string | null; workflow_type: "chief_engineer_report" | "engine_log";
+  usefulness_rating: number; review_seconds: number; workflow_completed: boolean;
+  boundary_control_passed: boolean; evidence_reference: string; note: string;
+  observation_hash: string; observed_at: string; created_at: string;
+}
+
+export interface AIPilotOutcomeReview {
+  id: string; assessment_id: string; reviewer_id: string | null;
+  review_role: "product" | "quality" | "risk"; action: "approve" | "reject";
+  evidence_reference: string | null; note: string; reviewed_at: string; created_at: string;
+}
+
+export interface AIPilotOutcomeAssessment {
+  id: string; pilot_id: string; requested_by_id: string | null;
+  finalized_by_id: string | null; attempt_number: number; assessment_key: string;
+  assessment_profile: "private_pilot_exit_v1"; thresholds: Record<string, number>;
+  status: string; outcome: string | null; metrics: Record<string, unknown> | null;
+  failure_reasons: string[]; assessment_note: string | null;
+  assessment_hash: string | null; assessed_at: string | null;
+  decision_note: string | null; decision_hash: string | null; decided_at: string | null;
+  observations: AIPilotWorkflowObservation[]; reviews: AIPilotOutcomeReview[];
+  summary: {
+    observation_count: number; thresholds_passed: boolean;
+    independent_reviews_complete: boolean; exit_recommendation_recorded: boolean;
+    limited_production_evaluation_recommended: boolean;
+    production_authorized: false; production_wide_authorized: false;
+    restricted_documents_authorized: false; autonomous_claim_decisions_authorized: false;
+    authoritative_facts_auto_updated: false; raw_content_stored: false;
+    human_review_required: true;
+  };
+  created_at: string;
+}
+
+export interface AIPilotOutcomeDashboard { assessments: AIPilotOutcomeAssessment[]; }
