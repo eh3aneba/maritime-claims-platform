@@ -839,3 +839,27 @@ export function approvePilotGovernance(note: string) {
 export function createPilotExitManifest(claimId: string) {
   return apiFetch<import("./types").PilotExitManifest>(`/pilot-operations/claims/${claimId}/exit-manifests`, { method: "POST", body: JSON.stringify({ idempotency_key: crypto.randomUUID(), confirm_manifest_only: true }) });
 }
+export function createDesignPartnerRehearsal(readinessReviewId: string) {
+  return apiFetch<import("./types").DesignPartnerRehearsal>("/pilot-operations/rehearsals", {
+    method: "POST", body: JSON.stringify({ readiness_review_id: readinessReviewId,
+      rehearsal_key: `rehearsal-${crypto.randomUUID()}`, name: "Design-partner pilot rehearsal",
+      objectives: ["Validate the bounded pilot runbook", "Exercise human escalation paths"],
+      participant_roles: ["Claims Manager", "Claims Handler", "Pilot Operations"],
+      scheduled_for: new Date(Date.now() + 86400000).toISOString() }),
+  });
+}
+export function startDesignPartnerRehearsal(id: string) {
+  return apiFetch<import("./types").DesignPartnerRehearsal>(`/pilot-operations/rehearsals/${id}/start`, { method: "POST" });
+}
+export function recordRehearsalEvidence(id: string, payload: { control_key: string; evidence_reference: string; evidence_summary: string; result: string }) {
+  return apiFetch<import("./types").DesignPartnerRehearsal>(`/pilot-operations/rehearsals/${id}/evidence`, { method: "PUT", body: JSON.stringify(payload) });
+}
+export function createRehearsalFinding(id: string, payload: { evidence_id?: string; severity: string; title: string; description: string; owner_label: string; due_at: string }) {
+  return apiFetch<import("./types").DesignPartnerRehearsal>(`/pilot-operations/rehearsals/${id}/findings`, { method: "POST", body: JSON.stringify(payload) });
+}
+export function transitionRehearsalFinding(id: string, findingId: string, action: "acknowledge" | "resolve", note: string) {
+  return apiFetch<import("./types").DesignPartnerRehearsal>(`/pilot-operations/rehearsals/${id}/findings/${findingId}/transition`, { method: "POST", body: JSON.stringify({ action, note }) });
+}
+export function completeDesignPartnerRehearsal(id: string, outcome: "go" | "no_go", note: string) {
+  return apiFetch<import("./types").DesignPartnerRehearsal>(`/pilot-operations/rehearsals/${id}/complete`, { method: "POST", body: JSON.stringify({ outcome, confirm_decision: true, note }) });
+}

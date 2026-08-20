@@ -96,3 +96,64 @@ class PilotExitManifest(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     manifest_checksum: Mapped[str] = mapped_column(String(64))
     status: Mapped[str] = mapped_column(String(30), default="authorized", server_default="authorized")
     authorized_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class DesignPartnerRehearsal(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "design_partner_rehearsals"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "rehearsal_key", name="uq_design_partner_rehearsal_key"),
+        Index("ix_design_partner_rehearsal_org_status", "organization_id", "status", "scheduled_for"),
+    )
+
+    organization_id: Mapped[UUID] = mapped_column(ForeignKey("organizations.id", ondelete="RESTRICT"), index=True)
+    readiness_review_id: Mapped[UUID] = mapped_column(ForeignKey("deployment_readiness_reviews.id", ondelete="RESTRICT"), index=True)
+    created_by_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    completed_by_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    rehearsal_key: Mapped[str] = mapped_column(String(120))
+    name: Mapped[str] = mapped_column(String(200))
+    objectives: Mapped[list] = mapped_column(JSON)
+    participant_roles: Mapped[list] = mapped_column(JSON)
+    status: Mapped[str] = mapped_column(String(30), default="draft", server_default="draft")
+    scheduled_for: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    outcome: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    decision_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    decision_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
+class RehearsalControlEvidence(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "rehearsal_control_evidence"
+    __table_args__ = (
+        UniqueConstraint("rehearsal_id", "control_key", name="uq_rehearsal_control_evidence"),
+        Index("ix_rehearsal_evidence_org_rehearsal", "organization_id", "rehearsal_id"),
+    )
+
+    organization_id: Mapped[UUID] = mapped_column(ForeignKey("organizations.id", ondelete="RESTRICT"), index=True)
+    rehearsal_id: Mapped[UUID] = mapped_column(ForeignKey("design_partner_rehearsals.id", ondelete="CASCADE"), index=True)
+    recorded_by_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    control_key: Mapped[str] = mapped_column(String(50))
+    evidence_reference: Mapped[str] = mapped_column(String(500))
+    evidence_summary: Mapped[str] = mapped_column(Text)
+    result: Mapped[str] = mapped_column(String(30))
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class RehearsalRemediationFinding(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "rehearsal_remediation_findings"
+    __table_args__ = (Index("ix_rehearsal_finding_org_status", "organization_id", "rehearsal_id", "status"),)
+
+    organization_id: Mapped[UUID] = mapped_column(ForeignKey("organizations.id", ondelete="RESTRICT"), index=True)
+    rehearsal_id: Mapped[UUID] = mapped_column(ForeignKey("design_partner_rehearsals.id", ondelete="CASCADE"), index=True)
+    evidence_id: Mapped[UUID | None] = mapped_column(ForeignKey("rehearsal_control_evidence.id", ondelete="SET NULL"), nullable=True)
+    created_by_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    updated_by_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    severity: Mapped[str] = mapped_column(String(20))
+    title: Mapped[str] = mapped_column(String(200))
+    description: Mapped[str] = mapped_column(Text)
+    owner_label: Mapped[str] = mapped_column(String(180))
+    due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    status: Mapped[str] = mapped_column(String(30), default="open", server_default="open")
+    acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    resolution_note: Mapped[str | None] = mapped_column(Text, nullable=True)

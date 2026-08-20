@@ -1,4 +1,5 @@
 import json
+import re
 from datetime import UTC, datetime
 from hashlib import sha256
 from uuid import UUID
@@ -15,16 +16,18 @@ from app.modules.documents.models import Document
 from app.modules.email_ingestion.models import EmailAdapterRun, EmailMessageStatus, EmailRetentionRun, IngestedEmailMessage
 from app.modules.external_portal.models import ExternalPortalInvitation, ExternalPortalSession, ExternalPortalSubmission
 from app.modules.pilot_operations.models import (
-    DeploymentReadinessReview, OperationalIncident, OperationalMonitorRun,
-    PilotExitManifest, PilotGovernanceProfile,
+    DeploymentReadinessReview, DesignPartnerRehearsal, OperationalIncident, OperationalMonitorRun,
+    PilotExitManifest, PilotGovernanceProfile, RehearsalControlEvidence, RehearsalRemediationFinding,
 )
 from app.modules.pilot_operations.schemas import (
     GovernanceProfileWrite, IncidentCreate, MonitorRunCreate, ReadinessCreate,
+    RehearsalCreate, RehearsalEvidenceWrite, RehearsalFindingCreate,
 )
 from app.modules.users.models import User
 
 READINESS_CONTROLS = {"tls", "secret_references", "backup_restore", "migrations", "malware_scan",
                       "least_privilege", "retention", "incident_contacts"}
+EVIDENCE_REFERENCE = re.compile(r"^(artifact|runbook|ticket|monitor)://[A-Za-z0-9._:/-]{3,450}$")
 
 
 def _audit(db: Session, user: User, action: str, kind: str, entity: UUID, values: dict, details: str) -> None:
@@ -42,7 +45,8 @@ def dashboard(db: Session, organization_id: UUID):
     profile = db.scalar(select(PilotGovernanceProfile).where(PilotGovernanceProfile.organization_id == organization_id))
     exits = list(db.scalars(select(PilotExitManifest).where(
         PilotExitManifest.organization_id == organization_id).order_by(PilotExitManifest.created_at.desc()).limit(25)))
-    return readiness, monitors, incidents, profile, exits
+    rehearsals = list_rehearsals(db, organization_id)
+    return readiness, monitors, incidents, profile, exits, rehearsals
 
 
 def create_readiness(db: Session, user: User, payload: ReadinessCreate) -> DeploymentReadinessReview:
@@ -197,3 +201,178 @@ def create_exit_manifest(db: Session, user: User, claim_id: UUID, key: str, conf
            {"claim_id": str(claim.id), "manifest_checksum": item.manifest_checksum, "counts": counts},
            "Manifest and checksum only; no raw file/message content exported and no deletion performed.")
     db.commit(); db.refresh(item); return item
+
+
+def _evidence(db: Session, rehearsal_id: UUID) -> list[RehearsalControlEvidence]:
+    return list(db.scalars(select(RehearsalControlEvidence).where(
+        RehearsalControlEvidence.rehearsal_id == rehearsal_id).order_by(RehearsalControlEvidence.control_key.asc())))
+
+
+def _findings(db: Session, rehearsal_id: UUID) -> list[RehearsalRemediationFinding]:
+    return list(db.scalars(select(RehearsalRemediationFinding).where(
+        RehearsalRemediationFinding.rehearsal_id == rehearsal_id).order_by(RehearsalRemediationFinding.created_at.asc())))
+
+
+def rehearsal_response(db: Session, item: DesignPartnerRehearsal) -> dict:
+    return {
+        "id": item.id, "readiness_review_id": item.readiness_review_id,
+        "rehearsal_key": item.rehearsal_key, "name": item.name,
+        "objectives": item.objectives, "participant_roles": item.participant_roles,
+        "status": item.status, "scheduled_for": item.scheduled_for,
+        "started_at": item.started_at, "completed_at": item.completed_at,
+        "outcome": item.outcome, "decision_note": item.decision_note,
+        "decision_hash": item.decision_hash, "created_at": item.created_at,
+        "evidence": _evidence(db, item.id), "findings": _findings(db, item.id),
+    }
+
+
+def list_rehearsals(db: Session, organization_id: UUID) -> list[dict]:
+    items = list(db.scalars(select(DesignPartnerRehearsal).where(
+        DesignPartnerRehearsal.organization_id == organization_id
+    ).order_by(DesignPartnerRehearsal.created_at.desc()).limit(25)))
+    return [rehearsal_response(db, item) for item in items]
+
+
+def get_rehearsal(db: Session, organization_id: UUID, item_id: UUID) -> DesignPartnerRehearsal:
+    item = db.scalar(select(DesignPartnerRehearsal).where(
+        DesignPartnerRehearsal.id == item_id,
+        DesignPartnerRehearsal.organization_id == organization_id,
+    ))
+    if item is None: raise HTTPException(404, "Design-partner rehearsal not found")
+    return item
+
+
+def create_rehearsal(db: Session, user: User, payload: RehearsalCreate) -> dict:
+    readiness = get_readiness(db, user.organization_id, payload.readiness_review_id)
+    if readiness.status != "ready" or readiness.attested_at is None:
+        raise HTTPException(409, "An attested ready snapshot is required before rehearsal")
+    objectives = list(dict.fromkeys(value.strip() for value in payload.objectives if value.strip()))
+    roles = list(dict.fromkeys(value.strip() for value in payload.participant_roles if value.strip()))
+    if not objectives or not roles: raise HTTPException(422, "Objectives and participant roles cannot be blank")
+    item = DesignPartnerRehearsal(
+        organization_id=user.organization_id, readiness_review_id=readiness.id, created_by_id=user.id,
+        rehearsal_key=payload.rehearsal_key.strip(), name=payload.name.strip(), objectives=objectives,
+        participant_roles=roles, status="draft", scheduled_for=payload.scheduled_for,
+    )
+    db.add(item)
+    try: db.flush()
+    except IntegrityError as exc:
+        db.rollback(); raise HTTPException(409, "This rehearsal key already exists") from exc
+    _audit(db, user, "CREATE_DESIGN_PARTNER_REHEARSAL", "design_partner_rehearsal", item.id,
+           {"readiness_review_id": str(readiness.id), "rehearsal_key": item.rehearsal_key,
+            "objective_count": len(objectives), "participant_role_count": len(roles)},
+           "Rehearsal created against an attested readiness snapshot; evidence references required.")
+    db.commit(); db.refresh(item); return rehearsal_response(db, item)
+
+
+def start_rehearsal(db: Session, user: User, item: DesignPartnerRehearsal) -> dict:
+    if item.status != "draft": raise HTTPException(409, "Only a draft rehearsal can be started")
+    item.status = "in_progress"; item.started_at = datetime.now(UTC)
+    _audit(db, user, "START_DESIGN_PARTNER_REHEARSAL", "design_partner_rehearsal", item.id,
+           {"status": item.status, "started_at": item.started_at.isoformat()},
+           "Human-facilitated rehearsal started; no deployment action performed.")
+    db.commit(); db.refresh(item); return rehearsal_response(db, item)
+
+
+def write_rehearsal_evidence(db: Session, user: User, item: DesignPartnerRehearsal,
+                             payload: RehearsalEvidenceWrite) -> dict:
+    if item.status == "completed": raise HTTPException(409, "Completed rehearsal evidence is immutable")
+    if not EVIDENCE_REFERENCE.fullmatch(payload.evidence_reference.strip()):
+        raise HTTPException(422, "Evidence reference must use artifact://, runbook://, ticket:// or monitor:// without secrets")
+    if item.status == "draft": item.status = "in_progress"; item.started_at = datetime.now(UTC)
+    evidence = db.scalar(select(RehearsalControlEvidence).where(
+        RehearsalControlEvidence.rehearsal_id == item.id,
+        RehearsalControlEvidence.control_key == payload.control_key,
+    ))
+    if evidence is None:
+        evidence = RehearsalControlEvidence(organization_id=user.organization_id, rehearsal_id=item.id,
+                                             control_key=payload.control_key); db.add(evidence)
+    evidence.recorded_by_id = user.id; evidence.evidence_reference = payload.evidence_reference.strip()
+    evidence.evidence_summary = payload.evidence_summary.strip(); evidence.result = payload.result
+    evidence.recorded_at = datetime.now(UTC); db.flush()
+    _audit(db, user, "RECORD_REHEARSAL_CONTROL_EVIDENCE", "rehearsal_control_evidence", evidence.id,
+           {"rehearsal_id": str(item.id), "control_key": evidence.control_key,
+            "evidence_reference": evidence.evidence_reference, "result": evidence.result},
+           "Bounded reference and human result only; no secret value or raw evidence content stored.")
+    db.commit(); db.refresh(evidence); return rehearsal_response(db, item)
+
+
+def create_rehearsal_finding(db: Session, user: User, item: DesignPartnerRehearsal,
+                             payload: RehearsalFindingCreate) -> dict:
+    if item.status == "completed": raise HTTPException(409, "Completed rehearsal findings are immutable")
+    if payload.evidence_id:
+        evidence = db.scalar(select(RehearsalControlEvidence).where(
+            RehearsalControlEvidence.id == payload.evidence_id,
+            RehearsalControlEvidence.rehearsal_id == item.id,
+            RehearsalControlEvidence.organization_id == user.organization_id,
+        ))
+        if evidence is None: raise HTTPException(404, "Rehearsal evidence not found")
+    finding = RehearsalRemediationFinding(
+        organization_id=user.organization_id, rehearsal_id=item.id, evidence_id=payload.evidence_id,
+        created_by_id=user.id, updated_by_id=user.id, severity=payload.severity,
+        title=payload.title.strip(), description=payload.description.strip(),
+        owner_label=payload.owner_label.strip(), due_at=payload.due_at, status="open",
+    )
+    db.add(finding); db.flush()
+    _audit(db, user, "OPEN_REHEARSAL_REMEDIATION_FINDING", "rehearsal_remediation_finding", finding.id,
+           {"rehearsal_id": str(item.id), "severity": finding.severity, "status": finding.status,
+            "owner_label": finding.owner_label, "due_at": finding.due_at.isoformat()},
+           finding.description)
+    db.commit(); db.refresh(finding); return rehearsal_response(db, item)
+
+
+def get_rehearsal_finding(db: Session, organization_id: UUID, finding_id: UUID) -> RehearsalRemediationFinding:
+    item = db.scalar(select(RehearsalRemediationFinding).where(
+        RehearsalRemediationFinding.id == finding_id,
+        RehearsalRemediationFinding.organization_id == organization_id,
+    ))
+    if item is None: raise HTTPException(404, "Rehearsal finding not found")
+    return item
+
+
+def transition_rehearsal_finding(db: Session, user: User, rehearsal: DesignPartnerRehearsal,
+                                 finding: RehearsalRemediationFinding, action: str, note: str) -> dict:
+    if finding.rehearsal_id != rehearsal.id: raise HTTPException(404, "Rehearsal finding not found")
+    if rehearsal.status == "completed": raise HTTPException(409, "Completed rehearsal findings are immutable")
+    now = datetime.now(UTC)
+    if action == "acknowledge" and finding.status == "open":
+        finding.status = "acknowledged"; finding.acknowledged_at = now
+    elif action == "resolve" and finding.status in {"open", "acknowledged"}:
+        finding.status = "resolved"; finding.resolved_at = now; finding.resolution_note = note.strip()
+    else: raise HTTPException(409, "Finding transition is not allowed from the current state")
+    finding.updated_by_id = user.id
+    _audit(db, user, f"{action.upper()}_REHEARSAL_FINDING", "rehearsal_remediation_finding", finding.id,
+           {"status": finding.status}, note.strip())
+    db.commit(); db.refresh(finding); return rehearsal_response(db, rehearsal)
+
+
+def complete_rehearsal(db: Session, user: User, item: DesignPartnerRehearsal,
+                       outcome: str, confirm: bool, note: str) -> dict:
+    if not confirm: raise HTTPException(422, "Explicit rehearsal decision confirmation is required")
+    if item.status == "completed": raise HTTPException(409, "Rehearsal is already complete")
+    evidence = _evidence(db, item.id); findings = _findings(db, item.id)
+    evidence_by_control = {entry.control_key: entry for entry in evidence}
+    if set(evidence_by_control) != READINESS_CONTROLS:
+        raise HTTPException(409, "All eight readiness controls require rehearsal evidence")
+    open_findings = [entry for entry in findings if entry.status != "resolved"]
+    failed_controls = [key for key, entry in evidence_by_control.items() if entry.result != "pass"]
+    if outcome == "go" and (failed_controls or open_findings):
+        raise HTTPException(409, "Go is blocked by failed/not-tested controls or unresolved findings")
+    now = datetime.now(UTC)
+    snapshot = {
+        "schema": "mcri-design-partner-rehearsal-v1", "rehearsal_id": str(item.id),
+        "readiness_review_id": str(item.readiness_review_id), "rehearsal_key": item.rehearsal_key,
+        "outcome": outcome, "decision_note": note.strip(),
+        "evidence": [{"control_key": entry.control_key, "reference": entry.evidence_reference,
+                      "summary": entry.evidence_summary, "result": entry.result} for entry in evidence],
+        "findings": [{"id": str(entry.id), "severity": entry.severity, "title": entry.title,
+                      "owner_label": entry.owner_label, "status": entry.status} for entry in findings],
+    }
+    item.status = "completed"; item.outcome = outcome; item.decision_note = note.strip()
+    item.completed_at = now; item.completed_by_id = user.id
+    item.decision_hash = sha256(json.dumps(snapshot, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    _audit(db, user, "COMPLETE_DESIGN_PARTNER_REHEARSAL", "design_partner_rehearsal", item.id,
+           {"outcome": item.outcome, "decision_hash": item.decision_hash,
+            "evidence_count": len(evidence), "finding_count": len(findings)},
+           "Human go/no-go decision snapshot; not a production certification or deployment action. " + item.decision_note)
+    db.commit(); db.refresh(item); return rehearsal_response(db, item)
