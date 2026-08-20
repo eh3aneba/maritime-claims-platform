@@ -8,11 +8,13 @@ import {
   ApiError, approvePilotGovernance, attestReadiness, createOperationalIncident,
   attestProductionArchitectureBaseline, completeDesignPartnerRehearsal,
   completePrivatePilotExecution, completeProductionControlVerificationGate,
+  createOperationalAcceptance, decideOperationalAcceptance,
   createDesignPartnerRehearsal, createPilotExitManifest, createPrivatePilotExecution,
   createProductionArchitectureBaseline, createProductionControlVerificationGate, createProductGap,
   createReadinessReview, createRehearsalFinding, getClaim, getPilotOperations,
   recordPrivatePilotCaseRun, recordProductionArchitectureControl, recordRehearsalEvidence,
   reviewProductionControlEvidence,
+  reviewOperationalAcceptance,
   runOperationalMonitor, startDesignPartnerRehearsal, startPrivatePilotExecution,
   submitProductionControlEvidence, transitionOperationalIncident, transitionProductGap,
   transitionRehearsalFinding, writePilotGovernance,
@@ -21,7 +23,7 @@ import type { Claim, PilotOperationsDashboard } from "@/lib/types";
 
 const controlKeys = ["tls", "secret_references", "backup_restore", "migrations", "malware_scan", "least_privilege", "retention", "incident_contacts"];
 const architectureControlKeys = ["identity_access", "application_security", "evidence_storage", "observability", "backup_dr", "data_governance", "deployment_iac", "interoperability", "ai_governance"];
-const emptyDashboard: PilotOperationsDashboard = { readiness_reviews: [], monitor_runs: [], incidents: [], governance_profile: null, exit_manifests: [], rehearsals: [], pilot_executions: [], architecture_baselines: [], control_verification_gates: [] };
+const emptyDashboard: PilotOperationsDashboard = { readiness_reviews: [], monitor_runs: [], incidents: [], governance_profile: null, exit_manifests: [], rehearsals: [], pilot_executions: [], architecture_baselines: [], control_verification_gates: [], operational_acceptances: [] };
 
 export default function PilotOperationsPage() {
   const { id } = useParams<{ id: string }>();
@@ -38,8 +40,8 @@ export default function PilotOperationsPage() {
   const profile = data.governance_profile;
   return <div>
     <Link href={`/claims/${id}`} className="text-sm font-semibold text-slate-500">← Back to claim</Link>
-    <p className="eyebrow mt-5">{claim.claim_reference} · Sprints 9H–10D</p><h1 className="mt-2 text-3xl font-semibold">Pilot Execution &amp; Production Baseline</h1>
-    <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-500">A human-controlled path from readiness and rehearsal into a private pilot, accountable product gaps, a truthful production-architecture baseline and independently reviewed implementation evidence. No record is deleted, no deployment occurs and no production certification or go-live authorization is issued here.</p>
+    <p className="eyebrow mt-5">{claim.claim_reference} · Sprints 9H–10E</p><h1 className="mt-2 text-3xl font-semibold">Pilot Execution &amp; Production Baseline</h1>
+    <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-500">A human-controlled path from readiness and rehearsal into a private pilot, accountable product gaps, a truthful production-architecture baseline, independently reviewed implementation evidence and bounded operational authorization. No record is deleted and no deployment, traffic enablement, production certification or external-AI authorization occurs here.</p>
     {error ? <div className="mt-5 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div> : null}
     <div className="mt-6 grid gap-6 xl:grid-cols-2">
       <section className="panel p-5"><p className="eyebrow">9H</p><h2 className="section-title mt-2">Deployment readiness gates</h2><p className="section-subtitle">All eight controls must pass before a Manager/Admin can attest the immutable snapshot.</p><div className="mt-4 grid gap-2 sm:grid-cols-2">{controlKeys.map((key) => <label key={key} className="flex items-center gap-2 rounded-lg border border-slate-200 p-3 text-sm"><input type="checkbox" checked={controls[key]} onChange={(e) => setControls({ ...controls, [key]: e.target.checked })} /><span>{key.replaceAll("_", " ")}</span></label>)}</div><button disabled={busy} className="secondary-button mt-4" onClick={() => run(() => createReadinessReview({ environment: "pilot", review_key: `pilot-${crypto.randomUUID()}`, controls }))}>Capture readiness snapshot</button><div className="mt-4 space-y-2">{data.readiness_reviews.slice(0, 3).map((x) => <div key={x.id} className="rounded-lg bg-slate-50 p-3 text-sm"><div className="flex justify-between"><span className="font-semibold">{x.review_key}</span><span>{x.status}</span></div>{x.status === "draft" ? <button className="secondary-button mt-2" onClick={() => { const note = window.prompt("Attestation note (10+ characters)")?.trim(); if (note) run(() => attestReadiness(x.id, note)); }}>Attest snapshot</button> : null}</div>)}</div></section>
@@ -107,6 +109,27 @@ export default function PilotOperationsPage() {
           {gate.status !== "completed" && gate.summary.all_independently_verified ? <button className="primary-button mt-4" disabled={busy} onClick={() => run(() => completeProductionControlVerificationGate(gate.id, "All controls in this immutable verification profile were independently verified; this evidence snapshot is not a production certification or go-live authorization."))}>Freeze verification snapshot</button> : null}
           <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">Production certification: false · Go-live authorization: false · Content/secrets included: false</div>
           {gate.outcome_hash ? <p className="mt-3 break-all font-mono text-[10px] text-slate-400">Immutable verification hash: {gate.outcome_hash}</p> : null}
+        </article>)}</div>
+      </section>
+
+      <section className="panel p-5 xl:col-span-2">
+        <p className="eyebrow">10E</p>
+        <h2 className="section-title mt-2">Operational acceptance &amp; bounded go-live decision</h2>
+        <p className="section-subtitle">Anchor a release and UTC-aware change window to a completed nine-control gate. Operations and risk require different reviewers; an Admin then records Authorize or Hold. Authorization expires with the window and never deploys, enables traffic or authorizes external AI.</p>
+        {data.control_verification_gates.some((gate) => gate.status === "completed" && gate.verification_profile === "architecture_v2" && (() => { const attempts = data.operational_acceptances.filter((item) => item.control_verification_gate_id === gate.id); return !attempts.length || ["rejected", "held"].includes(attempts[0].status); })()) ? <button className="primary-button mt-4" disabled={busy} onClick={() => { const gate = data.control_verification_gates.find((item) => item.status === "completed" && item.verification_profile === "architecture_v2" && (() => { const attempts = data.operational_acceptances.filter((acceptance) => acceptance.control_verification_gate_id === item.id); return !attempts.length || ["rejected", "held"].includes(attempts[0].status); })()); if (gate) run(() => createOperationalAcceptance(gate.id)); }}>Create seven-check acceptance attempt</button> : null}
+        {!data.control_verification_gates.some((gate) => gate.status === "completed" && gate.verification_profile === "architecture_v2") ? <p className="mt-4 text-sm text-amber-700">A completed architecture_v2 nine-control gate is required.</p> : null}
+        <div className="mt-5 space-y-4">{data.operational_acceptances.map((acceptance) => <article key={acceptance.id} className="rounded-xl border border-slate-200 p-4">
+          <div className="flex flex-wrap justify-between gap-3"><div><p className="font-semibold">{acceptance.release_identifier}</p><p className="text-xs text-slate-500">Attempt {acceptance.attempt_number} · {acceptance.summary.pass_count}/{acceptance.summary.required_check_count} checks passed · {acceptance.approvals.length}/2 reviews · expires {new Date(acceptance.change_window_end).toLocaleString()}</p></div><span className="text-xs font-semibold">{acceptance.outcome || acceptance.status}</span></div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {acceptance.status === "pending_approvals" && !acceptance.approvals.some((item) => item.approval_role === "operations") ? <button className="primary-button" disabled={busy} onClick={() => run(() => reviewOperationalAcceptance(acceptance.id, "operations", "approve"))}>Operations approve</button> : null}
+            {acceptance.status === "pending_approvals" && !acceptance.approvals.some((item) => item.approval_role === "risk") ? <button className="primary-button" disabled={busy} onClick={() => run(() => reviewOperationalAcceptance(acceptance.id, "risk", "approve"))}>Risk approve</button> : null}
+            {acceptance.status === "pending_approvals" ? <button className="secondary-button" disabled={busy} onClick={() => { const role = acceptance.approvals.some((item) => item.approval_role === "operations") ? "risk" : "operations"; run(() => reviewOperationalAcceptance(acceptance.id, role, "reject")); }}>Reject attempt</button> : null}
+            {acceptance.status === "decision_ready" ? <button className="primary-button" disabled={busy} onClick={() => run(() => decideOperationalAcceptance(acceptance.id, "authorize"))}>Admin authorize window</button> : null}
+            {acceptance.status === "decision_ready" ? <button className="secondary-button" disabled={busy} onClick={() => run(() => decideOperationalAcceptance(acceptance.id, "hold"))}>Admin hold</button> : null}
+          </div>
+          <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">Authorization active: {String(acceptance.summary.authorization_active)} · Deployment performed: false · Traffic enabled: false · Production certification: false · External AI authorization: false</div>
+          <p className="mt-2 text-xs text-slate-500">Use different Manager/Admin accounts for operations and risk approval; the requester cannot approve, and only an Admin can make the final decision.</p>
+          {acceptance.decision_hash ? <p className="mt-3 break-all font-mono text-[10px] text-slate-400">Immutable operational decision hash: {acceptance.decision_hash}</p> : null}
         </article>)}</div>
       </section>
     </div>

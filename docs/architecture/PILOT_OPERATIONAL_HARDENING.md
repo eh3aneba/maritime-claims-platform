@@ -1,6 +1,6 @@
 # Pilot Operational Hardening
 
-Sprint 9H–10D adds an operational control plane around the private design-partner pilot and its production-control follow-up.
+Sprint 9H–10E adds an operational control plane around the private design-partner pilot and its production-control follow-up.
 It does not certify production readiness or automate compliance decisions.
 
 ## Control flow
@@ -21,6 +21,9 @@ It does not certify production readiness or automate compliance decisions.
 14. An attested architecture baseline can anchor versioned implementation evidence for all nine architecture controls; historical five-control gates retain their original profile.
 15. A different Manager/Admin verifies or rejects every control; rejected versions stay immutable and visible.
 16. Only independently verified current submissions for every control in the gate's immutable profile permit a frozen verification snapshot, which never authorizes go-live.
+17. A completed `architecture_v2` gate may anchor a seven-check operational acceptance with named release, rollback, incident and support owners and a bounded UTC-aware change window.
+18. Operations and risk approvals require two different Manager/Admin users, both different from the requester.
+19. Only an Admin can record Authorize or Hold; authorization expires at the end of the change window and still performs no deployment or traffic action.
 
 ## Security boundaries
 
@@ -36,10 +39,12 @@ It does not certify production readiness or automate compliance decisions.
 - Architecture attestation is a reviewed design baseline, never a deployment or production certification.
 - Implementation submissions contain bounded references rather than secrets or raw infrastructure artifacts.
 - Submitter/reviewer separation is enforced per control; verified submissions and completed gates are immutable.
+- Operational checks, approvals and final decision are separately retained; rejected or held attempts permit only a fresh append-only attempt.
+- Every operational decision summary states `deployment_performed: false`, `traffic_enabled: false`, `production_certification: false` and `external_ai_authorization: false`.
 - Every state-changing operation is appended to the audit trail.
 
 ## Deployment use
 
 The controls support a documented rehearsal, bounded private pilot and architecture baseline. Operators must still implement
 the target infrastructure, independently verify evidence, perform recovery and security tests, validate incident contacts and
-obtain the organization’s own security, privacy, legal and production-go-live approvals.
+obtain the organization’s own security, privacy and legal approvals, and execute deployment/traffic changes through a separate authorized change process. External AI requires its own activation and evaluation gate.

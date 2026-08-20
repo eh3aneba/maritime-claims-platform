@@ -195,7 +195,9 @@ Engine-log event fields are intentionally not promoted into scalar `claim_facts`
 
 ## Current milestone
 
-Sprint 10 Phases A–D: a completed Go rehearsal can anchor a Manager-started private pilot and immutable human outcome; the pilot can anchor a nine-domain architecture baseline; and that baseline can anchor versioned implementation evidence with independent verification across all nine controls. Historical five-control gates retain their original profile. The platform still cannot certify production readiness, deploy infrastructure, authorize go-live, store secret evidence, delete pilot data, send email, or expose privileged/internal material.
+Sprint 10 Phases A–E: a completed Go rehearsal can anchor a Manager-started private pilot and immutable human outcome; the pilot can anchor a nine-domain architecture baseline; and that baseline can anchor versioned implementation evidence with independent verification across all nine controls. A completed `architecture_v2` gate can now anchor a seven-check operational acceptance with named release, rollback, incident and support owners, independent Operations/Risk approvals, and an Admin-only expiring Authorize/Hold decision. Historical five-control gates retain their original profile. The workflow never deploys infrastructure, enables traffic, certifies production, authorizes an external AI provider, stores secret evidence, deletes pilot data, sends email, or exposes privileged/internal material.
+
+The provider-neutral AI gateway, OpenAI Responses API adapter, strict Structured Outputs and mandatory human-review queue are already implemented. `AI_PROVIDER=disabled` remains the safe default. Synthetic or de-identified staging evaluation can begin after Sprint 11A's separate provider-activation gate; real claim documents require the later data-policy, evaluation and private-pilot approvals described in `docs/product/AI_ACTIVATION_ROADMAP.md`.
 
 ## Design-partner pilot
 

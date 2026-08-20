@@ -12,6 +12,8 @@ from app.modules.pilot_operations.schemas import (
     ControlVerificationGateResponse, ExitManifestCreate, ExitManifestResponse, GovernanceApproval,
     GovernanceProfileResponse, GovernanceProfileWrite, IncidentCreate, IncidentResponse,
     IncidentTransition, MonitorRunCreate, MonitorRunResponse, PilotCaseRunWrite,
+    OperationalAcceptanceApprovalWrite, OperationalAcceptanceCreate,
+    OperationalAcceptanceDecision, OperationalAcceptanceResponse,
     PilotExecutionComplete, PilotExecutionCreate, PilotExecutionResponse, PilotOperationsDashboard,
     ProductGapCreate, ProductGapTransition, ProductionControlEvidenceReview,
     ProductionControlEvidenceSubmit, ReadinessAttest, ReadinessCreate, ReadinessResponse,
@@ -23,10 +25,13 @@ from app.modules.pilot_operations.service import (
     complete_control_verification_gate, complete_pilot_execution, complete_rehearsal,
     create_architecture_baseline, create_control_verification_gate,
     create_exit_manifest, create_incident, create_pilot_execution, create_product_gap,
+    create_operational_acceptance, decide_operational_acceptance,
     create_readiness, create_rehearsal, create_rehearsal_finding, dashboard,
     get_architecture_baseline, get_control_verification_gate, get_governance, get_incident,
+    get_operational_acceptance,
     get_pilot_execution, get_product_gap, get_production_control_evidence, get_readiness,
     get_rehearsal, get_rehearsal_finding, review_production_control_evidence, run_monitor,
+    record_operational_acceptance_approval,
     start_pilot_execution, start_rehearsal, transition_incident, transition_product_gap,
     submit_production_control_evidence, transition_rehearsal_finding,
     write_architecture_control, write_governance,
@@ -36,17 +41,19 @@ from app.modules.users.models import User, UserRole
 
 router = APIRouter(prefix="/pilot-operations", tags=["pilot-operations"])
 Manager = Annotated[User, Depends(require_roles(UserRole.ADMIN, UserRole.CLAIMS_MANAGER))]
+Admin = Annotated[User, Depends(require_roles(UserRole.ADMIN))]
 
 
 @router.get("", response_model=PilotOperationsDashboard)
 def operations_dashboard(current_user: CurrentUser, db: Annotated[Session, Depends(get_db)]):
-    readiness, monitors, incidents, profile, exits, rehearsals, executions, baselines, gates = dashboard(
-        db, current_user.organization_id)
+    (readiness, monitors, incidents, profile, exits, rehearsals, executions, baselines, gates,
+     acceptances) = dashboard(db, current_user.organization_id)
     return PilotOperationsDashboard(readiness_reviews=readiness, monitor_runs=monitors,
                                     incidents=incidents, governance_profile=profile,
                                     exit_manifests=exits, rehearsals=rehearsals,
                                     pilot_executions=executions, architecture_baselines=baselines,
-                                    control_verification_gates=gates)
+                                    control_verification_gates=gates,
+                                    operational_acceptances=acceptances)
 
 
 @router.post("/readiness", response_model=ReadinessResponse, status_code=201)
@@ -232,3 +239,31 @@ def control_verification_gate_complete(item_id: UUID, payload: ControlVerificati
     return complete_control_verification_gate(
         db, manager, get_control_verification_gate(db, manager.organization_id, item_id),
         payload.confirm_verified, payload.note)
+
+
+@router.post("/operational-acceptances", response_model=OperationalAcceptanceResponse,
+             status_code=201)
+def operational_acceptance_create(payload: OperationalAcceptanceCreate, manager: Manager,
+                                  db: Annotated[Session, Depends(get_db)]):
+    return create_operational_acceptance(db, manager, payload)
+
+
+@router.post("/operational-acceptances/{item_id}/approvals",
+             response_model=OperationalAcceptanceResponse)
+def operational_acceptance_approval(item_id: UUID,
+                                    payload: OperationalAcceptanceApprovalWrite,
+                                    manager: Manager,
+                                    db: Annotated[Session, Depends(get_db)]):
+    return record_operational_acceptance_approval(
+        db, manager, get_operational_acceptance(db, manager.organization_id, item_id),
+        payload.approval_role, payload.action, payload.evidence_reference, payload.note)
+
+
+@router.post("/operational-acceptances/{item_id}/decision",
+             response_model=OperationalAcceptanceResponse)
+def operational_acceptance_decision(item_id: UUID, payload: OperationalAcceptanceDecision,
+                                    admin: Admin,
+                                    db: Annotated[Session, Depends(get_db)]):
+    return decide_operational_acceptance(
+        db, admin, get_operational_acceptance(db, admin.organization_id, item_id),
+        payload.outcome, payload.confirm_decision, payload.note)
