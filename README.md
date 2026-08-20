@@ -32,8 +32,9 @@ The MVP now includes the full H&M Machinery / Turbocharger design-partner workfl
 - Expiring external-AI staging activation with three independent reviews, per-document eligibility and a runtime kill switch
 - Version-pinned AI benchmark promotion with deterministic quality/safety/cost thresholds and immutable failures
 - Bounded real-document private AI pilot with independent data-owner approval, quotas, mandatory human review and incident rollback
+- Measured private-pilot exit gate with workflow scorecards, cost/incident trends and three independent reviews
 
-**Current phase: Sprint 11C — Bounded Real-Document Private Pilot.** Real non-restricted CE reports and engine logs can become eligible only after active 11A/11B anchors, different organization/data-owner approvals, an Admin decision, document-level authorization, cohort quotas and mandatory different-human review. Code deployment alone grants no data-processing authorization. Production-wide use and Restricted documents remain blocked.
+**Current phase: Sprint 11D — Measured Private-Pilot Exit.** A completed 11C pilot can now be assessed against fixed workflow coverage, human action, usefulness, effort, latency, cost and incident thresholds. Product, Quality and Risk must independently approve before an Admin records an exit recommendation. The recommendation is not Production authorization; Production-wide use and Restricted documents remain blocked.
 
 ## Prerequisites
 
@@ -198,9 +199,9 @@ Engine-log event fields are intentionally not promoted into scalar `claim_facts`
 
 ## Current milestone
 
-Sprint 11A adds the separately authorized provider control plane; Sprint 11B requires measured quality, safety, source-grounding, latency, cost and override evidence; Sprint 11C adds the independent organization/data-owner decision for a small monitored real non-restricted cohort. All three remain staging-only, content-minimizing and revocable, and none provisions a provider key.
+Sprint 11A adds the separately authorized provider control plane; Sprint 11B requires measured synthetic/de-identified promotion evidence; Sprint 11C adds the organization/data-owner decision for a small real non-restricted cohort; Sprint 11D freezes measured cohort outcomes and independent exit reviews. These stages remain content-minimizing, and none provisions a provider key or grants Production authorization.
 
-Next, Sprint 11D will measure actual cohort outcomes and prepare an explicit exit recommendation. Production-wide and Restricted-document AI remain unauthorized. Full English/Persian UI localization remains deferred until the product reaches a stable post-evaluation stage.
+Next, Sprint 11E will design a separately authorized limited-production evaluation control plane with environment isolation, allowlists, rollout caps, monitoring, expiry and rollback. Production-wide and Restricted-document AI remain unauthorized. Full English/Persian UI localization remains deferred until the product reaches a stable post-evaluation stage.
 
 ## Design-partner pilot
 

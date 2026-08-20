@@ -49,9 +49,24 @@ Implementation status: the application now provides the append-only pilot author
 
 Exit: a separately authorized production-AI decision may be considered. Restricted documents remain a later explicit decision.
 
+## Sprint 11D — Private-Pilot Outcome & Exit Gate
+
+Implementation status: the application now provides an append-only assessment anchored to a completed Sprint 11C pilot, one content-free usability observation per reviewed run, deterministic cohort/workflow scorecards, incident and cost trends, independent Product/Quality/Risk reviews and an Admin exit recommendation.
+
+- minimum six reviewed runs with three CE Reports and three Engine Logs
+- complete human-review, workflow-observation and safety-boundary coverage
+- fixed Reject/Edit, usefulness, review-effort, latency and observed-cost thresholds
+- zero unresolved/Critical incidents and zero privacy/security/cross-tenant incidents
+- immutable failures and SHA-256 evidence snapshots
+- recommend limited-production evaluation, extend private pilot or stop progression
+- every result preserves `production_authorized: false`
+
+Exit: a limited-production evaluation control plane may be designed only after a positive recommendation. That later control plane and its authorization remain separate decisions.
+
 ## Practical answer
 
 - Deterministic developer tests: available now with local fake providers and no external processing.
 - Shared staging use: after Sprint 11A controls are deployed and an activation attempt is independently authorized.
 - Real but non-restricted CE reports and engine logs: after Sprints 11A and 11B pass, Sprint 11C is deployed, its independent approvals are complete and an Admin explicitly authorizes the bounded cohort and document.
-- Broad production or restricted-document use: only after the bounded pilot demonstrates the required quality, safety, privacy, operational and cost thresholds.
+- Pilot exit recommendation: after Sprint 11D passes every fixed outcome threshold, three independent reviews complete and an Admin records the recommendation.
+- Limited or broad production and restricted-document use: still unauthorized; each requires a separate future control plane and explicit decision.

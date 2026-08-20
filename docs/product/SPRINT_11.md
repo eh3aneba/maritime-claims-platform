@@ -55,9 +55,26 @@ Delivered application controls:
 
 The application does not grant the operational authorization automatically. The organization must provide real approval evidence and make the recorded decisions before any real document is eligible. Completion does not grant production-wide or Restricted-data authorization.
 
-## Sprint 11D — Next
+## Sprint 11D — Private-pilot outcome gate
 
-Execute and measure the private pilot: add cohort outcome scorecards, per-workflow usability evidence, incident/cost trend review and an explicit pilot exit recommendation. Any production-AI authorization remains a separate later decision.
+Goal: turn a completed bounded pilot into measured, independently reviewed evidence without treating completion as production readiness.
+
+Delivered application controls:
+
+- append-only tenant-scoped assessments anchored to a completed Sprint 11C pilot
+- one content-free usability observation for every immutable reviewed provider run
+- fixed sample, workflow coverage, human action, usefulness, effort, latency, cost and incident thresholds
+- separate CE Report and Engine Log scorecards plus first-half/second-half cost trend
+- immutable SHA-256 scorecards and deterministic failure reasons
+- different Product, Quality and Risk reviewers plus Admin-only final recommendation
+- recommendation/extend/stop outcomes that always preserve `production_authorized: false`
+- dashboard, API, migration, audit events, tests, architecture document and ADR
+
+The application records an evidence-backed exit recommendation only. It does not enable Production, expand the cohort or admit Restricted documents.
+
+## Sprint 11E — Next
+
+Design the separately authorized limited-production evaluation control plane: deployment/environment isolation, tenant and document allowlists, rollout percentage, rollback SLOs, live quality/cost monitors, expiry and an independent authorization decision. Sprint 11D recommendation alone must remain insufficient.
 
 ## Deferred localization
 
