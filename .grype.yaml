@@ -9,3 +9,22 @@ ignore:
       name: python
       version: "3.13.15"
       type: binary
+
+  # Temporary VEX exceptions tracked by:
+  # https://github.com/eh3aneba/maritime-claims-platform/issues/52
+  #
+  # OpenSSL rates CVE-2026-14456 Low and limits it to applications that
+  # instantiate the OpenSSL QUIC server listener. The API and web images do
+  # not expose that code path. Grype reports High and Alpine currently has no
+  # fixed package; remove both rules when OpenSSL 3.5.8/backport is available.
+  # Review no later than 2026-09-03.
+  - vulnerability: CVE-2026-14456
+    package:
+      name: libcrypto3
+      version: "3.5.7-r0"
+      type: apk
+  - vulnerability: CVE-2026-14456
+    package:
+      name: libssl3
+      version: "3.5.7-r0"
+      type: apk
