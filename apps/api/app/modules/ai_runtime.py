@@ -17,13 +17,25 @@ def require_external_ai_runtime_authorization(
 ) -> object:
     """Use the newest applicable Production AI control plane and fail closed.
 
-    Sprint 11K takes precedence over Sprint 11I and Sprint 11G. Once a tenant
-    has any 11K attempt, a held, paused, revoked, completed or expired 11K
-    attempt blocks execution rather than falling back to older Production
-    authorizations. If no 11K attempt exists, the existing 11I/11G precedence
-    rule remains unchanged.
+    Sprint 11N takes precedence over Sprint 11K, Sprint 11I and Sprint 11G.
+    Once a tenant has any 11N attempt, inactive/held/paused/revoked/completed/
+    expired 11N state blocks execution rather than falling back to an older
+    Production authorization.
     """
     if get_settings().app_env.lower().strip() == "production":
+        from app.modules.ai_final_production.service import (
+            latest_final_production_attempt,
+            require_final_production_runtime_authorization,
+        )
+
+        if latest_final_production_attempt(db, organization_id) is not None:
+            authorization, _ = require_final_production_runtime_authorization(
+                db, organization_id=organization_id, document=document,
+                expected_document_type=expected_document_type,
+                input_char_count=input_char_count, requested_by_id=requested_by_id,
+            )
+            return authorization
+
         from app.modules.ai_high_coverage.service import (
             latest_high_coverage_attempt,
             require_high_coverage_runtime_authorization,
@@ -74,6 +86,16 @@ def reserve_production_ai_run(
     input_char_count: int, processing_job_id: UUID,
 ) -> object:
     """Reserve a content-free run in the newest Production control plane."""
+    from app.modules.ai_final_production.service import reserve_run_if_final_production
+
+    final_run = reserve_run_if_final_production(
+        db, user=user, document=document,
+        expected_document_type=expected_document_type,
+        input_char_count=input_char_count, processing_job_id=processing_job_id,
+    )
+    if final_run is not None:
+        return final_run
+
     from app.modules.ai_high_coverage.service import reserve_run_if_high_coverage
 
     high_coverage_run = reserve_run_if_high_coverage(
