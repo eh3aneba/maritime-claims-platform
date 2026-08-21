@@ -25,6 +25,7 @@ const nav = [
   { href: "/ai-high-coverage-outcomes", label: "AI Final Readiness", mark: "11L" },
   { href: "/ai-final-production-readiness", label: "AI Production Review", mark: "11M" },
   { href: "/ai-final-production", label: "AI Final Cohort", mark: "11N" },
+  { href: "/ai-final-production-outcomes", label: "AI >90% Readiness", mark: "11O" },
   { href: "/pilot", label: "Pilot", mark: "P" },
   { href: "/outreach", label: "Outreach", mark: "O" },
 ];
