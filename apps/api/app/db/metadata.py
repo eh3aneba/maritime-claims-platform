@@ -2,6 +2,7 @@
 
 from app.db.base import Base
 from app.modules.adjustments.models import AdjustmentLine, AdjustmentStatement  # noqa: F401
+from app.modules.ai_broader_production.models import AIBroaderProductionApproval, AIBroaderProductionAuthorization, AIBroaderProductionDocumentEligibility, AIBroaderProductionIncident, AIBroaderProductionMonitor, AIBroaderProductionRun  # noqa: F401
 from app.modules.ai_evaluation.models import AIEvaluationCaseResult, AIEvaluationReview, AIEvaluationSuite  # noqa: F401
 from app.modules.ai_governance.models import AIDocumentEligibilityAttestation, AIProviderActivationApproval, AIProviderActivationRequest  # noqa: F401
 from app.modules.ai_limited_production.models import AILimitedProductionApproval, AILimitedProductionAuthorization, AILimitedProductionDocumentEligibility, AILimitedProductionIncident, AILimitedProductionMonitor, AILimitedProductionRun  # noqa: F401
