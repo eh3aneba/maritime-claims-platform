@@ -5,6 +5,7 @@ from app.modules.adjustments.models import AdjustmentLine, AdjustmentStatement  
 from app.modules.ai_broader_production.models import AIBroaderProductionApproval, AIBroaderProductionAuthorization, AIBroaderProductionDocumentEligibility, AIBroaderProductionIncident, AIBroaderProductionMonitor, AIBroaderProductionRun  # noqa: F401
 from app.modules.ai_broader_production_outcomes.models import AIBroaderProductionOutcomeAssessment, AIBroaderProductionOutcomeObservation, AIBroaderProductionOutcomeReview  # noqa: F401
 from app.modules.ai_evaluation.models import AIEvaluationCaseResult, AIEvaluationReview, AIEvaluationSuite  # noqa: F401
+from app.modules.ai_final_production.models import AIFinalProductionApproval, AIFinalProductionAuthorization, AIFinalProductionDocumentEligibility, AIFinalProductionIncident, AIFinalProductionMonitor, AIFinalProductionRun  # noqa: F401
 from app.modules.ai_final_production_readiness.models import AIFinalProductionReadinessAssessment, AIFinalProductionReadinessClaimEvidence, AIFinalProductionReadinessControlEvidence, AIFinalProductionReadinessReview  # noqa: F401
 from app.modules.ai_governance.models import AIDocumentEligibilityAttestation, AIProviderActivationApproval, AIProviderActivationRequest  # noqa: F401
 from app.modules.ai_high_coverage.models import AIHighCoverageApproval, AIHighCoverageAuthorization, AIHighCoverageDocumentEligibility, AIHighCoverageIncident, AIHighCoverageMonitor, AIHighCoverageRun  # noqa: F401
