@@ -3,6 +3,7 @@
 from app.db.base import Base
 from app.modules.adjustments.models import AdjustmentLine, AdjustmentStatement  # noqa: F401
 from app.modules.ai_bounded_full_production.models import AIBoundedFullProductionApproval, AIBoundedFullProductionAuthorization, AIBoundedFullProductionDocumentEligibility, AIBoundedFullProductionIncident, AIBoundedFullProductionMonitor, AIBoundedFullProductionRun  # noqa: F401
+from app.modules.ai_bounded_full_production_outcomes.models import AIBoundedFullProductionOutcomeAssessment, AIBoundedFullProductionOutcomeBusinessEvidence, AIBoundedFullProductionOutcomeEnterpriseEvidence, AIBoundedFullProductionOutcomeObservation, AIBoundedFullProductionOutcomeReview  # noqa: F401
 from app.modules.ai_broader_production.models import AIBroaderProductionApproval, AIBroaderProductionAuthorization, AIBroaderProductionDocumentEligibility, AIBroaderProductionIncident, AIBroaderProductionMonitor, AIBroaderProductionRun  # noqa: F401
 from app.modules.ai_broader_production_outcomes.models import AIBroaderProductionOutcomeAssessment, AIBroaderProductionOutcomeObservation, AIBroaderProductionOutcomeReview  # noqa: F401
 from app.modules.ai_evaluation.models import AIEvaluationCaseResult, AIEvaluationReview, AIEvaluationSuite  # noqa: F401
