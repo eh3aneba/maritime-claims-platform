@@ -20,6 +20,7 @@ const nav = [
   { href: "/ai-scale-up", label: "AI Controlled Scale-Up", mark: "11G" },
   { href: "/ai-scale-up-outcomes", label: "AI Readiness Gate", mark: "11H" },
   { href: "/ai-broader-production", label: "AI Broader Production", mark: "11I" },
+  { href: "/ai-broader-production-outcomes", label: "AI >50% Readiness", mark: "11J" },
   { href: "/pilot", label: "Pilot", mark: "P" },
   { href: "/outreach", label: "Outreach", mark: "O" },
 ];
