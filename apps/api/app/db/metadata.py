@@ -19,6 +19,7 @@ from app.modules.ai_near_universal_outcomes.models import AINearUniversalOutcome
 from app.modules.ai_near_universal_production.models import AINearUniversalApproval, AINearUniversalAuthorization, AINearUniversalDocumentEligibility, AINearUniversalIncident, AINearUniversalMonitor, AINearUniversalRun  # noqa: F401
 from app.modules.ai_pilot_outcomes.models import AIPilotOutcomeAssessment, AIPilotOutcomeReview, AIPilotWorkflowObservation  # noqa: F401
 from app.modules.ai_private_pilot.models import AIPrivatePilotApproval, AIPrivatePilotAuthorization, AIPrivatePilotDocumentEligibility, AIPrivatePilotIncident, AIPrivatePilotRun  # noqa: F401
+from app.modules.ai_production_wide.models import AIProductionDecisionLog, AIProductionEligibilityDecision, AIProductionWideApproval, AIProductionWideAuthorization, AIProductionWideIncident, AIProductionWideMonitor  # noqa: F401
 from app.modules.ai_scale_up.models import AIScaleUpApproval, AIScaleUpAuthorization, AIScaleUpDocumentEligibility, AIScaleUpIncident, AIScaleUpMonitor, AIScaleUpRun  # noqa: F401
 from app.modules.ai_scale_up_outcomes.models import AIScaleUpOutcomeAssessment, AIScaleUpOutcomeObservation, AIScaleUpOutcomeReview  # noqa: F401
 from app.modules.audit.models import AuditLog  # noqa: F401
