@@ -5,6 +5,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import select
 
 from app.modules.audit.models import AuditLog
+from app.modules.rules.marine_engine import MARINE_RULES as COMPOSED_MARINE_RULES
 from app.modules.rules.marine_registry import MARINE_RULES, MarineRuleStatus, evaluate_marine_rules, registry_hash
 from app.modules.rules.models import RuleEvaluationRun
 from tests.db_harness import TestingSessionLocal, client, reset_database
@@ -187,8 +188,9 @@ def test_rules_api_attaches_marine_evaluations_to_existing_rule_run_and_audits()
     payload = response.json()
     assert payload["marine_run_id"] == payload["run_id"]
     summary = payload["summary"]
+    assert summary["marine_registry_version"] == "12B.2.0"
     assert len(summary["marine_registry_hash"]) == 64
-    assert len(summary["marine_rule_evaluations"]) == len(MARINE_RULES)
+    assert len(summary["marine_rule_evaluations"]) == len(COMPOSED_MARINE_RULES)
     tech = next(row for row in summary["marine_rule_evaluations"] if row["rule_id"] == "TECH-001")
     assert tech["status"] == "triggered"
     assert len(tech["definition_hash"]) == 64
