@@ -383,25 +383,6 @@ def _build_items(claim: Claim, data: dict[str, Any], policy: Any) -> list[dict]:
             related_entity_type="financial_flag", related_entity_id=flag.id,
         ))
 
-    cost_patterns = (
-        ("AAA-D1", ("tow", "pilot", "deviation", "port charge", "bunker"), "Potential D1 removal / movement cost review", "Review whether the expense arose from necessary removal or movement to a repair location and verify the exact policy/adjusting basis."),
-        ("AAA-D2", ("fuel", "bunker", "stores"), "Potential D2 fuel / stores cost review", "Review whether fuel or stores were consumed in qualifying repair activity rather than ordinary operation or commercial readiness."),
-        ("AAA-D6", ("winch", "machinery", "generator", "engine", "crane", "power"), "Potential D6 machinery-assisting-repairs review", "Review whether machinery was specifically used to assist insured repairs and whether the claimed consumption/cost is evidenced."),
-    )
-    for cost in data["costs"]:
-        text = f"{cost.description} {cost.category or ''}".lower()
-        for rule_id, needles, title, action in cost_patterns:
-            if not any(needle in text for needle in needles):
-                continue
-            refs = [_source("cost_item", cost.id, document_id=cost.document_id, amount=str(cost.amount), currency=cost.currency), _source("reference_rule", rule_id)]
-            add(_item(
-                key=f"cost-{rule_id.lower()}-{cost.id}", category="financial_lead", title=title,
-                description=f"Cost line: {cost.description} — {cost.amount} {cost.currency}.", severity="medium", urgency=55, evidence=85,
-                rationale=f"Keyword-based marine adjustment issue spotting only. The engine has not decided that {rule_id} applies or that the expense is recoverable.",
-                sources=refs, action_type="financial_review", suggested_action=action,
-                related_entity_type="cost_item", related_entity_id=cost.id,
-            ))
-
     recent_overhaul = next((x for x in data["issues"] if x.rule_id == "TECH-002"), None)
     recovery_facts = [f for f in facts if any(token in f.field_path.lower() for token in ("third_party", "repairer", "workshop", "maker", "supplier"))]
     if recent_overhaul is not None or recovery_facts:
