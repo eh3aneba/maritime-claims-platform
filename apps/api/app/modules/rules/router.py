@@ -17,6 +17,7 @@ from app.modules.rules.schemas import (
     EquivalentEvidenceResponse,
     MarineRuleDecisionResponse,
     MarineRuleDecisionWrite,
+    MarineRuleEvaluationResponse,
     RuleEvaluationResponse,
     RuleSummaryResponse,
 )
@@ -28,10 +29,14 @@ router = APIRouter(prefix="/claims/{claim_id}/rules", tags=["rules"])
 def _summary_with_marine(db: Session, *, claim) -> RuleSummaryResponse:
     summary = get_rule_summary(db, claim=claim)
     marine = latest_marine_rule_summary(db, claim=claim)
+    evaluations = [
+        MarineRuleEvaluationResponse.model_validate(row)
+        for row in marine.get("marine_rule_evaluations", [])
+    ]
     return summary.model_copy(update={
         "marine_registry_version": marine.get("marine_registry_version"),
         "marine_registry_hash": marine.get("marine_registry_hash"),
-        "marine_rule_evaluations": marine.get("marine_rule_evaluations", []),
+        "marine_rule_evaluations": evaluations,
         "marine_rule_counts": marine.get("marine_rule_counts", {}),
         "marine_evaluated_at": marine.get("marine_evaluated_at"),
         "marine_rule_run_id": marine.get("marine_rule_run_id"),
