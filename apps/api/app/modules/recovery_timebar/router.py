@@ -21,6 +21,7 @@ from app.modules.recovery_timebar.service import (
     record_decision,
     snapshot_response,
 )
+from app.modules.rules.service import evaluate_claim_rules
 
 router = APIRouter(prefix="/claims/{claim_id}/recovery-timebar", tags=["recovery-timebar"])
 
@@ -47,6 +48,7 @@ def build_recovery_timebar_intelligence(
     if claim is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Claim not found")
     try:
+        evaluate_claim_rules(db, claim=claim, user=current_user, trigger="recovery_timebar")
         snapshot = build_recovery_timebar(db, claim=claim, user=current_user)
     except ValueError as exc:
         db.rollback()
