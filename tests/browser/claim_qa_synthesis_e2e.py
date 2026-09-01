@@ -1,6 +1,7 @@
 """Focused browser coverage for Phase 12G governed Claim Q&A controls."""
 from __future__ import annotations
 
+import json
 import os
 
 from playwright.sync_api import expect, sync_playwright
@@ -114,7 +115,15 @@ def main() -> None:
         }
 
         def fulfill_authorized(route) -> None:
-            route.fulfill(status=200, content_type="application/json", body=__import__("json").dumps(synthetic_payload))
+            route.fulfill(
+                status=200,
+                content_type="application/json",
+                headers={
+                    "Access-Control-Allow-Origin": BASE_URL,
+                    "Access-Control-Allow-Credentials": "true",
+                },
+                body=json.dumps(synthetic_payload),
+            )
 
         page.route(synth_route, fulfill_authorized)
         page.get_by_label("Claim Q&A question").fill(
