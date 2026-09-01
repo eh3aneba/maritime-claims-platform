@@ -38,6 +38,7 @@ from app.modules.external_portal.router import router as external_portal_router
 from app.modules.evidence_matrix.router import router as evidence_matrix_router
 from app.modules.health.router import router as health_router
 from app.modules.financial.router import router as financial_router
+from app.modules.governance_webhooks.router import router as governance_webhooks_router
 from app.modules.intelligence.router import router as intelligence_router
 from app.modules.intake.router import router as intake_router
 from app.modules.processing.router import router as processing_router
@@ -93,6 +94,7 @@ app.include_router(ai_bounded_full_production_router, prefix=settings.api_v1_pre
 app.include_router(ai_bounded_full_production_outcomes_router, prefix=settings.api_v1_prefix)
 app.include_router(ai_production_wide_router, prefix=settings.api_v1_prefix)
 app.include_router(ai_operations_router, prefix=settings.api_v1_prefix)
+app.include_router(governance_webhooks_router, prefix=settings.api_v1_prefix)
 app.include_router(adjustments_router, prefix=settings.api_v1_prefix)
 app.include_router(assessments_router, prefix=settings.api_v1_prefix)
 app.include_router(claim_intelligence_router, prefix=settings.api_v1_prefix)
