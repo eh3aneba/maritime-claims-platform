@@ -73,3 +73,32 @@ export async function searchClaimEvidence(
   });
   return parse<EvidenceSearchResponse>(response, "Evidence search could not be completed");
 }
+
+export async function downloadEvidenceSearchDocument(
+  claimId: string,
+  documentId: string,
+  filename: string,
+): Promise<void> {
+  const response = await fetch(`${API_BASE}/claims/${claimId}/documents/${documentId}/download`, {
+    credentials: "include",
+  });
+  if (!response.ok) {
+    let detail = `Source document could not be downloaded (${response.status})`;
+    try {
+      const body = await response.json();
+      detail = typeof body.detail === "string" ? body.detail : detail;
+    } catch {
+      // Keep safe fallback.
+    }
+    throw new ApiError(response.status, detail);
+  }
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const anchor = window.document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  window.document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
