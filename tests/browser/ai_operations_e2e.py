@@ -165,7 +165,7 @@ def main() -> None:
         expect(page.get_by_text("Complete existing different-human review", exact=True)).to_be_visible()
         expect(page.get_by_role("button", name="approve", exact=True)).to_be_visible()
 
-        page.get_by_label("Workflow").select_option("claim_qa_synthesis")
+        page.get_by_label("Workflow", exact=True).select_option("claim_qa_synthesis")
         event_table = page.locator("table")
         expect(event_table.get_by_text("claim qa synthesis", exact=True)).to_be_visible()
         expect(event_table.get_by_text("chief engineer report", exact=True)).to_have_count(0)
