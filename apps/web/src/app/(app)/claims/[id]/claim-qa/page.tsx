@@ -87,7 +87,7 @@ export default function ClaimQaPage() {
     try {
       await downloadEvidenceSearchDocument(id, source.document_id, source.document_filename);
     } catch (e) {
-      setError(e instanceof ApiError ? e.detail : "Source document could not be downloaded.");
+      setError(e instanceof ApiError ? e.detail : "Source document could not be downloaded."));
     } finally {
       setDownloadId(null);
     }
@@ -229,16 +229,25 @@ export default function ClaimQaPage() {
           {response.statements.length ? (
             <section className="space-y-4" aria-label="Claim Q&A source statements">
               <div className="flex items-center justify-between gap-4">
-                <h2 className="section-title">Source-linked statements</h2>
+                <div>
+                  <h2 className="section-title">{response.synthesis_used ? "Verified synthesized wording" : "Exact retrieved evidence"}</h2>
+                  <p className="mt-1 text-xs leading-5 text-slate-500">
+                    {response.synthesis_used
+                      ? "The wording below was generated, then verified against the cited claim-file passages. Source cards preserve the exact evidence lineage."
+                      : "The wording below is extractive claim-file evidence returned by Phase 12F; it is not generative synthesis."}
+                  </p>
+                </div>
                 <Link href={`/claims/${id}/evidence-search`} className="secondary-button">Open Evidence Search</Link>
               </div>
               {response.statements.map((statement) => (
                 <article key={statement.statement_hash} className="panel p-6">
                   <div className="flex items-center justify-between gap-4">
-                    <span className="rounded-full bg-slate-950 px-2.5 py-1 text-[11px] font-bold text-white">Statement #{statement.statement_number}</span>
+                    <span className={`rounded-full px-2.5 py-1 text-[11px] font-bold text-white ${response.synthesis_used ? "bg-violet-700" : "bg-slate-950"}`}>
+                      {response.synthesis_used ? `Synthesized #${statement.statement_number}` : `Extractive passage #${statement.statement_number}`}
+                    </span>
                     <span className="font-mono text-[10px] text-slate-400">{hashLabel(statement.statement_hash)}</span>
                   </div>
-                  <blockquote className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm leading-7 text-slate-700">{statement.text}</blockquote>
+                  <blockquote className={`mt-4 rounded-xl border p-4 text-sm leading-7 text-slate-700 ${response.synthesis_used ? "border-violet-200 bg-violet-50/50" : "border-slate-200 bg-slate-50"}`}>{statement.text}</blockquote>
                   <div className="mt-4 space-y-3">
                     {statement.source_refs.map((source) => (
                       <div key={source.search_unit_id} className="rounded-xl border border-slate-200 p-4">
