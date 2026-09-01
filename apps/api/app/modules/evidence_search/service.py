@@ -18,13 +18,19 @@ from app.modules.documents.models import (
     DocumentMalwareScanStatus,
     DocumentProcessingStatus,
 )
+from app.modules.evidence_search.local_semantic import (
+    authorization_metadata as local_semantic_authorization,
+    candidate_terms as local_semantic_candidate_terms,
+    semantic_score as local_semantic_score,
+)
 from app.modules.evidence_search.models import ClaimEvidenceSearchRun, ClaimEvidenceSearchUnit
 from app.modules.evidence_search.schemas import EvidenceSearchRequest
 from app.modules.processing.models import DocumentTextExtraction, DocumentTextSegment
 from app.modules.users.models import User
 
 INDEX_VERSION = "12E.1"
-RANKING_VERSION = "12E.1"
+LEXICAL_RANKING_VERSION = "12E.1"
+HYBRID_RANKING_VERSION = "12E.2"
 
 
 def _jsonable(value: Any) -> Any:
@@ -202,6 +208,7 @@ def _score_candidate(
     tokens: list[str],
     include_superseded: bool,
     is_current: bool,
+    semantic_score_value: float | None,
 ) -> tuple[float, float, list[str]]:
     normalized_text = _normalize_text(text)
     lexical_hits = sum(min(normalized_text.count(token), 5) for token in tokens)
@@ -225,9 +232,14 @@ def _score_candidate(
     if current_bonus:
         reasons.append("current_version_preference")
 
+    semantic_bonus = 0.0
+    if semantic_score_value is not None and semantic_score_value > 0:
+        semantic_bonus = semantic_score_value * 2.0
+        reasons.append("local_semantic_concept_match")
+
     return (
         round(lexical_score, 6),
-        round(lexical_score + phrase_bonus + metadata_bonus + current_bonus, 6),
+        round(lexical_score + phrase_bonus + metadata_bonus + current_bonus + semantic_bonus, 6),
         reasons,
     )
 
@@ -253,6 +265,10 @@ def search_claim_evidence(
     }
     filters_hash = _hash(filters)
 
+    semantic_authorization = local_semantic_authorization() if payload.retrieval_mode == "hybrid" else None
+    semantic_used = semantic_authorization is not None
+    ranking_version = HYBRID_RANKING_VERSION if semantic_used else LEXICAL_RANKING_VERSION
+
     statement = (
         select(ClaimEvidenceSearchUnit, DocumentTextSegment, Document)
         .join(DocumentTextSegment, ClaimEvidenceSearchUnit.segment_id == DocumentTextSegment.id)
@@ -277,12 +293,18 @@ def search_claim_evidence(
     lowered_text = func.lower(DocumentTextSegment.text)
     if payload.exact_phrase:
         statement = statement.where(lowered_text.contains(normalized_query, autoescape=True))
-    elif tokens:
-        statement = statement.where(
-            or_(*[lowered_text.contains(token, autoescape=True) for token in tokens])
-        )
     else:
-        statement = statement.where(lowered_text.contains(normalized_query, autoescape=True))
+        search_terms = list(tokens)
+        if semantic_used:
+            for term in local_semantic_candidate_terms(normalized_query):
+                if term not in search_terms:
+                    search_terms.append(term)
+        if search_terms:
+            statement = statement.where(
+                or_(*[lowered_text.contains(term, autoescape=True) for term in search_terms])
+            )
+        else:
+            statement = statement.where(lowered_text.contains(normalized_query, autoescape=True))
 
     candidate_limit = min(max(payload.top_k * 20, 100), 1000)
     candidates = list(
@@ -298,6 +320,11 @@ def search_claim_evidence(
 
     ranked: list[dict[str, Any]] = []
     for unit, segment, document in candidates:
+        semantic_score_value = (
+            local_semantic_score(normalized_query, segment.text)
+            if semantic_used and not payload.exact_phrase
+            else None
+        )
         lexical_score, combined_score, reasons = _score_candidate(
             text=segment.text,
             filename=document.filename,
@@ -306,6 +333,7 @@ def search_claim_evidence(
             tokens=tokens,
             include_superseded=payload.include_superseded,
             is_current=unit.is_current_document,
+            semantic_score_value=semantic_score_value,
         )
         if payload.exact_phrase and "exact_phrase_match" not in reasons:
             continue
@@ -327,7 +355,7 @@ def search_claim_evidence(
                 "confidentiality_level": unit.confidentiality_level,
                 "snippet": _snippet(segment.text, normalized_query, tokens),
                 "lexical_score": lexical_score,
-                "semantic_score": None,
+                "semantic_score": semantic_score_value,
                 "combined_score": combined_score,
                 "match_reasons": reasons,
                 "source_file_hash": unit.source_file_hash,
@@ -356,6 +384,7 @@ def search_claim_evidence(
             "search_unit_hash": row["search_unit_hash"],
             "normalized_text_hash": row["normalized_text_hash"],
             "lexical_score": row["lexical_score"],
+            "semantic_score": row["semantic_score"],
             "combined_score": row["combined_score"],
         }
         for index, row in enumerate(results)
@@ -364,7 +393,11 @@ def search_claim_evidence(
         {
             "query_hash": query_hash,
             "filters_hash": filters_hash,
-            "ranking_version": RANKING_VERSION,
+            "retrieval_mode": payload.retrieval_mode,
+            "ranking_version": ranking_version,
+            "semantic_authorization_hash": (
+                semantic_authorization["authorization_hash"] if semantic_authorization else None
+            ),
             "results": ledger,
         }
     )
@@ -375,16 +408,18 @@ def search_claim_evidence(
         requested_by_id=user.id,
         normalized_query_hash=query_hash,
         retrieval_mode=payload.retrieval_mode,
-        ranking_version=RANKING_VERSION,
+        ranking_version=ranking_version,
         filters=filters,
         filters_hash=filters_hash,
         result_ledger=ledger,
         result_set_hash=result_set_hash,
         result_count=len(results),
         latency_ms=latency_ms,
-        semantic_provider=None,
-        semantic_model=None,
-        semantic_authorization_hash=None,
+        semantic_provider=(str(semantic_authorization["provider"]) if semantic_authorization else None),
+        semantic_model=(str(semantic_authorization["model"]) if semantic_authorization else None),
+        semantic_authorization_hash=(
+            str(semantic_authorization["authorization_hash"]) if semantic_authorization else None
+        ),
     )
     db.add(run)
     db.flush()
@@ -400,12 +435,17 @@ def search_claim_evidence(
             "query_hash": query_hash,
             "filters_hash": filters_hash,
             "retrieval_mode": payload.retrieval_mode,
-            "ranking_version": RANKING_VERSION,
+            "ranking_version": ranking_version,
             "result_count": len(results),
             "result_set_hash": result_set_hash,
+            "semantic_provider": run.semantic_provider,
+            "semantic_model": run.semantic_model,
+            "semantic_authorization_hash": run.semantic_authorization_hash,
         },
         details=(
-            "Executed claim-scoped private lexical evidence retrieval. Raw query text is not persisted in the search run or audit event."
+            "Executed claim-scoped private local hybrid evidence retrieval; no network egress and raw query text was not persisted."
+            if semantic_used
+            else "Executed claim-scoped private lexical evidence retrieval. Raw query text is not persisted in the search run or audit event."
         ),
     )
     db.commit()
@@ -414,11 +454,15 @@ def search_claim_evidence(
         "claim_id": claim.id,
         "run_id": run.id,
         "retrieval_mode": payload.retrieval_mode,
-        "ranking_version": RANKING_VERSION,
+        "ranking_version": ranking_version,
         "query_hash": query_hash,
         "filters_hash": filters_hash,
         "result_set_hash": result_set_hash,
         "result_count": len(results),
         "no_sufficient_evidence_found": not results,
+        "semantic_used": semantic_used,
+        "semantic_provider": run.semantic_provider,
+        "semantic_model": run.semantic_model,
+        "semantic_authorization_hash": run.semantic_authorization_hash,
         "results": results,
     }
