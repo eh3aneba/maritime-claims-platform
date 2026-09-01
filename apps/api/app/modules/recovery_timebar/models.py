@@ -21,6 +21,7 @@ class RecoveryTimebarSnapshot(UUIDPrimaryKeyMixin, Base):
     generated_by_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     snapshot_version: Mapped[int] = mapped_column(Integer, nullable=False)
     engine_version: Mapped[str] = mapped_column(String(30), nullable=False)
+    evaluation_date: Mapped[date] = mapped_column(Date, nullable=False)
     source_state_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     snapshot_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     summary: Mapped[dict] = mapped_column(JSON, nullable=False)

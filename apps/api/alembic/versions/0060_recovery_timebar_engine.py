@@ -20,6 +20,7 @@ def upgrade() -> None:
         sa.Column("generated_by_id", sa.Uuid(), nullable=True),
         sa.Column("snapshot_version", sa.Integer(), nullable=False),
         sa.Column("engine_version", sa.String(30), nullable=False),
+        sa.Column("evaluation_date", sa.Date(), nullable=False),
         sa.Column("source_state_hash", sa.String(64), nullable=False),
         sa.Column("snapshot_hash", sa.String(64), nullable=False),
         sa.Column("summary", sa.JSON(), nullable=False),

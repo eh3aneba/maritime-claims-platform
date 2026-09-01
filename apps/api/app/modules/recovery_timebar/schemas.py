@@ -78,6 +78,7 @@ class RecoveryTimebarSnapshotResponse(BaseModel):
     generated_by_id: UUID | None
     snapshot_version: int
     engine_version: str
+    evaluation_date: date
     source_state_hash: str
     snapshot_hash: str
     summary: dict
