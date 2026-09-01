@@ -6,22 +6,31 @@ import { FormEvent, useEffect, useState } from "react";
 
 import { ApiError, getClaim } from "@/lib/api";
 import type { Claim } from "@/lib/types";
-import { askClaimQuestion, type ClaimQaResponse, type ClaimQaSourceRef } from "@/lib/claim-qa-api";
+import {
+  askClaimQuestion,
+  askGovernedClaimQuestion,
+  type ClaimQaResponse,
+  type ClaimQaSourceRef,
+} from "@/lib/claim-qa-api";
 import { downloadEvidenceSearchDocument, type EvidenceRetrievalMode } from "@/lib/evidence-search-api";
 
-function hashLabel(value: string | null) {
+type AnswerMode = "extractive" | "governed_synthesis";
+
+function hashLabel(value: string | null | undefined) {
   return value ? `${value.slice(0, 12)}…${value.slice(-8)}` : "—";
 }
 
 function statusTone(status: ClaimQaResponse["status"]) {
   if (status === "answered") return "border-emerald-200 bg-emerald-50 text-emerald-900";
   if (status === "conflicting_evidence") return "border-amber-200 bg-amber-50 text-amber-950";
+  if (status === "synthesis_blocked") return "border-rose-200 bg-rose-50 text-rose-900";
   return "border-slate-200 bg-slate-50 text-slate-800";
 }
 
 function statusHeading(status: ClaimQaResponse["status"]) {
   if (status === "answered") return "Source-cited answer";
   if (status === "conflicting_evidence") return "Conflicting evidence";
+  if (status === "synthesis_blocked") return "Governed synthesis blocked";
   return "No sufficient evidence found";
 }
 
@@ -30,7 +39,9 @@ export default function ClaimQaPage() {
   const [claim, setClaim] = useState<Claim | null>(null);
   const [question, setQuestion] = useState("");
   const [retrievalMode, setRetrievalMode] = useState<EvidenceRetrievalMode>("hybrid");
+  const [answerMode, setAnswerMode] = useState<AnswerMode>("extractive");
   const [includeSuperseded, setIncludeSuperseded] = useState(false);
+  const [fallbackToExtractive, setFallbackToExtractive] = useState(true);
   const [response, setResponse] = useState<ClaimQaResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [asking, setAsking] = useState(false);
@@ -53,12 +64,15 @@ export default function ClaimQaPage() {
     setAsking(true);
     setError("");
     try {
-      const next = await askClaimQuestion(id, {
+      const basePayload = {
         question: question.trim(),
         retrieval_mode: retrievalMode,
         include_superseded: includeSuperseded,
         top_k: 5,
-      });
+      };
+      const next = answerMode === "governed_synthesis"
+        ? await askGovernedClaimQuestion(id, { ...basePayload, fallback_to_extractive: fallbackToExtractive })
+        : await askClaimQuestion(id, basePayload);
       setResponse(next);
     } catch (e) {
       setError(e instanceof ApiError ? e.detail : "Claim Q&A could not be completed.");
@@ -87,15 +101,15 @@ export default function ClaimQaPage() {
       <Link href={`/claims/${id}`} className="text-sm font-semibold text-slate-500 hover:text-slate-800">← Back to {claim.vessel.name}</Link>
 
       <div>
-        <p className="eyebrow">{claim.claim_reference} · Phase 12F</p>
+        <p className="eyebrow">{claim.claim_reference} · Phase 12G</p>
         <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">Claim Q&amp;A</h1>
         <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-500">
-          Ask one claim-file question and receive an extractive answer built only from private Phase 12E evidence retrieval. Every material statement carries exact source lineage.
+          Ask the controlled claim file. Extractive/private mode remains the default; governed synthesis is optional and can run only through the active Production-wide AI control plane.
         </p>
       </div>
 
       <div className="rounded-xl border border-cyan-200 bg-cyan-50 p-4 text-sm leading-6 text-cyan-950">
-        <strong>Extractive/private only.</strong> This foundation does not call an external generative AI provider. It does not create ClaimFacts or decide coverage, liability, causation, recoverability, reserve, settlement, payment or legal rights. Conflicting passages remain conflicting until a human reviews them.
+        <strong>Human authority remains final.</strong> Governed synthesis cannot bypass retrieval, source citations, Production-wide authorization, confidentiality controls or grounding verification. Restricted evidence stays outside the external synthesis path. No mode creates ClaimFacts or decides coverage, liability, causation, recoverability, reserve, settlement, payment or legal rights.
       </div>
 
       {error ? <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div> : null}
@@ -111,27 +125,50 @@ export default function ClaimQaPage() {
             aria-label="Claim Q&A question"
           />
         </label>
-        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-            <label>
-              <span className="label">Retrieval mode</span>
-              <select
-                value={retrievalMode}
-                onChange={(event) => setRetrievalMode(event.target.value as EvidenceRetrievalMode)}
-                className="field mt-2"
-                aria-label="Claim Q&A retrieval mode"
-              >
-                <option value="lexical">Lexical · exact terms</option>
-                <option value="hybrid">Private Hybrid · local semantic</option>
-              </select>
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <label>
+            <span className="label">Answer mode</span>
+            <select
+              value={answerMode}
+              onChange={(event) => setAnswerMode(event.target.value as AnswerMode)}
+              className="field mt-2"
+              aria-label="Claim Q&A answer mode"
+            >
+              <option value="extractive">Extractive · safest default</option>
+              <option value="governed_synthesis">Governed synthesis · authorization required</option>
+            </select>
+          </label>
+          <label>
+            <span className="label">Retrieval mode</span>
+            <select
+              value={retrievalMode}
+              onChange={(event) => setRetrievalMode(event.target.value as EvidenceRetrievalMode)}
+              className="field mt-2"
+              aria-label="Claim Q&A retrieval mode"
+            >
+              <option value="lexical">Lexical · exact terms</option>
+              <option value="hybrid">Private Hybrid · local semantic</option>
+            </select>
+          </label>
+          <label className="mt-6 flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-700">
+            <input type="checkbox" checked={includeSuperseded} onChange={(event) => setIncludeSuperseded(event.target.checked)} />
+            Include superseded versions
+          </label>
+          {answerMode === "governed_synthesis" ? (
+            <label className="mt-6 flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-700">
+              <input type="checkbox" checked={fallbackToExtractive} onChange={(event) => setFallbackToExtractive(event.target.checked)} />
+              Safe fallback to extractive
             </label>
-            <label className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-700">
-              <input type="checkbox" checked={includeSuperseded} onChange={(event) => setIncludeSuperseded(event.target.checked)} />
-              Include superseded versions
-            </label>
+          ) : <div />}
+        </div>
+        {answerMode === "governed_synthesis" ? (
+          <div className="mt-4 rounded-xl border border-violet-200 bg-violet-50 p-4 text-xs leading-5 text-violet-900">
+            <strong>Governed synthesis requested.</strong> The server first performs Phase 12F retrieval, then checks the active Production-wide authorization for every cited document. A model response is returned only after source-unit and exact-quote verification. If authorization or verification fails, the safe fallback is used when enabled.
           </div>
+        ) : null}
+        <div className="mt-4 flex justify-end">
           <button type="submit" disabled={asking} className="primary-button whitespace-nowrap disabled:opacity-40">
-            {asking ? "Reviewing evidence…" : "Ask claim file"}
+            {asking ? "Reviewing evidence…" : answerMode === "governed_synthesis" ? "Ask with governed synthesis" : "Ask claim file"}
           </button>
         </div>
         <div className="mt-4 flex flex-wrap gap-2">
@@ -149,6 +186,20 @@ export default function ClaimQaPage() {
 
       {response ? (
         <>
+          {response.synthesis_requested ? (
+            <section className={`rounded-xl border p-4 text-sm leading-6 ${response.synthesis_used ? "border-violet-200 bg-violet-50 text-violet-950" : "border-slate-200 bg-slate-50 text-slate-800"}`} aria-label="Governed synthesis status">
+              <strong>{response.synthesis_used ? "Governed synthesis verified." : response.fallback_used ? "Governed synthesis not used — extractive fallback returned." : "Governed synthesis blocked."}</strong>
+              {response.synthesis_failure_code ? <span className="ml-2 font-mono text-xs">{response.synthesis_failure_code}</span> : null}
+              <div className="mt-2 grid gap-1 text-xs sm:grid-cols-2 xl:grid-cols-4">
+                <span>provider {response.provider || "—"}</span>
+                <span>model {response.model || "—"}</span>
+                <span>prompt {response.prompt_bundle_version || "—"}</span>
+                <span>schema {response.schema_bundle_version || "—"}</span>
+              </div>
+              {response.authorization_hash ? <p className="mt-2 font-mono text-[10px]">authorization {hashLabel(response.authorization_hash)} · input {hashLabel(response.input_hash)} · output {hashLabel(response.output_hash)}</p> : null}
+            </section>
+          ) : null}
+
           <section className={`rounded-xl border p-5 ${statusTone(response.status)}`} role="status">
             <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
               <div>
