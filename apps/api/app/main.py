@@ -43,6 +43,7 @@ from app.modules.pilot.router import router as pilot_router
 from app.modules.pilot_operations.router import router as pilot_operations_router
 from app.modules.policy_intelligence.router import router as policy_intelligence_router
 from app.modules.outreach.router import router as outreach_router
+from app.modules.recovery_timebar.router import router as recovery_timebar_router
 from app.modules.review.router import router as review_router
 from app.modules.rules.router import router as rules_router
 from app.modules.settlements.router import router as settlements_router
@@ -108,6 +109,7 @@ app.include_router(pilot_router, prefix=settings.api_v1_prefix)
 app.include_router(pilot_operations_router, prefix=settings.api_v1_prefix)
 app.include_router(policy_intelligence_router, prefix=settings.api_v1_prefix)
 app.include_router(outreach_router, prefix=settings.api_v1_prefix)
+app.include_router(recovery_timebar_router, prefix=settings.api_v1_prefix)
 app.include_router(review_router, prefix=settings.api_v1_prefix)
 app.include_router(rules_router, prefix=settings.api_v1_prefix)
 app.include_router(settlements_router, prefix=settings.api_v1_prefix)
