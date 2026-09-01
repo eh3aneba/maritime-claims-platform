@@ -194,7 +194,7 @@ jobs:
           CUSTOM_COMPILE_COMMAND="pip-compile --generate-hashes --output-file=apps/api/requirements-dev.lock --strip-extras apps/api/requirements-dev.in" \
             pip-compile --generate-hashes --strip-extras --resolver=backtracking \
               --output-file=apps/api/requirements-dev.lock apps/api/requirements-dev.in
-          CUSTOM_COMPILE_COMMAND="pip-compile --generate-hashes --output-file=tests/browser/requirements.lock --strip-extras apps/api/requirements-dev.in" \
+          CUSTOM_COMPILE_COMMAND="pip-compile --generate-hashes --output-file=tests/browser/requirements.lock --strip-extras tests/browser/requirements.txt" \
             pip-compile --generate-hashes --strip-extras --resolver=backtracking \
               --output-file=tests/browser/requirements.lock tests/browser/requirements.txt
           npm install --package-lock-only --ignore-scripts --no-audit --no-fund \
