@@ -32,6 +32,7 @@ from app.modules.chronology.router import router as chronology_router
 from app.modules.correspondence.router import router as correspondence_router
 from app.modules.documents.router import router as documents_router
 from app.modules.email_ingestion.router import router as email_ingestion_router
+from app.modules.evidence_search.router import router as evidence_search_router
 from app.modules.external_portal.router import router as external_portal_router
 from app.modules.evidence_matrix.router import router as evidence_matrix_router
 from app.modules.health.router import router as health_router
@@ -103,6 +104,7 @@ app.include_router(chronology_router, prefix=settings.api_v1_prefix)
 app.include_router(correspondence_router, prefix=settings.api_v1_prefix)
 app.include_router(documents_router, prefix=settings.api_v1_prefix)
 app.include_router(email_ingestion_router, prefix=settings.api_v1_prefix)
+app.include_router(evidence_search_router, prefix=settings.api_v1_prefix)
 app.include_router(external_portal_router, prefix=settings.api_v1_prefix)
 app.include_router(evidence_matrix_router, prefix=settings.api_v1_prefix)
 app.include_router(processing_router, prefix=settings.api_v1_prefix)
