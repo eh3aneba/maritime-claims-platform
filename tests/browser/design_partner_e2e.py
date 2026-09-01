@@ -89,7 +89,7 @@ def main() -> None:
         if not rules_response.ok:
             raise AssertionError(f"Marine rule evaluation failed: HTTP {rules_response.status}")
         expect(page.get_by_text(re.compile(r"Registry 12B\.1\.0"))).to_be_visible()
-        expect(page.get_by_text(re.compile(r"triggered: \d+"), exact=True)).to_be_visible()
+        expect(page.get_by_text(re.compile(r"^triggered: \d+$"), exact=True)).to_be_visible()
         review_button = page.get_by_role("button", name=re.compile(r"Review rule|Add disposition")).first
         if review_button.count() == 0:
             details = page.locator("details").filter(has_text=re.compile(r"not-triggered / not-applicable evaluations"))
