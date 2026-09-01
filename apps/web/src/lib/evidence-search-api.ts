@@ -1,9 +1,11 @@
 import { API_BASE, ApiError } from "./api";
 
+export type EvidenceRetrievalMode = "lexical" | "hybrid";
+
 export interface EvidenceSearchRequest {
   query: string;
   top_k?: number;
-  retrieval_mode?: "lexical";
+  retrieval_mode?: EvidenceRetrievalMode;
   include_superseded?: boolean;
   document_types?: string[];
   document_ids?: string[];
@@ -37,13 +39,17 @@ export interface EvidenceSearchResult {
 export interface EvidenceSearchResponse {
   claim_id: string;
   run_id: string;
-  retrieval_mode: string;
+  retrieval_mode: EvidenceRetrievalMode;
   ranking_version: string;
   query_hash: string;
   filters_hash: string;
   result_set_hash: string;
   result_count: number;
   no_sufficient_evidence_found: boolean;
+  semantic_used: boolean;
+  semantic_provider: string | null;
+  semantic_model: string | null;
+  semantic_authorization_hash: string | null;
   results: EvidenceSearchResult[];
 }
 
