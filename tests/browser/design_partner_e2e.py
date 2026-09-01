@@ -98,6 +98,28 @@ def main() -> None:
         expect(page.get_by_text("Current version", exact=True).first).to_be_visible()
         expect(page.get_by_role("button", name="Download source").first).to_be_visible()
 
+        page.get_by_label("Evidence retrieval mode").select_option("hybrid")
+        expect(page.get_by_text(re.compile(r"Private Hybrid is local-only"))).to_be_visible()
+        page.get_by_label("Evidence search query").fill("operating hours")
+        with page.expect_response(
+            lambda response: "/api/v1/claims/" in response.url
+            and response.url.endswith("/evidence-search")
+            and response.request.method == "POST"
+        ) as hybrid_response_info:
+            page.get_by_role("button", name="Search evidence").click()
+        hybrid_response = hybrid_response_info.value
+        if not hybrid_response.ok:
+            raise AssertionError(f"Private hybrid evidence search failed: HTTP {hybrid_response.status}")
+        hybrid_payload = hybrid_response.json()
+        if hybrid_payload.get("semantic_provider") != "local_in_process":
+            raise AssertionError("Private hybrid search did not report the local semantic provider")
+        if not hybrid_payload.get("semantic_used"):
+            raise AssertionError("Private hybrid search did not report semantic usage")
+        if not hybrid_payload.get("results"):
+            raise AssertionError("Private hybrid search did not retrieve the running-hours evidence")
+        expect(page.get_by_text("local_in_process", exact=True).first).to_be_visible()
+        expect(page.get_by_text(re.compile(r"local semantic \d+\.\d+"), exact=True).first).to_be_visible()
+
         page.get_by_label("Evidence search query").fill("qzxvplmnonexistent987654321")
         with page.expect_response(
             lambda response: "/api/v1/claims/" in response.url
