@@ -280,6 +280,7 @@ jobs:
           export MCRI_E2E_SCREENSHOT=artifacts/design-partner-e2e.png
           python tests/browser/design_partner_e2e.py
           python tests/browser/claim_qa_synthesis_e2e.py
+          python tests/browser/ai_operations_e2e.py
 
       - name: Capture container diagnostics
         if: failure()

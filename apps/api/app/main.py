@@ -18,6 +18,7 @@ from app.modules.ai_limited_production.router import router as ai_limited_produc
 from app.modules.ai_limited_production_outcomes.router import router as ai_limited_production_outcomes_router
 from app.modules.ai_near_universal_outcomes.router import router as ai_near_universal_outcomes_router
 from app.modules.ai_near_universal_production.router import router as ai_near_universal_production_router
+from app.modules.ai_operations.router import router as ai_operations_router
 from app.modules.ai_pilot_outcomes.router import router as ai_pilot_outcomes_router
 from app.modules.ai_private_pilot.router import router as ai_private_pilot_router
 from app.modules.ai_production_wide.router import router as ai_production_wide_router
@@ -91,6 +92,7 @@ app.include_router(ai_near_universal_outcomes_router, prefix=settings.api_v1_pre
 app.include_router(ai_bounded_full_production_router, prefix=settings.api_v1_prefix)
 app.include_router(ai_bounded_full_production_outcomes_router, prefix=settings.api_v1_prefix)
 app.include_router(ai_production_wide_router, prefix=settings.api_v1_prefix)
+app.include_router(ai_operations_router, prefix=settings.api_v1_prefix)
 app.include_router(adjustments_router, prefix=settings.api_v1_prefix)
 app.include_router(assessments_router, prefix=settings.api_v1_prefix)
 app.include_router(claim_intelligence_router, prefix=settings.api_v1_prefix)
