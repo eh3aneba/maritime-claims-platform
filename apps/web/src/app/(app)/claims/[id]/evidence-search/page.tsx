@@ -9,6 +9,7 @@ import type { Claim } from "@/lib/types";
 import {
   downloadEvidenceSearchDocument,
   searchClaimEvidence,
+  type EvidenceRetrievalMode,
   type EvidenceSearchResponse,
   type EvidenceSearchResult,
 } from "@/lib/evidence-search-api";
@@ -33,6 +34,7 @@ export default function EvidenceSearchPage() {
   const [claim, setClaim] = useState<Claim | null>(null);
   const [query, setQuery] = useState("");
   const [documentType, setDocumentType] = useState("");
+  const [retrievalMode, setRetrievalMode] = useState<EvidenceRetrievalMode>("lexical");
   const [includeSuperseded, setIncludeSuperseded] = useState(false);
   const [exactPhrase, setExactPhrase] = useState(false);
   const [response, setResponse] = useState<EvidenceSearchResponse | null>(null);
@@ -48,6 +50,7 @@ export default function EvidenceSearchPage() {
     if (initialQuery) setQuery(initialQuery);
     if (initialType) setDocumentType(initialType);
     if (params.get("include_superseded") === "1") setIncludeSuperseded(true);
+    if (params.get("mode") === "hybrid") setRetrievalMode("hybrid");
 
     getClaim(id)
       .then(setClaim)
@@ -66,6 +69,7 @@ export default function EvidenceSearchPage() {
     try {
       const next = await searchClaimEvidence(id, {
         query: query.trim(),
+        retrieval_mode: retrievalMode,
         include_superseded: includeSuperseded,
         exact_phrase: exactPhrase,
         document_types: documentType.trim() ? [documentType.trim()] : [],
@@ -107,7 +111,7 @@ export default function EvidenceSearchPage() {
       </div>
 
       <div className="rounded-xl border border-cyan-200 bg-cyan-50 p-4 text-sm leading-6 text-cyan-950">
-        <strong>Evidence discovery only.</strong> Lexical retrieval stays inside the private claim evidence store. No external semantic provider is active, and conflicting passages remain visible rather than being resolved automatically.
+        <strong>Evidence discovery only.</strong> Lexical mode stays inside the claim database. Private Hybrid adds a deterministic marine-concept similarity kernel running inside the API process with no network egress. No external semantic provider is selectable, and conflicting passages remain visible rather than being resolved automatically.
       </div>
 
       {error ? <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div> : null}
@@ -128,7 +132,7 @@ export default function EvidenceSearchPage() {
             </button>
           </div>
         </label>
-        <div className="mt-4 grid gap-4 md:grid-cols-[minmax(0,1fr)_auto_auto] md:items-end">
+        <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,.65fr)_auto_auto] xl:items-end">
           <label>
             <span className="label">Document type filter (optional)</span>
             <input
@@ -139,6 +143,18 @@ export default function EvidenceSearchPage() {
               aria-label="Document type filter"
             />
           </label>
+          <label>
+            <span className="label">Retrieval mode</span>
+            <select
+              value={retrievalMode}
+              onChange={(event) => setRetrievalMode(event.target.value as EvidenceRetrievalMode)}
+              className="field"
+              aria-label="Evidence retrieval mode"
+            >
+              <option value="lexical">Lexical · exact terms</option>
+              <option value="hybrid">Private Hybrid · local semantic</option>
+            </select>
+          </label>
           <label className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-700">
             <input type="checkbox" checked={exactPhrase} onChange={(event) => setExactPhrase(event.target.checked)} />
             Exact phrase
@@ -148,8 +164,9 @@ export default function EvidenceSearchPage() {
             Include superseded versions
           </label>
         </div>
+        {retrievalMode === "hybrid" ? <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs leading-5 text-emerald-900"><strong>Private Hybrid is local-only.</strong> Provider: local_in_process · model: marine-concepts-hash-v1 · network egress: disabled. Restricted evidence remains inside the API process.</div> : null}
         <div className="mt-4 flex flex-wrap gap-2">
-          {["turbocharger", "running hours", "overhaul", "cause of failure"].map((example) => (
+          {["turbocharger", "running hours", "last serviced", "reason for failure"].map((example) => (
             <button key={example} type="button" onClick={() => setQuery(example)} className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50">
               {example}
             </button>
@@ -159,12 +176,15 @@ export default function EvidenceSearchPage() {
 
       {response ? (
         <>
-          <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
             <div className="panel p-5"><p className="metric-label">Results</p><p className="metric-value">{response.result_count}</p></div>
             <div className="panel p-5"><p className="metric-label">Retrieval</p><p className="mt-2 text-sm font-semibold capitalize text-slate-900">{response.retrieval_mode}</p><p className="mt-1 text-xs text-slate-400">Ranking {response.ranking_version}</p></div>
+            <div className="panel p-5"><p className="metric-label">Semantic kernel</p><p className="mt-2 text-sm font-semibold text-slate-900">{response.semantic_used ? "Local only" : "Not used"}</p><p className="mt-1 text-xs text-slate-400">{response.semantic_provider ?? "lexical-only"}</p></div>
             <div className="panel p-5"><p className="metric-label">Query hash</p><p className="mt-2 break-all font-mono text-[11px] text-slate-600">{hashLabel(response.query_hash)}</p></div>
             <div className="panel p-5"><p className="metric-label">Result-set hash</p><p className="mt-2 break-all font-mono text-[11px] text-slate-600">{hashLabel(response.result_set_hash)}</p></div>
           </section>
+
+          {response.semantic_used ? <section className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-xs leading-5 text-emerald-900"><strong>Semantic authorization:</strong> {response.semantic_provider} · {response.semantic_model} · authorization SHA-256 {hashLabel(response.semantic_authorization_hash)}. This path is local in-process and performs no external network request.</section> : null}
 
           {response.no_sufficient_evidence_found ? (
             <section className="panel border-dashed p-8 text-center" role="status">
@@ -205,6 +225,7 @@ export default function EvidenceSearchPage() {
                   <div className="mt-4 flex flex-wrap gap-2">
                     {row.match_reasons.map((reason) => <span key={reason} className="rounded-full bg-cyan-50 px-2.5 py-1 text-[11px] font-semibold text-cyan-800">{reason.replaceAll("_", " ")}</span>)}
                     <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600">lexical {row.lexical_score.toFixed(3)}</span>
+                    {row.semantic_score !== null ? <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">local semantic {row.semantic_score.toFixed(3)}</span> : null}
                     <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600">combined {row.combined_score.toFixed(3)}</span>
                   </div>
 
