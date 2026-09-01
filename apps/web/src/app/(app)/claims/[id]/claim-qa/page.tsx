@@ -87,7 +87,7 @@ export default function ClaimQaPage() {
     try {
       await downloadEvidenceSearchDocument(id, source.document_id, source.document_filename);
     } catch (e) {
-      setError(e instanceof ApiError ? e.detail : "Source document could not be downloaded."));
+      setError(e instanceof ApiError ? e.detail : "Source document could not be downloaded.");
     } finally {
       setDownloadId(null);
     }
