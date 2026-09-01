@@ -88,6 +88,9 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       AI_MAX_INPUT_CHARS: ${AI_MAX_INPUT_CHARS:-60000}
       ALLOW_EXTERNAL_AI_RESTRICTED: ${ALLOW_EXTERNAL_AI_RESTRICTED:-false}
+      GOVERNANCE_WEBHOOK_MAX_ATTEMPTS: ${GOVERNANCE_WEBHOOK_MAX_ATTEMPTS:-6}
+      GOVERNANCE_WEBHOOK_TIMEOUT_SECONDS: ${GOVERNANCE_WEBHOOK_TIMEOUT_SECONDS:-10}
+      GOVERNANCE_WEBHOOK_REPLAY_WINDOW_SECONDS: ${GOVERNANCE_WEBHOOK_REPLAY_WINDOW_SECONDS:-300}
     ports:
       - "8000:8000"
     volumes:
@@ -133,6 +136,24 @@ services:
     depends_on:
       preflight:
         condition: service_completed_successfully
+
+  governance-webhook-worker:
+    build:
+      context: ./apps/api
+      target: base
+    command: ["python", "-m", "app.workers.governance_webhook_worker"]
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://maritime:change-me-in-local-env@db:5432/maritime_claims}
+      SECRET_KEY: ${SECRET_KEY:-replace-with-a-long-random-secret}
+      GOVERNANCE_WEBHOOK_MAX_ATTEMPTS: ${GOVERNANCE_WEBHOOK_MAX_ATTEMPTS:-6}
+      GOVERNANCE_WEBHOOK_POLL_SECONDS: ${GOVERNANCE_WEBHOOK_POLL_SECONDS:-5}
+      GOVERNANCE_WEBHOOK_TIMEOUT_SECONDS: ${GOVERNANCE_WEBHOOK_TIMEOUT_SECONDS:-10}
+      GOVERNANCE_WEBHOOK_REPLAY_WINDOW_SECONDS: ${GOVERNANCE_WEBHOOK_REPLAY_WINDOW_SECONDS:-300}
+    depends_on:
+      preflight:
+        condition: service_completed_successfully
+    restart: unless-stopped
 
   web:
     build:
