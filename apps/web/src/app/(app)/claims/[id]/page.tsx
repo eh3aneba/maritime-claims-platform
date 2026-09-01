@@ -12,6 +12,12 @@ export default function ClaimOverviewPage() {
     <div>
       <div className="mb-4 flex flex-wrap justify-end gap-2">
         <Link
+          href={`/claims/${id}/evidence-search`}
+          className="secondary-button"
+        >
+          Open Evidence Search
+        </Link>
+        <Link
           href={`/claims/${id}/recovery-timebar`}
           className="secondary-button"
         >

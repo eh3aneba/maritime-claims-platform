@@ -55,6 +55,7 @@ def main() -> None:
         expect(page.get_by_text("MCRI-DEMO-MT-ORION", exact=True)).to_be_visible()
 
         checks = [
+            ("Open Evidence Search", "Evidence Search"),
             ("Open Recovery & Time-bar", "Recovery & Time-bar Intelligence"),
             ("Open Severity & Reserve Support", "Severity & Reserve Support"),
             ("Open requirements", "Requirements & workflow"),
@@ -77,6 +78,60 @@ def main() -> None:
             page.goto(f"{BASE_URL}{claim_href}", wait_until="networkidle")
             page.get_by_role("link", name=link_name).click()
             expect(page.get_by_role("heading", name=heading)).to_be_visible()
+
+        page.goto(f"{BASE_URL}{claim_href}", wait_until="networkidle")
+        page.get_by_role("link", name="Open Evidence Search").click()
+        expect(page.get_by_role("heading", name="Evidence Search")).to_be_visible()
+        expect(page.get_by_text(re.compile(r"Evidence discovery only"))).to_be_visible()
+        page.get_by_label("Evidence search query").fill("turbocharger")
+        with page.expect_response(
+            lambda response: "/api/v1/claims/" in response.url
+            and response.url.endswith("/evidence-search")
+            and response.request.method == "POST"
+        ) as evidence_response_info:
+            page.get_by_role("button", name="Search evidence").click()
+        evidence_response = evidence_response_info.value
+        if not evidence_response.ok:
+            raise AssertionError(f"Evidence search failed: HTTP {evidence_response.status}")
+        results = page.locator('section[aria-label="Evidence search results"] article')
+        expect(results.first).to_be_visible()
+        expect(page.get_by_text("Current version", exact=True).first).to_be_visible()
+        expect(page.get_by_role("button", name="Download source").first).to_be_visible()
+
+        page.get_by_label("Evidence retrieval mode").select_option("hybrid")
+        expect(page.get_by_text(re.compile(r"Private Hybrid is local-only"))).to_be_visible()
+        page.get_by_label("Evidence search query").fill("operating hours")
+        with page.expect_response(
+            lambda response: "/api/v1/claims/" in response.url
+            and response.url.endswith("/evidence-search")
+            and response.request.method == "POST"
+        ) as hybrid_response_info:
+            page.get_by_role("button", name="Search evidence").click()
+        hybrid_response = hybrid_response_info.value
+        if not hybrid_response.ok:
+            raise AssertionError(f"Private hybrid evidence search failed: HTTP {hybrid_response.status}")
+        hybrid_payload = hybrid_response.json()
+        if hybrid_payload.get("semantic_provider") != "local_in_process":
+            raise AssertionError("Private hybrid search did not report the local semantic provider")
+        if not hybrid_payload.get("semantic_used"):
+            raise AssertionError("Private hybrid search did not report semantic usage")
+        if not hybrid_payload.get("results"):
+            raise AssertionError("Private hybrid search did not retrieve the running-hours evidence")
+        expect(page.get_by_text("local_in_process", exact=True).first).to_be_visible()
+        expect(page.get_by_text(re.compile(r"local semantic \d+\.\d+"), exact=True).first).to_be_visible()
+
+        page.get_by_label("Evidence search query").fill("qzxvplmnonexistent987654321")
+        with page.expect_response(
+            lambda response: "/api/v1/claims/" in response.url
+            and response.url.endswith("/evidence-search")
+            and response.request.method == "POST"
+        ) as no_evidence_response_info:
+            page.get_by_role("button", name="Search evidence").click()
+        no_evidence_response = no_evidence_response_info.value
+        if not no_evidence_response.ok:
+            raise AssertionError(f"No-evidence search failed: HTTP {no_evidence_response.status}")
+        expect(page.get_by_role("heading", name="No sufficient evidence found")).to_be_visible()
+        expect(page.get_by_text(re.compile(r"has not generated or inferred an answer"))).to_be_visible()
 
         page.goto(f"{BASE_URL}{claim_href}", wait_until="networkidle")
         page.get_by_role("link", name="Open Recovery & Time-bar").click()

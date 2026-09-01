@@ -2,6 +2,7 @@
 
 import { useParams } from "next/navigation";
 
+import EvidenceSearchBridge from "./evidence-search-bridge";
 import IntelligenceCore from "./intelligence-core";
 import SeverityReserveProxy from "./severity-reserve-proxy";
 
@@ -11,6 +12,7 @@ export default function ClaimIntelligencePage() {
   return (
     <div className="space-y-7">
       <IntelligenceCore />
+      <EvidenceSearchBridge claimId={id} />
       <SeverityReserveProxy claimId={id} />
     </div>
   );
