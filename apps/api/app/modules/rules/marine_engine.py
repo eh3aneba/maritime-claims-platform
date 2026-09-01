@@ -52,7 +52,7 @@ def evaluate_marine_rules(
     fact_rows: Iterable[Any],
     documents: Iterable[Any],
     costs: Iterable[Any],
-    policy: Any,
+    policy: Any = None,
 ) -> tuple[MarineRuleEvaluation, ...]:
     fact_rows = tuple(fact_rows)
     documents = tuple(documents)
