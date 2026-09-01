@@ -44,6 +44,7 @@ from app.modules.pilot_operations.models import DeploymentReadinessReview, Desig
 from app.modules.recovery_timebar.models import RecoveryTimebarDecision, RecoveryTimebarEvaluation, RecoveryTimebarSnapshot  # noqa: F401
 from app.modules.rules.models import ClaimDocumentRequirement, ClaimIssue, RuleEvaluationRun  # noqa: F401
 from app.modules.settlements.models import PaymentAuthorization, SettlementProposal  # noqa: F401
+from app.modules.severity_reserve.models import SeverityReserveDecision, SeverityReserveEvaluation, SeverityReserveSnapshot  # noqa: F401
 from app.modules.tasks.models import ClaimTask, DocumentRequestBatch  # noqa: F401
 from app.modules.users.models import User  # noqa: F401
 from app.modules.vessels.models import Vessel  # noqa: F401
