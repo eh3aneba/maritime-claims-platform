@@ -2,7 +2,7 @@ import enum
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Index, JSON, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -137,3 +137,42 @@ class RuleEvaluationRun(UUIDPrimaryKeyMixin, Base):
     triggered_rule_ids: Mapped[list | None] = mapped_column(JSON, nullable=True)
     summary: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class MarineRuleEvaluationDecision(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "marine_rule_evaluation_decisions"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "claim_id",
+            "rule_id",
+            "evaluation_hash",
+            "decision_number",
+            name="uq_marine_rule_decision_number",
+        ),
+        Index(
+            "ix_marine_rule_decision_eval",
+            "organization_id",
+            "claim_id",
+            "rule_id",
+            "evaluation_hash",
+            "decision_number",
+        ),
+    )
+
+    organization_id: Mapped[UUID] = mapped_column(ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False, index=True)
+    claim_id: Mapped[UUID] = mapped_column(ForeignKey("claims.id", ondelete="CASCADE"), nullable=False, index=True)
+    rule_run_id: Mapped[UUID] = mapped_column(ForeignKey("rule_evaluation_runs.id", ondelete="CASCADE"), nullable=False, index=True)
+    decided_by_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+    rule_id: Mapped[str] = mapped_column(String(80), nullable=False)
+    rule_version: Mapped[str] = mapped_column(String(30), nullable=False)
+    evaluation_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    decision_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    action: Mapped[str] = mapped_column(String(24), nullable=False)
+    note: Mapped[str] = mapped_column(Text, nullable=False)
+    edited_candidate_implication: Mapped[str | None] = mapped_column(Text, nullable=True)
+    edited_recommended_action: Mapped[str | None] = mapped_column(Text, nullable=True)
+    previous_decision_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    decision_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    decided_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
