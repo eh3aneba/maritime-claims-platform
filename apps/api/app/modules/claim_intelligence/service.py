@@ -1,51 +1,37 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.modules.audit.service import write_audit_log
-from app.modules.chronology.service import BUILD_VERSION as CHRONOLOGY_BUILD_VERSION, build_chronology
 from app.modules.claim_intelligence import service_core as core
 from app.modules.claim_intelligence.models import ClaimIntelligenceItem, ClaimIntelligenceSnapshot
-from app.modules.claims.models import Claim
-from app.modules.policy_intelligence.service import build_policy_intelligence
 from app.modules.recovery_timebar.models import RecoveryTimebarEvaluation
-from app.modules.recovery_timebar.service import ENGINE_VERSION as RECOVERY_TIMEBAR_ENGINE_VERSION, build_recovery_timebar
-from app.modules.rules.library import RULESET_VERSION
-from app.modules.rules.service import evaluate_claim_rules
-from app.modules.users.models import User
+from app.modules.recovery_timebar.service import (
+    ENGINE_VERSION as RECOVERY_TIMEBAR_ENGINE_VERSION,
+    build_recovery_timebar,
+)
 
-ENGINE_VERSION = core.ENGINE_VERSION
-DISCLAIMER = core.DISCLAIMER
-LEGACY_RECOVERY_ITEM_KEYS = {"recovery-preservation-lead", "next-recovery-preservation"}
+# Preserve the established Phase 12A service surface while layering structured
+# Phase 12C recovery/time-bar output without duplicating the proven core.
+for _name in dir(core):
+    if not _name.startswith("__") and _name != "build_claim_intelligence":
+        globals()[_name] = getattr(core, _name)
 
-# Public response/review behavior remains the proven Phase 12A core implementation.
-dashboard_response = core.dashboard_response
-latest_snapshot = core.latest_snapshot
-record_item_decision = core.record_item_decision
-snapshot_response = core.snapshot_response
+ENGINE_VERSION = "12C-CI.1"
 
 
-def _recovery_timebar_rows(db: Session, snapshot_id) -> list[RecoveryTimebarEvaluation]:
-    return list(
-        db.scalars(
-            select(RecoveryTimebarEvaluation)
-            .where(RecoveryTimebarEvaluation.snapshot_id == snapshot_id)
-            .order_by(RecoveryTimebarEvaluation.kind.asc(), RecoveryTimebarEvaluation.evaluation_key.asc())
-        )
-    )
-
-
-def _recovery_timebar_state(snapshot, rows: list[RecoveryTimebarEvaluation]) -> dict[str, Any]:
+def _structured_source_state(snapshot: Any, rows: list[RecoveryTimebarEvaluation]) -> dict:
     return {
         "snapshot_id": str(snapshot.id),
         "snapshot_version": snapshot.snapshot_version,
-        "snapshot_hash": snapshot.snapshot_hash,
-        "source_state_hash": snapshot.source_state_hash,
         "engine_version": snapshot.engine_version,
+        "source_state_hash": snapshot.source_state_hash,
+        "snapshot_hash": snapshot.snapshot_hash,
         "evaluations": [
             {
                 "id": str(row.id),
@@ -80,7 +66,7 @@ def _structured_recovery_timebar_items(rows: list[RecoveryTimebarEvaluation]) ->
                 "recovery_timebar_evaluation",
                 row.id,
                 snapshot_id=row.snapshot_id,
-                kind=row.kind,
+                evaluation_kind=row.kind,
                 status=row.status,
                 urgency=row.urgency,
                 evaluation_hash=row.evaluation_hash,
@@ -112,83 +98,105 @@ def _structured_recovery_timebar_items(rows: list[RecoveryTimebarEvaluation]) ->
     return output
 
 
-def build_claim_intelligence(db: Session, *, claim: Claim, user: User) -> ClaimIntelligenceSnapshot:
-    # Keep deterministic prerequisite layers current. They consume only controlled / human-reviewed evidence.
-    evaluate_claim_rules(db, claim=claim, user=user, trigger="claims_intelligence")
-    build_chronology(db, claim=claim, user=user)
-    policy = build_policy_intelligence(db, claim_id=claim.id, organization_id=claim.organization_id)
+def _latest_rows(db: Session, snapshot_id) -> list[RecoveryTimebarEvaluation]:
+    return list(
+        db.scalars(
+            select(RecoveryTimebarEvaluation)
+            .where(RecoveryTimebarEvaluation.snapshot_id == snapshot_id)
+            .order_by(RecoveryTimebarEvaluation.kind.asc(), RecoveryTimebarEvaluation.evaluation_key.asc())
+        )
+    )
 
-    # Phase 12C is first-class input to Claims Intelligence. It never invents a deadline when source prerequisites are absent.
-    recovery_timebar_snapshot = build_recovery_timebar(db, claim=claim, user=user)
-    recovery_timebar_rows = _recovery_timebar_rows(db, recovery_timebar_snapshot.id)
 
-    data = core._load_sources(db, claim)
-    state = core._source_state(claim, data, policy)
-    state["recovery_timebar"] = _recovery_timebar_state(recovery_timebar_snapshot, recovery_timebar_rows)
-    state.setdefault("engine", {})["recovery_timebar"] = RECOVERY_TIMEBAR_ENGINE_VERSION
-    state_hash = core._hash(state)
+def build_claim_intelligence(db: Session, *, claim, user) -> ClaimIntelligenceSnapshot:
+    recovery_snapshot = build_recovery_timebar(db, claim=claim, user=user)
+    recovery_timebar_rows = _latest_rows(db, recovery_snapshot.id)
 
+    # Run the unchanged, proven Phase 12A builder first. The recovery engine
+    # already refreshed Marine Rules, and core remains responsible for chronology,
+    # policy intelligence and all existing source-linked categories.
+    base_snapshot = core.build_claim_intelligence(db, claim=claim, user=user)
+    base_rows = list(
+        db.scalars(
+            select(ClaimIntelligenceItem)
+            .where(ClaimIntelligenceItem.snapshot_id == base_snapshot.id)
+            .order_by(ClaimIntelligenceItem.rank_score.desc(), ClaimIntelligenceItem.category.asc(), ClaimIntelligenceItem.item_key.asc())
+        )
+    )
+
+    # Remove the legacy heuristic recovery pair. Structured Phase 12C proxies
+    # replace these; policy issue flags remain because they may carry independent
+    # reviewed wording and are not themselves a computed 12C deadline.
+    legacy_keys = {"recovery-preservation-lead", "next-recovery-preservation"}
+    item_payloads = [
+        {
+            "item_key": row.item_key,
+            "category": row.category,
+            "title": row.title,
+            "description": row.description,
+            "severity": row.severity,
+            "urgency_score": row.urgency_score,
+            "evidential_value_score": row.evidential_value_score,
+            "rank_score": row.rank_score,
+            "rationale": row.rationale,
+            "source_refs": list(row.source_refs or []),
+            "action_type": row.action_type,
+            "suggested_action": row.suggested_action,
+            "related_entity_type": row.related_entity_type,
+            "related_entity_id": row.related_entity_id,
+            "item_hash": row.item_hash,
+        }
+        for row in base_rows
+        if row.item_key not in legacy_keys
+    ]
+    item_payloads.extend(_structured_recovery_timebar_items(recovery_timebar_rows))
+    item_payloads.sort(key=lambda row: (-row["rank_score"], row["category"], row["item_key"]))
+
+    structured_state = _structured_source_state(recovery_snapshot, recovery_timebar_rows)
+    combined_source_state_hash = core._hash(
+        {
+            "phase12a_source_state_hash": base_snapshot.source_state_hash,
+            "recovery_timebar": structured_state,
+        }
+    )
     existing = db.scalar(
         select(ClaimIntelligenceSnapshot).where(
             ClaimIntelligenceSnapshot.organization_id == claim.organization_id,
             ClaimIntelligenceSnapshot.claim_id == claim.id,
-            ClaimIntelligenceSnapshot.source_state_hash == state_hash,
+            ClaimIntelligenceSnapshot.source_state_hash == combined_source_state_hash,
         )
     )
     if existing is not None:
         return existing
 
-    # Preserve the proven Phase 12A item builder, remove its legacy heuristic recovery proxy, then add structured 12C proxies.
-    item_payloads = [
-        row
-        for row in core._build_items(claim, data, policy)
-        if row["item_key"] not in LEGACY_RECOVERY_ITEM_KEYS
-    ]
-    item_payloads.extend(_structured_recovery_timebar_items(recovery_timebar_rows))
-    item_payloads = sorted(
-        {row["item_key"]: row for row in item_payloads}.values(),
-        key=lambda row: (-row["rank_score"], row["category"], row["item_key"]),
-    )
-
     counts: dict[str, int] = {}
     for row in item_payloads:
         counts[row["category"]] = counts.get(row["category"], 0) + 1
-    summary = {
-        "source_linked": True,
-        "non_authoritative": True,
-        "human_review_required": True,
-        "external_provider_scope_expanded": False,
-        "ruleset_version": RULESET_VERSION,
-        "chronology_build_version": CHRONOLOGY_BUILD_VERSION,
-        "recovery_timebar_engine_version": RECOVERY_TIMEBAR_ENGINE_VERSION,
-        "recovery_timebar_snapshot_id": str(recovery_timebar_snapshot.id),
-        "recovery_timebar_snapshot_hash": recovery_timebar_snapshot.snapshot_hash,
-        "structured_recovery_timebar_count": sum(
-            1 for row in recovery_timebar_rows if row.status in {"triggered", "insufficient_evidence"}
-        ),
-        "item_count": len(item_payloads),
-        "category_counts": counts,
-        "missing_evidence_count": counts.get("missing_evidence", 0),
-        "open_conflict_count": counts.get("conflict", 0),
-        "hypothesis_count": counts.get("hypothesis", 0),
-        "financial_recovery_lead_count": counts.get("financial_lead", 0) + counts.get("recovery_lead", 0),
-        "deadline_lead_count": counts.get("deadline_lead", 0),
-        "next_action_count": counts.get("next_action", 0),
-        "authoritative_claim_facts_updated": False,
-        "authoritative_deadline_created": False,
-        "coverage_decision_made": False,
-        "causation_decision_made": False,
-        "liability_decision_made": False,
-        "recoverability_decision_made": False,
-        "reserve_or_settlement_decision_made": False,
-    }
-    item_hashes = [row["item_hash"] for row in item_payloads]
+    summary = dict(base_snapshot.summary or {})
+    summary.update(
+        {
+            "engine_version": ENGINE_VERSION,
+            "recovery_timebar_engine_version": RECOVERY_TIMEBAR_ENGINE_VERSION,
+            "recovery_timebar_snapshot_id": str(recovery_snapshot.id),
+            "recovery_timebar_snapshot_hash": recovery_snapshot.snapshot_hash,
+            "structured_recovery_timebar_count": sum(
+                1 for row in recovery_timebar_rows if row.status in {"triggered", "insufficient_evidence"}
+            ),
+            "item_count": len(item_payloads),
+            "category_counts": counts,
+            "financial_recovery_lead_count": counts.get("financial_lead", 0) + counts.get("recovery_lead", 0),
+            "deadline_lead_count": counts.get("deadline_lead", 0),
+            "next_action_count": counts.get("next_action", 0),
+            "recoverability_decision_made": False,
+            "authoritative_deadline_created": False,
+        }
+    )
     snapshot_hash = core._hash(
         {
             "engine": ENGINE_VERSION,
-            "source_state_hash": state_hash,
+            "source_state_hash": combined_source_state_hash,
             "summary": summary,
-            "item_hashes": item_hashes,
+            "item_hashes": [row["item_hash"] for row in item_payloads],
         }
     )
     current_max = db.scalar(
@@ -204,7 +212,7 @@ def build_claim_intelligence(db: Session, *, claim: Claim, user: User) -> ClaimI
         generated_by_id=user.id,
         snapshot_version=current_max + 1,
         engine_version=ENGINE_VERSION,
-        source_state_hash=state_hash,
+        source_state_hash=combined_source_state_hash,
         snapshot_hash=snapshot_hash,
         summary=summary,
         generated_at=now,
@@ -220,7 +228,7 @@ def build_claim_intelligence(db: Session, *, claim: Claim, user: User) -> ClaimI
                 **payload,
             )
         )
-    write_audit_log(
+    core.write_audit_log(
         db,
         organization_id=claim.organization_id,
         user_id=user.id,
@@ -230,13 +238,15 @@ def build_claim_intelligence(db: Session, *, claim: Claim, user: User) -> ClaimI
         new_values={
             "snapshot_id": str(snapshot.id),
             "snapshot_version": snapshot.snapshot_version,
-            "source_state_hash": state_hash,
+            "source_state_hash": combined_source_state_hash,
             "snapshot_hash": snapshot_hash,
+            "recovery_timebar_snapshot_id": str(recovery_snapshot.id),
+            "recovery_timebar_snapshot_hash": recovery_snapshot.snapshot_hash,
             **summary,
         },
         details=(
-            "Built a source-linked, non-authoritative Claims Intelligence snapshot from controlled claim evidence, "
-            "marine rules and structured Recovery & Time-bar evaluations."
+            "Built Claims Intelligence with structured, non-authoritative Phase 12C recovery/time-bar evaluations. "
+            "Recovery/time-bar proxy items are read-only and preserve human-controlled task/diary conversion."
         ),
     )
     db.commit()
