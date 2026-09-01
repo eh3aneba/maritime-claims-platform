@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import UTC, datetime
 from typing import Any
 
@@ -12,7 +14,15 @@ from app.modules.claims.models import Claim
 from app.modules.documents.models import Document
 from app.modules.financial.models import CostItem
 from app.modules.rules.marine_registry import MARINE_REGISTRY_VERSION, MarineRuleStatus, evaluate_marine_rules, registry_hash
-from app.modules.rules.models import ClaimIssue, IssueCategory, IssueSeverity, IssueStatus, RuleEvaluationRun
+from app.modules.rules.models import (
+    ClaimIssue,
+    IssueCategory,
+    IssueSeverity,
+    IssueStatus,
+    MarineRuleEvaluationDecision,
+    RuleEvaluationRun,
+)
+from app.modules.rules.schemas import MarineRuleDecisionWrite
 from app.modules.users.models import User
 
 
@@ -27,6 +37,12 @@ _FAMILY_CATEGORY = {
     "charterparty": IssueCategory.OPERATIONAL,
 }
 _HIGH_REVIEW_RULES = {"TECH-002", "MIA-S78", "MARINE-EMERGENCY-001", "GA-YAR-001", "POLICY-TL-001"}
+
+
+def _hash(payload: Any) -> str:
+    return hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str).encode("utf-8")
+    ).hexdigest()
 
 
 def _fact_rows(db: Session, claim: Claim) -> list[ClaimFact]:
@@ -164,6 +180,72 @@ def _sync_marine_issues(
     return active
 
 
+def _latest_marine_run(db: Session, *, claim: Claim) -> RuleEvaluationRun | None:
+    runs = list(
+        db.scalars(
+            select(RuleEvaluationRun).where(
+                RuleEvaluationRun.organization_id == claim.organization_id,
+                RuleEvaluationRun.claim_id == claim.id,
+            ).order_by(RuleEvaluationRun.created_at.desc())
+        )
+    )
+    return next((row for row in runs if (row.summary or {}).get("marine_registry_version")), None)
+
+
+def _latest_decision(
+    db: Session,
+    *,
+    claim: Claim,
+    rule_id: str,
+    evaluation_hash: str,
+) -> MarineRuleEvaluationDecision | None:
+    return db.scalar(
+        select(MarineRuleEvaluationDecision).where(
+            MarineRuleEvaluationDecision.organization_id == claim.organization_id,
+            MarineRuleEvaluationDecision.claim_id == claim.id,
+            MarineRuleEvaluationDecision.rule_id == rule_id,
+            MarineRuleEvaluationDecision.evaluation_hash == evaluation_hash,
+        ).order_by(MarineRuleEvaluationDecision.decision_number.desc()).limit(1)
+    )
+
+
+def _decision_dict(decision: MarineRuleEvaluationDecision | None) -> dict[str, Any] | None:
+    if decision is None:
+        return None
+    return {
+        "id": decision.id,
+        "rule_run_id": decision.rule_run_id,
+        "decided_by_id": decision.decided_by_id,
+        "rule_id": decision.rule_id,
+        "rule_version": decision.rule_version,
+        "evaluation_hash": decision.evaluation_hash,
+        "decision_number": decision.decision_number,
+        "action": decision.action,
+        "note": decision.note,
+        "edited_candidate_implication": decision.edited_candidate_implication,
+        "edited_recommended_action": decision.edited_recommended_action,
+        "previous_decision_hash": decision.previous_decision_hash,
+        "decision_hash": decision.decision_hash,
+        "decided_at": decision.decided_at,
+    }
+
+
+def _with_latest_decisions(db: Session, *, claim: Claim, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rendered: list[dict[str, Any]] = []
+    for row in rows:
+        current = dict(row)
+        current["latest_decision"] = _decision_dict(
+            _latest_decision(
+                db,
+                claim=claim,
+                rule_id=row["rule_id"],
+                evaluation_hash=row["evaluation_hash"],
+            )
+        )
+        rendered.append(current)
+    return rendered
+
+
 def attach_marine_rules_to_run(
     db: Session,
     *,
@@ -223,16 +305,94 @@ def attach_marine_rules_to_run(
     return run
 
 
-def latest_marine_rule_summary(db: Session, *, claim: Claim) -> dict[str, Any]:
-    runs = list(
-        db.scalars(
-            select(RuleEvaluationRun).where(
-                RuleEvaluationRun.organization_id == claim.organization_id,
-                RuleEvaluationRun.claim_id == claim.id,
-            ).order_by(RuleEvaluationRun.created_at.desc())
-        )
+def record_marine_rule_decision(
+    db: Session,
+    *,
+    claim: Claim,
+    run: RuleEvaluationRun,
+    rule_id: str,
+    payload: MarineRuleDecisionWrite,
+    user: User,
+) -> MarineRuleEvaluationDecision:
+    if run.organization_id != claim.organization_id or run.claim_id != claim.id:
+        raise ValueError("Rule evaluation run does not belong to this claim.")
+    latest = _latest_marine_run(db, claim=claim)
+    if latest is None or latest.id != run.id:
+        raise ValueError("Marine rule evaluation run is superseded; review the latest rule evaluation instead.")
+
+    evaluations = list((run.summary or {}).get("marine_rule_evaluations") or [])
+    evaluation = next((row for row in evaluations if row.get("rule_id") == rule_id), None)
+    if evaluation is None:
+        raise ValueError("Marine rule evaluation not found in this rule run.")
+    if evaluation.get("evaluation_hash") != payload.evaluation_hash:
+        raise ValueError("Marine rule evaluation changed; refresh and review the latest evidence-linked evaluation.")
+
+    previous = _latest_decision(
+        db,
+        claim=claim,
+        rule_id=rule_id,
+        evaluation_hash=payload.evaluation_hash,
     )
-    run = next((row for row in runs if (row.summary or {}).get("marine_registry_version")), None)
+    number = previous.decision_number + 1 if previous is not None else 1
+    now = datetime.now(UTC)
+    decision_payload = {
+        "rule_run_id": str(run.id),
+        "rule_id": rule_id,
+        "rule_version": evaluation["rule_version"],
+        "evaluation_hash": payload.evaluation_hash,
+        "decision_number": number,
+        "action": payload.action,
+        "note": payload.note.strip(),
+        "edited_candidate_implication": payload.edited_candidate_implication,
+        "edited_recommended_action": payload.edited_recommended_action,
+        "previous_decision_hash": previous.decision_hash if previous else None,
+        "decided_by_id": str(user.id),
+        "decided_at": now.isoformat(),
+    }
+    decision = MarineRuleEvaluationDecision(
+        organization_id=claim.organization_id,
+        claim_id=claim.id,
+        rule_run_id=run.id,
+        decided_by_id=user.id,
+        rule_id=rule_id,
+        rule_version=evaluation["rule_version"],
+        evaluation_hash=payload.evaluation_hash,
+        decision_number=number,
+        action=payload.action,
+        note=payload.note.strip(),
+        edited_candidate_implication=payload.edited_candidate_implication,
+        edited_recommended_action=payload.edited_recommended_action,
+        previous_decision_hash=previous.decision_hash if previous else None,
+        decision_hash=_hash(decision_payload),
+        decided_at=now,
+    )
+    db.add(decision)
+    db.flush()
+    write_audit_log(
+        db,
+        organization_id=claim.organization_id,
+        user_id=user.id,
+        action="REVIEW_MARINE_RULE_EVALUATION",
+        entity_type="marine_rule_evaluation",
+        entity_id=decision.id,
+        new_values={
+            "rule_run_id": str(run.id),
+            "rule_id": rule_id,
+            "rule_version": evaluation["rule_version"],
+            "evaluation_hash": payload.evaluation_hash,
+            "decision_number": number,
+            "action": payload.action,
+            "decision_hash": decision.decision_hash,
+        },
+        details="Human disposition recorded separately from the immutable marine rule definition and evaluation payload.",
+    )
+    db.commit()
+    db.refresh(decision)
+    return decision
+
+
+def latest_marine_rule_summary(db: Session, *, claim: Claim) -> dict[str, Any]:
+    run = _latest_marine_run(db, claim=claim)
     if run is None:
         return {
             "marine_registry_version": MARINE_REGISTRY_VERSION,
@@ -250,6 +410,11 @@ def latest_marine_rule_summary(db: Session, *, claim: Claim) -> dict[str, Any]:
             "human_authority_boundary": None,
         }
     summary = dict(run.summary or {})
+    summary["marine_rule_evaluations"] = _with_latest_decisions(
+        db,
+        claim=claim,
+        rows=list(summary.get("marine_rule_evaluations") or []),
+    )
     summary["marine_evaluated_at"] = run.created_at
     summary["marine_rule_run_id"] = run.id
     return summary
