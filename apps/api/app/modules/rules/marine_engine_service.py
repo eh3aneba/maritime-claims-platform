@@ -22,6 +22,21 @@ from app.modules.rules.models import RuleEvaluationRun
 from app.modules.users.models import User
 
 
+def _policy_source_document_version_ids(policy: Any) -> list[str]:
+    """Return deterministic exact source-version references from reviewed policy terms.
+
+    PolicyIntelligenceResponse intentionally exposes source lineage on each reviewed
+    term rather than a parallel top-level source-version collection. Compose the
+    summary reference from that public contract so the marine layer does not depend
+    on an attribute the policy service does not own.
+    """
+    sources = {
+        (str(term.source.document_id), int(term.source.document_version))
+        for term in policy.terms
+    }
+    return [f"{document_id}:v{version}" for document_id, version in sorted(sources)]
+
+
 def attach_marine_rules_to_run(
     db: Session,
     *,
@@ -62,7 +77,7 @@ def attach_marine_rules_to_run(
         "marine_rule_evaluations": rows,
         "marine_rule_counts": counts,
         "active_marine_issue_count": len(active_marine_issues),
-        "policy_source_document_version_ids": [str(value) for value in policy.source_document_version_ids],
+        "policy_source_document_version_ids": _policy_source_document_version_ids(policy),
         "policy_term_count": len(policy.terms),
         "human_authority_boundary": (
             "Marine rule evaluations are explainable review prompts only. They do not determine coverage, liability, "
