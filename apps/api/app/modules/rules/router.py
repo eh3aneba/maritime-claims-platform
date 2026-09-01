@@ -9,7 +9,7 @@ from app.db.session import get_db
 from app.modules.auth.dependencies import CurrentUser
 from app.modules.claims.security import get_claim_for_tenant
 from app.modules.claims.facts import ClaimFact
-from app.modules.rules.marine_service import latest_marine_rule_summary, record_marine_rule_decision
+from app.modules.rules.marine_engine_service import latest_marine_rule_summary, record_marine_rule_decision
 from app.modules.rules.models import ClaimDocumentRequirement, RuleEvaluationRun
 from app.modules.rules.schemas import (
     DocumentRequirementResponse,
