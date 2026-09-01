@@ -77,6 +77,31 @@ def main() -> None:
             expect(page.get_by_role("heading", name=heading)).to_be_visible()
 
         page.goto(f"{BASE_URL}{claim_href}", wait_until="networkidle")
+        page.get_by_role("link", name="Open requirements").click()
+        expect(page.get_by_role("heading", name="Marine rule evaluations")).to_be_visible()
+        with page.expect_response(
+            lambda response: "/api/v1/claims/" in response.url
+            and response.url.endswith("/rules/evaluate")
+            and response.request.method == "POST"
+        ) as rules_response_info:
+            page.get_by_role("button", name="Refresh rules").click()
+        rules_response = rules_response_info.value
+        if not rules_response.ok:
+            raise AssertionError(f"Marine rule evaluation failed: HTTP {rules_response.status}")
+        expect(page.get_by_text(re.compile(r"Registry 12B\.1\.0"))).to_be_visible()
+        expect(page.get_by_text(re.compile(r"triggered: \d+"), exact=True)).to_be_visible()
+        review_button = page.get_by_role("button", name=re.compile(r"Review rule|Add disposition")).first
+        if review_button.count() == 0:
+            details = page.locator("details").filter(has_text=re.compile(r"not-triggered / not-applicable evaluations"))
+            if details.count() > 0:
+                details.locator("summary").click()
+                review_button = page.get_by_role("button", name=re.compile(r"Review rule|Add disposition")).first
+        expect(review_button).to_be_visible()
+        review_button.click()
+        expect(page.get_by_text("Disposition", exact=True).first).to_be_visible()
+        expect(page.get_by_text(re.compile(r"append-only and linked to this exact evaluation hash"))).to_be_visible()
+
+        page.goto(f"{BASE_URL}{claim_href}", wait_until="networkidle")
         page.get_by_role("link", name="Open claim-pack exports").click()
         expect(page.get_by_role("heading", name="Claim Pack Export")).to_be_visible()
         page.get_by_role(
