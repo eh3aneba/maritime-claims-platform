@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import calendar
 import hashlib
 import json
+from calendar import monthrange
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 from uuid import UUID
@@ -19,37 +19,33 @@ from app.modules.recovery_timebar.models import (
     RecoveryTimebarSnapshot,
 )
 from app.modules.recovery_timebar.schemas import RecoveryTimebarDecisionWrite
+from app.modules.rules.service import evaluate_claim_rules
 from app.modules.rules.marine_service import latest_marine_rule_summary
 from app.modules.tasks.models import ClaimTask, TaskPriority, TaskSource, TaskStatus, TaskType
 from app.modules.users.models import User
 
 ENGINE_VERSION = "12C.1"
 DISCLAIMER = (
-    "Recovery & Time-bar Intelligence is source-linked decision support only. Candidate recovery parties, notices and "
-    "dates require human/legal verification. The engine does not determine liability, recoverability, limitation, waiver, "
-    "suspension, extension, jurisdiction, settlement or payment, and it never sends external correspondence automatically."
+    "Recovery & Time-bar Intelligence is source-linked decision support only. It does not determine liability, "
+    "recoverability, limitation, waiver, suspension, extension, jurisdiction or settlement. Any candidate date is derived "
+    "only from reviewed source inputs and requires human/legal verification before reliance or external action."
 )
-_RELEVANT_PREFIXES = ("recovery.", "timebar.")
 _ALLOWED_PERIOD_UNITS = {"days", "months", "years"}
-_TASK_PRIORITY = {
-    "low": TaskPriority.LOW,
-    "medium": TaskPriority.MEDIUM,
-    "high": TaskPriority.HIGH,
-    "critical": TaskPriority.CRITICAL,
-}
 
 
 def _jsonable(value: Any) -> Any:
     if isinstance(value, UUID):
         return str(value)
-    if isinstance(value, (date, datetime)):
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, date):
         return value.isoformat()
     if hasattr(value, "value") and not isinstance(value, (str, bytes, dict, list, tuple)):
         return value.value
     if isinstance(value, dict):
-        return {str(key): _jsonable(item) for key, item in value.items()}
+        return {str(k): _jsonable(v) for k, v in value.items()}
     if isinstance(value, (list, tuple, set)):
-        return [_jsonable(item) for item in value]
+        return [_jsonable(v) for v in value]
     return value
 
 
@@ -71,58 +67,6 @@ def _fact_source(fact: ClaimFact) -> dict[str, Any]:
     }
 
 
-def _relevant_facts(db: Session, claim: Claim) -> list[ClaimFact]:
-    return [
-        fact
-        for fact in db.scalars(
-            select(ClaimFact).where(
-                ClaimFact.organization_id == claim.organization_id,
-                ClaimFact.claim_id == claim.id,
-            ).order_by(ClaimFact.field_path.asc())
-        )
-        if fact.field_path.startswith(_RELEVANT_PREFIXES)
-    ]
-
-
-def _parse_date(value: Any) -> date | None:
-    if isinstance(value, datetime):
-        return value.date()
-    if isinstance(value, date):
-        return value
-    if isinstance(value, str):
-        try:
-            return date.fromisoformat(value.strip()[:10])
-        except ValueError:
-            return None
-    return None
-
-
-def _parse_positive_int(value: Any) -> int | None:
-    if isinstance(value, bool):
-        return None
-    try:
-        parsed = int(value)
-    except (TypeError, ValueError):
-        return None
-    return parsed if parsed > 0 else None
-
-
-def _add_period(trigger: date, value: int, unit: str) -> date:
-    if unit == "days":
-        return trigger + timedelta(days=value)
-    if unit == "months":
-        month_index = (trigger.month - 1) + value
-        year = trigger.year + (month_index // 12)
-        month = (month_index % 12) + 1
-        day = min(trigger.day, calendar.monthrange(year, month)[1])
-        return date(year, month, day)
-    if unit == "years":
-        year = trigger.year + value
-        day = min(trigger.day, calendar.monthrange(year, trigger.month)[1])
-        return date(year, trigger.month, day)
-    raise ValueError("Unsupported time-bar period unit")
-
-
 def _marine_recovery_rows(db: Session, claim: Claim) -> list[dict[str, Any]]:
     summary = latest_marine_rule_summary(db, claim=claim)
     rows = list(summary.get("marine_rule_evaluations") or [])
@@ -130,45 +74,8 @@ def _marine_recovery_rows(db: Session, claim: Claim) -> list[dict[str, Any]]:
         row
         for row in rows
         if row.get("status") in {"triggered", "insufficient_evidence"}
-        and (
-            row.get("rule_id") == "TECH-002"
-            or row.get("family") in {"emergency_services", "charterparty"}
-        )
+        and (row.get("rule_id") == "TECH-002" or row.get("family") in {"emergency_services", "charterparty"})
     ]
-
-
-def _source_state(claim: Claim, facts: list[ClaimFact], marine_rows: list[dict[str, Any]], evaluation_date: date) -> dict[str, Any]:
-    return {
-        "claim": {
-            "id": str(claim.id),
-            "status": claim.status.value,
-            "incident_date": claim.incident_date.isoformat(),
-            "notification_date": claim.notification_date.isoformat(),
-        },
-        "evaluation_date": evaluation_date.isoformat(),
-        "facts": [
-            {
-                "id": str(fact.id),
-                "field_path": fact.field_path,
-                "value": _jsonable(fact.value),
-                "version": fact.version,
-                "source_document_id": str(fact.source_document_id),
-                "source_extraction_id": str(fact.source_extraction_id),
-                "source_segment_id": str(fact.source_segment_id) if fact.source_segment_id else None,
-            }
-            for fact in facts
-        ],
-        "marine_recovery_rows": [
-            {
-                "rule_id": row.get("rule_id"),
-                "rule_version": row.get("rule_version"),
-                "status": row.get("status"),
-                "evaluation_hash": row.get("evaluation_hash"),
-            }
-            for row in marine_rows
-        ],
-        "engine_version": ENGINE_VERSION,
-    }
 
 
 def _marine_sources(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -183,6 +90,98 @@ def _marine_sources(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         }
         for row in rows
     ]
+
+
+def _parse_date(value: Any) -> date | None:
+    if isinstance(value, date) and not isinstance(value, datetime):
+        return value
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, str):
+        try:
+            return date.fromisoformat(value.strip())
+        except ValueError:
+            return None
+    return None
+
+
+def _parse_positive_int(value: Any) -> int | None:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None
+
+
+def _add_period(start: date, value: int, unit: str) -> date:
+    if unit == "days":
+        return start + timedelta(days=value)
+    if unit == "months":
+        month_index = (start.year * 12 + (start.month - 1)) + value
+        year = month_index // 12
+        month = month_index % 12 + 1
+        return date(year, month, min(start.day, monthrange(year, month)[1]))
+    if unit == "years":
+        year = start.year + value
+        return date(year, start.month, min(start.day, monthrange(year, start.month)[1]))
+    raise ValueError("Unsupported period unit")
+
+
+def _facts(db: Session, claim: Claim) -> list[ClaimFact]:
+    return list(
+        db.scalars(
+            select(ClaimFact)
+            .where(
+                ClaimFact.organization_id == claim.organization_id,
+                ClaimFact.claim_id == claim.id,
+            )
+            .order_by(ClaimFact.field_path.asc())
+        )
+    )
+
+
+def _source_state(
+    claim: Claim,
+    facts: list[ClaimFact],
+    marine_rows: list[dict[str, Any]],
+    evaluation_date: date,
+) -> dict[str, Any]:
+    controlled = [
+        fact
+        for fact in facts
+        if fact.field_path.startswith("recovery.") or fact.field_path.startswith("timebar.")
+    ]
+    return {
+        "claim": {
+            "id": str(claim.id),
+            "status": claim.status.value,
+            "incident_date": claim.incident_date.isoformat(),
+            "notification_date": claim.notification_date.isoformat(),
+        },
+        "controlled_facts": [
+            {
+                "id": str(fact.id),
+                "field_path": fact.field_path,
+                "value": fact.value,
+                "version": fact.version,
+                "document_id": str(fact.source_document_id),
+                "extraction_id": str(fact.source_extraction_id),
+                "segment_id": str(fact.source_segment_id) if fact.source_segment_id else None,
+            }
+            for fact in controlled
+        ],
+        "marine_recovery_rows": [
+            {
+                "rule_id": row.get("rule_id"),
+                "rule_version": row.get("rule_version"),
+                "status": row.get("status"),
+                "evaluation_hash": row.get("evaluation_hash"),
+            }
+            for row in marine_rows
+        ],
+        "evaluation_date": evaluation_date.isoformat(),
+        "engine_version": ENGINE_VERSION,
+    }
 
 
 def _evaluation_payload(
@@ -266,10 +265,11 @@ def _build_recovery_evaluation(
 
     counterparty = str(counterparty_fact.value).strip() if counterparty_fact and counterparty_fact.value not in (None, "") else None
     basis = str(basis_fact.value).strip() if basis_fact and basis_fact.value not in (None, "") else None
-    if not basis and marine_rows:
+    triggered_marine_rows = [row for row in marine_rows if row.get("status") == "triggered"]
+    if not basis and triggered_marine_rows:
         basis = "; ".join(
             str(row.get("candidate_implication") or row.get("rationale") or row.get("source_reference"))
-            for row in marine_rows[:3]
+            for row in triggered_marine_rows[:3]
         )
     missing = []
     if not counterparty:
@@ -401,52 +401,57 @@ def _build_timebar_evaluation(
         days_remaining=days_remaining,
         urgency=urgency,
         rationale=(
-            "A candidate date is calculated only from human-approved source facts. It is a diary/review aid and not a legal "
-            "conclusion that the referenced period applies, has started, has not been extended, or is enforceable."
+            "The candidate date is derived only from the cited reviewed source reference, approved trigger date and reviewed "
+            "period inputs. It is not an authoritative limitation or notice conclusion."
         ),
         candidate_implication=(
-            f"Candidate date for urgent human/legal verification: {candidate_deadline.isoformat()}."
-            if candidate_deadline
-            else "A possible time-sensitive recovery issue exists, but the controlled source basis is incomplete and no date is calculated."
+            "Human/legal verification is required before relying on any candidate date, sending notice, commencing proceedings "
+            "or concluding that rights have expired."
         ),
         recommended_action=(
-            "Verify the source wording, governing context, trigger event, extensions/standstills and procedural requirements; then diary or revise the candidate date explicitly."
-            if candidate_deadline
-            else "Obtain and human-review the missing source/trigger/period evidence before entering any legal deadline."
+            "Verify the cited wording, governing contract/law/jurisdiction and trigger event. If accepted, create a controlled "
+            "diary task; do not send external correspondence automatically."
         ),
         missing_prerequisites=missing,
         source_refs=sources,
     )
 
 
-def latest_snapshot(db: Session, *, claim: Claim) -> RecoveryTimebarSnapshot | None:
+def _latest_snapshot(db: Session, *, claim: Claim) -> RecoveryTimebarSnapshot | None:
     return db.scalar(
-        select(RecoveryTimebarSnapshot).where(
+        select(RecoveryTimebarSnapshot)
+        .where(
             RecoveryTimebarSnapshot.organization_id == claim.organization_id,
             RecoveryTimebarSnapshot.claim_id == claim.id,
-        ).order_by(RecoveryTimebarSnapshot.snapshot_version.desc()).limit(1)
+        )
+        .order_by(RecoveryTimebarSnapshot.snapshot_version.desc())
+        .limit(1)
+    )
+
+
+def _snapshot_evaluations(db: Session, snapshot_id: UUID) -> list[RecoveryTimebarEvaluation]:
+    return list(
+        db.scalars(
+            select(RecoveryTimebarEvaluation)
+            .where(RecoveryTimebarEvaluation.snapshot_id == snapshot_id)
+            .order_by(RecoveryTimebarEvaluation.kind.asc(), RecoveryTimebarEvaluation.evaluation_key.asc())
+        )
     )
 
 
 def _latest_decision(db: Session, evaluation_id: UUID) -> RecoveryTimebarDecision | None:
     return db.scalar(
-        select(RecoveryTimebarDecision).where(
-            RecoveryTimebarDecision.evaluation_id == evaluation_id,
-        ).order_by(RecoveryTimebarDecision.decision_number.desc()).limit(1)
+        select(RecoveryTimebarDecision)
+        .where(RecoveryTimebarDecision.evaluation_id == evaluation_id)
+        .order_by(RecoveryTimebarDecision.decision_number.desc())
+        .limit(1)
     )
 
 
 def snapshot_response(db: Session, snapshot: RecoveryTimebarSnapshot) -> dict[str, Any]:
-    evaluations = list(
-        db.scalars(
-            select(RecoveryTimebarEvaluation).where(
-                RecoveryTimebarEvaluation.snapshot_id == snapshot.id,
-            ).order_by(RecoveryTimebarEvaluation.kind.asc())
-        )
-    )
-    rendered = []
-    for row in evaluations:
-        rendered.append(
+    evaluations = []
+    for row in _snapshot_evaluations(db, snapshot.id):
+        evaluations.append(
             {
                 "id": row.id,
                 "snapshot_id": row.snapshot_id,
@@ -477,16 +482,17 @@ def snapshot_response(db: Session, snapshot: RecoveryTimebarSnapshot) -> dict[st
         "generated_by_id": snapshot.generated_by_id,
         "snapshot_version": snapshot.snapshot_version,
         "engine_version": snapshot.engine_version,
+        "evaluation_date": snapshot.evaluation_date,
         "source_state_hash": snapshot.source_state_hash,
         "snapshot_hash": snapshot.snapshot_hash,
         "summary": dict(snapshot.summary or {}),
         "generated_at": snapshot.generated_at,
-        "evaluations": rendered,
+        "evaluations": evaluations,
     }
 
 
 def dashboard_response(db: Session, *, claim: Claim) -> dict[str, Any]:
-    snapshot = latest_snapshot(db, claim=claim)
+    snapshot = _latest_snapshot(db, claim=claim)
     return {
         "claim_id": claim.id,
         "snapshot": snapshot_response(db, snapshot) if snapshot else None,
@@ -495,42 +501,44 @@ def dashboard_response(db: Session, *, claim: Claim) -> dict[str, Any]:
 
 
 def build_recovery_timebar(db: Session, *, claim: Claim, user: User) -> RecoveryTimebarSnapshot:
-    evaluation_date = datetime.now(UTC).date()
-    facts = _relevant_facts(db, claim)
+    evaluate_claim_rules(db, claim=claim, user=user, trigger="recovery_timebar")
+    facts = _facts(db, claim)
+    fact_by_path = {fact.field_path: fact for fact in facts}
     marine_rows = _marine_recovery_rows(db, claim)
+    evaluation_date = datetime.now(UTC).date()
     state = _source_state(claim, facts, marine_rows, evaluation_date)
-    state_hash = _hash(state)
+    source_state_hash = _hash(state)
+
     existing = db.scalar(
         select(RecoveryTimebarSnapshot).where(
             RecoveryTimebarSnapshot.organization_id == claim.organization_id,
             RecoveryTimebarSnapshot.claim_id == claim.id,
-            RecoveryTimebarSnapshot.source_state_hash == state_hash,
+            RecoveryTimebarSnapshot.source_state_hash == source_state_hash,
         )
     )
     if existing is not None:
         return existing
 
-    fact_by_path = {fact.field_path: fact for fact in facts}
     recovery = _build_recovery_evaluation(fact_by_path, marine_rows)
     timebar = _build_timebar_evaluation(fact_by_path, recovery, evaluation_date)
     payloads = [recovery, timebar]
     summary = {
         "source_linked": True,
         "non_authoritative": True,
-        "human_review_required": True,
-        "evaluation_date": evaluation_date.isoformat(),
-        "recovery_status": recovery["status"],
-        "timebar_status": timebar["status"],
-        "candidate_deadline": _jsonable(timebar["candidate_deadline"]),
-        "authoritative_deadline_created": False,
-        "liability_decision_made": False,
+        "human_legal_verification_required": True,
+        "evaluation_count": 2,
+        "triggered_count": sum(1 for row in payloads if row["status"] == "triggered"),
+        "insufficient_evidence_count": sum(1 for row in payloads if row["status"] == "insufficient_evidence"),
+        "candidate_deadline_count": sum(1 for row in payloads if row["candidate_deadline"] is not None),
         "recoverability_decision_made": False,
-        "external_notice_sent": False,
+        "liability_decision_made": False,
+        "authoritative_deadline_created": False,
+        "external_correspondence_sent": False,
     }
     snapshot_hash = _hash(
         {
-            "engine_version": ENGINE_VERSION,
-            "source_state_hash": state_hash,
+            "engine": ENGINE_VERSION,
+            "source_state_hash": source_state_hash,
             "summary": summary,
             "evaluation_hashes": [row["evaluation_hash"] for row in payloads],
         }
@@ -548,7 +556,8 @@ def build_recovery_timebar(db: Session, *, claim: Claim, user: User) -> Recovery
         generated_by_id=user.id,
         snapshot_version=current_max + 1,
         engine_version=ENGINE_VERSION,
-        source_state_hash=state_hash,
+        evaluation_date=evaluation_date,
+        source_state_hash=source_state_hash,
         snapshot_hash=snapshot_hash,
         summary=summary,
         generated_at=now,
@@ -574,11 +583,11 @@ def build_recovery_timebar(db: Session, *, claim: Claim, user: User) -> Recovery
         new_values={
             "snapshot_id": str(snapshot.id),
             "snapshot_version": snapshot.snapshot_version,
-            "source_state_hash": state_hash,
+            "source_state_hash": source_state_hash,
             "snapshot_hash": snapshot_hash,
             **summary,
         },
-        details="Built source-linked, non-authoritative recovery/time-bar evaluations from controlled evidence.",
+        details="Built immutable source-linked Recovery & Time-bar Intelligence without making liability/recoverability conclusions.",
     )
     db.commit()
     db.refresh(snapshot)
@@ -593,56 +602,72 @@ def record_decision(
     payload: RecoveryTimebarDecisionWrite,
     user: User,
 ) -> RecoveryTimebarDecision:
-    latest = latest_snapshot(db, claim=claim)
-    if latest is None or latest.id != evaluation.snapshot_id:
-        raise ValueError("Recovery/time-bar evaluation belongs to a superseded snapshot; review the latest evaluation instead")
+    if evaluation.organization_id != claim.organization_id or evaluation.claim_id != claim.id:
+        raise ValueError("Recovery/time-bar evaluation does not belong to this claim")
+    latest_snapshot = _latest_snapshot(db, claim=claim)
+    if latest_snapshot is None or latest_snapshot.id != evaluation.snapshot_id:
+        raise ValueError("Recovery/time-bar evaluation belongs to a superseded snapshot; review the latest snapshot instead")
     if payload.evaluation_hash != evaluation.evaluation_hash:
-        raise ValueError("Recovery/time-bar evaluation changed; refresh and review the latest evidence-linked evaluation")
+        raise ValueError("Evaluation hash does not match the immutable evaluation under review")
+    if payload.convert_to_task and payload.action in {"dismiss", "not_applicable"}:
+        raise ValueError("Dismissed/not-applicable evaluations cannot create controlled tasks")
+
     previous = _latest_decision(db, evaluation.id)
     if payload.convert_to_task:
-        existing_task_id = db.scalar(
-            select(RecoveryTimebarDecision.converted_task_id).where(
+        existing_task = db.scalar(
+            select(RecoveryTimebarDecision.converted_task_id)
+            .where(
+                RecoveryTimebarDecision.organization_id == claim.organization_id,
+                RecoveryTimebarDecision.claim_id == claim.id,
                 RecoveryTimebarDecision.evaluation_id == evaluation.id,
                 RecoveryTimebarDecision.converted_task_id.is_not(None),
-            ).order_by(RecoveryTimebarDecision.decision_number.desc()).limit(1)
+            )
+            .order_by(RecoveryTimebarDecision.decision_number.desc())
+            .limit(1)
         )
-        if existing_task_id is not None:
+        if existing_task is not None:
             raise ValueError("A controlled claim task has already been created from this recovery/time-bar evaluation")
-        if payload.action not in {"accept", "edit"}:
-            raise ValueError("Only accepted or human-edited evaluations can be converted into a task")
 
+    number = (previous.decision_number + 1) if previous else 1
     task: ClaimTask | None = None
     if payload.convert_to_task:
-        due_date = payload.edited_due_date if payload.edited_due_date is not None else evaluation.candidate_deadline
-        description = payload.edited_recommended_action or evaluation.recommended_action
+        due_date = payload.edited_due_date or evaluation.candidate_deadline
+        title = (
+            payload.edited_recommended_action
+            if payload.action == "edit" and payload.edited_recommended_action
+            else evaluation.title
+        )
+        description = (
+            payload.edited_recommended_action
+            if payload.action == "edit" and payload.edited_recommended_action
+            else evaluation.recommended_action
+        )
         task = ClaimTask(
             organization_id=claim.organization_id,
             claim_id=claim.id,
             requirement_id=None,
             request_batch_id=None,
             assignee_id=claim.handler_id or user.id,
-            title=evaluation.title[:220],
+            title=title[:220],
             description=description,
             task_type=TaskType.FOLLOW_UP if evaluation.kind == "timebar" else TaskType.REVIEW,
             status=TaskStatus.OPEN,
-            priority=_TASK_PRIORITY.get(evaluation.urgency, TaskPriority.MEDIUM),
-            source=TaskSource.RULE,
+            priority=TaskPriority.CRITICAL if evaluation.urgency == "critical" else TaskPriority.HIGH if evaluation.urgency == "high" else TaskPriority.MEDIUM,
+            source=TaskSource.AI_SUGGESTION,
             due_date=due_date,
         )
         db.add(task)
         db.flush()
 
-    number = previous.decision_number + 1 if previous else 1
     now = datetime.now(UTC)
     decision_payload = {
-        "evaluation_id": str(evaluation.id),
         "evaluation_hash": evaluation.evaluation_hash,
         "decision_number": number,
         "action": payload.action,
         "note": payload.note.strip(),
         "edited_candidate_implication": payload.edited_candidate_implication,
         "edited_recommended_action": payload.edited_recommended_action,
-        "edited_due_date": _jsonable(payload.edited_due_date),
+        "edited_due_date": payload.edited_due_date.isoformat() if payload.edited_due_date else None,
         "converted_task_id": str(task.id) if task else None,
         "previous_decision_hash": previous.decision_hash if previous else None,
         "decided_by_id": str(user.id),
@@ -651,12 +676,11 @@ def record_decision(
     decision = RecoveryTimebarDecision(
         organization_id=claim.organization_id,
         claim_id=claim.id,
-        snapshot_id=evaluation.snapshot_id,
         evaluation_id=evaluation.id,
         decided_by_id=user.id,
         converted_task_id=task.id if task else None,
-        evaluation_hash=evaluation.evaluation_hash,
         decision_number=number,
+        evaluation_hash=evaluation.evaluation_hash,
         action=payload.action,
         note=payload.note.strip(),
         edited_candidate_implication=payload.edited_candidate_implication,
@@ -677,13 +701,12 @@ def record_decision(
         entity_id=evaluation.id,
         new_values={
             "decision_id": str(decision.id),
-            "evaluation_hash": evaluation.evaluation_hash,
             "decision_number": number,
             "action": payload.action,
             "decision_hash": decision.decision_hash,
             "converted_task_id": str(task.id) if task else None,
         },
-        details="Human decision recorded separately from the immutable recovery/time-bar snapshot and evaluation.",
+        details="Human recovery/time-bar disposition recorded separately from immutable source-linked evaluation.",
     )
     db.commit()
     db.refresh(decision)
