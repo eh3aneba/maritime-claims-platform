@@ -55,6 +55,7 @@ def main() -> None:
         expect(page.get_by_text("MCRI-DEMO-MT-ORION", exact=True)).to_be_visible()
 
         checks = [
+            ("Open Recovery & Time-bar", "Recovery & Time-bar Intelligence"),
             ("Open requirements", "Requirements & workflow"),
             ("Open chronology", "Claim chronology"),
             ("Open technical review", "Technical review matrix"),
@@ -75,6 +76,25 @@ def main() -> None:
             page.goto(f"{BASE_URL}{claim_href}", wait_until="networkidle")
             page.get_by_role("link", name=link_name).click()
             expect(page.get_by_role("heading", name=heading)).to_be_visible()
+
+        page.goto(f"{BASE_URL}{claim_href}", wait_until="networkidle")
+        page.get_by_role("link", name="Open Recovery & Time-bar").click()
+        expect(page.get_by_role("heading", name="Recovery & Time-bar Intelligence")).to_be_visible()
+        expect(page.get_by_text(re.compile(r"Human/legal verification required"))).to_be_visible()
+        with page.expect_response(
+            lambda response: "/api/v1/claims/" in response.url
+            and response.url.endswith("/recovery-timebar/build")
+            and response.request.method == "POST"
+        ) as recovery_response_info:
+            page.get_by_role("button", name=re.compile(r"Build analysis|Refresh analysis")).click()
+        recovery_response = recovery_response_info.value
+        if not recovery_response.ok:
+            raise AssertionError(f"Recovery/time-bar analysis failed: HTTP {recovery_response.status}")
+        expect(page.get_by_text("Recovery status", exact=True)).to_be_visible()
+        expect(page.get_by_text("Time-bar status", exact=True)).to_be_visible()
+        expect(page.get_by_role("heading", name="Evaluations")).to_be_visible()
+        expect(page.get_by_text("recovery", exact=True).first).to_be_visible()
+        expect(page.get_by_text("timebar", exact=True).first).to_be_visible()
 
         page.goto(f"{BASE_URL}{claim_href}", wait_until="networkidle")
         page.get_by_role("link", name="Open requirements").click()
