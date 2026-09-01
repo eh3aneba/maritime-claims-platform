@@ -9,7 +9,7 @@ class EvidenceSearchRequest(BaseModel):
 
     query: str = Field(min_length=2, max_length=1000)
     top_k: int = Field(default=10, ge=1, le=50)
-    retrieval_mode: Literal["lexical"] = "lexical"
+    retrieval_mode: Literal["lexical", "hybrid"] = "lexical"
     include_superseded: bool = False
     document_types: list[str] = Field(default_factory=list, max_length=30)
     document_ids: list[UUID] = Field(default_factory=list, max_length=100)
@@ -50,4 +50,8 @@ class EvidenceSearchResponse(BaseModel):
     result_set_hash: str
     result_count: int
     no_sufficient_evidence_found: bool
+    semantic_used: bool = False
+    semantic_provider: str | None = None
+    semantic_model: str | None = None
+    semantic_authorization_hash: str | None = None
     results: list[EvidenceSearchResult]
