@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select
@@ -14,8 +13,6 @@ from app.modules.financial.models import CostItem
 from app.modules.rules.marine_registry import MARINE_REGISTRY_VERSION, evaluate_marine_rules, registry_hash
 from app.modules.rules.models import RuleEvaluationRun
 from app.modules.users.models import User
-
-MARINE_RULESET_NAME = "marine_rules_engine"
 
 
 def _fact_rows(db: Session, claim: Claim) -> list[ClaimFact]:
@@ -53,13 +50,16 @@ def _costs(db: Session, claim: Claim) -> list[CostItem]:
     )
 
 
-def evaluate_and_record_marine_rules(
+def attach_marine_rules_to_run(
     db: Session,
     *,
     claim: Claim,
     user: User,
-    trigger: str = "manual",
+    run: RuleEvaluationRun,
 ) -> RuleEvaluationRun:
+    if run.organization_id != claim.organization_id or run.claim_id != claim.id:
+        raise ValueError("Rule evaluation run does not belong to this claim.")
+
     evaluations = evaluate_marine_rules(
         claim=claim,
         fact_rows=_fact_rows(db, claim),
@@ -71,7 +71,7 @@ def evaluate_and_record_marine_rules(
         "triggered", "not_triggered", "insufficient_evidence", "not_applicable"
     )}
     triggered = [row["rule_id"] for row in rows if row["status"] == "triggered"]
-    summary: dict[str, Any] = {
+    marine_summary: dict[str, Any] = {
         "marine_registry_version": MARINE_REGISTRY_VERSION,
         "marine_registry_hash": registry_hash(),
         "marine_rule_evaluations": rows,
@@ -81,31 +81,22 @@ def evaluate_and_record_marine_rules(
             "causation, recoverability, General Average contribution, total-loss status, reserve, settlement or payment."
         ),
     }
-    run = RuleEvaluationRun(
-        organization_id=claim.organization_id,
-        claim_id=claim.id,
-        evaluated_by_id=user.id,
-        ruleset_name=MARINE_RULESET_NAME,
-        ruleset_version=MARINE_REGISTRY_VERSION,
-        trigger=trigger,
-        triggered_rule_ids=triggered,
-        summary=summary,
-        created_at=datetime.now(UTC),
-    )
-    db.add(run)
-    db.flush()
+    combined_summary = dict(run.summary or {})
+    combined_summary.update(marine_summary)
+    run.summary = combined_summary
+    run.triggered_rule_ids = list(dict.fromkeys(list(run.triggered_rule_ids or []) + triggered))
+
     write_audit_log(
         db,
         organization_id=claim.organization_id,
         user_id=user.id,
         action="EVALUATE_MARINE_RULES",
-        entity_type="claim",
-        entity_id=claim.id,
+        entity_type="rule_evaluation_run",
+        entity_id=run.id,
         new_values={
             "rule_run_id": str(run.id),
-            "ruleset_name": MARINE_RULESET_NAME,
-            "ruleset_version": MARINE_REGISTRY_VERSION,
-            "registry_hash": summary["marine_registry_hash"],
+            "marine_registry_version": MARINE_REGISTRY_VERSION,
+            "marine_registry_hash": marine_summary["marine_registry_hash"],
             "triggered_rule_ids": triggered,
             "counts": counts,
         },
@@ -116,13 +107,15 @@ def evaluate_and_record_marine_rules(
 
 
 def latest_marine_rule_summary(db: Session, *, claim: Claim) -> dict[str, Any]:
-    run = db.scalar(
-        select(RuleEvaluationRun).where(
-            RuleEvaluationRun.organization_id == claim.organization_id,
-            RuleEvaluationRun.claim_id == claim.id,
-            RuleEvaluationRun.ruleset_name == MARINE_RULESET_NAME,
-        ).order_by(RuleEvaluationRun.created_at.desc()).limit(1)
+    runs = list(
+        db.scalars(
+            select(RuleEvaluationRun).where(
+                RuleEvaluationRun.organization_id == claim.organization_id,
+                RuleEvaluationRun.claim_id == claim.id,
+            ).order_by(RuleEvaluationRun.created_at.desc())
+        )
     )
+    run = next((row for row in runs if (row.summary or {}).get("marine_registry_version")), None)
     if run is None:
         return {
             "marine_registry_version": MARINE_REGISTRY_VERSION,
@@ -136,6 +129,7 @@ def latest_marine_rule_summary(db: Session, *, claim: Claim) -> dict[str, Any]:
             },
             "marine_evaluated_at": None,
             "marine_rule_run_id": None,
+            "human_authority_boundary": None,
         }
     summary = dict(run.summary or {})
     summary["marine_evaluated_at"] = run.created_at
