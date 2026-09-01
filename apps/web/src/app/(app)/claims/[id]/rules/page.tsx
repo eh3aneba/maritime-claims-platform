@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
+import { MarineRulesPanel, type MarineRuleSummaryView } from "@/components/marine-rules-panel";
 import { ApiError, acceptEquivalentEvidence, createDocumentRequest, evaluateClaimRules, getClaim, getClaimRules, listClaimTasks } from "@/lib/api";
 import { formatDate } from "@/lib/format";
 import type { Claim, ClaimDocumentRequirement, ClaimRuleSummary, ClaimTask, DocumentRequestResult, RequirementPriority } from "@/lib/types";
@@ -64,8 +65,6 @@ export default function ClaimRulesPage() {
     finally { setBusy(false); }
   }
 
-
-
   async function requestDocuments(allCritical = false) {
     setBusy(true); setError("");
     try {
@@ -122,6 +121,8 @@ export default function ClaimRulesPage() {
       <div className="panel p-5"><p className="metric-label">Open tasks</p><p className="metric-value">{tasks.filter((t) => t.status === "open").length}</p></div>
       <div className="panel p-5"><p className="metric-label">Active issues</p><p className="metric-value">{summary.issues.length}</p><p className="mt-1 text-xs text-slate-400">Evaluated {summary.evaluated_at ? formatDate(summary.evaluated_at) : "not yet"}</p></div>
     </section>
+
+    <MarineRulesPanel claimId={id} summary={summary as unknown as MarineRuleSummaryView} onRefresh={load} />
 
     <section className="panel mt-5 p-5">
       <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
