@@ -141,9 +141,11 @@ def main() -> None:
                 "events": [document_event], "page": 1, "page_size": 20, "total": 1, "has_more": False,
             }))
 
-        page.route("**/ai-operations", fulfill_dashboard)
-        page.route("**/ai-operations/events?*", fulfill_events)
-        page.route("**/ai-operations/review-queue?*", fulfill_queue)
+        # Scope mocks to the API origin/path only. A broad **/ai-operations matcher also
+        # intercepts the Next.js page navigation itself and replaces the HTML document with JSON.
+        page.route("**/api/v1/ai-operations", fulfill_dashboard)
+        page.route("**/api/v1/ai-operations/events?*", fulfill_events)
+        page.route("**/api/v1/ai-operations/review-queue?*", fulfill_queue)
         page.goto(f"{BASE_URL}/ai-operations", wait_until="networkidle")
 
         expect(page.get_by_role("heading", name="AI Decision Log / AI Operations")).to_be_visible()
