@@ -35,6 +35,7 @@ from app.modules.email_ingestion.models import EmailAdapterRun, EmailAttachmentM
 from app.modules.evidence_search.models import ClaimEvidenceSearchRun, ClaimEvidenceSearchUnit  # noqa: F401
 from app.modules.evidence_search.qa_synthesis_models import ClaimQaSynthesisRun  # noqa: F401
 from app.modules.external_portal.models import ExternalPortalInvitation, ExternalPortalPublicationProposal, ExternalPortalPublishedItem, ExternalPortalSession, ExternalPortalSubmission  # noqa: F401
+from app.modules.governance_webhooks.models import GovernanceWebhookDelivery, GovernanceWebhookDestination  # noqa: F401
 from app.modules.intelligence.models import AIFeedback, AIRun, DocumentExtraction  # noqa: F401
 from app.modules.intake.models import ClaimIntakeDraft, ClaimIntakeProcessingJob  # noqa: F401
 from app.modules.financial.models import CostItem, FinancialFlag, ReserveHistory  # noqa: F401
