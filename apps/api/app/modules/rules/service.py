@@ -11,13 +11,13 @@ for _name in dir(_core):
 
 
 def evaluate_claim_rules(db, *, claim, user, trigger: str = "manual"):
-    """Evaluate core claim rules and attach versioned marine-rule reasoning.
+    """Evaluate core claim rules and attach the composed Marine Rules Engine.
 
     The marine layer remains non-authoritative. It enriches the same immutable
-    RuleEvaluationRun and materializes evidence-rich ClaimIssue records so
-    downstream Claims Intelligence consumes the reviewed rule output natively.
+    RuleEvaluationRun, uses only controlled claim evidence and reviewed wording,
+    and materializes evidence-rich ClaimIssue records for downstream Claims Intelligence.
     """
     run = _core.evaluate_claim_rules(db, claim=claim, user=user, trigger=trigger)
-    from app.modules.rules.marine_service import attach_marine_rules_to_run
+    from app.modules.rules.marine_engine_service import attach_marine_rules_to_run
 
     return attach_marine_rules_to_run(db, claim=claim, user=user, run=run)
