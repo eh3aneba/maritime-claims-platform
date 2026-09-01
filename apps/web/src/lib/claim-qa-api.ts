@@ -11,6 +11,10 @@ export interface ClaimQaRequest {
   exact_phrase?: boolean;
 }
 
+export interface ClaimQaSynthesisRequest extends ClaimQaRequest {
+  fallback_to_extractive?: boolean;
+}
+
 export interface ClaimQaSourceRef {
   search_unit_id: string;
   segment_id: string;
@@ -45,7 +49,7 @@ export interface ClaimQaConflict {
 
 export interface ClaimQaResponse {
   claim_id: string;
-  status: "answered" | "insufficient_evidence" | "conflicting_evidence";
+  status: "answered" | "insufficient_evidence" | "conflicting_evidence" | "synthesis_blocked";
   answer: string;
   statements: ClaimQaStatement[];
   conflicts: ClaimQaConflict[];
@@ -65,6 +69,20 @@ export interface ClaimQaResponse {
   human_review_required: boolean;
   claim_facts_updated: boolean;
   disclaimer: string;
+  synthesis_requested?: boolean;
+  synthesis_used?: boolean;
+  synthesis_run_id?: string;
+  synthesis_failure_code?: string | null;
+  fallback_used?: boolean;
+  production_authorization_id?: string | null;
+  provider?: string | null;
+  model?: string | null;
+  prompt_bundle_version?: string | null;
+  schema_bundle_version?: string | null;
+  authorization_hash?: string | null;
+  input_hash?: string | null;
+  output_hash?: string | null;
+  synthesis_engine_version?: string;
 }
 
 async function parse<T>(response: Response, fallback: string): Promise<T> {
@@ -92,4 +110,22 @@ export async function askClaimQuestion(
     body: JSON.stringify({ retrieval_mode: "hybrid", top_k: 5, ...payload }),
   });
   return parse<ClaimQaResponse>(response, "Claim Q&A could not be completed");
+}
+
+export async function askGovernedClaimQuestion(
+  claimId: string,
+  payload: ClaimQaSynthesisRequest,
+): Promise<ClaimQaResponse> {
+  const response = await fetch(`${API_BASE}/claims/${claimId}/evidence-search/qa/synthesize`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      retrieval_mode: "hybrid",
+      top_k: 5,
+      fallback_to_extractive: true,
+      ...payload,
+    }),
+  });
+  return parse<ClaimQaResponse>(response, "Governed Claim Q&A synthesis could not be completed");
 }

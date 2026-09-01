@@ -279,6 +279,7 @@ jobs:
           export MCRI_WEB_URL=http://127.0.0.1:3000
           export MCRI_E2E_SCREENSHOT=artifacts/design-partner-e2e.png
           python tests/browser/design_partner_e2e.py
+          python tests/browser/claim_qa_synthesis_e2e.py
 
       - name: Capture container diagnostics
         if: failure()

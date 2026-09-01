@@ -137,7 +137,7 @@ def main() -> None:
         page.goto(f"{BASE_URL}{claim_href}", wait_until="networkidle")
         page.get_by_role("link", name="Open Claim Q&A").click()
         expect(page.get_by_role("heading", name="Claim Q&A")).to_be_visible()
-        expect(page.get_by_text(re.compile(r"Extractive/private only"))).to_be_visible()
+        expect(page.get_by_text(re.compile(r"Human authority remains final"))).to_be_visible()
         page.get_by_label("Claim Q&A retrieval mode").select_option("hybrid")
         page.get_by_label("Claim Q&A question").fill(
             "What were the turbocharger operating hours before casualty?"
