@@ -16,6 +16,12 @@ class ClaimQaRequest(BaseModel):
     exact_phrase: bool = False
 
 
+class ClaimQaSynthesisRequest(ClaimQaRequest):
+    """Optional governed synthesis request; extractive 12F remains the default API."""
+
+    fallback_to_extractive: bool = True
+
+
 class ClaimQaSourceRef(BaseModel):
     search_unit_id: UUID
     segment_id: UUID
@@ -66,6 +72,44 @@ class ClaimQaResponse(BaseModel):
     semantic_authorization_hash: str | None
     answer_engine_version: str
     answer_hash: str
+    non_authoritative: bool = True
+    human_review_required: bool = True
+    claim_facts_updated: bool = False
+    disclaimer: str
+
+
+class ClaimQaSynthesisResponse(BaseModel):
+    claim_id: UUID
+    status: Literal["answered", "insufficient_evidence", "conflicting_evidence", "synthesis_blocked"]
+    answer: str
+    statements: list[ClaimQaStatement]
+    conflicts: list[ClaimQaConflict]
+    missing_evidence: list[str]
+    retrieval_run_id: UUID
+    retrieval_mode: str
+    ranking_version: str
+    question_hash: str
+    result_set_hash: str
+    semantic_used: bool
+    semantic_provider: str | None
+    semantic_model: str | None
+    semantic_authorization_hash: str | None
+    answer_engine_version: str
+    answer_hash: str
+    synthesis_requested: bool = True
+    synthesis_used: bool
+    synthesis_run_id: UUID
+    synthesis_failure_code: str | None
+    fallback_used: bool
+    production_authorization_id: UUID | None
+    provider: str | None
+    model: str | None
+    prompt_bundle_version: str | None
+    schema_bundle_version: str | None
+    authorization_hash: str | None
+    input_hash: str | None
+    output_hash: str | None
+    synthesis_engine_version: str
     non_authoritative: bool = True
     human_review_required: bool = True
     claim_facts_updated: bool = False
