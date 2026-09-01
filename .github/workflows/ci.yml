@@ -281,6 +281,7 @@ jobs:
           python tests/browser/design_partner_e2e.py
           python tests/browser/claim_qa_synthesis_e2e.py
           python tests/browser/ai_operations_e2e.py
+          python tests/browser/governance_webhooks_e2e.py
 
       - name: Capture container diagnostics
         if: failure()
