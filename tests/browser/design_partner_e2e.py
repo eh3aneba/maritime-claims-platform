@@ -55,6 +55,7 @@ def main() -> None:
         expect(page.get_by_text("MCRI-DEMO-MT-ORION", exact=True)).to_be_visible()
 
         checks = [
+            ("Open Claim Q&A", "Claim Q&A"),
             ("Open Evidence Search", "Evidence Search"),
             ("Open Recovery & Time-bar", "Recovery & Time-bar Intelligence"),
             ("Open Severity & Reserve Support", "Severity & Reserve Support"),
@@ -132,6 +133,68 @@ def main() -> None:
             raise AssertionError(f"No-evidence search failed: HTTP {no_evidence_response.status}")
         expect(page.get_by_role("heading", name="No sufficient evidence found")).to_be_visible()
         expect(page.get_by_text(re.compile(r"has not generated or inferred an answer"))).to_be_visible()
+
+        page.goto(f"{BASE_URL}{claim_href}", wait_until="networkidle")
+        page.get_by_role("link", name="Open Claim Q&A").click()
+        expect(page.get_by_role("heading", name="Claim Q&A")).to_be_visible()
+        expect(page.get_by_text(re.compile(r"Extractive/private only"))).to_be_visible()
+        page.get_by_label("Claim Q&A retrieval mode").select_option("hybrid")
+        page.get_by_label("Claim Q&A question").fill(
+            "What were the turbocharger operating hours before casualty?"
+        )
+        with page.expect_response(
+            lambda response: "/api/v1/claims/" in response.url
+            and response.url.endswith("/evidence-search/qa")
+            and response.request.method == "POST"
+        ) as qa_response_info:
+            page.get_by_role("button", name="Ask claim file").click()
+        qa_response = qa_response_info.value
+        if not qa_response.ok:
+            raise AssertionError(f"Claim Q&A failed: HTTP {qa_response.status}")
+        qa_payload = qa_response.json()
+        if qa_payload.get("status") != "conflicting_evidence":
+            raise AssertionError(
+                f"MT ORION operating-hours Q&A should preserve conflicting source evidence: {qa_payload.get('status')}"
+            )
+        if qa_payload.get("semantic_provider") != "local_in_process":
+            raise AssertionError("Claim Q&A did not preserve the private local semantic provider")
+        if qa_payload.get("claim_facts_updated") is not False:
+            raise AssertionError("Claim Q&A reported an authoritative ClaimFact mutation")
+        statements = qa_payload.get("statements") or []
+        if len(statements) < 2:
+            raise AssertionError("Claim Q&A conflict did not preserve at least two source-linked statements")
+        if not all(statement.get("source_refs") for statement in statements):
+            raise AssertionError("Claim Q&A returned an unsupported statement without source refs")
+        conflicts = qa_payload.get("conflicts") or []
+        numeric_conflicts = [
+            conflict for conflict in conflicts if conflict.get("conflict_type") == "numeric_disagreement"
+        ]
+        if not numeric_conflicts:
+            raise AssertionError("Claim Q&A did not identify the operating-hours numeric disagreement")
+        if not all(len(conflict.get("statement_hashes") or []) == 2 for conflict in numeric_conflicts):
+            raise AssertionError("Claim Q&A conflict lineage did not retain both statement hashes")
+        expect(page.get_by_role("heading", name="Conflicting evidence")).to_be_visible()
+        expect(page.locator('section[aria-label="Claim Q&A conflicts"]')).to_be_visible()
+        expect(page.locator('section[aria-label="Claim Q&A source statements"] article').first).to_be_visible()
+        expect(page.get_by_role("button", name="Download source").first).to_be_visible()
+        expect(page.get_by_text(re.compile(r"local_in_process")).first).to_be_visible()
+
+        page.get_by_label("Claim Q&A question").fill("qzxvplmnonexistent987654321")
+        with page.expect_response(
+            lambda response: "/api/v1/claims/" in response.url
+            and response.url.endswith("/evidence-search/qa")
+            and response.request.method == "POST"
+        ) as qa_no_evidence_info:
+            page.get_by_role("button", name="Ask claim file").click()
+        qa_no_evidence = qa_no_evidence_info.value
+        if not qa_no_evidence.ok:
+            raise AssertionError(f"Claim Q&A no-evidence path failed: HTTP {qa_no_evidence.status}")
+        qa_no_evidence_payload = qa_no_evidence.json()
+        if qa_no_evidence_payload.get("status") != "insufficient_evidence":
+            raise AssertionError("Claim Q&A no-evidence path did not fail closed")
+        if qa_no_evidence_payload.get("statements"):
+            raise AssertionError("Claim Q&A invented statements for the no-evidence path")
+        expect(page.get_by_role("heading", name="No sufficient evidence found")).to_be_visible()
 
         page.goto(f"{BASE_URL}{claim_href}", wait_until="networkidle")
         page.get_by_role("link", name="Open Recovery & Time-bar").click()
