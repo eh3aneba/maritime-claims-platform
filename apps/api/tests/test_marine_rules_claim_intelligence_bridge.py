@@ -52,7 +52,7 @@ def test_claim_intelligence_consumes_structured_marine_rule_issue() -> None:
             ).order_by(RuleEvaluationRun.created_at.desc())
         )
         assert run is not None
-        assert run.summary["marine_registry_version"] == "12B.1.0"
+        assert run.summary["marine_registry_version"] == "12B.2.0"
         assert run.summary["active_marine_issue_count"] >= 1
 
 
