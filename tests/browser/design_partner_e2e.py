@@ -152,20 +152,32 @@ def main() -> None:
         if not qa_response.ok:
             raise AssertionError(f"Claim Q&A failed: HTTP {qa_response.status}")
         qa_payload = qa_response.json()
-        if qa_payload.get("status") != "answered":
-            raise AssertionError(f"Claim Q&A did not produce a grounded answer: {qa_payload.get('status')}")
+        if qa_payload.get("status") != "conflicting_evidence":
+            raise AssertionError(
+                f"MT ORION operating-hours Q&A should preserve conflicting source evidence: {qa_payload.get('status')}"
+            )
         if qa_payload.get("semantic_provider") != "local_in_process":
             raise AssertionError("Claim Q&A did not preserve the private local semantic provider")
         if qa_payload.get("claim_facts_updated") is not False:
             raise AssertionError("Claim Q&A reported an authoritative ClaimFact mutation")
-        if not qa_payload.get("statements"):
-            raise AssertionError("Claim Q&A returned no source-linked statements")
-        if not all(statement.get("source_refs") for statement in qa_payload["statements"]):
+        statements = qa_payload.get("statements") or []
+        if len(statements) < 2:
+            raise AssertionError("Claim Q&A conflict did not preserve at least two source-linked statements")
+        if not all(statement.get("source_refs") for statement in statements):
             raise AssertionError("Claim Q&A returned an unsupported statement without source refs")
-        expect(page.get_by_role("heading", name="Source-cited answer")).to_be_visible()
+        conflicts = qa_payload.get("conflicts") or []
+        numeric_conflicts = [
+            conflict for conflict in conflicts if conflict.get("conflict_type") == "numeric_disagreement"
+        ]
+        if not numeric_conflicts:
+            raise AssertionError("Claim Q&A did not identify the operating-hours numeric disagreement")
+        if not all(len(conflict.get("statement_hashes") or []) == 2 for conflict in numeric_conflicts):
+            raise AssertionError("Claim Q&A conflict lineage did not retain both statement hashes")
+        expect(page.get_by_role("heading", name="Conflicting evidence")).to_be_visible()
+        expect(page.locator('section[aria-label="Claim Q&A conflicts"]')).to_be_visible()
         expect(page.locator('section[aria-label="Claim Q&A source statements"] article').first).to_be_visible()
         expect(page.get_by_role("button", name="Download source").first).to_be_visible()
-        expect(page.get_by_text("local_in_process", exact=True).first).to_be_visible()
+        expect(page.get_by_text(re.compile(r"local_in_process")).first).to_be_visible()
 
         page.get_by_label("Claim Q&A question").fill("qzxvplmnonexistent987654321")
         with page.expect_response(
