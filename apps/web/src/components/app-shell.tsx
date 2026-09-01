@@ -10,6 +10,7 @@ import type { CurrentUser } from "@/lib/types";
 const nav = [
   { href: "/dashboard", label: "Dashboard", mark: "D" },
   { href: "/claims", label: "Claims", mark: "C" },
+  { href: "/claims-workbench", label: "Claims Workbench", mark: "12J" },
   { href: "/ai-review", label: "AI Review", mark: "AI" },
   { href: "/ai-governance", label: "AI Governance", mark: "G" },
   { href: "/ai-evaluation", label: "AI Evaluation", mark: "E" },

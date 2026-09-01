@@ -28,6 +28,7 @@ from app.modules.auth.router import router as auth_router
 from app.modules.assessments.router import router as assessments_router
 from app.modules.claim_intelligence.router import router as claim_intelligence_router
 from app.modules.claim_packs.router import router as claim_packs_router
+from app.modules.claim_workbench.router import router as claim_workbench_router
 from app.modules.claims.router import router as claims_router
 from app.modules.chronology.router import router as chronology_router
 from app.modules.correspondence.router import router as correspondence_router
@@ -98,6 +99,7 @@ app.include_router(governance_webhooks_router, prefix=settings.api_v1_prefix)
 app.include_router(adjustments_router, prefix=settings.api_v1_prefix)
 app.include_router(assessments_router, prefix=settings.api_v1_prefix)
 app.include_router(claim_intelligence_router, prefix=settings.api_v1_prefix)
+app.include_router(claim_workbench_router, prefix=settings.api_v1_prefix)
 app.include_router(financial_router, prefix=settings.api_v1_prefix)
 app.include_router(intelligence_router, prefix=settings.api_v1_prefix)
 app.include_router(intake_router, prefix=settings.api_v1_prefix)
