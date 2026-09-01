@@ -83,7 +83,11 @@ def main() -> None:
         "raw_claim_or_model_content_exposed": False,
     }
     issued = {
-        "destination": {**destination, "id": "55555555-5555-5555-5555-555555555555", "name": "Primary SIEM"},
+        "destination": {
+            **destination,
+            "id": "55555555-5555-5555-5555-555555555555",
+            "name": "Primary SIEM",
+        },
         "signing_secret": "ONE_TIME_SYNTHETIC_SIGNING_SECRET_1234567890",
         "secret_version": 1,
         "secret_reference": "derived-hmac-sha256:synthetic-new:v1",
@@ -100,13 +104,20 @@ def main() -> None:
         page.get_by_role("button", name="Sign in").click()
         page.wait_for_url("**/dashboard")
 
-        def route_dashboard(route) -> None:
-            if route.request.method == "POST":
-                route.fulfill(status=201, content_type="application/json", body=json.dumps(issued))
-            else:
+        def route_governance(route) -> None:
+            request = route.request
+            path = request.url.split("?", 1)[0]
+            if request.method == "GET" and path.endswith("/api/v1/governance-webhooks"):
                 route.fulfill(status=200, content_type="application/json", body=json.dumps(dashboard))
+                return
+            if request.method == "POST" and path.endswith(
+                "/api/v1/governance-webhooks/destinations"
+            ):
+                route.fulfill(status=201, content_type="application/json", body=json.dumps(issued))
+                return
+            route.continue_()
 
-        page.route("**/api/v1/governance-webhooks", route_dashboard)
+        page.route("**/api/v1/governance-webhooks**", route_governance)
         page.goto(f"{BASE_URL}/ai-integrations", wait_until="networkidle")
 
         expect(page.get_by_role("heading", name="AI Integrations / SIEM Webhooks")).to_be_visible()
@@ -119,7 +130,9 @@ def main() -> None:
 
         page.get_by_role("button", name="Create destination").click()
         expect(page.get_by_text("One-time signing secret", exact=True)).to_be_visible()
-        expect(page.get_by_text("ONE_TIME_SYNTHETIC_SIGNING_SECRET_1234567890", exact=True)).to_be_visible()
+        expect(
+            page.get_by_text("ONE_TIME_SYNTHETIC_SIGNING_SECRET_1234567890", exact=True)
+        ).to_be_visible()
         expect(page.get_by_text("Store this secret", exact=False)).to_be_visible()
 
         browser.close()
