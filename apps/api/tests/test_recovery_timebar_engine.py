@@ -44,6 +44,7 @@ def test_builds_source_linked_candidate_deadline_and_reuses_same_day_snapshot() 
     assert first["id"] == second["id"]
     assert first["snapshot_version"] == 1
     assert first["engine_version"] == "12C.1"
+    assert date.fromisoformat(first["evaluation_date"])
     assert len(first["source_state_hash"]) == 64
     assert len(first["snapshot_hash"]) == 64
     assert first["summary"]["non_authoritative"] is True
@@ -142,6 +143,7 @@ def test_human_task_conversion_uses_candidate_date_and_prevents_duplicate_or_sta
             RecoveryTimebarDecision.evaluation_id == UUID(timebar["id"])
         )))
         assert len(rows) == 1
+        assert rows[0].snapshot_id == UUID(first["id"])
 
     _add_fact(claim_id, "recovery.notice_requirement", "Reviewed written notice requirement")
     second = _build(claim_id)
