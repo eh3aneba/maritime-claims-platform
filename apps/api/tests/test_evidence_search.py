@@ -114,6 +114,8 @@ def test_current_engine_log_hit_returns_exact_source_lineage() -> None:
 
     assert result["ranking_version"] == "12E.1"
     assert result["retrieval_mode"] == "lexical"
+    assert result["semantic_used"] is False
+    assert result["semantic_provider"] is None
     assert result["result_count"] == 1
     assert result["no_sufficient_evidence_found"] is False
     row = result["results"][0]
@@ -220,14 +222,14 @@ def test_search_is_tenant_and_claim_scoped_in_sql() -> None:
     )
 
     login("alpha", "alpha@example.com")
-    no_leak = _search(ids["claim_id"], "Cross-claim-secret-keyword")
+    no_leak = _search(ids["claim_id"], "Cross-claim-secret-keyword", retrieval_mode="hybrid")
     assert no_leak["results"] == []
 
     client.cookies.clear()
     login("beta", "beta@example.com")
     forbidden = client.post(
         f"/api/v1/claims/{ids['claim_id']}/evidence-search",
-        json={"query": "turbocharger", "retrieval_mode": "lexical"},
+        json={"query": "turbocharger", "retrieval_mode": "hybrid"},
     )
     assert forbidden.status_code == 404
 
@@ -244,7 +246,7 @@ def test_empty_search_is_explicit_and_does_not_invent_an_answer() -> None:
     )
     login("alpha", "alpha@example.com")
 
-    result = _search(ids["claim_id"], "nonexistent cavitation signature")
+    result = _search(ids["claim_id"], "nonexistent cavitation signature", retrieval_mode="hybrid")
     assert result["result_count"] == 0
     assert result["results"] == []
     assert result["no_sufficient_evidence_found"] is True
@@ -270,9 +272,10 @@ def test_identical_state_and_query_yield_deterministic_ranks_and_result_hash() -
     )
     login("alpha", "alpha@example.com")
 
-    first = _search(ids["claim_id"], "turbocharger bearing damage")
-    second = _search(ids["claim_id"], "turbocharger bearing damage")
+    first = _search(ids["claim_id"], "turbocharger bearing damage", retrieval_mode="hybrid")
+    second = _search(ids["claim_id"], "turbocharger bearing damage", retrieval_mode="hybrid")
     assert first["run_id"] != second["run_id"]
+    assert first["ranking_version"] == "12E.2"
     assert first["result_set_hash"] == second["result_set_hash"]
     assert [row["search_unit_id"] for row in first["results"]] == [
         row["search_unit_id"] for row in second["results"]
@@ -282,7 +285,47 @@ def test_identical_state_and_query_yield_deterministic_ranks_and_result_hash() -
     ]
 
 
-def test_search_is_read_only_for_claim_facts_and_search_audit_is_content_free() -> None:
+def test_local_hybrid_finds_semantic_equivalent_without_external_provider() -> None:
+    ids = seed_claim()
+    claim_id = UUID(ids["claim_id"])
+    document_id = _add_processed_document(
+        claim_id=claim_id,
+        filename="PMS_Overhaul_Record.txt",
+        document_type="pms_history",
+        text="Turbocharger overhaul completed at 11,800 running hours. Bearings and rotor were inspected.",
+        locator="12",
+    )
+    login("alpha", "alpha@example.com")
+
+    lexical = _search(ids["claim_id"], "When was the machinery last serviced?")
+    assert lexical["result_count"] == 0
+
+    hybrid = _search(
+        ids["claim_id"],
+        "When was the machinery last serviced?",
+        retrieval_mode="hybrid",
+    )
+    assert hybrid["retrieval_mode"] == "hybrid"
+    assert hybrid["ranking_version"] == "12E.2"
+    assert hybrid["semantic_used"] is True
+    assert hybrid["semantic_provider"] == "local_in_process"
+    assert hybrid["semantic_model"] == "marine-concepts-hash-v1"
+    assert len(hybrid["semantic_authorization_hash"]) == 64
+    assert hybrid["result_count"] >= 1
+    row = hybrid["results"][0]
+    assert row["document_id"] == str(document_id)
+    assert row["semantic_score"] is not None and row["semantic_score"] > 0
+    assert "local_semantic_concept_match" in row["match_reasons"]
+
+    with TestingSessionLocal() as db:
+        run = db.get(ClaimEvidenceSearchRun, UUID(hybrid["run_id"]))
+        assert run is not None
+        assert run.semantic_provider == "local_in_process"
+        assert run.semantic_model == "marine-concepts-hash-v1"
+        assert len(run.semantic_authorization_hash or "") == 64
+
+
+def test_restricted_evidence_can_use_local_hybrid_without_external_egress() -> None:
     ids = seed_claim()
     claim_id = UUID(ids["claim_id"])
     _add_processed_document(
@@ -295,33 +338,49 @@ def test_search_is_read_only_for_claim_facts_and_search_audit_is_content_free() 
     )
     login("alpha", "alpha@example.com")
 
+    result = _search(ids["claim_id"], "operating hours before casualty", retrieval_mode="hybrid")
+    assert result["result_count"] == 1
+    assert result["semantic_provider"] == "local_in_process"
+    assert result["results"][0]["confidentiality_level"] == "restricted"
+    assert result["results"][0]["semantic_score"] is not None
+
+
+def test_search_is_read_only_for_claim_facts_and_search_audit_is_content_free() -> None:
+    ids = seed_claim()
+    claim_id = UUID(ids["claim_id"])
+    _add_processed_document(
+        claim_id=claim_id,
+        filename="Engine_Log.txt",
+        document_type="engine_log",
+        text="Evidence records 14,250 turbocharger running hours before casualty.",
+        locator="9",
+    )
+    login("alpha", "alpha@example.com")
+
     with TestingSessionLocal() as db:
         before = db.scalar(select(func.count()).select_from(ClaimFact).where(ClaimFact.claim_id == claim_id)) or 0
 
-    raw_query = "14250 turbocharger running hours"
-    result = _search(ids["claim_id"], raw_query)
+    raw_query = "operating hours before casualty"
+    result = _search(ids["claim_id"], raw_query, retrieval_mode="hybrid")
     assert result["result_count"] == 1
-    assert result["results"][0]["confidentiality_level"] == "restricted"
-    assert result["results"][0]["semantic_score"] is None
 
     with TestingSessionLocal() as db:
         after = db.scalar(select(func.count()).select_from(ClaimFact).where(ClaimFact.claim_id == claim_id)) or 0
         run = db.get(ClaimEvidenceSearchRun, UUID(result["run_id"]))
         assert run is not None
         assert before == after
-        assert run.semantic_provider is None
-        assert run.semantic_model is None
+        assert run.semantic_provider == "local_in_process"
         assert raw_query not in str(run.filters)
         assert raw_query not in str(run.result_ledger)
         assert len(run.normalized_query_hash) == 64
         unit_table = ClaimEvidenceSearchUnit.__table__
         assert "text" not in unit_table.c
 
-    hybrid = client.post(
+    external = client.post(
         f"/api/v1/claims/{ids['claim_id']}/evidence-search",
-        json={"query": "turbocharger", "retrieval_mode": "hybrid"},
+        json={"query": "turbocharger", "retrieval_mode": "external_semantic"},
     )
-    assert hybrid.status_code == 422
+    assert external.status_code == 422
 
 
 def test_conflicting_passages_are_both_returned_without_resolution() -> None:
@@ -343,7 +402,7 @@ def test_conflicting_passages_are_both_returned_without_resolution() -> None:
     )
     login("alpha", "alpha@example.com")
 
-    result = _search(ids["claim_id"], "cause indication turbocharger bearing damage")
+    result = _search(ids["claim_id"], "reason for failure turbocharger bearing damage", retrieval_mode="hybrid")
     assert result["result_count"] == 2
     filenames = {row["document_filename"] for row in result["results"]}
     assert filenames == {"CE_Report.txt", "Workshop_Report.txt"}
