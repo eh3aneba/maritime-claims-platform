@@ -1,8 +1,8 @@
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.modules.rules.models import IssueCategory, IssueSeverity, IssueStatus, RequirementPriority, RequirementStatus
 
@@ -46,6 +46,41 @@ class ClaimIssueResponse(BaseModel):
     last_triggered_at: datetime | None
 
 
+class MarineRuleDecisionWrite(BaseModel):
+    evaluation_hash: str = Field(min_length=64, max_length=64)
+    action: Literal["accept", "edit", "dismiss", "not_applicable"]
+    note: str = Field(min_length=5, max_length=4000)
+    edited_candidate_implication: str | None = Field(default=None, max_length=8000)
+    edited_recommended_action: str | None = Field(default=None, max_length=8000)
+
+    @model_validator(mode="after")
+    def validate_edit_payload(self):
+        has_edit = bool(self.edited_candidate_implication or self.edited_recommended_action)
+        if self.action == "edit" and not has_edit:
+            raise ValueError("Edit decisions require an edited candidate implication or recommended action.")
+        if self.action != "edit" and has_edit:
+            raise ValueError("Edited wording is only permitted when action is edit.")
+        return self
+
+
+class MarineRuleDecisionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    rule_run_id: UUID
+    decided_by_id: UUID | None
+    rule_id: str
+    rule_version: str
+    evaluation_hash: str
+    decision_number: int
+    action: str
+    note: str
+    edited_candidate_implication: str | None
+    edited_recommended_action: str | None
+    previous_decision_hash: str | None
+    decision_hash: str
+    decided_at: datetime
+
+
 class MarineRuleEvaluationResponse(BaseModel):
     rule_id: str
     rule_version: str
@@ -61,6 +96,7 @@ class MarineRuleEvaluationResponse(BaseModel):
     candidate_implication: str
     recommended_action: str
     evaluation_hash: str
+    latest_decision: MarineRuleDecisionResponse | None = None
 
 
 class ReadinessResponse(BaseModel):
