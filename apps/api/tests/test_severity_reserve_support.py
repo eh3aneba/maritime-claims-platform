@@ -1,4 +1,3 @@
-from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import UUID, uuid4
 
@@ -153,8 +152,14 @@ def test_reserve_range_uses_reviewed_target_currency_evidence_without_fx_or_reje
     assert reserve["currency"] == "USD"
     assert Decimal(str(reserve["lower_amount"])) == Decimal("100000.00")
     assert Decimal(str(reserve["upper_amount"])) == Decimal("600000.00")
-    assert any(factor["factor"] == "non_rejected_invoice_exposure" and factor["amount"] == "350000" for factor in reserve["factors"])
-    assert any(factor["factor"] == "highest_reviewed_quotation" and factor["amount"] == "600000" for factor in reserve["factors"])
+    assert any(
+        factor["factor"] == "non_rejected_invoice_exposure" and Decimal(factor["amount"]) == Decimal("350000")
+        for factor in reserve["factors"]
+    )
+    assert any(
+        factor["factor"] == "highest_reviewed_quotation" and Decimal(factor["amount"]) == Decimal("600000")
+        for factor in reserve["factors"]
+    )
     assert any("EUR" in item for item in reserve["missing_prerequisites"])
     assert not any(source.get("amount") == "900000.00" and source.get("review_status") != "rejected" for source in reserve["source_refs"])
     assert _reserve_count(claim_id) == 0
