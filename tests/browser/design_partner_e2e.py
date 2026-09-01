@@ -56,6 +56,7 @@ def main() -> None:
 
         checks = [
             ("Open Recovery & Time-bar", "Recovery & Time-bar Intelligence"),
+            ("Open Severity & Reserve Support", "Severity & Reserve Support"),
             ("Open requirements", "Requirements & workflow"),
             ("Open chronology", "Claim chronology"),
             ("Open technical review", "Technical review matrix"),
@@ -95,6 +96,30 @@ def main() -> None:
         expect(page.get_by_role("heading", name="Evaluations")).to_be_visible()
         expect(page.get_by_text("recovery", exact=True).first).to_be_visible()
         expect(page.get_by_text("timebar", exact=True).first).to_be_visible()
+
+        page.goto(f"{BASE_URL}{claim_href}", wait_until="networkidle")
+        page.get_by_role("link", name="Open Severity & Reserve Support").click()
+        expect(page.get_by_role("heading", name="Severity & Reserve Support")).to_be_visible()
+        expect(page.get_by_text(re.compile(r"Human reserve authority required"))).to_be_visible()
+        with page.expect_response(
+            lambda response: "/api/v1/claims/" in response.url
+            and response.url.endswith("/severity-reserve/build")
+            and response.request.method == "POST"
+        ) as support_response_info:
+            page.get_by_role("button", name=re.compile(r"Build support|Refresh support")).click()
+        support_response = support_response_info.value
+        if not support_response.ok:
+            raise AssertionError(f"Severity/reserve support failed: HTTP {support_response.status}")
+        expect(page.get_by_text("Handling severity", exact=True)).to_be_visible()
+        expect(page.get_by_text("Candidate range", exact=True)).to_be_visible()
+        expect(page.get_by_role("heading", name="Evaluations")).to_be_visible()
+        expect(page.get_by_text(re.compile(r"no “Set reserve automatically” action"))).to_be_visible()
+
+        page.goto(f"{BASE_URL}{claim_href}/intelligence", wait_until="networkidle")
+        expect(page.get_by_role("heading", name="Source-linked claim intelligence")).to_be_visible()
+        expect(page.get_by_text("Phase 12D · read-only adjunct", exact=True)).to_be_visible()
+        expect(page.get_by_role("heading", name="Severity & Reserve Support")).to_be_visible()
+        expect(page.get_by_role("link", name="Open support workspace")).to_be_visible()
 
         page.goto(f"{BASE_URL}{claim_href}", wait_until="networkidle")
         page.get_by_role("link", name="Open requirements").click()
