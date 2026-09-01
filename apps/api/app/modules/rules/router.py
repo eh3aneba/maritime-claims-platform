@@ -9,7 +9,7 @@ from app.db.session import get_db
 from app.modules.auth.dependencies import CurrentUser
 from app.modules.claims.security import get_claim_for_tenant
 from app.modules.claims.facts import ClaimFact
-from app.modules.rules.marine_service import evaluate_and_record_marine_rules, latest_marine_rule_summary
+from app.modules.rules.marine_service import attach_marine_rules_to_run, latest_marine_rule_summary
 from app.modules.rules.models import ClaimDocumentRequirement
 from app.modules.rules.schemas import DocumentRequirementResponse, EquivalentEvidenceRequest, EquivalentEvidenceResponse, RuleEvaluationResponse, RuleSummaryResponse
 from app.modules.rules.service import accept_equivalent_evidence, equivalent_evidence_candidates, evaluate_claim_rules, get_rule_summary
@@ -45,8 +45,8 @@ def evaluate_rules(claim_id: UUID, current_user: CurrentUser, db: Annotated[Sess
     if claim is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Claim not found")
     run = evaluate_claim_rules(db, claim=claim, user=current_user)
-    marine_run = evaluate_and_record_marine_rules(db, claim=claim, user=current_user)
-    return RuleEvaluationResponse(run_id=run.id, marine_run_id=marine_run.id, summary=_summary_with_marine(db, claim=claim))
+    run = attach_marine_rules_to_run(db, claim=claim, user=current_user, run=run)
+    return RuleEvaluationResponse(run_id=run.id, marine_run_id=run.id, summary=_summary_with_marine(db, claim=claim))
 
 
 @router.post("/requirements/{requirement_id}/accept-equivalent", response_model=EquivalentEvidenceResponse)
