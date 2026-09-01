@@ -36,6 +36,10 @@ class Settings(BaseSettings):
     ai_prompt_bundle_version: str = "2026-08-20.1"
     ai_schema_bundle_version: str = "2026-08-20.1"
     allow_external_ai_restricted: bool = False
+    governance_webhook_max_attempts: int = 6
+    governance_webhook_poll_seconds: float = 5.0
+    governance_webhook_timeout_seconds: float = 10.0
+    governance_webhook_replay_window_seconds: int = 300
 
     @property
     def max_upload_bytes(self) -> int:
