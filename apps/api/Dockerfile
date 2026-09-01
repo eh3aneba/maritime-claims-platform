@@ -5,6 +5,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+RUN apk upgrade --no-cache libssl3 libcrypto3
+
 COPY requirements.lock .
 RUN pip install --no-cache-dir --require-hashes -r requirements.lock
 
