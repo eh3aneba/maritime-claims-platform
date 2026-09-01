@@ -9,9 +9,17 @@ from app.db.session import get_db
 from app.modules.auth.dependencies import CurrentUser
 from app.modules.claims.security import get_claim_for_tenant
 from app.modules.claims.facts import ClaimFact
-from app.modules.rules.marine_service import latest_marine_rule_summary
-from app.modules.rules.models import ClaimDocumentRequirement
-from app.modules.rules.schemas import DocumentRequirementResponse, EquivalentEvidenceRequest, EquivalentEvidenceResponse, RuleEvaluationResponse, RuleSummaryResponse
+from app.modules.rules.marine_service import latest_marine_rule_summary, record_marine_rule_decision
+from app.modules.rules.models import ClaimDocumentRequirement, RuleEvaluationRun
+from app.modules.rules.schemas import (
+    DocumentRequirementResponse,
+    EquivalentEvidenceRequest,
+    EquivalentEvidenceResponse,
+    MarineRuleDecisionResponse,
+    MarineRuleDecisionWrite,
+    RuleEvaluationResponse,
+    RuleSummaryResponse,
+)
 from app.modules.rules.service import accept_equivalent_evidence, equivalent_evidence_candidates, evaluate_claim_rules, get_rule_summary
 
 router = APIRouter(prefix="/claims/{claim_id}/rules", tags=["rules"])
@@ -46,6 +54,45 @@ def evaluate_rules(claim_id: UUID, current_user: CurrentUser, db: Annotated[Sess
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Claim not found")
     run = evaluate_claim_rules(db, claim=claim, user=current_user)
     return RuleEvaluationResponse(run_id=run.id, marine_run_id=run.id, summary=_summary_with_marine(db, claim=claim))
+
+
+@router.post(
+    "/runs/{run_id}/evaluations/{rule_id}/decision",
+    response_model=MarineRuleDecisionResponse,
+)
+def decide_marine_rule_evaluation(
+    claim_id: UUID,
+    run_id: UUID,
+    rule_id: str,
+    payload: MarineRuleDecisionWrite,
+    current_user: CurrentUser,
+    db: Annotated[Session, Depends(get_db)],
+) -> MarineRuleDecisionResponse:
+    claim = get_claim_for_tenant(db, claim_id=claim_id, organization_id=current_user.organization_id)
+    if claim is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Claim not found")
+    run = db.scalar(
+        select(RuleEvaluationRun).where(
+            RuleEvaluationRun.id == run_id,
+            RuleEvaluationRun.organization_id == current_user.organization_id,
+            RuleEvaluationRun.claim_id == claim.id,
+        )
+    )
+    if run is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rule evaluation run not found")
+    try:
+        decision = record_marine_rule_decision(
+            db,
+            claim=claim,
+            run=run,
+            rule_id=rule_id,
+            payload=payload,
+            user=current_user,
+        )
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    return MarineRuleDecisionResponse.model_validate(decision)
 
 
 @router.post("/requirements/{requirement_id}/accept-equivalent", response_model=EquivalentEvidenceResponse)
