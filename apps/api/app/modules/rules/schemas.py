@@ -46,6 +46,23 @@ class ClaimIssueResponse(BaseModel):
     last_triggered_at: datetime | None
 
 
+class MarineRuleEvaluationResponse(BaseModel):
+    rule_id: str
+    rule_version: str
+    definition_hash: str
+    family: str
+    topic: str
+    source_title: str
+    source_reference: str
+    status: str
+    evidence_used: list[dict[str, Any]] = Field(default_factory=list)
+    missing_prerequisites: list[str] = Field(default_factory=list)
+    rationale: str
+    candidate_implication: str
+    recommended_action: str
+    evaluation_hash: str
+
+
 class ReadinessResponse(BaseModel):
     score: int
     state: str
@@ -65,10 +82,18 @@ class RuleSummaryResponse(BaseModel):
     issues: list[ClaimIssueResponse]
     readiness: ReadinessResponse
     triggered_rule_ids: list[str]
+    marine_registry_version: str | None = None
+    marine_registry_hash: str | None = None
+    marine_rule_evaluations: list[MarineRuleEvaluationResponse] = Field(default_factory=list)
+    marine_rule_counts: dict[str, int] = Field(default_factory=dict)
+    marine_evaluated_at: datetime | None = None
+    marine_rule_run_id: UUID | None = None
+    human_authority_boundary: str | None = None
 
 
 class RuleEvaluationResponse(BaseModel):
     run_id: UUID
+    marine_run_id: UUID | None = None
     summary: RuleSummaryResponse
 
 
