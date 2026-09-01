@@ -63,14 +63,15 @@ export default function ClaimsPage() {
         <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4"><p className="text-sm text-slate-500">{loading ? "Loading…" : `${total} claim${total === 1 ? "" : "s"}`}</p></div>
         <div className="overflow-x-auto">
           <table className="data-table">
-            <thead><tr><th>Claim</th><th>Vessel</th><th>Incident</th><th>Status</th><th>Priority</th><th>Estimate</th><th>Reserve</th><th>Handler</th></tr></thead>
+            <thead><tr><th>Claim</th><th>Vessel</th><th>Incident</th><th>Status</th><th>Priority</th><th>Estimate</th><th>Reserve</th><th>Handler</th><th>Intelligence</th></tr></thead>
             <tbody>
-              {!loading && items.length === 0 ? <tr><td colSpan={8} className="py-14 text-center text-slate-500">No claims match the current filters.</td></tr> : null}
+              {!loading && items.length === 0 ? <tr><td colSpan={9} className="py-14 text-center text-slate-500">No claims match the current filters.</td></tr> : null}
               {items.map((claim) => <tr key={claim.id}>
                 <td><Link href={`/claims/${claim.id}`} className="font-semibold text-slate-950 hover:text-cyan-800">{claim.claim_reference}</Link>{claim.external_reference ? <div className="mt-1 text-xs text-slate-400">{claim.external_reference}</div> : null}</td>
                 <td><div className="font-medium text-slate-800">{claim.vessel.name}</div><div className="text-xs text-slate-400">{claim.vessel.imo_number ? `IMO ${claim.vessel.imo_number}` : "—"}</div></td>
                 <td>{formatDate(claim.incident_date)}</td><td><StatusBadge status={claim.status} /></td><td><PriorityText priority={claim.priority} /></td>
                 <td>{formatMoney(claim.estimated_loss, claim.currency)}</td><td>{formatMoney(claim.current_reserve, claim.currency)}</td><td>{claim.handler?.full_name ?? <span className="text-slate-400">Unassigned</span>}</td>
+                <td><Link href={`/claims/${claim.id}/intelligence`} className="text-xs font-semibold text-cyan-800 hover:text-cyan-950">Open intelligence →</Link></td>
               </tr>)}
             </tbody>
           </table>

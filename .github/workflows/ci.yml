@@ -188,12 +188,15 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install "pip-tools==7.6.1"
-          pip-compile --generate-hashes --strip-extras --resolver=backtracking \
-            --output-file=apps/api/requirements.lock apps/api/requirements.txt
-          pip-compile --generate-hashes --strip-extras --resolver=backtracking \
-            --output-file=apps/api/requirements-dev.lock apps/api/requirements-dev.in
-          pip-compile --generate-hashes --strip-extras --resolver=backtracking \
-            --output-file=tests/browser/requirements.lock tests/browser/requirements.txt
+          CUSTOM_COMPILE_COMMAND="pip-compile --generate-hashes --output-file=apps/api/requirements.lock --strip-extras apps/api/requirements.txt" \
+            pip-compile --generate-hashes --strip-extras --resolver=backtracking \
+              --output-file=apps/api/requirements.lock apps/api/requirements.txt
+          CUSTOM_COMPILE_COMMAND="pip-compile --generate-hashes --output-file=apps/api/requirements-dev.lock --strip-extras apps/api/requirements-dev.in" \
+            pip-compile --generate-hashes --strip-extras --resolver=backtracking \
+              --output-file=apps/api/requirements-dev.lock apps/api/requirements-dev.in
+          CUSTOM_COMPILE_COMMAND="pip-compile --generate-hashes --output-file=tests/browser/requirements.lock --strip-extras tests/browser/requirements.txt" \
+            pip-compile --generate-hashes --strip-extras --resolver=backtracking \
+              --output-file=tests/browser/requirements.lock tests/browser/requirements.txt
           npm install --package-lock-only --ignore-scripts --no-audit --no-fund \
             --prefix apps/web
 

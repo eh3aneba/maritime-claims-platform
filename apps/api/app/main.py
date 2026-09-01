@@ -25,6 +25,7 @@ from app.modules.ai_scale_up.router import router as ai_scale_up_router
 from app.modules.ai_scale_up_outcomes.router import router as ai_scale_up_outcomes_router
 from app.modules.auth.router import router as auth_router
 from app.modules.assessments.router import router as assessments_router
+from app.modules.claim_intelligence.router import router as claim_intelligence_router
 from app.modules.claim_packs.router import router as claim_packs_router
 from app.modules.claims.router import router as claims_router
 from app.modules.chronology.router import router as chronology_router
@@ -89,6 +90,7 @@ app.include_router(ai_bounded_full_production_outcomes_router, prefix=settings.a
 app.include_router(ai_production_wide_router, prefix=settings.api_v1_prefix)
 app.include_router(adjustments_router, prefix=settings.api_v1_prefix)
 app.include_router(assessments_router, prefix=settings.api_v1_prefix)
+app.include_router(claim_intelligence_router, prefix=settings.api_v1_prefix)
 app.include_router(financial_router, prefix=settings.api_v1_prefix)
 app.include_router(intelligence_router, prefix=settings.api_v1_prefix)
 app.include_router(intake_router, prefix=settings.api_v1_prefix)
