@@ -5,9 +5,14 @@ from uuid import UUID
 from app.ai.gateway.base import AIResponse
 from app.modules.documents.models import ConfidentialityLevel
 from app.modules.evidence_search import qa_synthesis_service as synthesis
+from tests.db_harness import reset_database
 from tests.test_claim_qa_synthesis import _fake_authorization, _post, _seed_answerable
 from tests.test_document_processing import login, seed_claim
 from tests.test_evidence_search import _add_processed_document
+
+
+def setup_function() -> None:
+    reset_database()
 
 
 def _forbidden_provider():
