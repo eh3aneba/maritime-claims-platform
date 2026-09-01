@@ -153,7 +153,7 @@ def _record_decision(
                 if evaluation.urgency == "high"
                 else core.TaskPriority.MEDIUM
             ),
-            source=core.TaskSource.AI_SUGGESTION,
+            source=core.TaskSource.RULE,
             due_date=due_date,
         )
         db.add(task)
