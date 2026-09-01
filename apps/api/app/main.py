@@ -47,6 +47,7 @@ from app.modules.recovery_timebar.router import router as recovery_timebar_route
 from app.modules.review.router import router as review_router
 from app.modules.rules.router import router as rules_router
 from app.modules.settlements.router import router as settlements_router
+from app.modules.severity_reserve.router import router as severity_reserve_router
 from app.modules.users.router import router as users_router
 from app.modules.tasks.router import router as tasks_router
 from app.modules.technical.router import router as technical_router
@@ -113,6 +114,7 @@ app.include_router(recovery_timebar_router, prefix=settings.api_v1_prefix)
 app.include_router(review_router, prefix=settings.api_v1_prefix)
 app.include_router(rules_router, prefix=settings.api_v1_prefix)
 app.include_router(settlements_router, prefix=settings.api_v1_prefix)
+app.include_router(severity_reserve_router, prefix=settings.api_v1_prefix)
 app.include_router(tasks_router, prefix=settings.api_v1_prefix)
 app.include_router(technical_router, prefix=settings.api_v1_prefix)
 app.include_router(users_router, prefix=settings.api_v1_prefix)
