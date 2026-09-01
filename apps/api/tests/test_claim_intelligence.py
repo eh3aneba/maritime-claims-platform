@@ -166,6 +166,53 @@ def test_human_decisions_are_append_only_and_task_conversion_never_mutates_snaps
         assert item is not None and item.item_hash == original_item_hash
 
 
+def test_rejects_decision_on_superseded_snapshot_item() -> None:
+    result = create_orion_claim()
+    claim_id = result["claim"]["id"]
+    _set_status(claim_id, ClaimStatus.INVESTIGATION)
+    first = _build(claim_id)
+    candidate = next(item for item in first["items"] if item["category"] == "next_action" and item["suggested_action"])
+
+    _set_status(claim_id, ClaimStatus.TECHNICAL_REVIEW)
+    second = _build(claim_id)
+    assert second["snapshot_version"] == 2
+
+    response = client.post(
+        f"/api/v1/claims/{claim_id}/intelligence/items/{candidate['id']}/decision",
+        json={"action": "accept", "note": "Reviewed old item after refresh.", "convert_to_task": False},
+    )
+    assert response.status_code == 409
+    assert "superseded snapshot" in response.json()["detail"]
+
+
+def test_prevents_duplicate_task_conversion_for_same_intelligence_item() -> None:
+    result = create_orion_claim()
+    claim_id = result["claim"]["id"]
+    _set_status(claim_id, ClaimStatus.INVESTIGATION)
+    snapshot = _build(claim_id)
+    candidate = next(item for item in snapshot["items"] if item["category"] == "next_action" and item["suggested_action"])
+
+    first = client.post(
+        f"/api/v1/claims/{claim_id}/intelligence/items/{candidate['id']}/decision",
+        json={"action": "accept", "note": "Create the controlled follow-up task.", "convert_to_task": True},
+    )
+    assert first.status_code == 200, first.text
+
+    second = client.post(
+        f"/api/v1/claims/{claim_id}/intelligence/items/{candidate['id']}/decision",
+        json={"action": "accept", "note": "Attempt to create the same task again.", "convert_to_task": True},
+    )
+    assert second.status_code == 409
+    assert "already been created" in second.json()["detail"]
+
+    with TestingSessionLocal() as db:
+        tasks = list(db.scalars(select(ClaimTask).where(
+            ClaimTask.claim_id == UUID(claim_id),
+            ClaimTask.source == TaskSource.AI_SUGGESTION,
+        )))
+        assert len(tasks) == 1
+
+
 def test_claim_intelligence_is_tenant_scoped() -> None:
     result = create_orion_claim()
     claim_id = result["claim"]["id"]
