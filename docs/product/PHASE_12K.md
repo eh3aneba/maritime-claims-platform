@@ -45,6 +45,15 @@ Make active operator workflows equally usable in English and Persian while keepi
 - expanded browser E2E with a read-only evidence snapshot covering clean/current, superseded, blocked, legacy, infected quarantine and scanner-error quarantine states;
 - browser E2E explicitly asserts localization/navigation cause no evidence uploads, replacements, deletes, downloads, rescans, quarantine actions or AI queue mutations.
 
+## Chronology increment
+- localized Chronology labels, metrics, guidance, empty/loading/error states and rebuild presentation;
+- localized event materiality, conflict status/type presentation, measurement labels, evidence-verification labels and human conflict-review actions without changing stored enums;
+- preserved event titles/descriptions, source quotes, source filenames, source values and existing human resolution notes without automatic translation;
+- directionally isolated claim references, dates, times, timezone labels, source filenames, technical field labels and numeric/engineering values in Persian RTL UI;
+- preserved deterministic clustering, event ordering and canonical-display timestamp rules;
+- preserved chronology rebuild and conflict-resolution endpoints, methods and payloads exactly;
+- dedicated browser E2E verifies EN/FA Chronology presentation and asserts locale switching/navigation causes no chronology rebuild or conflict-resolution mutation.
+
 ## Coverage matrix
 | Surface | Phase 12K status |
 | --- | --- |
@@ -59,7 +68,7 @@ Make active operator workflows equally usable in English and Persian while keepi
 | Claim intake | Implemented |
 | Claim detail/workspace | Core implemented |
 | Evidence/document workflows | Implemented |
-| Chronology | Pending migration |
+| Chronology | Implemented |
 | Technical/financial/severity/recovery workflows | Pending migration |
 | Tasks/outreach/correspondence | Pending migration |
 | Claim-pack controls | Pending migration |
