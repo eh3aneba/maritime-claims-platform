@@ -153,7 +153,8 @@ def main() -> None:
         expect(page.get_by_text("grounding verification failed", exact=False)).to_be_visible()
         expect(page.get_by_text("Different-human review queue", exact=True)).to_be_visible()
 
-        page.get_by_text("claim qa synthesis", exact=True).first.click()
+        event_table = page.locator("table").first
+        event_table.get_by_text("claim qa synthesis", exact=True).click()
         expect(page.get_by_text("Lineage drill-down", exact=True)).to_be_visible()
         expect(page.get_by_text("synthetic-governed-model", exact=True).first).to_be_visible()
         expect(page.get_by_text("Input hash", exact=True)).to_be_visible()
@@ -161,14 +162,13 @@ def main() -> None:
         if page.get_by_text("SUPER_SECRET_RAW_QUESTION", exact=False).count() != 0:
             raise AssertionError("AI Operations rendered raw question content")
 
-        page.get_by_text("chief engineer report", exact=True).first.click()
+        event_table.get_by_text("chief engineer report", exact=True).click()
         expect(page.get_by_text("Complete existing different-human review", exact=True)).to_be_visible()
         expect(page.get_by_role("button", name="approve", exact=True)).to_be_visible()
 
         workflow_filter = page.locator('select:has(option[value="claim_qa_synthesis"])')
         expect(workflow_filter).to_have_count(1)
         workflow_filter.select_option("claim_qa_synthesis")
-        event_table = page.locator("table").first
         expect(event_table.get_by_text("claim qa synthesis", exact=True)).to_be_visible()
         expect(event_table.get_by_text("chief engineer report", exact=True)).to_have_count(0)
 
