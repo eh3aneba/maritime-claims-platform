@@ -124,7 +124,10 @@ def main() -> None:
         expect(page.get_by_text("Security boundary:", exact=False)).to_be_visible()
         expect(page.get_by_text("Synthetic SIEM", exact=True)).to_be_visible()
         expect(page.get_by_text("delivered", exact=True).first).to_be_visible()
-        expect(page.get_by_text("raw claim/model content exposed: false", exact=False)).to_be_visible()
+        content_boundary = page.locator("section").filter(has_text="raw claim/model content exposed")
+        expect(content_boundary).to_have_count(1)
+        expect(content_boundary).to_contain_text("raw claim/model content exposed")
+        expect(content_boundary).to_contain_text("No")
         if page.get_by_text("SUPER_SECRET_RAW_QUESTION", exact=False).count() != 0:
             raise AssertionError("AI Integrations rendered raw question content")
 
