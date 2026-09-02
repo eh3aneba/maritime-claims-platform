@@ -90,6 +90,16 @@ Make active operator workflows equally usable in English and Persian while keepi
 - dedicated browser E2E covers all five major AI surfaces, verifies EN/FA + RTL/LTR behavior, preserves editable destination content across locale changes and fails on any locale-caused AI/governance mutation;
 - ADR-089 records the presentation-only AI governance localization boundary.
 
+## Final localization, RTL and accessibility sweep
+- added an accessible mobile navigation drawer that reuses the authenticated route inventory and translation keys instead of introducing a separate mobile workflow;
+- mirrored the drawer edge by locale direction and preserved controlled LTR technical islands inside Persian RTL presentation;
+- added active-route `aria-current="page"`, a keyboard skip-to-content path, visible shared `:focus-visible` treatment, Escape-to-close and focus return to the mobile menu trigger;
+- added reduced-motion handling for operators who request it at OS/browser level;
+- preserved navigation and locale switching as presentation-only actions with no claim, workbench, AI or governance mutation authority;
+- added dedicated 390px mobile browser E2E covering EN/LTR and FA/RTL, drawer mirroring, current-route semantics, Escape/focus return, technical LTR identifiers and zero domain mutations;
+- retained all existing English desktop/browser journeys as regression coverage;
+- ADR-090 records the accessible mobile RTL/LTR shell boundary.
+
 ## Coverage matrix
 | Surface | Phase 12K status |
 | --- | --- |
@@ -112,7 +122,7 @@ Make active operator workflows equally usable in English and Persian while keepi
 | AI Review | Implemented |
 | AI Governance / Evaluation | Implemented |
 | AI Operations / AI Integrations | Implemented |
-| Final localization / RTL / accessibility sweep | Pending |
+| Final localization / RTL / accessibility sweep | Implemented |
 
 ## Permanent boundaries
 Localization does not translate or mutate source evidence, API enum values, hashes, ClaimFacts, AI governance/authorization state, coverage/liability/causation/recoverability, reserves, settlement/payment, legal rights or external correspondence.
@@ -121,3 +131,5 @@ H&M, P&I, GA, PA, IMO and AI remain controlled abbreviations. Candidate time-bar
 
 ## Exit criteria for full Phase 12K
 Every active user-facing workflow has material English/Persian coverage, RTL is usable on desktop/mobile, technical values remain readable, existing English E2E journeys still pass and exact-head CI + Supply Chain Security are green before merge.
+
+PR #150 was Squash-merged into `main` as `f8ca2ad50961c4696b0257e52cfb10a20f944c6f`. The final sweep is implemented on PR #152 and must pass exact post-parent CI + Supply Chain Security before its own separate explicit merge authorization.
