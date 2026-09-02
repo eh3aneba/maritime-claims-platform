@@ -162,7 +162,9 @@ def main() -> None:
         if page.get_by_text("SUPER_SECRET_RAW_QUESTION", exact=False).count() != 0:
             raise AssertionError("AI Operations rendered raw question content")
 
-        event_table.get_by_text("chief engineer report", exact=True).click()
+        review_queue = page.locator("section").filter(has_text="Different-human review queue")
+        expect(review_queue).to_have_count(1)
+        review_queue.get_by_text("chief engineer report", exact=True).click()
         expect(page.get_by_text("Complete existing different-human review", exact=True)).to_be_visible()
         expect(page.get_by_role("button", name="approve", exact=True)).to_be_visible()
 
