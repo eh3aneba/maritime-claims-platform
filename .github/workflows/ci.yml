@@ -284,6 +284,7 @@ jobs:
           python tests/browser/governance_webhooks_e2e.py
           python tests/browser/claim_workbench_e2e.py
           python tests/browser/localization_e2e.py
+          python tests/browser/chronology_localization_e2e.py
 
       - name: Capture container diagnostics
         if: failure()
