@@ -110,13 +110,36 @@ def main() -> None:
         expect(page.get_by_text("MT ORION", exact=True)).to_be_visible()
         claims_claim_ref = page.locator('a[href^="/claims/"]').filter(has_text="MCRI-HM-").first
         expect(claims_claim_ref).to_have_attribute("dir", "ltr")
+        claim_href = claims_claim_ref.get_attribute("href")
+        assert claim_href, "Expected a claim detail href"
         expect(page.get_by_text("باز کردن هوشمندی ←", exact=True).first).to_be_visible()
+
+        # Claim intake localizes presentation while retaining controlled source fields and LTR technical inputs.
+        page.goto(f"{BASE_URL}/claims/new", wait_until="networkidle")
+        expect(page.get_by_role("heading", name="ایجاد پرونده خسارت ماشین‌آلات H&M")).to_be_visible()
+        expect(page.get_by_role("button", name="ورود اعلام خسارت")).to_be_visible()
+        expect(page.get_by_role("button", name="ثبت دستی")).to_be_visible()
+        expect(page.get_by_text("هیچ پیشنهاد استخراج‌شده‌ای به‌صورت خودکار به حقیقت پرونده تبدیل نمی‌شود.", exact=False)).to_be_visible()
+        expect(page.get_by_label("تاریخ حادثه")).to_have_attribute("dir", "ltr")
+        expect(page.get_by_label("ارز")).to_have_attribute("dir", "ltr")
+
+        # Existing claim workspace is localized without changing claim state or authority.
+        page.goto(f"{BASE_URL}{claim_href}", wait_until="networkidle")
+        expect(page.locator("html")).to_have_attribute("lang", "fa")
+        expect(page.get_by_role("heading", name="MT ORION")).to_be_visible()
+        expect(page.get_by_text("نمای کلی پرونده", exact=True)).to_be_visible()
+        expect(page.get_by_text("Claim Facts تأییدشده", exact=True)).to_be_visible()
+        expect(page.get_by_text("ماتریس شواهد", exact=True)).to_be_visible()
+        workspace_claim_ref = page.get_by_text(re.compile(r"^MCRI-HM-")).first
+        expect(workspace_claim_ref).to_have_attribute("dir", "ltr")
+        workspace_imo = page.get_by_text(re.compile(r"IMO \d{7}")).first
+        expect(workspace_imo).to_be_visible()
+        expect(workspace_imo).to_have_attribute("dir", "ltr")
 
         page.get_by_role("button", name="EN").click()
         expect(page.locator("html")).to_have_attribute("lang", "en")
         expect(page.locator("html")).to_have_attribute("dir", "ltr")
-        expect(page.get_by_role("heading", name="Claims")).to_be_visible()
-        expect(page.get_by_placeholder("Search claim, vessel or IMO…")).to_be_visible()
+        expect(page.get_by_text("Claim overview", exact=True)).to_be_visible()
 
         def route_workbench(route) -> None:
             workbench_methods.append(route.request.method)

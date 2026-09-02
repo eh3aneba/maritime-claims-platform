@@ -26,6 +26,16 @@ Make active operator workflows equally usable in English and Persian while keepi
 - claim references, external references, IMO values and monetary source values retain controlled LTR presentation where appropriate;
 - expanded browser E2E verifies Dashboard and Claims list in Persian against the synthetic MT ORION environment and asserts locale changes/navigation do not mutate claim APIs.
 
+## Claim intake and workspace increment
+- localized human-approved claim intake in document and manual modes;
+- preserved source-document/OCR proposals as non-authoritative until explicit approval;
+- retained locale-neutral create/approve/reject payload semantics and the existing audit review-note behavior;
+- localized claim overview, metrics, approved Claim Facts, workflow status display, reserve control and primary workspace navigation;
+- preserved locale-neutral audit reason for status advancement and explicit human reserve changes;
+- kept claim reference, IMO, external reference, dates, currency and monetary presentation directionally controlled in Persian;
+- retained the existing Evidence & Documents component without changing its malware, quarantine, versioning or evidence-security behavior; that module is the next localization tranche;
+- expanded browser E2E verifies Persian Claim Intake and the MT ORION claim workspace while asserting locale changes/navigation do not mutate claim APIs.
+
 ## Coverage matrix
 | Surface | Phase 12K status |
 | --- | --- |
@@ -37,8 +47,8 @@ Make active operator workflows equally usable in English and Persian while keepi
 | Claims Workbench | Implemented |
 | Shared claim status/priority presentation | Implemented |
 | Shared table direction | Implemented |
-| Claim intake | Pending migration |
-| Claim detail/workspace | Pending migration |
+| Claim intake | Implemented |
+| Claim detail/workspace | Core implemented; embedded evidence module pending |
 | Evidence/document workflows | Pending migration |
 | Chronology | Pending migration |
 | Technical/financial/severity/recovery workflows | Pending migration |
