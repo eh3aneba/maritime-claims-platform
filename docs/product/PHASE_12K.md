@@ -77,6 +77,19 @@ Make active operator workflows equally usable in English and Persian while keepi
 - dedicated browser E2E verifies EN/FA presentation and fails if locale switching/navigation creates correspondence or Claim Pack mutations;
 - confirmed Tasks/Outreach are not active standalone operator surfaces in the current product, so Phase 12K does not invent workflows to localize.
 
+## AI review, governance, evaluation, operations and integrations increment
+- localized AI Review queue/group controls, semantic/review-status presentation, evidence guidance, human review actions, source/history controls and empty/loading/error states;
+- preserved source quotes, document/source names, AI candidate values, approved human values, reviewer reasons/history and existing audit content without automatic translation;
+- localized provider activation and document-eligibility controls while preserving exact provider/model identifiers, authorization/eligibility records, distinct-reviewer rules and all existing staging-only authority boundaries;
+- localized measured evaluation/promotion controls, benchmark labels, threshold/review presentation and immutable case-ledger UI while preserving benchmark evidence references, human verification notes, model/prompt/schema versions, hashes and action payload enums;
+- localized AI Operations metrics, filters, event/review presentation, lineage drill-down, different-human review controls and explicit incident-handoff shell while retaining the content-free governance plane and existing Production incident authority;
+- localized AI Integrations/SIEM destination, delivery and retry presentation while preserving endpoint URLs, destination content, signing secrets/references, event-type payload values and outbound-only/no-inbound-command boundaries;
+- centralized recurring AI enum/status terminology in a presentation-only helper instead of translating stored values;
+- controlled LTR presentation for UUIDs, hashes, model/provider identifiers, prompt/schema bundle versions, endpoints, secret references, HTTP/status codes and technical measurements in Persian RTL UI;
+- locale switching/navigation remains read-only: it cannot execute AI, approve/reject output, authorize/revoke a provider or document, create/finalize/review/promote an evaluation, record an operator review, hand off an incident, mutate an integration destination, rotate a secret, queue a test delivery or retry a webhook;
+- dedicated browser E2E covers all five major AI surfaces, verifies EN/FA + RTL/LTR behavior, preserves editable destination content across locale changes and fails on any locale-caused AI/governance mutation;
+- ADR-089 records the presentation-only AI governance localization boundary.
+
 ## Coverage matrix
 | Surface | Phase 12K status |
 | --- | --- |
@@ -96,8 +109,10 @@ Make active operator workflows equally usable in English and Persian while keepi
 | Correspondence | Implemented |
 | Claim-pack controls | Implemented |
 | Tasks / Outreach | Deferred / not currently exposed as active standalone workflows |
-| AI Review / AI governance pages | Pending migration |
-| AI Operations / AI Integrations | Pending migration |
+| AI Review | Implemented |
+| AI Governance / Evaluation | Implemented |
+| AI Operations / AI Integrations | Implemented |
+| Final localization / RTL / accessibility sweep | Pending |
 
 ## Permanent boundaries
 Localization does not translate or mutate source evidence, API enum values, hashes, ClaimFacts, AI governance/authorization state, coverage/liability/causation/recoverability, reserves, settlement/payment, legal rights or external correspondence.
