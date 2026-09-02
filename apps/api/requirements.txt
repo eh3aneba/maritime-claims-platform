@@ -1,6 +1,6 @@
 fastapi==0.139.0
 uvicorn[standard]>=0.35,<1
-pydantic>=2.12,<3
+pydantic>=2.13.4,<3
 pydantic-settings>=2.10,<3
 SQLAlchemy>=2.0.40,<2.1
 alembic>=1.16,<2
