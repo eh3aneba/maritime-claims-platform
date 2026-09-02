@@ -64,6 +64,7 @@ def main() -> None:
         "claim_merits_decision": False,
     }
     workbench_methods: list[str] = []
+    evidence_methods: list[str] = []
     mutating_claim_requests: list[str] = []
 
     with sync_playwright() as pw:
@@ -112,6 +113,7 @@ def main() -> None:
         expect(claims_claim_ref).to_have_attribute("dir", "ltr")
         claim_href = claims_claim_ref.get_attribute("href")
         assert claim_href, "Expected a claim detail href"
+        claim_id = claim_href.rstrip("/").split("/")[-1]
         expect(page.get_by_text("باز کردن هوشمندی ←", exact=True).first).to_be_visible()
 
         # Claim intake localizes presentation while retaining controlled source fields and LTR technical inputs.
@@ -123,7 +125,97 @@ def main() -> None:
         expect(page.get_by_label("تاریخ حادثه")).to_have_attribute("dir", "ltr")
         expect(page.get_by_label("ارز")).to_have_attribute("dir", "ltr")
 
-        # Existing claim workspace is localized without changing claim state or authority.
+        evidence_payload = {
+            "items": [
+                {
+                    "id": "44444444-4444-4444-4444-444444444442",
+                    "original_filename": "engine-log-2026-08-31.pdf",
+                    "file_size_bytes": 204800,
+                    "document_type": "engine_log",
+                    "confidentiality_level": "confidential",
+                    "file_hash": "c" * 64,
+                    "malware_scan_status": "clean",
+                    "processing_status": "processed",
+                    "is_current": True,
+                    "version_number": 2,
+                    "created_at": now,
+                    "replacement_reason": "Corrected scan supplied by Chief Engineer",
+                },
+                {
+                    "id": "44444444-4444-4444-4444-444444444441",
+                    "original_filename": "engine-log-2026-08-31-v1.pdf",
+                    "file_size_bytes": 198000,
+                    "document_type": "engine_log",
+                    "confidentiality_level": "confidential",
+                    "file_hash": "d" * 64,
+                    "malware_scan_status": "clean",
+                    "processing_status": "processed",
+                    "is_current": False,
+                    "version_number": 1,
+                    "created_at": now,
+                    "replacement_reason": None,
+                },
+                {
+                    "id": "55555555-5555-5555-5555-555555555555",
+                    "original_filename": "workshop-findings.pdf",
+                    "file_size_bytes": 409600,
+                    "document_type": "workshop_report",
+                    "confidentiality_level": "restricted",
+                    "file_hash": "e" * 64,
+                    "malware_scan_status": "scan_error",
+                    "processing_status": "pending",
+                    "is_current": True,
+                    "version_number": 1,
+                    "created_at": now,
+                    "replacement_reason": None,
+                },
+                {
+                    "id": "66666666-6666-6666-6666-666666666666",
+                    "original_filename": "running-hours-legacy.xlsx",
+                    "file_size_bytes": 102400,
+                    "document_type": "running_hours_record",
+                    "confidentiality_level": "internal",
+                    "file_hash": "f" * 64,
+                    "malware_scan_status": "legacy_unscanned",
+                    "processing_status": "processed",
+                    "is_current": True,
+                    "version_number": 1,
+                    "created_at": now,
+                    "replacement_reason": None,
+                },
+            ],
+            "quarantined_items": [
+                {
+                    "id": "77777777-7777-7777-7777-777777777777",
+                    "original_filename": "infected-attachment.pdf",
+                    "file_size_bytes": 12345,
+                    "status": "infected",
+                    "threat_name": "EICAR-Test-File",
+                    "retry_count": 0,
+                    "scanned_at": now,
+                },
+                {
+                    "id": "88888888-8888-8888-8888-888888888888",
+                    "original_filename": "scanner-timeout.pdf",
+                    "file_size_bytes": 23456,
+                    "status": "scan_error",
+                    "threat_name": None,
+                    "retry_count": 2,
+                    "scanned_at": now,
+                },
+            ],
+        }
+
+        def route_evidence(route) -> None:
+            evidence_methods.append(route.request.method)
+            if route.request.method == "GET":
+                route.fulfill(status=200, content_type="application/json", body=json.dumps(evidence_payload))
+            else:
+                route.continue_()
+
+        page.route(f"**/api/v1/claims/{claim_id}/documents", route_evidence)
+
+        # Existing claim workspace and evidence security are localized without changing claim state or authority.
         page.goto(f"{BASE_URL}{claim_href}", wait_until="networkidle")
         expect(page.locator("html")).to_have_attribute("lang", "fa")
         expect(page.get_by_role("heading", name="MT ORION")).to_be_visible()
@@ -136,10 +228,34 @@ def main() -> None:
         expect(workspace_imo).to_be_visible()
         expect(workspace_imo).to_have_attribute("dir", "ltr")
 
+        expect(page.get_by_role("heading", name="شواهد و اسناد")).to_be_visible()
+        expect(page.get_by_text("امنیت شواهد فعال است", exact=True)).to_be_visible()
+        expect(page.get_by_label("نوع سند")).to_be_visible()
+        expect(page.get_by_label("سطح محرمانگی")).to_be_visible()
+        expect(page.get_by_text("مدارک پرونده را اینجا رها کنید", exact=True)).to_be_visible()
+        expect(page.get_by_text("اسکن بدافزار · پاک", exact=True).first).to_be_visible()
+        expect(page.get_by_text(re.compile(r"v1\s*·\s*جایگزین‌شده"))).to_be_visible()
+        expect(page.get_by_text("مسدود توسط امنیت شواهد", exact=True)).to_be_visible()
+        evidence_filename = page.get_by_text("engine-log-2026-08-31.pdf", exact=True)
+        expect(evidence_filename).to_have_attribute("dir", "ltr")
+        evidence_hash = page.get_by_text(re.compile(r"^SHA-256 · c{10}…$")).first
+        expect(evidence_hash).to_have_attribute("dir", "ltr")
+        expect(page.get_by_role("heading", name="شواهد قرنطینه‌شده")).to_be_visible()
+        expect(page.get_by_text(re.compile(r"^بدافزار شناسایی شد\s*·\s*EICAR-Test-File$"))).to_be_visible()
+        threat_name = page.get_by_text("· EICAR-Test-File", exact=True)
+        expect(threat_name).to_have_attribute("dir", "ltr")
+        expect(page.get_by_text("اسکنر در دسترس نیست · 2 بار تلاش", exact=True)).to_be_visible()
+        expect(page.get_by_role("button", name="تکرار اسکن")).to_be_visible()
+
         page.get_by_role("button", name="EN").click()
         expect(page.locator("html")).to_have_attribute("lang", "en")
         expect(page.locator("html")).to_have_attribute("dir", "ltr")
         expect(page.get_by_text("Claim overview", exact=True)).to_be_visible()
+        expect(page.get_by_role("heading", name="Evidence & documents")).to_be_visible()
+        expect(page.get_by_text("Malware scan · Clean", exact=True).first).to_be_visible()
+        expect(page.get_by_text("Blocked by evidence security", exact=True)).to_be_visible()
+        expect(page.get_by_role("heading", name="Quarantined evidence")).to_be_visible()
+        expect(page.get_by_role("button", name="Retry scan")).to_be_visible()
 
         def route_workbench(route) -> None:
             workbench_methods.append(route.request.method)
@@ -177,6 +293,7 @@ def main() -> None:
         expect(page.locator("aside")).to_have_class(re.compile(r"\bleft-0\b"))
 
         assert workbench_methods and set(workbench_methods) == {"GET"}, f"Localization must not mutate workbench APIs: {workbench_methods}"
+        assert evidence_methods and set(evidence_methods) == {"GET"}, f"Localization must not mutate evidence APIs: {evidence_methods}"
         assert not mutating_claim_requests, f"Locale changes/navigation must not mutate claim APIs: {mutating_claim_requests}"
         browser.close()
 

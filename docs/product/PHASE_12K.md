@@ -33,8 +33,17 @@ Make active operator workflows equally usable in English and Persian while keepi
 - localized claim overview, metrics, approved Claim Facts, workflow status display, reserve control and primary workspace navigation;
 - preserved locale-neutral audit reason for status advancement and explicit human reserve changes;
 - kept claim reference, IMO, external reference, dates, currency and monetary presentation directionally controlled in Persian;
-- retained the existing Evidence & Documents component without changing its malware, quarantine, versioning or evidence-security behavior; that module is the next localization tranche;
 - expanded browser E2E verifies Persian Claim Intake and the MT ORION claim workspace while asserting locale changes/navigation do not mutate claim APIs.
+
+## Evidence & Documents increment
+- localized Evidence & Documents labels, help text, upload controls, confidentiality/document-type presentation, empty/loading/error states and operator prompts;
+- localized malware-security presentation for clean, infected/blocked, scanner-error/blocked and legacy-unscanned states without changing the underlying verdict enums;
+- localized version/current/superseded presentation while preserving lineage, replacement reasons, prior approvals and the existing replacement API semantics;
+- localized quarantine warnings and operator controls while preserving manager/admin retry authority, administrator-only purge authority and fail-closed download/processing restrictions;
+- preserved source filenames/content, SHA-256 hashes, IDs, threat signatures and replacement reasons without automatic translation;
+- used controlled LTR presentation for hashes, version identifiers, sizes, timestamps and quarantine references inside Persian RTL UI;
+- expanded browser E2E with a read-only evidence snapshot covering clean/current, superseded, blocked, legacy, infected quarantine and scanner-error quarantine states;
+- browser E2E explicitly asserts localization/navigation cause no evidence uploads, replacements, deletes, downloads, rescans, quarantine actions or AI queue mutations.
 
 ## Coverage matrix
 | Surface | Phase 12K status |
@@ -48,8 +57,8 @@ Make active operator workflows equally usable in English and Persian while keepi
 | Shared claim status/priority presentation | Implemented |
 | Shared table direction | Implemented |
 | Claim intake | Implemented |
-| Claim detail/workspace | Core implemented; embedded evidence module pending |
-| Evidence/document workflows | Pending migration |
+| Claim detail/workspace | Core implemented |
+| Evidence/document workflows | Implemented |
 | Chronology | Pending migration |
 | Technical/financial/severity/recovery workflows | Pending migration |
 | Tasks/outreach/correspondence | Pending migration |
