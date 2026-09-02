@@ -54,6 +54,18 @@ Make active operator workflows equally usable in English and Persian while keepi
 - preserved chronology rebuild and conflict-resolution endpoints, methods and payloads exactly;
 - dedicated browser E2E verifies EN/FA Chronology presentation and asserts locale switching/navigation causes no chronology rebuild or conflict-resolution mutation.
 
+## Technical, financial, severity, recovery and time-bar increment
+- localized Technical Review headings, maintenance labels, investigation-priority presentation, evidence-section labels, workshop-evidence labels and empty/loading/error states;
+- preserved technical rule output, source quotes, engineering values and reviewed evidence content without automatic translation;
+- localized Financial Review metrics, cost-schedule labels, review-status presentation, financial-flag controls, quotation presentation and reserve-history labels without changing `CostReviewStatus` values or financial mutations;
+- preserved supplier names, descriptions, scope summaries, review reasons, currencies and monetary values as source/human data, with no FX conversion;
+- localized Severity & Reserve Support headings, support/status/severity presentation and human-disposition controls while preserving immutable evaluations and append-only decisions;
+- preserved the hard reserve-authority boundary: localization cannot create or change authoritative reserve state and no automatic reserve action exists;
+- localized Recovery & Time-bar headings, status/urgency presentation, candidate-date labels and human-decision controls while preserving source wording, candidate implications, rationale and evidence lineage without automatic translation;
+- preserved candidate time-bar dates as non-authoritative review aids requiring human/legal verification;
+- controlled LTR presentation for claim references, dates, amounts, currencies, percentages, rule/source identifiers, hashes and technical values in Persian RTL UI;
+- dedicated browser E2E verifies EN/FA presentation across all four review surfaces and fails on any locale-caused Technical/Financial/Severity/Recovery-Timebar mutation.
+
 ## Coverage matrix
 | Surface | Phase 12K status |
 | --- | --- |
@@ -69,7 +81,7 @@ Make active operator workflows equally usable in English and Persian while keepi
 | Claim detail/workspace | Core implemented |
 | Evidence/document workflows | Implemented |
 | Chronology | Implemented |
-| Technical/financial/severity/recovery workflows | Pending migration |
+| Technical/financial/severity/recovery workflows | Implemented |
 | Tasks/outreach/correspondence | Pending migration |
 | Claim-pack controls | Pending migration |
 | AI Review / AI governance pages | Pending migration |
