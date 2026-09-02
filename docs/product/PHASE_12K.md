@@ -66,6 +66,17 @@ Make active operator workflows equally usable in English and Persian while keepi
 - controlled LTR presentation for claim references, dates, amounts, currencies, percentages, rule/source identifiers, hashes and technical values in Persian RTL UI;
 - dedicated browser E2E verifies EN/FA presentation across all four review surfaces and fails on any locale-caused Technical/Financial/Severity/Recovery-Timebar mutation.
 
+## Correspondence and Claim Pack increment
+- localized Correspondence Centre headings, controlled enum/status presentation, workflow guidance, manager-review/dispatch controls, empty/loading/error states and operator prompts;
+- preserved correspondence subject/body, sender/recipient labels, review notes and external/dispatch references as human/source content without automatic translation;
+- kept the default correspondence body locale-independent so changing EN/FA never rewrites draft content;
+- localized Claim Pack export controls, review-aid warnings, export-history labels and empty/loading/error states while preserving the immutable snapshot/export model;
+- preserved generated Claim Pack content, filenames, hashes, approved claim data and source evidence without automatic translation or regeneration;
+- preserved all correspondence and Claim Pack API/storage enum values, authorization rules and mutation payloads;
+- controlled LTR presentation for claim references, external references, dates, filenames, file sizes and hashes in Persian RTL UI;
+- dedicated browser E2E verifies EN/FA presentation and fails if locale switching/navigation creates correspondence or Claim Pack mutations;
+- confirmed Tasks/Outreach are not active standalone operator surfaces in the current product, so Phase 12K does not invent workflows to localize.
+
 ## Coverage matrix
 | Surface | Phase 12K status |
 | --- | --- |
@@ -82,8 +93,9 @@ Make active operator workflows equally usable in English and Persian while keepi
 | Evidence/document workflows | Implemented |
 | Chronology | Implemented |
 | Technical/financial/severity/recovery workflows | Implemented |
-| Tasks/outreach/correspondence | Pending migration |
-| Claim-pack controls | Pending migration |
+| Correspondence | Implemented |
+| Claim-pack controls | Implemented |
+| Tasks / Outreach | Deferred / not currently exposed as active standalone workflows |
 | AI Review / AI governance pages | Pending migration |
 | AI Operations / AI Integrations | Pending migration |
 
