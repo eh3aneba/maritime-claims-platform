@@ -18,16 +18,27 @@ Make active operator workflows equally usable in English and Persian while keepi
 - direction-aware shared tables;
 - browser E2E for switch/persistence/RTL/no-mutation.
 
+## Core claims portfolio increment
+- localized Dashboard copy, metrics, recent-claims table and empty/error states;
+- localized Claims list, search/filter controls, table headings, empty/loading states and intelligence link;
+- shared localized claim status and priority presentation;
+- locale-aware money/date presentation with Persian UI retaining the Gregorian calendar and Latin digits for operational/legal readability;
+- claim references, external references, IMO values and monetary source values retain controlled LTR presentation where appropriate;
+- expanded browser E2E verifies Dashboard and Claims list in Persian against the synthetic MT ORION environment and asserts locale changes/navigation do not mutate claim APIs.
+
 ## Coverage matrix
-| Surface | Foundation status |
+| Surface | Phase 12K status |
 | --- | --- |
 | Root app direction/language | Implemented |
 | Authenticated app shell/navigation | Implemented |
 | Login | Implemented |
+| Dashboard | Implemented |
+| Claims list | Implemented |
 | Claims Workbench | Implemented |
+| Shared claim status/priority presentation | Implemented |
 | Shared table direction | Implemented |
-| Dashboard | Pending migration |
-| Claims list/detail/intake | Pending migration |
+| Claim intake | Pending migration |
+| Claim detail/workspace | Pending migration |
 | Evidence/document workflows | Pending migration |
 | Chronology | Pending migration |
 | Technical/financial/severity/recovery workflows | Pending migration |

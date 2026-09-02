@@ -1,4 +1,7 @@
-import { priorityLabel, statusLabel } from "@/lib/format";
+"use client";
+
+import { useLocale } from "@/components/locale-provider";
+import type { TranslationKey } from "@/lib/i18n";
 import type { ClaimPriority, ClaimStatus } from "@/lib/types";
 
 const statusClasses: Record<ClaimStatus, string> = {
@@ -19,6 +22,24 @@ const statusClasses: Record<ClaimStatus, string> = {
   withdrawn: "bg-zinc-100 text-zinc-700 ring-zinc-200",
 };
 
+const statusKeys: Record<ClaimStatus, TranslationKey> = {
+  new: "status.new",
+  triage: "status.triage",
+  awaiting_documents: "status.awaiting_documents",
+  investigation: "status.investigation",
+  technical_review: "status.technical_review",
+  financial_review: "status.financial_review",
+  coverage_review: "status.coverage_review",
+  negotiation: "status.negotiation",
+  settlement: "status.settlement",
+  recovery: "status.recovery",
+  closed: "status.closed",
+  on_hold: "status.on_hold",
+  litigation: "status.litigation",
+  rejected: "status.rejected",
+  withdrawn: "status.withdrawn",
+};
+
 const priorityClasses: Record<ClaimPriority, string> = {
   low: "text-slate-600",
   medium: "text-amber-700",
@@ -26,10 +47,19 @@ const priorityClasses: Record<ClaimPriority, string> = {
   critical: "text-red-700",
 };
 
+const priorityKeys: Record<ClaimPriority, TranslationKey> = {
+  low: "priority.low",
+  medium: "priority.medium",
+  high: "priority.high",
+  critical: "priority.critical",
+};
+
 export function StatusBadge({ status }: { status: ClaimStatus }) {
-  return <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${statusClasses[status]}`}>{statusLabel[status]}</span>;
+  const { t } = useLocale();
+  return <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${statusClasses[status]}`}>{t(statusKeys[status])}</span>;
 }
 
 export function PriorityText({ priority }: { priority: ClaimPriority }) {
-  return <span className={`text-sm font-semibold ${priorityClasses[priority]}`}>{priorityLabel[priority]}</span>;
+  const { t } = useLocale();
+  return <span className={`text-sm font-semibold ${priorityClasses[priority]}`}>{t(priorityKeys[priority])}</span>;
 }

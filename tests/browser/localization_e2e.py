@@ -63,7 +63,8 @@ def main() -> None:
         "operational_triage_only": True,
         "claim_merits_decision": False,
     }
-    methods: list[str] = []
+    workbench_methods: list[str] = []
+    mutating_claim_requests: list[str] = []
 
     with sync_playwright() as pw:
         browser = pw.chromium.launch(headless=True)
@@ -79,8 +80,46 @@ def main() -> None:
         page.get_by_role("button", name="Sign in").click()
         page.wait_for_url("**/dashboard")
 
+        def observe_request(request) -> None:
+            if "/api/v1/claims" in request.url and request.method not in {"GET", "HEAD", "OPTIONS"}:
+                mutating_claim_requests.append(f"{request.method} {request.url}")
+
+        page.on("request", observe_request)
+
+        # Core portfolio surfaces use the same locale state and preserve controlled values.
+        expect(page.get_by_role("heading", name="Dashboard")).to_be_visible()
+        page.get_by_role("button", name="FA").click()
+        expect(page.locator("html")).to_have_attribute("lang", "fa")
+        expect(page.locator("html")).to_have_attribute("dir", "rtl")
+        expect(page.get_by_role("heading", name="داشبورد")).to_be_visible()
+        expect(page.get_by_text("پرونده‌های اخیر", exact=True)).to_be_visible()
+        dashboard_claim_ref = page.locator('a[href^="/claims/"]').filter(has_text="MCRI-HM-").first
+        expect(dashboard_claim_ref).to_be_visible()
+        expect(dashboard_claim_ref).to_have_attribute("dir", "ltr")
+        imo_value = page.get_by_text(re.compile(r"^IMO \d{7}$")).first
+        expect(imo_value).to_be_visible()
+        expect(imo_value).to_have_attribute("dir", "ltr")
+
+        page.goto(f"{BASE_URL}/claims", wait_until="networkidle")
+        expect(page.locator("html")).to_have_attribute("lang", "fa")
+        expect(page.get_by_role("heading", name="پرونده‌ها")).to_be_visible()
+        page.get_by_placeholder("جست‌وجوی پرونده، کشتی یا IMO…").fill("MCRI-DEMO-MT-ORION")
+        expect(page.get_by_role("option", name="در حال بررسی")).to_be_attached()
+        expect(page.get_by_role("option", name="بحرانی")).to_be_attached()
+        page.get_by_role("button", name="اعمال فیلترها").click()
+        expect(page.get_by_text("MT ORION", exact=True)).to_be_visible()
+        claims_claim_ref = page.locator('a[href^="/claims/"]').filter(has_text="MCRI-HM-").first
+        expect(claims_claim_ref).to_have_attribute("dir", "ltr")
+        expect(page.get_by_text("باز کردن هوشمندی ←", exact=True).first).to_be_visible()
+
+        page.get_by_role("button", name="EN").click()
+        expect(page.locator("html")).to_have_attribute("lang", "en")
+        expect(page.locator("html")).to_have_attribute("dir", "ltr")
+        expect(page.get_by_role("heading", name="Claims")).to_be_visible()
+        expect(page.get_by_placeholder("Search claim, vessel or IMO…")).to_be_visible()
+
         def route_workbench(route) -> None:
-            methods.append(route.request.method)
+            workbench_methods.append(route.request.method)
             if "/queue" in route.request.url:
                 body = {"rows": [row], "page": 1, "page_size": 100, "total": 1, "has_more": False}
             else:
@@ -114,7 +153,8 @@ def main() -> None:
         expect(page.get_by_role("heading", name="Claims Workbench")).to_be_visible()
         expect(page.locator("aside")).to_have_class(re.compile(r"\bleft-0\b"))
 
-        assert methods and set(methods) == {"GET"}, f"Localization must not mutate claim/workflow APIs: {methods}"
+        assert workbench_methods and set(workbench_methods) == {"GET"}, f"Localization must not mutate workbench APIs: {workbench_methods}"
+        assert not mutating_claim_requests, f"Locale changes/navigation must not mutate claim APIs: {mutating_claim_requests}"
         browser.close()
 
     print("Bilingual RTL localization browser E2E passed.")
