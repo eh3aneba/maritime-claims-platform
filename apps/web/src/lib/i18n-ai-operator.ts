@@ -4,79 +4,6 @@ export function aiT(locale: Locale, en: string, fa: string): string {
   return locale === "fa" ? fa : en;
 }
 
-const enLabels: Record<string, string> = {
-  all: "All",
-  pending: "Pending",
-  approved: "Approved",
-  edited: "Edited",
-  rejected: "Rejected",
-  fact: "Fact",
-  opinion: "Opinion",
-  inference: "Inference",
-  needs_attention: "Needs attention",
-  routine: "Routine",
-  staging_authorized: "Staging authorized",
-  decision_ready: "Decision ready",
-  eligible: "Eligible",
-  held: "Held",
-  revoked: "Revoked",
-  pending_approvals: "Pending approvals",
-  security: "Security",
-  privacy: "Privacy",
-  product: "Product",
-  approve: "Approve",
-  edit: "Edit",
-  reject: "Reject",
-  synthetic: "Synthetic",
-  deidentified: "De-identified",
-  review_ready: "Review ready",
-  promotion_ready: "Promotion ready",
-  staging_promoted: "Staging promoted",
-  failed: "Failed",
-  review_rejected: "Review rejected",
-  collecting: "Collecting",
-  pass: "Pass",
-  fail: "Fail",
-  quality: "Quality",
-  risk: "Risk",
-  baseline: "Baseline",
-  prompt_injection: "Prompt injection",
-  malformed_input: "Malformed input",
-  cross_tenant: "Cross tenant",
-  restricted_data: "Restricted data",
-  chief_engineer_report: "Chief Engineer report",
-  engine_log: "Engine log",
-  document_processing: "Document processing",
-  claim_qa_synthesis: "Claim Q&A synthesis",
-  completed: "Completed",
-  not_applicable: "Not applicable",
-  blocked: "Blocked",
-  fallback: "Fallback",
-  clear: "Clear",
-  low: "Low",
-  medium: "Medium",
-  high: "High",
-  critical: "Critical",
-  cost: "Cost",
-  availability: "Availability",
-  reliability: "Reliability",
-  other: "Other",
-  enabled: "Enabled",
-  disabled: "Disabled",
-  queued: "Queued",
-  attempting: "Attempting",
-  delivered: "Delivered",
-  dead_letter: "Dead-letter",
-  content_free: "Content free",
-  output_candidate_count: "Output candidate count",
-  human_edit_count: "Human edit count",
-  unsupported_output_count: "Unsupported output count",
-  source_grounded_output_count: "Source-grounded output count",
-  source_grounding_total_count: "Source-grounding total count",
-  latency_ms: "Latency ms",
-  observed_provider_cost_microusd: "Observed provider cost µUSD",
-};
-
 const faLabels: Record<string, string> = {
   all: "همه",
   pending: "در انتظار",
@@ -153,9 +80,10 @@ const faLabels: Record<string, string> = {
 export function aiLabel(locale: Locale, value: string | null | undefined): string {
   if (!value) return "—";
   const normalized = value.replace(/^ai_operations\./, "");
-  const known = (locale === "fa" ? faLabels : enLabels)[normalized];
-  if (known) return known;
-  return normalized.replaceAll("_", " ");
+  // English is the compatibility baseline: preserve the pre-localization enum
+  // presentation exactly (underscores become spaces, casing/content otherwise unchanged).
+  if (locale === "en") return normalized.replaceAll("_", " ");
+  return faLabels[normalized] ?? normalized.replaceAll("_", " ");
 }
 
 export function aiBoolean(locale: Locale, value: boolean): string {
