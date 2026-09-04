@@ -226,7 +226,7 @@ def _build_raw_review(db: Session, *, claim_id: UUID, organization_id: UUID) -> 
         text = str(_value(opinion) or "")
         missing, follow = _follow_up_for_opinion(text)
         matrix.append({
-            "key": f"workshop_opinion:{opinion.id}",
+            "key": f"workshop_opinion_{opinion.id}",
             "topic_kind": "workshop_opinion",
             "title": f"Workshop cause opinion: {text[:100]}",
             "severity": "medium",
