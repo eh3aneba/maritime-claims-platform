@@ -1,8 +1,17 @@
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+
+TechnicalDecisionAction = Literal[
+    "keep_open",
+    "supported_for_investigation",
+    "not_supported",
+    "needs_more_evidence",
+]
+TechnicalDecisionState = Literal["none", "current", "stale"]
 
 
 class TechnicalEvidenceItem(BaseModel):
@@ -16,8 +25,42 @@ class TechnicalEvidenceItem(BaseModel):
     source_verified: bool | None = None
 
 
+class TechnicalInvestigationDecisionResponse(BaseModel):
+    id: UUID
+    topic_key: str
+    topic_kind: str
+    state_fingerprint: str
+    state_version: int
+    decision_number: int
+    action: TechnicalDecisionAction
+    note: str
+    decided_by_id: UUID | None = None
+    decided_at: datetime
+    previous_decision_hash: str | None = None
+    decision_hash: str
+
+    model_config = {"from_attributes": True}
+
+
+class TechnicalDecisionCreate(BaseModel):
+    action: TechnicalDecisionAction
+    note: str = Field(min_length=5, max_length=4000)
+    expected_state_fingerprint: str = Field(min_length=64, max_length=64)
+    expected_state_version: int = Field(ge=1)
+    confirm_re_review: bool = False
+
+
+class TechnicalDecisionHistoryResponse(BaseModel):
+    topic_key: str
+    current_state_fingerprint: str | None = None
+    current_state_version: int | None = None
+    decision_state: TechnicalDecisionState
+    items: list[TechnicalInvestigationDecisionResponse]
+
+
 class TechnicalMatrixRow(BaseModel):
     key: str
+    topic_kind: str
     title: str
     severity: str
     status: str
@@ -26,6 +69,10 @@ class TechnicalMatrixRow(BaseModel):
     unknown_or_missing: list[str]
     recommended_follow_up: list[str]
     explanation: str
+    state_fingerprint: str
+    state_version: int
+    decision_state: TechnicalDecisionState
+    latest_decision: TechnicalInvestigationDecisionResponse | None = None
 
 
 class TechnicalReviewResponse(BaseModel):
