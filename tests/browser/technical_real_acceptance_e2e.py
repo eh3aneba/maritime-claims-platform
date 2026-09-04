@@ -97,6 +97,7 @@ def main() -> None:
                     "action": "edit",
                     "value": evolved_value,
                     "reason": "Phase 13.5C real technical evidence evolution acceptance",
+                    "confirm_re_review": True,
                 },
             ),
             "workshop opinion edit",
