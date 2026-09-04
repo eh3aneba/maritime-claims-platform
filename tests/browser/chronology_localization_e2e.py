@@ -1,4 +1,4 @@
-"""Focused browser coverage for Phase 12K Chronology localization."""
+"""Focused browser coverage for Chronology localization and mature conflict state rendering."""
 from __future__ import annotations
 
 import json
@@ -39,10 +39,12 @@ def main() -> None:
         assert claim_href, "Expected MT ORION claim href"
         claim_id = claim_href.rstrip("/").split("/")[-1]
 
+        event_id = "99999999-9999-9999-9999-999999999991"
+        extraction_id = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1"
         chronology_payload = {
             "events": [
                 {
-                    "id": "99999999-9999-9999-9999-999999999991",
+                    "id": event_id,
                     "title": "Main engine shutdown",
                     "description": "Turbocharger vibration increased; Chief Engineer stopped the main engine; RPM: 72",
                     "event_type": "shutdown",
@@ -52,22 +54,30 @@ def main() -> None:
                     "materiality": "high",
                     "evidence": [
                         {
-                            "extraction_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1",
+                            "extraction_id": extraction_id,
                             "document_id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb1",
                             "document_name": "engine-log-2026-08-31.pdf",
+                            "document_type": "engine_log",
                             "field_path": "events[3].rpm",
                             "value": {"value": 72, "unit": "rpm", "raw": "72 rpm"},
                             "source_verified": True,
                             "source_quote": "14:05 ME stopped after abnormal TC vibration.",
+                            "source_locator_type": "page",
+                            "source_locator_value": "12",
+                            "evidence_role": "primary",
                         },
                         {
                             "extraction_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa2",
                             "document_id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb1",
                             "document_name": "engine-log-2026-08-31.pdf",
+                            "document_type": "engine_log",
                             "field_path": "events[3].engine_load",
                             "value": {"value": 48, "unit": "%", "raw": "48%"},
                             "source_verified": False,
                             "source_quote": None,
+                            "source_locator_type": None,
+                            "source_locator_value": None,
+                            "evidence_role": "supporting",
                         },
                     ],
                 }
@@ -84,6 +94,16 @@ def main() -> None:
                     "value_b": {"date": "2026-08-31", "time": "14:12", "timezone": "UTC+04"},
                     "difference_minutes": 7,
                     "resolution_note": None,
+                    "state_fingerprint": "a" * 64,
+                    "state_version": 1,
+                    "decision_state": "none",
+                    "decision_history": [],
+                    "event_a_id": event_id,
+                    "event_b_id": event_id,
+                    "evidence_a_extraction_id": extraction_id,
+                    "evidence_b_extraction_id": extraction_id,
+                    "resolved_by_id": None,
+                    "resolved_at": None,
                 }
             ],
             "event_count": 1,
@@ -111,6 +131,9 @@ def main() -> None:
         expect(page.get_by_text("Event importance: High", exact=True)).to_be_visible()
         expect(page.get_by_role("heading", name="Evidence conflicts")).to_be_visible()
         expect(page.get_by_text("Conflict severity: Medium", exact=True)).to_be_visible()
+        expect(page.get_by_text("No decision", exact=True)).to_be_visible()
+        expect(page.get_by_text("Source A", exact=True)).to_be_visible()
+        expect(page.get_by_text("Source locator:", exact=False)).to_be_visible()
         expect(page.get_by_role("button", name="Build / refresh chronology")).to_be_visible()
         expect(page.get_by_placeholder("Explain how this difference should be understood…")).to_be_visible()
         expect(page.get_by_role("button", name="Accept difference")).to_be_visible()
@@ -120,7 +143,7 @@ def main() -> None:
         page.get_by_text("Sources (1) · Evidence fields (2)", exact=True).click()
         source_filename = page.get_by_text("engine-log-2026-08-31.pdf", exact=True).first
         expect(source_filename).to_have_attribute("dir", "ltr")
-        source_quote = page.get_by_text("14:05 ME stopped after abnormal TC vibration.", exact=True)
+        source_quote = page.get_by_text("14:05 ME stopped after abnormal TC vibration.", exact=True).first
         expect(source_quote).to_be_visible()
         timeline_time = page.get_by_text("14:05", exact=True).first
         expect(timeline_time).to_have_attribute("dir", "ltr")
@@ -137,6 +160,8 @@ def main() -> None:
         expect(page.get_by_role("heading", name="تعارض‌های شواهد")).to_be_visible()
         expect(page.get_by_text("اختلاف زمان · باز", exact=True)).to_be_visible()
         expect(page.get_by_text("شدت تعارض: متوسط", exact=True)).to_be_visible()
+        expect(page.get_by_text("بدون تصمیم", exact=True)).to_be_visible()
+        expect(page.get_by_text("منبع A", exact=True)).to_be_visible()
         expect(page.get_by_role("button", name="ساخت / به‌روزرسانی خط زمانی")).to_be_visible()
         expect(page.get_by_placeholder("توضیح دهید این اختلاف چگونه باید درک شود…")).to_be_visible()
         expect(page.get_by_role("button", name="پذیرش اختلاف")).to_be_visible()
@@ -144,7 +169,7 @@ def main() -> None:
 
         # Source/extracted content remains unchanged and is not auto-translated.
         expect(page.get_by_role("heading", name="Main engine shutdown")).to_be_visible()
-        expect(page.get_by_text("14:05 ME stopped after abnormal TC vibration.", exact=True)).to_be_visible()
+        expect(page.get_by_text("14:05 ME stopped after abnormal TC vibration.", exact=True).first).to_be_visible()
         expect(source_filename).to_have_attribute("dir", "ltr")
         rpm_value = page.locator('p[dir="ltr"]').filter(has_text=re.compile(r"^72 rpm$"))
         expect(rpm_value).to_have_attribute("dir", "ltr")
