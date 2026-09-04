@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from uuid import UUID
+
 from sqlalchemy import select
 
 from app.modules.rules import service_core as _core
@@ -82,7 +84,7 @@ def equivalent_evidence_candidates(db, *, claim, requirement: ClaimDocumentRequi
     candidates = _core.equivalent_evidence_candidates(db, claim=claim, requirement=requirement)
     if not candidates:
         return []
-    fact_ids = [row["claim_fact_id"] for row in candidates]
+    fact_ids = [UUID(str(row["claim_fact_id"])) for row in candidates]
     from app.modules.claims.facts import ClaimFact
 
     facts = {
