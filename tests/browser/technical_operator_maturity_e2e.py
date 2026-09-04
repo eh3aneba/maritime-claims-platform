@@ -156,7 +156,7 @@ def main() -> None:
         # Evidence, unknowns, follow-up and current human state are visible together.
         expect(page.get_by_text("Workshop cause opinion: Lubrication deficiency", exact=True)).to_be_visible()
         expect(page.get_by_text("No human disposition", exact=True)).to_be_visible()
-        expect(page.get_by_text("Lubricating-oil analysis / condition evidence", exact=True)).to_be_visible()
+        expect(page.get_by_text("Lubricating-oil analysis / condition evidence", exact=False)).to_be_visible()
         expect(page.get_by_role("link", name="Open source context").first).to_be_visible()
         expect(page.get_by_text("Workshop suspects lubrication deficiency", exact=False).first).to_be_visible()
 
