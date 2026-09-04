@@ -7,11 +7,11 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.modules.audit.service import write_audit_log
-from app.modules.claims.facts import ClaimFact
+from app.modules.claims.facts import ClaimFact, ClaimFactRevision
 from app.modules.claims.models import Claim
 from app.modules.documents.models import Document
 from app.modules.intelligence.models import AIFeedback, AISemanticKind, AIReviewStatus, DocumentExtraction
@@ -65,8 +65,6 @@ NON_PROMOTABLE_PATH_FRAGMENTS = {
     "invoice.",
 }
 
-
-
 _GROUP_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"^(policy\.[a-z_]+\[\d+\])"), "policy_term"),
     (re.compile(r"^(engine_log\.events\[\d+\])\."), "engine_log_row"),
@@ -87,6 +85,39 @@ _GROUP_LABELS = {
     "reported_event": "Reported event",
     "single_field": "Single field",
 }
+
+
+def _postgresql(db: Session) -> bool:
+    return db.bind is not None and db.bind.dialect.name == "postgresql"
+
+
+def _lock_claim_review_scope(
+    db: Session,
+    *,
+    claim_id: UUID,
+    organization_id: UUID,
+) -> None:
+    """Serialize canonical fact mutations for one claim on PostgreSQL.
+
+    Different AI extractions can target the same canonical field. Locking the
+    claim before the extraction avoids a reverse-order deadlock in grouped review
+    and ensures only one reviewer mutates a claim's current-fact set at a time.
+    SQLite test environments keep their normal transaction semantics.
+    """
+
+    if not _postgresql(db):
+        return
+    locked = db.scalar(
+        select(Claim.id)
+        .where(
+            Claim.id == claim_id,
+            Claim.organization_id == organization_id,
+            Claim.deleted_at.is_(None),
+        )
+        .with_for_update()
+    )
+    if locked is None:
+        raise ValueError("Claim is unavailable for review.")
 
 
 def review_group_key(field_path: str) -> tuple[str, str]:
@@ -185,6 +216,7 @@ def validate_same_review_group(extractions: list[DocumentExtraction]) -> tuple[s
         raise ValueError("Grouped review may only contain fields from the same review row/group.")
     return next(iter(keys))
 
+
 def is_bulk_approvable(extraction: DocumentExtraction) -> bool:
     return (
         extraction.human_status == AIReviewStatus.PENDING
@@ -276,8 +308,14 @@ def list_review_queue(
     return items, total
 
 
-def get_extraction_for_tenant(db: Session, *, extraction_id: UUID, organization_id: UUID) -> DocumentExtraction | None:
-    return db.scalar(
+def get_extraction_for_tenant(
+    db: Session,
+    *,
+    extraction_id: UUID,
+    organization_id: UUID,
+    lock_for_update: bool = False,
+) -> DocumentExtraction | None:
+    query = (
         select(DocumentExtraction)
         .join(Claim, Claim.id == DocumentExtraction.claim_id)
         .join(Document, Document.id == DocumentExtraction.document_id)
@@ -290,6 +328,9 @@ def get_extraction_for_tenant(db: Session, *, extraction_id: UUID, organization_
             Document.deleted_at.is_(None),
         )
     )
+    if lock_for_update and _postgresql(db):
+        query = query.with_for_update(of=DocumentExtraction)
+    return db.scalar(query)
 
 
 def get_source_segment_for_extraction(
@@ -319,20 +360,86 @@ def get_feedback_history(db: Session, *, extraction_id: UUID, organization_id: U
     )
 
 
+def _latest_feedback(
+    db: Session,
+    *,
+    extraction_id: UUID,
+    organization_id: UUID,
+) -> AIFeedback | None:
+    return db.scalar(
+        select(AIFeedback)
+        .where(
+            AIFeedback.extraction_id == extraction_id,
+            AIFeedback.organization_id == organization_id,
+        )
+        .order_by(AIFeedback.created_at.desc(), AIFeedback.id.desc())
+        .limit(1)
+    )
+
+
 def get_current_claim_fact(
     db: Session,
     *,
     claim_id: UUID,
     field_path: str,
     organization_id: UUID,
+    lock_for_update: bool = False,
 ) -> ClaimFact | None:
-    return db.scalar(
-        select(ClaimFact).where(
-            ClaimFact.organization_id == organization_id,
-            ClaimFact.claim_id == claim_id,
-            ClaimFact.field_path == field_path,
+    query = select(ClaimFact).where(
+        ClaimFact.organization_id == organization_id,
+        ClaimFact.claim_id == claim_id,
+        ClaimFact.field_path == field_path,
+    )
+    if lock_for_update and _postgresql(db):
+        query = query.with_for_update()
+    return db.scalar(query)
+
+
+def _latest_restorable_revision(
+    db: Session,
+    *,
+    claim_fact: ClaimFact,
+    rejected_extraction_id: UUID,
+) -> ClaimFactRevision | None:
+    revisions = list(
+        db.scalars(
+            select(ClaimFactRevision)
+            .where(
+                ClaimFactRevision.organization_id == claim_fact.organization_id,
+                ClaimFactRevision.claim_id == claim_fact.claim_id,
+                ClaimFactRevision.field_path == claim_fact.field_path,
+                ClaimFactRevision.version < claim_fact.version,
+                or_(
+                    ClaimFactRevision.source_extraction_id.is_(None),
+                    ClaimFactRevision.source_extraction_id != rejected_extraction_id,
+                ),
+            )
+            .order_by(ClaimFactRevision.version.desc())
+            .limit(50)
         )
     )
+    for revision in revisions:
+        if revision.provenance_kind == "intake_review":
+            return revision
+        if revision.provenance_kind != "ai_review" or revision.source_extraction_id is None:
+            continue
+        source = db.get(DocumentExtraction, revision.source_extraction_id)
+        if source is not None and source.human_status in {AIReviewStatus.APPROVED, AIReviewStatus.EDITED}:
+            return revision
+    return None
+
+
+def _fact_audit_values(claim_fact: ClaimFact) -> dict[str, Any]:
+    return {
+        "field_path": claim_fact.field_path,
+        "value": claim_fact.value,
+        "provenance_kind": claim_fact.provenance_kind,
+        "source_extraction_id": str(claim_fact.source_extraction_id) if claim_fact.source_extraction_id else None,
+        "source_text_extraction_id": str(claim_fact.source_text_extraction_id) if claim_fact.source_text_extraction_id else None,
+        "source_document_id": str(claim_fact.source_document_id),
+        "source_segment_id": str(claim_fact.source_segment_id) if claim_fact.source_segment_id else None,
+        "version": claim_fact.version,
+    }
 
 
 def review_extraction(
@@ -347,14 +454,30 @@ def review_extraction(
     if extraction.organization_id != reviewer.organization_id:
         raise ValueError("Extraction does not belong to the current organization.")
 
-    if not extraction.source_verified and action in {"approve", "edit"} and not (reason or "").strip():
-        raise ValueError("A reason is required when approving or editing an extraction whose source quote is not verified.")
+    # Serialize all canonical-fact mutations for this claim before locking the
+    # individual extraction. This keeps grouped review lock ordering stable.
+    _lock_claim_review_scope(
+        db,
+        claim_id=extraction.claim_id,
+        organization_id=reviewer.organization_id,
+    )
+    locked_extraction = get_extraction_for_tenant(
+        db,
+        extraction_id=extraction.id,
+        organization_id=reviewer.organization_id,
+        lock_for_update=True,
+    )
+    if locked_extraction is None:
+        raise ValueError("Extraction is unavailable for review.")
+    extraction = locked_extraction
 
-    previous_status = extraction.human_status
-    previous_approved_value = extraction.approved_value
+    normalized_reason = (reason or "").strip() or None
+    if not extraction.source_verified and action in {"approve", "edit"} and normalized_reason is None:
+        raise ValueError(
+            "A reason is required when approving or editing an extraction whose source quote is not verified."
+        )
+
     ai_value = extraction.normalized_value if extraction.normalized_value is not None else extraction.raw_value
-    now = datetime.now(UTC)
-
     if action == "approve":
         human_status = AIReviewStatus.APPROVED
         approved_value = ai_value
@@ -371,33 +494,62 @@ def review_extraction(
     else:
         raise ValueError("Unsupported review action.")
 
-    extraction.human_status = human_status
-    extraction.approved_value = approved_value
-    extraction.reviewed_by_id = reviewer.id
-    extraction.reviewed_at = now
-
-    feedback = AIFeedback(
-        organization_id=extraction.organization_id,
-        claim_id=extraction.claim_id,
-        document_id=extraction.document_id,
-        extraction_id=extraction.id,
-        reviewer_id=reviewer.id,
-        action=human_status.value,
-        ai_value=ai_value,
-        human_value=approved_value,
-        reason=(reason or "").strip() or None,
-        created_at=now,
-    )
-    db.add(feedback)
-
-    promoted = False
     claim_fact = get_current_claim_fact(
         db,
         claim_id=extraction.claim_id,
         field_path=extraction.field_path,
         organization_id=extraction.organization_id,
+        lock_for_update=True,
+    )
+    latest_feedback = _latest_feedback(
+        db,
+        extraction_id=extraction.id,
+        organization_id=extraction.organization_id,
     )
 
+    # Exact semantic replay is a transport/client retry, not a new human
+    # decision. A different reason is intentionally treated as a fresh review so
+    # a reviewer can explicitly re-assert the same value with new reasoning.
+    if (
+        extraction.human_status == human_status
+        and extraction.approved_value == approved_value
+        and latest_feedback is not None
+        and latest_feedback.action == human_status.value
+        and latest_feedback.human_value == approved_value
+        and latest_feedback.reason == normalized_reason
+    ):
+        currently_promoted = bool(
+            claim_fact is not None
+            and is_promotable(extraction)
+            and claim_fact.provenance_kind == "ai_review"
+            and claim_fact.source_extraction_id == extraction.id
+        )
+        return extraction, claim_fact, currently_promoted
+
+    previous_status = extraction.human_status
+    previous_approved_value = extraction.approved_value
+    now = datetime.now(UTC)
+    extraction.human_status = human_status
+    extraction.approved_value = approved_value
+    extraction.reviewed_by_id = reviewer.id
+    extraction.reviewed_at = now
+
+    db.add(
+        AIFeedback(
+            organization_id=extraction.organization_id,
+            claim_id=extraction.claim_id,
+            document_id=extraction.document_id,
+            extraction_id=extraction.id,
+            reviewer_id=reviewer.id,
+            action=human_status.value,
+            ai_value=ai_value,
+            human_value=approved_value,
+            reason=normalized_reason,
+            created_at=now,
+        )
+    )
+
+    promoted = False
     if human_status in {AIReviewStatus.APPROVED, AIReviewStatus.EDITED} and is_promotable(extraction):
         if claim_fact is None:
             claim_fact = ClaimFact(
@@ -405,7 +557,9 @@ def review_extraction(
                 claim_id=extraction.claim_id,
                 field_path=extraction.field_path,
                 value=approved_value,
+                provenance_kind="ai_review",
                 source_extraction_id=extraction.id,
+                source_text_extraction_id=None,
                 source_document_id=extraction.document_id,
                 source_segment_id=extraction.source_segment_id,
                 approved_by_id=reviewer.id,
@@ -421,26 +575,20 @@ def review_extraction(
                 action="CREATE_APPROVED_CLAIM_FACT",
                 entity_type="claim_fact",
                 entity_id=claim_fact.id,
-                new_values={
-                    "field_path": claim_fact.field_path,
-                    "value": approved_value,
-                    "source_extraction_id": str(extraction.id),
-                    "version": claim_fact.version,
-                },
+                new_values=_fact_audit_values(claim_fact),
             )
         else:
-            old_fact = {
-                "value": claim_fact.value,
-                "source_extraction_id": str(claim_fact.source_extraction_id),
-                "version": claim_fact.version,
-            }
+            old_fact = _fact_audit_values(claim_fact)
             claim_fact.value = approved_value
+            claim_fact.provenance_kind = "ai_review"
             claim_fact.source_extraction_id = extraction.id
+            claim_fact.source_text_extraction_id = None
             claim_fact.source_document_id = extraction.document_id
             claim_fact.source_segment_id = extraction.source_segment_id
             claim_fact.approved_by_id = reviewer.id
             claim_fact.approved_at = now
             claim_fact.version += 1
+            db.flush()
             write_audit_log(
                 db,
                 organization_id=extraction.organization_id,
@@ -449,28 +597,59 @@ def review_extraction(
                 entity_type="claim_fact",
                 entity_id=claim_fact.id,
                 old_values=old_fact,
-                new_values={"value": approved_value, "source_extraction_id": str(extraction.id), "version": claim_fact.version},
+                new_values=_fact_audit_values(claim_fact),
             )
         promoted = True
-    elif human_status == AIReviewStatus.REJECTED and claim_fact is not None and claim_fact.source_extraction_id == extraction.id:
-        old_fact = {
-            "field_path": claim_fact.field_path,
-            "value": claim_fact.value,
-            "source_extraction_id": str(claim_fact.source_extraction_id),
-            "version": claim_fact.version,
-        }
-        db.delete(claim_fact)
-        write_audit_log(
+    elif (
+        human_status == AIReviewStatus.REJECTED
+        and claim_fact is not None
+        and claim_fact.provenance_kind == "ai_review"
+        and claim_fact.source_extraction_id == extraction.id
+    ):
+        old_fact = _fact_audit_values(claim_fact)
+        previous_revision = _latest_restorable_revision(
             db,
-            organization_id=extraction.organization_id,
-            user_id=reviewer.id,
-            action="REMOVE_APPROVED_CLAIM_FACT",
-            entity_type="claim_fact",
-            entity_id=claim_fact.id,
-            old_values=old_fact,
-            details="Source extraction was rejected by a human reviewer.",
+            claim_fact=claim_fact,
+            rejected_extraction_id=extraction.id,
         )
-        claim_fact = None
+        if previous_revision is None:
+            db.delete(claim_fact)
+            write_audit_log(
+                db,
+                organization_id=extraction.organization_id,
+                user_id=reviewer.id,
+                action="REMOVE_APPROVED_CLAIM_FACT",
+                entity_type="claim_fact",
+                entity_id=claim_fact.id,
+                old_values=old_fact,
+                details="Source extraction was rejected and no earlier still-valid canonical fact exists.",
+            )
+            claim_fact = None
+        else:
+            claim_fact.value = previous_revision.value
+            claim_fact.provenance_kind = previous_revision.provenance_kind
+            claim_fact.source_extraction_id = previous_revision.source_extraction_id
+            claim_fact.source_text_extraction_id = previous_revision.source_text_extraction_id
+            claim_fact.source_document_id = previous_revision.source_document_id
+            claim_fact.source_segment_id = previous_revision.source_segment_id
+            claim_fact.approved_by_id = previous_revision.approved_by_id
+            claim_fact.approved_at = previous_revision.approved_at
+            claim_fact.version += 1
+            db.flush()
+            write_audit_log(
+                db,
+                organization_id=extraction.organization_id,
+                user_id=reviewer.id,
+                action="RESTORE_APPROVED_CLAIM_FACT",
+                entity_type="claim_fact",
+                entity_id=claim_fact.id,
+                old_values=old_fact,
+                new_values=_fact_audit_values(claim_fact),
+                details=(
+                    f"Rejected AI extraction {extraction.id}; restored canonical revision "
+                    f"{previous_revision.version} under a new current version."
+                ),
+            )
 
     write_audit_log(
         db,
@@ -479,13 +658,16 @@ def review_extraction(
         action="REVIEW_AI_EXTRACTION",
         entity_type="document_extraction",
         entity_id=extraction.id,
-        old_values={"human_status": previous_status.value, "approved_value": previous_approved_value},
+        old_values={
+            "human_status": previous_status.value,
+            "approved_value": previous_approved_value,
+        },
         new_values={
             "human_status": human_status.value,
             "approved_value": approved_value,
             "promoted_to_claim_fact": promoted,
         },
-        details=(reason or "").strip() or None,
+        details=normalized_reason,
     )
     db.flush()
     return extraction, claim_fact, promoted
