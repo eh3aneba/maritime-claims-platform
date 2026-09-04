@@ -274,8 +274,24 @@ def list_review_queue(
 
     count_query = select(func.count()).select_from(query.order_by(None).subquery())
     total = int(db.scalar(count_query) or 0)
+
+    # Pending work is operational FIFO: older unreviewed candidates stay at the
+    # front until a human acts. Historical status views are the opposite: recent
+    # human decisions must stay visible even when a claim has more rows than the
+    # page limit, otherwise a just-approved item can disappear behind old history.
+    if human_status == AIReviewStatus.PENDING:
+        ordering = (DocumentExtraction.created_at.asc(), DocumentExtraction.field_path.asc())
+    elif human_status is None:
+        ordering = (DocumentExtraction.created_at.desc(), DocumentExtraction.field_path.asc())
+    else:
+        ordering = (
+            DocumentExtraction.reviewed_at.desc().nullslast(),
+            DocumentExtraction.created_at.desc(),
+            DocumentExtraction.field_path.asc(),
+        )
+
     rows = db.execute(
-        query.order_by(DocumentExtraction.created_at.asc(), DocumentExtraction.field_path.asc())
+        query.order_by(*ordering)
         .limit(limit)
         .offset(offset)
     ).all()

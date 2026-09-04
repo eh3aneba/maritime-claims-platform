@@ -69,6 +69,23 @@ class ClaimFactResponse(BaseModel):
     version: int
 
 
+class ClaimFactRevisionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    claim_id: UUID
+    field_path: str
+    value: Any
+    provenance_kind: Literal["ai_review", "intake_review"]
+    source_extraction_id: UUID | None
+    source_text_extraction_id: UUID | None
+    source_document_id: UUID
+    source_segment_id: UUID | None
+    approved_by_id: UUID | None
+    approved_at: datetime
+    version: int
+    created_at: datetime
+
+
 class ReviewResult(BaseModel):
     extraction_id: UUID
     human_status: AIReviewStatus
@@ -122,6 +139,7 @@ class ExtractionReviewDetail(BaseModel):
     item: ReviewQueueItem
     feedback: list[FeedbackResponse]
     current_claim_fact: ClaimFactResponse | None
+    claim_fact_revisions: list[ClaimFactRevisionResponse]
 
 
 class ReviewGroup(BaseModel):

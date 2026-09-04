@@ -19,6 +19,39 @@ import { aiLabel, aiT } from "@/lib/i18n-ai-operator";
 import type { Locale } from "@/lib/i18n";
 import type { AIReviewDetail, AIReviewGroup, AIReviewItem, AIReviewStatus, AISemanticKind, AISourcePreview } from "@/lib/types";
 
+type ProvenanceKind = "ai_review" | "intake_review";
+
+interface ClaimFactView {
+  id: string;
+  claim_id: string;
+  field_path: string;
+  value: unknown;
+  provenance_kind: ProvenanceKind;
+  source_extraction_id: string | null;
+  source_text_extraction_id: string | null;
+  source_document_id: string;
+  source_segment_id: string | null;
+  approved_by_id: string | null;
+  approved_at: string;
+  version: number;
+}
+
+interface ClaimFactRevisionView extends ClaimFactView {
+  created_at: string;
+}
+
+type ReviewDetailView = Omit<AIReviewDetail, "current_claim_fact"> & {
+  current_claim_fact: ClaimFactView | null;
+  claim_fact_revisions: ClaimFactRevisionView[];
+};
+
+type ReviewPayload = { action: "approve" | "edit" | "reject"; value?: unknown; reason?: string };
+
+type PendingSupersession =
+  | { kind: "single"; item: AIReviewItem; payload: ReviewPayload; facts: ClaimFactView[] }
+  | { kind: "group"; ids: string[]; reason?: string; facts: ClaimFactView[] }
+  | { kind: "bulk"; ids: string[]; reason?: string; facts: ClaimFactView[] };
+
 function humanField(path: string) {
   return path
     .replace(/\[(\d+)\]/g, " $1")
@@ -91,11 +124,18 @@ export default function AIReviewPage() {
   const [reviewReasons, setReviewReasons] = useState<Record<string, string>>({});
   const [source, setSource] = useState<Record<string, AISourcePreview | undefined>>({});
   const [sourceOpen, setSourceOpen] = useState<string | null>(null);
-  const [history, setHistory] = useState<Record<string, AIReviewDetail | undefined>>({});
+  const [history, setHistory] = useState<Record<string, ReviewDetailView | undefined>>({});
   const [historyOpen, setHistoryOpen] = useState<string | null>(null);
+  const [pendingSupersession, setPendingSupersession] = useState<PendingSupersession | null>(null);
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
   const [error, setError] = useState("");
+
+  function provenanceLabel(kind: ProvenanceKind) {
+    return kind === "intake_review"
+      ? L("Human-reviewed intake", "ورودی بازبینی‌شده توسط انسان")
+      : L("Human-approved AI review", "بازبینی AI تأییدشده توسط انسان");
+  }
 
   async function load() {
     setLoading(true);
@@ -131,26 +171,84 @@ export default function AIReviewPage() {
 
   useEffect(() => { if (queryReady) void load(); }, [statusFilter, semanticFilter, claimId, attentionOnly, queryReady]);
 
+  useEffect(() => {
+    setHistoryOpen(null);
+    setHistory({});
+    setSourceOpen(null);
+    setSource({});
+  }, [statusFilter, semanticFilter, claimId, viewMode]);
+
   const bulkEligible = useMemo(() => items.filter((item) => item.bulk_approvable), [items]);
 
-  async function review(item: AIReviewItem, action: "approve" | "edit" | "reject") {
+  async function getDetail(item: AIReviewItem) {
+    const detail = await getAIReviewDetail(item.extraction_id) as unknown as ReviewDetailView;
+    setHistory((current) => ({ ...current, [item.extraction_id]: detail }));
+    return detail;
+  }
+
+  async function findSupersessions(ids: string[]) {
+    const idSet = new Set(ids);
+    const relevant = items.filter((item) => idSet.has(item.extraction_id));
+    const details = await Promise.all(relevant.map((item) => getDetail(item)));
+    const facts = details
+      .map((detail) => ({ item: detail.item, fact: detail.current_claim_fact }))
+      .filter(({ item, fact }) => Boolean(
+        fact && !(fact.provenance_kind === "ai_review" && fact.source_extraction_id === item.extraction_id),
+      ))
+      .map(({ fact }) => fact as ClaimFactView);
+    return Array.from(new Map(facts.map((fact) => [fact.id, fact])).values());
+  }
+
+  function clearHistory(extractionIds: string[]) {
+    setHistory((current) => {
+      const next = { ...current };
+      for (const id of extractionIds) delete next[id];
+      return next;
+    });
+    setHistoryOpen((current) => current && extractionIds.includes(current) ? null : current);
+  }
+
+  async function submitSingle(item: AIReviewItem, payload: ReviewPayload) {
     setWorking(true);
     setError("");
     try {
-      const payload: { action: "approve" | "edit" | "reject"; value?: unknown; reason?: string } = { action };
-      if (action === "edit") payload.value = parseEditedValue(item.normalized_value ?? item.ai_value, editText);
-      const itemReason = reviewReasons[item.extraction_id]?.trim();
-      if (itemReason) payload.reason = itemReason;
       await reviewAIExtraction(item.extraction_id, payload);
       setEditing(null);
       setEditText("");
       setReviewReasons((current) => { const next = { ...current }; delete next[item.extraction_id]; return next; });
+      clearHistory([item.extraction_id]);
       await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : L("Review action could not be saved.", "عملیات بازبینی ذخیره نشد."));
     } finally {
       setWorking(false);
     }
+  }
+
+  async function review(item: AIReviewItem, action: "approve" | "edit" | "reject") {
+    const payload: ReviewPayload = { action };
+    if (action === "edit") payload.value = parseEditedValue(item.normalized_value ?? item.ai_value, editText);
+    const itemReason = reviewReasons[item.extraction_id]?.trim();
+    if (itemReason) payload.reason = itemReason;
+
+    if (action === "approve" || action === "edit") {
+      setWorking(true);
+      setError("");
+      try {
+        const conflicts = await findSupersessions([item.extraction_id]);
+        if (conflicts.length) {
+          setPendingSupersession({ kind: "single", item, payload, facts: conflicts });
+          setHistoryOpen(item.extraction_id);
+          return;
+        }
+      } catch (err) {
+        setError(err instanceof ApiError ? err.detail : L("Current Claim Fact could not be checked.", "واقعیت فعلی پرونده قابل بررسی نبود."));
+        return;
+      } finally {
+        setWorking(false);
+      }
+    }
+    await submitSingle(item, payload);
   }
 
   async function toggleSource(item: AIReviewItem) {
@@ -171,23 +269,19 @@ export default function AIReviewPage() {
     setHistoryOpen(item.extraction_id);
     if (!history[item.extraction_id]) {
       try {
-        const detail = await getAIReviewDetail(item.extraction_id);
-        setHistory((current) => ({ ...current, [item.extraction_id]: detail }));
+        await getDetail(item);
       } catch (err) {
         setError(err instanceof ApiError ? err.detail : L("Review history could not be loaded.", "سابقه بازبینی بارگذاری نشد."));
       }
     }
   }
 
-  async function reviewGroup(group: AIReviewGroup, action: "approve" | "reject") {
-    const ids = group.items.filter((item) => item.human_status === "pending").map((item) => item.extraction_id);
-    if (!ids.length) return;
+  async function submitGroup(ids: string[], action: "approve" | "reject", reason?: string) {
     setWorking(true);
     setError("");
     try {
-      const stateKey = reviewGroupStateKey(group);
-      await reviewAIGroup(ids, action, groupReasons[stateKey]?.trim() || undefined);
-      setGroupReasons((current) => { const next = { ...current }; delete next[stateKey]; return next; });
+      await reviewAIGroup(ids, action, reason);
+      clearHistory(ids);
       await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : L("Grouped review could not be completed.", "بازبینی گروهی تکمیل نشد."));
@@ -196,20 +290,78 @@ export default function AIReviewPage() {
     }
   }
 
-  async function bulkApprove() {
-    if (!selected.length) return;
+  async function reviewGroup(group: AIReviewGroup, action: "approve" | "reject") {
+    const ids = group.items.filter((item) => item.human_status === "pending").map((item) => item.extraction_id);
+    if (!ids.length) return;
+    const reason = groupReasons[reviewGroupStateKey(group)]?.trim() || undefined;
+    if (action === "approve") {
+      setWorking(true);
+      setError("");
+      try {
+        const conflicts = await findSupersessions(ids);
+        if (conflicts.length) {
+          setPendingSupersession({ kind: "group", ids, reason, facts: conflicts });
+          return;
+        }
+      } catch (err) {
+        setError(err instanceof ApiError ? err.detail : L("Current Claim Facts could not be checked.", "واقعیت‌های فعلی پرونده قابل بررسی نبودند."));
+        return;
+      } finally {
+        setWorking(false);
+      }
+    }
+    await submitGroup(ids, action, reason);
+    setGroupReasons((current) => { const next = { ...current }; delete next[reviewGroupStateKey(group)]; return next; });
+  }
+
+  async function submitBulk(ids: string[], reason?: string) {
     setWorking(true);
     setError("");
     try {
-      // Audit content stays locale-neutral; changing the UI language must not rewrite persisted review notes.
-      await bulkApproveAIExtractions(selected, "Bulk-approved after source-linked metadata review.");
+      await bulkApproveAIExtractions(ids, reason);
       setSelected([]);
+      clearHistory(ids);
       await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : L("Bulk approval could not be completed.", "تأیید گروهی تکمیل نشد."));
     } finally {
       setWorking(false);
     }
+  }
+
+  async function bulkApprove() {
+    if (!selected.length) return;
+    const reason = "Bulk-approved after source-linked metadata review.";
+    setWorking(true);
+    setError("");
+    try {
+      const conflicts = await findSupersessions(selected);
+      if (conflicts.length) {
+        setPendingSupersession({ kind: "bulk", ids: [...selected], reason, facts: conflicts });
+        return;
+      }
+    } catch (err) {
+      setError(err instanceof ApiError ? err.detail : L("Current Claim Facts could not be checked.", "واقعیت‌های فعلی پرونده قابل بررسی نبودند."));
+      return;
+    } finally {
+      setWorking(false);
+    }
+    await submitBulk(selected, reason);
+  }
+
+  async function confirmSupersession() {
+    const pending = pendingSupersession;
+    if (!pending) return;
+    setPendingSupersession(null);
+    if (pending.kind === "single") {
+      await submitSingle(pending.item, pending.payload);
+      return;
+    }
+    if (pending.kind === "group") {
+      await submitGroup(pending.ids, "approve", pending.reason);
+      return;
+    }
+    await submitBulk(pending.ids, pending.reason);
   }
 
   return (
@@ -228,6 +380,15 @@ export default function AIReviewPage() {
 
       {claimId ? <div className="mt-5 rounded-lg border border-cyan-200 bg-cyan-50 px-4 py-3 text-sm text-cyan-900">{L("Filtered to one claim.", "فقط یک پرونده نمایش داده می‌شود.")} <Link href="/ai-review" className="font-semibold underline">{L("Show organization queue", "نمایش صف سازمان")}</Link></div> : null}
       {error ? <div className="mt-5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" dir="auto">{error}</div> : null}
+      {pendingSupersession ? <div role="alert" className="mt-5 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">
+        <p className="font-semibold">{L("Canonical Claim Fact replacement requires confirmation", "جایگزینی واقعیت معتبر پرونده نیازمند تأیید است")}</p>
+        <p className="mt-1 leading-6">{L(
+          "This approval would replace an existing human-approved Claim Fact. The previous state remains in immutable revision history and can be restored if the superseding AI extraction is later rejected.",
+          "این تأیید یک واقعیت موجود و تأییدشده توسط انسان را جایگزین می‌کند. وضعیت قبلی در سابقه تغییرناپذیر نسخه‌ها باقی می‌ماند و اگر استخراج AI جایگزین بعداً رد شود، قابل بازیابی است.",
+        )}</p>
+        <div className="mt-3 space-y-2">{pendingSupersession.facts.slice(0, 4).map((fact) => <div key={fact.id} className="rounded-lg border border-amber-200 bg-white/70 px-3 py-2 text-xs"><span className="font-semibold" dir="ltr">{humanField(fact.field_path)}</span> · {provenanceLabel(fact.provenance_kind)} · {L("version", "نسخه")} <span dir="ltr">{fact.version}</span> · <span dir="auto">{displayValue(fact.value, locale)}</span></div>)}</div>
+        <div className="mt-4 flex flex-wrap gap-2"><button disabled={working} onClick={confirmSupersession} className="primary-button">{L("Confirm replacement", "تأیید جایگزینی")}</button><button disabled={working} onClick={() => setPendingSupersession(null)} className="secondary-button">{L("Cancel", "لغو")}</button></div>
+      </div> : null}
 
       <section className="panel mt-6 p-4">
         <div className="grid gap-3 md:grid-cols-[180px_200px_200px_1fr_auto] md:items-end">
@@ -254,6 +415,7 @@ export default function AIReviewPage() {
         {!loading && items.length === 0 ? <div className="panel py-16 text-center"><p className="text-sm font-semibold text-slate-800">{L("No extraction candidates in this view.", "در این نما کاندید استخراجی وجود ندارد.")}</p><p className="mt-2 text-sm text-slate-500">{L("AI-generated values appear here only after document intelligence has completed.", "مقادیر تولیدشده توسط AI فقط پس از تکمیل هوشمندی اسناد در اینجا ظاهر می‌شوند.")}</p></div> : null}
         {items.map((item) => {
           const currentSource = source[item.extraction_id];
+          const currentHistory = history[item.extraction_id];
           const isEditing = editing === item.extraction_id;
           const checked = selected.includes(item.extraction_id);
           return (
@@ -278,7 +440,7 @@ export default function AIReviewPage() {
                   <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-xs text-slate-500"><span dir="auto">{item.document_name}</span><span dir="ltr">{item.source_locator_type && item.source_locator_value ? `${item.source_locator_type}: ${item.source_locator_value}` : L("Locator unavailable", "مکان‌یاب موجود نیست")}</span><span className={item.source_verified ? "font-semibold text-emerald-700" : "font-semibold text-amber-700"}>{item.source_verified ? L("Source verified", "منبع تأیید شده") : L("Manual source check required", "بررسی دستی منبع الزامی است")}</span></div>
                   {item.validation_warnings?.length ? <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-800" dir="auto">{item.validation_warnings.join(" ")}</div> : null}
                   {!item.source_verified && item.human_status === "pending" ? <label className="mt-3 block"><span className="label">{L("Manual verification reason", "دلیل بررسی دستی")}</span><textarea dir="auto" className="field resize-y" rows={2} value={reviewReasons[item.extraction_id] ?? ""} onChange={(e) => setReviewReasons((current) => ({ ...current, [item.extraction_id]: e.target.value }))} placeholder={L("Required before approving or editing an unverified source citation.", "پیش از تأیید یا ویرایش استناد منبع تأییدنشده الزامی است.")} /></label> : null}
-                  <div className="mt-3 flex flex-wrap gap-4"><button onClick={() => toggleSource(item)} className="text-xs font-semibold text-cyan-800 hover:text-cyan-950">{sourceOpen === item.extraction_id ? L("Hide source context", "پنهان کردن متن منبع") : L("View source context", "مشاهده متن منبع")}</button><button onClick={() => toggleHistory(item)} className="text-xs font-semibold text-slate-600 hover:text-slate-900">{historyOpen === item.extraction_id ? L("Hide review history", "پنهان کردن سابقه بازبینی") : L("Review history", "سابقه بازبینی")}</button></div>
+                  <div className="mt-3 flex flex-wrap gap-4"><button onClick={() => toggleSource(item)} className="text-xs font-semibold text-cyan-800 hover:text-cyan-950">{sourceOpen === item.extraction_id ? L("Hide source context", "پنهان کردن متن منبع") : L("View source context", "مشاهده متن منبع")}</button><button onClick={() => toggleHistory(item)} className="text-xs font-semibold text-slate-600 hover:text-slate-900">{historyOpen === item.extraction_id ? L("Hide provenance & history", "پنهان کردن منبع و سابقه") : L("Provenance & history", "منبع و سابقه")}</button></div>
                 </div>
 
                 <div className="flex min-w-[170px] flex-col gap-2 lg:items-stretch">
@@ -290,7 +452,14 @@ export default function AIReviewPage() {
 
               {sourceOpen === item.extraction_id ? <div className="border-t border-slate-200 bg-slate-50 px-5 py-4"><p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">{L("Source segment", "بخش منبع")}</p>{currentSource ? <pre dir="auto" className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap rounded-lg border border-slate-200 bg-white p-4 font-sans text-xs leading-6 text-slate-700">{currentSource.segment_text ?? L("Source segment is unavailable.", "بخش منبع موجود نیست.")}</pre> : <p className="mt-3 text-sm text-slate-500">{L("Loading source context…", "در حال بارگذاری متن منبع…")}</p>}</div> : null}
 
-              {historyOpen === item.extraction_id ? <div className="border-t border-slate-200 bg-white px-5 py-4"><p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">{L("Human review history", "سابقه بازبینی انسانی")}</p>{history[item.extraction_id] ? <div className="mt-3 space-y-3">{history[item.extraction_id]!.feedback.length ? history[item.extraction_id]!.feedback.map((entry) => <div key={entry.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3"><div className="flex flex-wrap items-center justify-between gap-2"><span className="text-xs font-semibold uppercase tracking-wide text-slate-700">{aiLabel(locale, entry.action)}</span><span className="text-xs text-slate-400" dir="ltr">{formatDateTime(entry.created_at, locale)}</span></div><p className="mt-2 text-sm text-slate-700" dir="auto">{entry.reviewer_name ?? entry.reviewer_email ?? L("Reviewer unavailable", "بازبین مشخص نیست")}</p><p className="mt-1 text-xs text-slate-500" dir="auto">{L("Human value:", "مقدار انسانی:")} {displayValue(entry.human_value, locale)}</p>{entry.reason ? <p className="mt-2 text-xs leading-5 text-slate-600" dir="auto">{L("Reason:", "دلیل:")} {entry.reason}</p> : null}</div>) : <p className="text-sm text-slate-500">{L("No human review actions recorded yet.", "هنوز اقدام بازبینی انسانی ثبت نشده است.")}</p>}{history[item.extraction_id]!.current_claim_fact ? <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-800">{L("Current approved claim fact", "واقعیت فعلی تأییدشده پرونده")} · {L("version", "نسخه")} <span dir="ltr">{history[item.extraction_id]!.current_claim_fact!.version}</span></div> : null}</div> : <p className="mt-3 text-sm text-slate-500">{L("Loading review history…", "در حال بارگذاری سابقه بازبینی…")}</p>}</div> : null}
+              {historyOpen === item.extraction_id ? <div className="border-t border-slate-200 bg-white px-5 py-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">{L("Canonical Claim Fact lineage", "زنجیره منبع واقعیت معتبر پرونده")}</p>
+                {currentHistory ? <div className="mt-3 space-y-4">
+                  {currentHistory.current_claim_fact ? <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-xs text-emerald-900"><div className="flex flex-wrap items-center justify-between gap-2"><span className="font-semibold">{L("Current canonical fact", "واقعیت معتبر فعلی")}</span><span>{provenanceLabel(currentHistory.current_claim_fact.provenance_kind)} · {L("version", "نسخه")} <span dir="ltr">{currentHistory.current_claim_fact.version}</span></span></div><p className="mt-2 text-sm font-semibold" dir="auto">{displayValue(currentHistory.current_claim_fact.value, locale)}</p><p className="mt-2 text-[11px] text-emerald-800" dir="ltr">document {currentHistory.current_claim_fact.source_document_id}</p></div> : <p className="text-sm text-slate-500">{L("No canonical Claim Fact is currently approved for this field.", "در حال حاضر واقعیت معتبر تأییدشده‌ای برای این فیلد وجود ندارد.")}</p>}
+                  <div><p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">{L("Canonical revisions", "نسخه‌های واقعیت معتبر")}</p>{currentHistory.claim_fact_revisions.length ? <div className="mt-2 space-y-2">{currentHistory.claim_fact_revisions.map((revision) => <div key={revision.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3"><div className="flex flex-wrap items-center justify-between gap-2"><span className="text-xs font-semibold text-slate-700">{L("Version", "نسخه")} <span dir="ltr">{revision.version}</span> · {provenanceLabel(revision.provenance_kind)}</span><span className="text-xs text-slate-400" dir="ltr">{formatDateTime(revision.approved_at, locale)}</span></div><p className="mt-2 text-sm text-slate-700" dir="auto">{displayValue(revision.value, locale)}</p><p className="mt-1 text-[11px] text-slate-400" dir="ltr">document {revision.source_document_id}</p></div>)}</div> : <p className="mt-2 text-sm text-slate-500">{L("No canonical revisions recorded yet.", "هنوز نسخه‌ای از واقعیت معتبر ثبت نشده است.")}</p>}</div>
+                  <div><p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">{L("AI review feedback", "بازخورد بازبینی AI")}</p>{currentHistory.feedback.length ? <div className="mt-2 space-y-3">{currentHistory.feedback.map((entry) => <div key={entry.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3"><div className="flex flex-wrap items-center justify-between gap-2"><span className="text-xs font-semibold uppercase tracking-wide text-slate-700">{aiLabel(locale, entry.action)}</span><span className="text-xs text-slate-400" dir="ltr">{formatDateTime(entry.created_at, locale)}</span></div><p className="mt-2 text-sm text-slate-700" dir="auto">{entry.reviewer_name ?? entry.reviewer_email ?? L("Reviewer unavailable", "بازبین مشخص نیست")}</p><p className="mt-1 text-xs text-slate-500" dir="auto">{L("Human value:", "مقدار انسانی:")} {displayValue(entry.human_value, locale)}</p>{entry.reason ? <p className="mt-2 text-xs leading-5 text-slate-600" dir="auto">{L("Reason:", "دلیل:")} {entry.reason}</p> : null}</div>)}</div> : <p className="mt-2 text-sm text-slate-500">{L("No AI review actions recorded yet.", "هنوز اقدام بازبینی AI ثبت نشده است.")}</p>}</div>
+                </div> : <p className="mt-3 text-sm text-slate-500">{L("Loading provenance and history…", "در حال بارگذاری منبع و سابقه…")}</p>}
+              </div> : null}
 
               {isEditing ? <div className="border-t border-slate-200 bg-white px-5 py-5"><div className="grid gap-4 lg:grid-cols-[1fr_1fr_auto]"><label><span className="label">{L("Corrected value", "مقدار اصلاح‌شده")}</span><textarea dir="auto" className="field min-h-24 resize-y" value={editText} onChange={(e) => setEditText(e.target.value)} /></label><label><span className="label">{L("Review reason", "دلیل بازبینی")}</span><textarea dir="auto" className="field min-h-24 resize-y" value={reviewReasons[item.extraction_id] ?? ""} onChange={(e) => setReviewReasons((current) => ({ ...current, [item.extraction_id]: e.target.value }))} placeholder={L("Optional for verified sources; required if the source citation is unverified.", "برای منابع تأییدشده اختیاری است؛ اگر استناد منبع تأیید نشده باشد الزامی است.")} /></label><div className="flex items-end gap-2"><button disabled={working} onClick={() => review(item, "edit")} className="primary-button">{L("Save correction", "ذخیره اصلاح")}</button><button disabled={working} onClick={() => setEditing(null)} className="secondary-button">{L("Cancel", "لغو")}</button></div></div></div> : null}
             </article>

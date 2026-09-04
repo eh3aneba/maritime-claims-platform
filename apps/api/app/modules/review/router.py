@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.modules.auth.dependencies import CurrentUser
-from app.modules.claims.facts import ClaimFact
+from app.modules.claims.facts import ClaimFactRevision
 from app.modules.claims.security import get_claim_for_tenant
 from app.modules.documents.models import Document
 from app.modules.intelligence.models import AISemanticKind, AIReviewStatus
@@ -15,18 +15,18 @@ from app.modules.pilot.service import record_active_event
 from app.modules.review.schemas import (
     BulkApproveRequest,
     BulkApproveResponse,
+    ClaimFactResponse,
+    ClaimFactRevisionResponse,
+    ExtractionReviewDetail,
+    FeedbackResponse,
     GroupReviewRequest,
     GroupReviewResponse,
     ReviewGroupQueueResponse,
-    ClaimFactResponse,
-    ExtractionReviewDetail,
-    FeedbackResponse,
     ReviewQueueResponse,
     ReviewRequest,
     ReviewResult,
     SourcePreviewResponse,
 )
-from app.modules.users.models import User
 from app.modules.review.service import (
     get_current_claim_fact,
     get_extraction_for_tenant,
@@ -35,9 +35,10 @@ from app.modules.review.service import (
     is_bulk_approvable,
     list_review_groups,
     list_review_queue,
-    validate_same_review_group,
     review_extraction,
+    validate_same_review_group,
 )
+from app.modules.users.models import User
 
 router = APIRouter(prefix="/ai-review", tags=["ai-review"])
 
@@ -207,10 +208,23 @@ def review_detail(
         field_path=extraction.field_path,
         organization_id=current_user.organization_id,
     )
+    revisions = list(
+        db.scalars(
+            select(ClaimFactRevision)
+            .where(
+                ClaimFactRevision.organization_id == current_user.organization_id,
+                ClaimFactRevision.claim_id == extraction.claim_id,
+                ClaimFactRevision.field_path == extraction.field_path,
+            )
+            .order_by(ClaimFactRevision.version.desc(), ClaimFactRevision.created_at.desc())
+            .limit(100)
+        )
+    )
     return ExtractionReviewDetail(
         item=item,
         feedback=[_feedback_response(db, row) for row in feedback],
         current_claim_fact=ClaimFactResponse.model_validate(fact) if fact else None,
+        claim_fact_revisions=[ClaimFactRevisionResponse.model_validate(row) for row in revisions],
     )
 
 
