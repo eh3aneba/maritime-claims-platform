@@ -42,6 +42,34 @@ textarea:focus-visible,
   transform: translateY(0);
 }
 
+/*
+ * Phase 13.2 navigation consolidation.
+ * Historical AI rollout/readiness routes remain routable and retain their data,
+ * APIs and regression coverage, but they are no longer primary operator tasks.
+ * Hiding them from both desktop and mobile side navigation reduces feature sprawl
+ * without deleting rollout evidence or changing authority boundaries.
+ */
+aside nav a[href="/ai-private-pilot"],
+aside nav a[href="/ai-pilot-outcomes"],
+aside nav a[href="/ai-limited-production"],
+aside nav a[href="/ai-limited-production-outcomes"],
+aside nav a[href="/ai-scale-up"],
+aside nav a[href="/ai-scale-up-outcomes"],
+aside nav a[href="/ai-broader-production"],
+aside nav a[href="/ai-broader-production-outcomes"],
+aside nav a[href="/ai-high-coverage"],
+aside nav a[href="/ai-high-coverage-outcomes"],
+aside nav a[href="/ai-final-production-readiness"],
+aside nav a[href="/ai-final-production"],
+aside nav a[href="/ai-final-production-outcomes"],
+aside nav a[href="/ai-near-universal-production"],
+aside nav a[href="/ai-near-universal-outcomes"],
+aside nav a[href="/ai-bounded-full-production"],
+aside nav a[href="/ai-bounded-full-production-outcomes"],
+aside nav a[href="/ai-production-wide"] {
+  display: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
