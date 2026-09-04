@@ -157,7 +157,7 @@ export default function ClaimChronologyPage() {
               <div className="mt-5 space-y-4">
                 {chronology.conflicts.map((conflict) => (
                   <ChronologyConflictReview
-                    key={`${conflict.id}:${conflict.state_version}:${conflict.decision_history.length}`}
+                    key={conflict.id}
                     claimId={id}
                     conflict={conflict}
                     events={chronology.events}
