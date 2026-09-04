@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     clamav_timeout_seconds: float = 30.0
     processing_max_attempts: int = 3
     processing_poll_seconds: float = 2.0
+    processing_stale_after_seconds: int = 600
     ocr_enabled: bool = False
     ocr_languages: str = "eng+fas"
     ocr_max_pages: int = 20
