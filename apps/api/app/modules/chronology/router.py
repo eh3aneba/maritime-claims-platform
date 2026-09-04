@@ -7,11 +7,18 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.modules.auth.dependencies import CurrentUser
-from app.modules.chronology.models import ChronologyEvent, ConflictStatus, EvidenceConflict, EventEvidence
+from app.modules.chronology.models import (
+    ChronologyEvent,
+    ConflictStatus,
+    EvidenceConflict,
+    EvidenceConflictDecision,
+    EventEvidence,
+)
 from app.modules.chronology.schemas import (
     ChronologyBuildResponse,
     ChronologyEventResponse,
     ChronologyResponse,
+    ConflictDecisionResponse,
     ConflictResolutionRequest,
     ConflictResolutionResponse,
     EventEvidenceResponse,
@@ -66,7 +73,31 @@ def _serialize_event(db: Session, event: ChronologyEvent) -> ChronologyEventResp
     )
 
 
-def _serialize_conflict(conflict: EvidenceConflict) -> EvidenceConflictResponse:
+def _serialize_conflict(db: Session, conflict: EvidenceConflict) -> EvidenceConflictResponse:
+    decisions = list(
+        db.scalars(
+            select(EvidenceConflictDecision)
+            .where(
+                EvidenceConflictDecision.organization_id == conflict.organization_id,
+                EvidenceConflictDecision.claim_id == conflict.claim_id,
+                EvidenceConflictDecision.conflict_id == conflict.id,
+            )
+            .order_by(EvidenceConflictDecision.decision_number.asc())
+        )
+    )
+    latest = decisions[-1] if decisions else None
+    if latest is None:
+        decision_state = "none"
+    elif (
+        conflict.status != ConflictStatus.OPEN
+        and conflict.state_fingerprint is not None
+        and latest.state_fingerprint == conflict.state_fingerprint
+        and latest.state_version == conflict.state_version
+        and latest.status == conflict.status
+    ):
+        decision_state = "current"
+    else:
+        decision_state = "stale"
     return EvidenceConflictResponse(
         id=conflict.id,
         conflict_type=conflict.conflict_type,
@@ -76,6 +107,10 @@ def _serialize_conflict(conflict: EvidenceConflict) -> EvidenceConflictResponse:
         value_b=conflict.value_b,
         difference_minutes=conflict.difference_minutes,
         materiality=conflict.materiality,
+        state_fingerprint=conflict.state_fingerprint,
+        state_version=conflict.state_version,
+        decision_state=decision_state,
+        decision_history=[ConflictDecisionResponse.model_validate(row) for row in decisions],
         status=conflict.status,
         resolution_note=conflict.resolution_note,
         event_a_id=conflict.event_a_id,
@@ -98,7 +133,7 @@ def chronology_summary(claim_id: UUID, current_user: CurrentUser, db: Annotated[
     conflicts = list(db.scalars(select(EvidenceConflict).where(EvidenceConflict.claim_id == claim.id, EvidenceConflict.organization_id == claim.organization_id, EvidenceConflict.is_active.is_(True)).order_by(EvidenceConflict.created_at.asc())))
     return ChronologyResponse(
         events=[_serialize_event(db, event) for event in events],
-        conflicts=[_serialize_conflict(conflict) for conflict in conflicts],
+        conflicts=[_serialize_conflict(db, conflict) for conflict in conflicts],
         event_count=len(events),
         open_conflict_count=sum(conflict.status == ConflictStatus.OPEN for conflict in conflicts),
     )
@@ -109,7 +144,11 @@ def rebuild_chronology(claim_id: UUID, current_user: CurrentUser, db: Annotated[
     claim = get_claim_for_tenant(db, claim_id=claim_id, organization_id=current_user.organization_id)
     if claim is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Claim not found")
-    events, conflicts = build_chronology(db, claim=claim, user=current_user)
+    try:
+        events, conflicts = build_chronology(db, claim=claim, user=current_user)
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     return ChronologyBuildResponse(
         events_created_or_activated=len(events),
         conflicts_created_or_activated=len(conflicts),
@@ -132,5 +171,29 @@ def resolve_claim_conflict(
     conflict = db.scalar(select(EvidenceConflict).where(EvidenceConflict.id == conflict_id, EvidenceConflict.claim_id == claim.id, EvidenceConflict.organization_id == claim.organization_id, EvidenceConflict.is_active.is_(True)))
     if conflict is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Evidence conflict not found")
-    resolved = resolve_conflict(db, conflict=conflict, user=current_user, status=ConflictStatus(payload.status), note=payload.note)
-    return ConflictResolutionResponse.model_validate(resolved)
+    try:
+        resolved, decision, replayed = resolve_conflict(
+            db,
+            conflict=conflict,
+            user=current_user,
+            status=ConflictStatus(payload.status),
+            note=payload.note,
+            expected_state_fingerprint=payload.expected_state_fingerprint,
+            expected_state_version=payload.expected_state_version,
+            confirm_re_review=payload.confirm_re_review,
+        )
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    return ConflictResolutionResponse(
+        id=resolved.id,
+        status=resolved.status,
+        resolution_note=resolved.resolution_note,
+        resolved_by_id=resolved.resolved_by_id,
+        resolved_at=resolved.resolved_at,
+        state_fingerprint=resolved.state_fingerprint or decision.state_fingerprint,
+        state_version=resolved.state_version,
+        decision_number=decision.decision_number,
+        decision_hash=decision.decision_hash,
+        replayed=replayed,
+    )

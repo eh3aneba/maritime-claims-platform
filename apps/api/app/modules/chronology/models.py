@@ -3,7 +3,7 @@ from datetime import date, datetime, time
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import Boolean, Date, DateTime, Enum, ForeignKey, Index, JSON, Numeric, String, Text, Time, UniqueConstraint
+from sqlalchemy import Boolean, CheckConstraint, Date, DateTime, Enum, ForeignKey, Index, Integer, JSON, Numeric, String, Text, Time, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -78,6 +78,7 @@ class EvidenceConflict(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         UniqueConstraint("organization_id", "claim_id", "conflict_key", name="uq_evidence_conflict_key"),
         Index("ix_evidence_conflicts_org_claim_active", "organization_id", "claim_id", "is_active"),
         Index("ix_evidence_conflicts_status", "organization_id", "status"),
+        CheckConstraint("state_version >= 1", name="ck_evidence_conflict_state_version"),
     )
 
     organization_id: Mapped[UUID] = mapped_column(ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False, index=True)
@@ -98,6 +99,8 @@ class EvidenceConflict(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         Enum(ChronologyMateriality, name="chronology_materiality", native_enum=True, values_callable=enum_values),
         nullable=False,
     )
+    state_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    state_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
     status: Mapped[ConflictStatus] = mapped_column(
         Enum(ConflictStatus, name="evidence_conflict_status", native_enum=True, values_callable=enum_values),
         nullable=False,
@@ -108,3 +111,35 @@ class EvidenceConflict(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     resolved_by_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
+
+
+class EvidenceConflictDecision(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "evidence_conflict_decisions"
+    __table_args__ = (
+        UniqueConstraint("conflict_id", "decision_number", name="uq_evidence_conflict_decision_number"),
+        Index(
+            "ix_evidence_conflict_decisions_org_claim_conflict",
+            "organization_id",
+            "claim_id",
+            "conflict_id",
+            "decision_number",
+        ),
+        CheckConstraint("state_version >= 1", name="ck_evidence_conflict_decision_state_version"),
+        CheckConstraint("decision_number >= 1", name="ck_evidence_conflict_decision_number"),
+    )
+
+    organization_id: Mapped[UUID] = mapped_column(ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False, index=True)
+    claim_id: Mapped[UUID] = mapped_column(ForeignKey("claims.id", ondelete="RESTRICT"), nullable=False, index=True)
+    conflict_id: Mapped[UUID] = mapped_column(ForeignKey("evidence_conflicts.id", ondelete="CASCADE"), nullable=False, index=True)
+    state_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    state_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    decision_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[ConflictStatus] = mapped_column(
+        Enum(ConflictStatus, name="evidence_conflict_status", native_enum=True, values_callable=enum_values),
+        nullable=False,
+    )
+    note: Mapped[str] = mapped_column(Text, nullable=False)
+    decided_by_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    decided_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    previous_decision_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    decision_hash: Mapped[str] = mapped_column(String(64), nullable=False)

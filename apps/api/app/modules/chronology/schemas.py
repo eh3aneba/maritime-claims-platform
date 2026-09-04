@@ -36,6 +36,21 @@ class ChronologyEventResponse(BaseModel):
     updated_at: datetime
 
 
+class ConflictDecisionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    state_fingerprint: str
+    state_version: int
+    decision_number: int
+    status: ConflictStatus
+    note: str
+    decided_by_id: UUID | None
+    decided_at: datetime
+    previous_decision_hash: str | None
+    decision_hash: str
+    created_at: datetime
+
+
 class EvidenceConflictResponse(BaseModel):
     id: UUID
     conflict_type: str
@@ -45,6 +60,10 @@ class EvidenceConflictResponse(BaseModel):
     value_b: Any
     difference_minutes: Decimal | None
     materiality: ChronologyMateriality
+    state_fingerprint: str | None
+    state_version: int
+    decision_state: Literal["none", "current", "stale"]
+    decision_history: list[ConflictDecisionResponse]
     status: ConflictStatus
     resolution_note: str | None
     event_a_id: UUID | None
@@ -74,12 +93,27 @@ class ChronologyBuildResponse(BaseModel):
 class ConflictResolutionRequest(BaseModel):
     status: Literal["explained", "resolved", "accepted_difference", "irrelevant"]
     note: str = Field(min_length=3, max_length=3000)
+    expected_state_fingerprint: str | None = Field(default=None, min_length=64, max_length=64)
+    expected_state_version: int | None = Field(default=None, ge=1)
+    confirm_re_review: bool = False
+
+    @model_validator(mode="after")
+    def validate_expected_state_pair(self):
+        supplied = self.expected_state_fingerprint is not None or self.expected_state_version is not None
+        complete = self.expected_state_fingerprint is not None and self.expected_state_version is not None
+        if supplied and not complete:
+            raise ValueError("Conflict state fingerprint and version must be supplied together.")
+        return self
 
 
 class ConflictResolutionResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
     id: UUID
     status: ConflictStatus
     resolution_note: str | None
     resolved_by_id: UUID | None
     resolved_at: datetime | None
+    state_fingerprint: str
+    state_version: int
+    decision_number: int
+    decision_hash: str
+    replayed: bool
