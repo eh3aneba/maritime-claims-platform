@@ -1,3 +1,4 @@
+from decimal import Decimal
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -6,8 +7,22 @@ from sqlalchemy import select
 from app.modules.claims.facts import ClaimFact
 from app.modules.claims.models import Claim, ClaimStatus
 from app.modules.documents import service as document_service
-from app.modules.documents.models import Document, DocumentMalwareScanStatus, DocumentProcessingStatus
+from app.modules.documents.models import (
+    ConfidentialityLevel,
+    Document,
+    DocumentMalwareScanStatus,
+    DocumentProcessingStatus,
+)
+from app.modules.intelligence.models import (
+    AIRun,
+    AIRunStatus,
+    AISemanticKind,
+    AIReviewStatus,
+    DocumentExtraction,
+)
+from app.modules.processing.models import DocumentTextExtraction, DocumentTextSegment
 from app.modules.rules.requirement_lineage import ClaimDocumentRequirementDecision
+from app.modules.users.models import User
 from tests.db_harness import TestingSessionLocal, client, reset_database
 from tests.test_claims_api import create_orion_claim, login
 
@@ -92,6 +107,97 @@ def _seed_equivalent_claim() -> tuple[str, str, dict, dict]:
     assert requirement["state_fingerprint"] and requirement["state_version"] >= 1
     assert candidate["claim_fact_version"] == 1
     return claim_id, fact_id, requirement, candidate
+
+
+def _add_ai_interval_extraction(claim_id: str, value: int) -> str:
+    with TestingSessionLocal() as db:
+        claim = db.get(Claim, UUID(claim_id))
+        assert claim is not None
+        user = db.scalar(select(User).where(User.organization_id == claim.organization_id).order_by(User.created_at.asc()))
+        assert user is not None
+        document = Document(
+            organization_id=claim.organization_id,
+            claim_id=claim.id,
+            uploaded_by_id=user.id,
+            filename="running-hours.xlsx",
+            original_filename="Running_Hours.xlsx",
+            document_type="running_hours_record",
+            mime_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            file_size_bytes=1024,
+            file_hash="d" * 64,
+            storage_key=f"{claim.organization_id}/{claim.id}/running-hours.xlsx",
+            version_number=1,
+            processing_status=DocumentProcessingStatus.PROCESSED,
+            confidentiality_level=ConfidentialityLevel.CONFIDENTIAL,
+            malware_scan_status=DocumentMalwareScanStatus.CLEAN,
+        )
+        db.add(document)
+        db.flush()
+        text_extraction = DocumentTextExtraction(
+            organization_id=claim.organization_id,
+            document_id=document.id,
+            extraction_method="openpyxl",
+            extractor_version="phase-13-4b-test",
+            char_count=80,
+            segment_count=1,
+            requires_ocr=False,
+            text_hash="e" * 64,
+        )
+        db.add(text_extraction)
+        db.flush()
+        segment = DocumentTextSegment(
+            organization_id=claim.organization_id,
+            document_id=document.id,
+            extraction_id=text_extraction.id,
+            segment_index=0,
+            locator_type="sheet",
+            locator_value="Running Hours!A1:B4",
+            text=f"Maker recommended overhaul interval: {value} hours",
+            char_count=50,
+        )
+        db.add(segment)
+        db.flush()
+        run = AIRun(
+            organization_id=claim.organization_id,
+            claim_id=claim.id,
+            document_id=document.id,
+            requested_by_id=user.id,
+            task="running_hours_extract",
+            status=AIRunStatus.COMPLETED,
+            provider="fake",
+            model="fake-v1",
+            prompt_name="running_hours",
+            prompt_version="1.0",
+            schema_name="running_hours_v1",
+            schema_version="1.0",
+            input_text_hash="f" * 64,
+            input_char_count=50,
+            document_type_candidate="running_hours_record",
+            classification_confidence=Decimal("0.990"),
+        )
+        db.add(run)
+        db.flush()
+        extraction = DocumentExtraction(
+            organization_id=claim.organization_id,
+            claim_id=claim.id,
+            document_id=document.id,
+            ai_run_id=run.id,
+            source_segment_id=segment.id,
+            field_path="maintenance.recommended_overhaul_interval",
+            semantic_kind=AISemanticKind.FACT,
+            raw_value=value,
+            normalized_value=value,
+            confidence=Decimal("0.990"),
+            source_locator_type="sheet",
+            source_locator_value="Running Hours!A1:B4",
+            source_quote=f"Maker recommended overhaul interval: {value} hours",
+            source_verified=True,
+            human_status=AIReviewStatus.PENDING,
+        )
+        db.add(extraction)
+        db.commit()
+        db.refresh(extraction)
+        return str(extraction.id)
 
 
 def test_initial_acceptance_creates_append_only_decision_and_history() -> None:
@@ -238,6 +344,36 @@ def test_accepted_equivalent_becomes_superseded_when_reviewed_fact_changes() -> 
     assert current["satisfaction_basis"] == "equivalent_evidence_stale"
     assert current["latest_decision"]["decision_number"] == 1
     assert refreshed["readiness"]["important_missing_count"] == 1
+
+
+def test_ai_review_fact_change_auto_refreshes_accepted_equivalent_without_manual_evaluate() -> None:
+    claim_id, fact_id, requirement, candidate = _seed_equivalent_claim()
+    accepted = _accept(
+        claim_id,
+        requirement,
+        candidate,
+        "Reviewed canonical maker interval as sufficient equivalent evidence.",
+    )
+    assert accepted.status_code == 200, accepted.text
+    extraction_id = _add_ai_interval_extraction(claim_id, 13000)
+
+    reviewed = client.post(
+        f"/api/v1/ai-review/{extraction_id}",
+        json={"action": "approve", "reason": "Reviewed the cited running-hours source."},
+    )
+    assert reviewed.status_code == 200, reviewed.text
+    assert reviewed.json()["promoted"] is True
+    assert reviewed.json()["claim_fact"]["id"] == fact_id
+    assert reviewed.json()["claim_fact"]["version"] == 2
+
+    # No explicit /rules/evaluate call here: the controlled AI review action must
+    # refresh evidence state once after the canonical ClaimFact commit.
+    current_summary = client.get(f"/api/v1/claims/{claim_id}/rules").json()
+    current = _maker_requirement(current_summary)
+    assert current["status"] == "superseded"
+    assert current["satisfaction_basis"] == "equivalent_evidence_stale"
+    assert current["latest_decision"]["claim_fact_version"] == 1
+    assert current_summary["readiness"]["important_missing_count"] == 1
 
 
 def test_direct_document_can_take_over_and_deletion_restores_valid_prior_equivalent(tmp_path: Path) -> None:
