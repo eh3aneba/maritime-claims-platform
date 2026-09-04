@@ -11,12 +11,17 @@ from sqlalchemy.orm import Session
 
 from app.modules.claims.facts import ClaimFact
 from app.modules.claims.models import Claim
+from app.modules.documents.models import Document, DocumentMalwareScanStatus, DocumentProcessingStatus
 from app.modules.intelligence.models import AISemanticKind, AIReviewStatus, DocumentExtraction
 from app.modules.rules.models import ClaimIssue, IssueCategory
 from app.modules.technical.models import TECHNICAL_DECISION_ACTIONS, TechnicalInvestigationDecision
 
 
 REVIEWED = {AIReviewStatus.APPROVED, AIReviewStatus.EDITED}
+USABLE_MALWARE_STATES = {
+    DocumentMalwareScanStatus.CLEAN,
+    DocumentMalwareScanStatus.LEGACY_UNSCANNED,
+}
 
 
 class TechnicalTopicNotFoundError(ValueError):
@@ -27,25 +32,50 @@ class TechnicalDecisionConflictError(ValueError):
     pass
 
 
-def _reviewed_extractions(db: Session, *, claim_id: UUID, organization_id: UUID, prefix: str) -> list[DocumentExtraction]:
-    return list(db.scalars(select(DocumentExtraction).where(
-        DocumentExtraction.claim_id == claim_id,
-        DocumentExtraction.organization_id == organization_id,
-        DocumentExtraction.human_status.in_(REVIEWED),
-        DocumentExtraction.field_path.like(f"{prefix}%"),
-    ).order_by(DocumentExtraction.field_path.asc())))
+def _reviewed_extractions(
+    db: Session,
+    *,
+    claim_id: UUID,
+    organization_id: UUID,
+    prefix: str,
+) -> list[tuple[DocumentExtraction, Document]]:
+    rows = db.execute(
+        select(DocumentExtraction, Document)
+        .join(Document, Document.id == DocumentExtraction.document_id)
+        .where(
+            DocumentExtraction.claim_id == claim_id,
+            DocumentExtraction.organization_id == organization_id,
+            DocumentExtraction.human_status.in_(REVIEWED),
+            DocumentExtraction.field_path.like(f"{prefix}%"),
+            Document.organization_id == organization_id,
+            Document.claim_id == claim_id,
+            Document.is_current.is_(True),
+            Document.deleted_at.is_(None),
+            Document.processing_status == DocumentProcessingStatus.PROCESSED,
+            Document.malware_scan_status.in_(USABLE_MALWARE_STATES),
+        )
+        .order_by(DocumentExtraction.field_path.asc(), DocumentExtraction.id.asc())
+    ).all()
+    return [(row[0], row[1]) for row in rows]
 
 
 def _value(ex: DocumentExtraction) -> Any:
-    return ex.approved_value if ex.human_status == AIReviewStatus.EDITED else (ex.normalized_value if ex.normalized_value is not None else ex.raw_value)
+    return ex.approved_value if ex.human_status == AIReviewStatus.EDITED else (
+        ex.normalized_value if ex.normalized_value is not None else ex.raw_value
+    )
 
 
-def _evidence(ex: DocumentExtraction) -> dict[str, Any]:
+def _evidence(ex: DocumentExtraction, document: Document) -> dict[str, Any]:
     return {
         "extraction_id": ex.id,
         "field_path": ex.field_path,
         "value": _value(ex),
         "document_id": ex.document_id,
+        "document_version": document.version_number,
+        "document_is_current": document.is_current and document.deleted_at is None,
+        "document_processing_status": document.processing_status.value,
+        "document_malware_scan_status": document.malware_scan_status.value,
+        "source_state": "current_usable",
         "source_quote": ex.source_quote,
         "source_locator_type": ex.source_locator_type,
         "source_locator_value": ex.source_locator_value,
@@ -180,7 +210,16 @@ def _build_raw_review(db: Session, *, claim_id: UUID, organization_id: UUID) -> 
 
     workshop_findings = _reviewed_extractions(db, claim_id=claim_id, organization_id=organization_id, prefix="workshop.damage_findings[")
     repair_options = _reviewed_extractions(db, claim_id=claim_id, organization_id=organization_id, prefix="workshop.repair_options[")
-    cause_opinions = [ex for ex in _reviewed_extractions(db, claim_id=claim_id, organization_id=organization_id, prefix="workshop.suspected_cause_opinions[") if ex.semantic_kind == AISemanticKind.OPINION]
+    cause_opinions = [
+        row
+        for row in _reviewed_extractions(
+            db,
+            claim_id=claim_id,
+            organization_id=organization_id,
+            prefix="workshop.suspected_cause_opinions[",
+        )
+        if row[0].semantic_kind == AISemanticKind.OPINION
+    ]
     issues = list(db.scalars(select(ClaimIssue).where(
         ClaimIssue.claim_id == claim_id,
         ClaimIssue.organization_id == organization_id,
@@ -222,7 +261,7 @@ def _build_raw_review(db: Session, *, claim_id: UUID, organization_id: UUID) -> 
             "explanation": issue.explanation or issue.description,
         })
 
-    for opinion in cause_opinions:
+    for opinion, document in cause_opinions:
         text = str(_value(opinion) or "")
         missing, follow = _follow_up_for_opinion(text)
         matrix.append({
@@ -231,7 +270,7 @@ def _build_raw_review(db: Session, *, claim_id: UUID, organization_id: UUID) -> 
             "title": f"Workshop cause opinion: {text[:100]}",
             "severity": "medium",
             "status": "under_review",
-            "evidence_for": [_evidence(opinion)],
+            "evidence_for": [_evidence(opinion, document)],
             "evidence_against": [],
             "unknown_or_missing": missing,
             "recommended_follow_up": follow,
@@ -240,11 +279,34 @@ def _build_raw_review(db: Session, *, claim_id: UUID, organization_id: UUID) -> 
 
     return {
         "maintenance_facts": maintenance,
-        "workshop_findings": [_evidence(ex) for ex in workshop_findings],
-        "workshop_repair_options": [_evidence(ex) for ex in repair_options],
-        "workshop_cause_opinions": [_evidence(ex) for ex in cause_opinions],
+        "workshop_findings": [_evidence(ex, document) for ex, document in workshop_findings],
+        "workshop_repair_options": [_evidence(ex, document) for ex, document in repair_options],
+        "workshop_cause_opinions": [_evidence(ex, document) for ex, document in cause_opinions],
         "matrix": matrix,
         "generated_at": datetime.now(UTC),
+    }
+
+
+def _historical_topic_row(prior: TechnicalInvestigationDecision) -> dict[str, Any]:
+    return {
+        "key": prior.topic_key,
+        "topic_kind": prior.topic_kind,
+        "title": "Previously reviewed technical topic no longer present in current usable evidence",
+        "severity": "medium",
+        "status": "historical_evidence_unavailable",
+        "evidence_for": [],
+        "evidence_against": [],
+        "unknown_or_missing": [
+            "The evidence or active technical issue that previously defined this topic is no longer present in the current usable technical evidence state."
+        ],
+        "recommended_follow_up": [
+            "Review the source/version/security change and deliberately re-review the prior investigation disposition against the current absence of usable evidence."
+        ],
+        "explanation": (
+            "Prior human technical-investigation lineage is retained even though the source evidence or active rule state "
+            "is no longer currently usable. This historical row does not reinstate unavailable evidence and does not "
+            "establish causation, coverage or liability."
+        ),
     }
 
 
@@ -257,7 +319,9 @@ def _enrich_with_decisions(
     for decision in history:
         latest[decision.topic_key] = decision
 
+    current_keys: set[str] = set()
     for row in review["matrix"]:
+        current_keys.add(row["key"])
         fingerprint = _topic_fingerprint(row)
         prior = latest.get(row["key"])
         if prior is None:
@@ -273,6 +337,23 @@ def _enrich_with_decisions(
         row["state_version"] = state_version
         row["decision_state"] = decision_state
         row["latest_decision"] = _decision_payload(prior) if prior is not None else None
+
+    for topic_key, prior in latest.items():
+        if topic_key in current_keys:
+            continue
+        row = _historical_topic_row(prior)
+        fingerprint = _topic_fingerprint(row)
+        if prior.state_fingerprint == fingerprint:
+            state_version = prior.state_version
+            decision_state = "current"
+        else:
+            state_version = prior.state_version + 1
+            decision_state = "stale"
+        row["state_fingerprint"] = fingerprint
+        row["state_version"] = state_version
+        row["decision_state"] = decision_state
+        row["latest_decision"] = _decision_payload(prior)
+        review["matrix"].append(row)
     return review
 
 
