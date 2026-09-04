@@ -369,6 +369,7 @@ def record_technical_decision(
         and latest.state_version == current["state_version"]
         and latest.action == action
         and latest.note == clean_note
+        and latest.decided_by_id == decided_by_id
     ):
         return latest
 
