@@ -50,6 +50,7 @@ from app.modules.rules.requirement_lineage import ClaimDocumentRequirementDecisi
 from app.modules.settlements.models import PaymentAuthorization, SettlementProposal  # noqa: F401
 from app.modules.severity_reserve.models import SeverityReserveDecision, SeverityReserveEvaluation, SeverityReserveSnapshot  # noqa: F401
 from app.modules.tasks.models import ClaimTask, DocumentRequestBatch  # noqa: F401
+from app.modules.technical.models import TechnicalInvestigationDecision  # noqa: F401
 from app.modules.users.models import User  # noqa: F401
 from app.modules.vessels.models import Vessel  # noqa: F401
 
