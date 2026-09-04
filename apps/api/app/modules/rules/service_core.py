@@ -10,7 +10,11 @@ from sqlalchemy.orm import Session
 from app.modules.audit.service import write_audit_log
 from app.modules.claims.facts import ClaimFact
 from app.modules.claims.models import Claim
-from app.modules.documents.models import Document
+from app.modules.documents.models import (
+    Document,
+    DocumentMalwareScanStatus,
+    DocumentProcessingStatus,
+)
 from app.modules.rules.library import (
     DOCUMENT_RULES,
     RULESET_NAME,
@@ -35,7 +39,11 @@ from app.modules.rules.schemas import DocumentRequirementResponse, ReadinessResp
 from app.modules.users.models import User
 
 
-SATISFIED_STATUSES = {RequirementStatus.RECEIVED, RequirementStatus.UNDER_REVIEW, RequirementStatus.ACCEPTED}
+# Physical receipt is intentionally not a completeness state. A document must pass
+# admission/security controls and finish text acquisition before it can contribute
+# to handler readiness. UNDER_REVIEW means usable evidence is available for human
+# review; ACCEPTED remains the explicit human/equivalent-evidence state.
+SATISFIED_STATUSES = {RequirementStatus.UNDER_REVIEW, RequirementStatus.ACCEPTED}
 PRIORITY_WEIGHT = {
     RequirementPriority.CRITICAL: 4,
     RequirementPriority.IMPORTANT: 2,
@@ -132,6 +140,31 @@ def _matched_document(documents: list[Document], document_type: str) -> Document
     return matches[0]
 
 
+def _direct_document_state(document: Document) -> tuple[RequirementStatus, str]:
+    """Map an admitted document to a requirement state without guessing evidence quality.
+
+    RECEIVED means bytes exist but the evidence is not yet usable for completeness.
+    UNDER_REVIEW means text acquisition completed and the document is available to a
+    human handler. Malware-blocked or processing-failed evidence remains RECEIVED so
+    it cannot satisfy readiness while its provenance is still visible.
+    """
+    if document.malware_scan_status in {
+        DocumentMalwareScanStatus.INFECTED_QUARANTINED,
+        DocumentMalwareScanStatus.SCAN_ERROR,
+    }:
+        return RequirementStatus.RECEIVED, "document_security_blocked"
+    if document.processing_status == DocumentProcessingStatus.FAILED:
+        return RequirementStatus.RECEIVED, "document_processing_failed"
+    if document.processing_status in {
+        DocumentProcessingStatus.UPLOADED,
+        DocumentProcessingStatus.PROCESSING,
+    }:
+        return RequirementStatus.RECEIVED, "document_processing_pending"
+    if document.malware_scan_status == DocumentMalwareScanStatus.LEGACY_UNSCANNED:
+        return RequirementStatus.UNDER_REVIEW, "direct_document_legacy_unscanned"
+    return RequirementStatus.UNDER_REVIEW, "direct_document"
+
+
 def _upsert_requirement(
     db: Session,
     *,
@@ -148,6 +181,11 @@ def _upsert_requirement(
             ClaimDocumentRequirement.document_type == rule.document_type,
         )
     )
+    direct_status: RequirementStatus | None = None
+    direct_basis: str | None = None
+    if matched is not None:
+        direct_status, direct_basis = _direct_document_state(matched)
+
     if requirement is None:
         requirement = ClaimDocumentRequirement(
             organization_id=claim.organization_id,
@@ -159,9 +197,9 @@ def _upsert_requirement(
             priority=rule.priority,
             required_from_status=rule.required_from.value,
             reason=rule.reason,
-            status=RequirementStatus.RECEIVED if matched else RequirementStatus.MISSING,
+            status=direct_status if matched is not None else RequirementStatus.MISSING,
             matched_document_id=matched.id if matched else None,
-            satisfaction_basis="direct_document" if matched else None,
+            satisfaction_basis=direct_basis if matched else None,
             is_active=True,
             last_evaluated_at=now,
         )
@@ -178,19 +216,30 @@ def _upsert_requirement(
     requirement.last_evaluated_at = now
     if matched is not None:
         requirement.matched_document_id = matched.id
-        requirement.satisfaction_basis = "direct_document"
-        requirement.equivalent_claim_fact_id = None
-        requirement.satisfaction_note = None
-        requirement.satisfied_by_id = None
-        requirement.satisfied_at = None
-        if requirement.status not in {RequirementStatus.UNDER_REVIEW}:
-            requirement.status = RequirementStatus.RECEIVED
+        # A pending/failed direct document must not silently displace a previously
+        # human-accepted equivalent. Phase 13.4B will add append-only disposition
+        # lineage for the later usable direct-document handoff.
+        preserve_equivalent = (
+            requirement.satisfaction_basis == "equivalent_evidence"
+            and requirement.equivalent_claim_fact_id is not None
+            and direct_status == RequirementStatus.RECEIVED
+        )
+        if preserve_equivalent:
+            requirement.status = RequirementStatus.ACCEPTED
+        else:
+            requirement.satisfaction_basis = direct_basis
+            requirement.equivalent_claim_fact_id = None
+            requirement.satisfaction_note = None
+            requirement.satisfied_by_id = None
+            requirement.satisfied_at = None
+            requirement.status = direct_status or RequirementStatus.RECEIVED
     else:
         requirement.matched_document_id = None
         if requirement.satisfaction_basis == "equivalent_evidence" and requirement.equivalent_claim_fact_id is not None:
             requirement.status = RequirementStatus.ACCEPTED
         elif requirement.status not in {RequirementStatus.REQUESTED, RequirementStatus.REJECTED}:
             requirement.status = RequirementStatus.MISSING
+            requirement.satisfaction_basis = None
     return requirement
 
 
@@ -435,7 +484,7 @@ def evaluate_claim_rules(db: Session, *, claim: Claim, user: User, trigger: str 
     documents = _active_documents(db, claim)
     requirements, document_rule_ids = _sync_document_requirements(db, claim=claim, facts=facts, documents=documents, now=now)
     issues, issue_rule_ids = _sync_issues(db, claim=claim, facts=facts, now=now)
-    # Keep rule-driven document-request tasks synchronized with evidence receipt.
+    # Keep rule-driven document-request tasks synchronized with evidence usability.
     from app.modules.tasks.service import sync_requirement_tasks
     sync_requirement_tasks(db, claim=claim, user=user)
     readiness = calculate_readiness(requirements)
@@ -548,6 +597,7 @@ def accept_equivalent_evidence(
     db.commit()
     db.refresh(requirement)
     return requirement
+
 
 def get_rule_summary(db: Session, *, claim: Claim) -> RuleSummaryResponse:
     requirements = list(

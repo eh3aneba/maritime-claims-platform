@@ -28,6 +28,12 @@ _PRIORITY_MAP = {
     RequirementPriority.SUPPORTING: TaskPriority.MEDIUM,
 }
 
+_AUTO_COMPLETION_PREFIX = "Automatically completed because "
+_USABLE_REQUIREMENT_STATUSES = {
+    RequirementStatus.UNDER_REVIEW,
+    RequirementStatus.ACCEPTED,
+}
+
 
 def list_tasks(db: Session, *, claim: Claim) -> list[ClaimTask]:
     return list(db.scalars(select(ClaimTask).where(
@@ -96,7 +102,6 @@ def create_document_request(db: Session, *, claim: Claim, user: User, payload: D
     db.flush()
 
     tasks: list[ClaimTask] = []
-    now = datetime.now(UTC)
     for requirement in requirements:
         existing = db.scalar(select(ClaimTask).where(
             ClaimTask.organization_id == claim.organization_id,
@@ -172,30 +177,84 @@ def complete_task(db: Session, *, task: ClaimTask, user: User, reason: str) -> C
     return task
 
 
+def _auto_completion_reason(requirement: ClaimDocumentRequirement) -> str:
+    if requirement.satisfaction_basis == "equivalent_evidence":
+        return f"{_AUTO_COMPLETION_PREFIX}human-approved equivalent evidence satisfied the document requirement."
+    return f"{_AUTO_COMPLETION_PREFIX}the required document completed processing and is available for human review."
+
+
 def sync_requirement_tasks(db: Session, *, claim: Claim, user: User | None = None) -> int:
-    satisfied = list(db.scalars(select(ClaimDocumentRequirement).where(
+    """Keep rule-created document tasks aligned with evidence usability.
+
+    Physical receipt alone never closes a request task. Only evidence that is usable
+    for human review (UNDER_REVIEW) or explicitly accepted by a human (ACCEPTED)
+    can auto-complete it. If that evidence later becomes unavailable, only tasks
+    previously auto-completed by this synchronization are reopened; human-completed
+    tasks are never reversed automatically.
+    """
+    active_requirements = list(db.scalars(select(ClaimDocumentRequirement).where(
         ClaimDocumentRequirement.organization_id == claim.organization_id,
         ClaimDocumentRequirement.claim_id == claim.id,
-        ClaimDocumentRequirement.status.in_([RequirementStatus.RECEIVED, RequirementStatus.UNDER_REVIEW, RequirementStatus.ACCEPTED]),
+        ClaimDocumentRequirement.is_active.is_(True),
     )))
+    by_id = {requirement.id: requirement for requirement in active_requirements}
     count = 0
     now = datetime.now(UTC)
-    for requirement in satisfied:
+
+    for requirement in active_requirements:
+        if requirement.status not in _USABLE_REQUIREMENT_STATUSES:
+            continue
         tasks = list(db.scalars(select(ClaimTask).where(
             ClaimTask.organization_id == claim.organization_id,
             ClaimTask.claim_id == claim.id,
             ClaimTask.requirement_id == requirement.id,
+            ClaimTask.task_type == TaskType.DOCUMENT_REQUEST,
             ClaimTask.status == TaskStatus.OPEN,
         )))
         for task in tasks:
             task.status = TaskStatus.COMPLETED
             task.completed_at = now
             task.completed_by_id = user.id if user else None
-            task.completion_reason = (
-                "Automatically completed because human-approved equivalent evidence satisfied the document requirement."
-                if requirement.satisfaction_basis == "equivalent_evidence"
-                else "Automatically completed because the required document was received."
-            )
+            task.completion_reason = _auto_completion_reason(requirement)
             count += 1
-            write_audit_log(db, organization_id=claim.organization_id, user_id=user.id if user else None, action="AUTO_COMPLETE_DOCUMENT_TASK", entity_type="claim_task", entity_id=task.id, new_values={"requirement_id": str(requirement.id), "status": "completed"})
+            write_audit_log(
+                db,
+                organization_id=claim.organization_id,
+                user_id=user.id if user else None,
+                action="AUTO_COMPLETE_DOCUMENT_TASK",
+                entity_type="claim_task",
+                entity_id=task.id,
+                new_values={"requirement_id": str(requirement.id), "status": "completed"},
+            )
+
+    completed_tasks = list(db.scalars(select(ClaimTask).where(
+        ClaimTask.organization_id == claim.organization_id,
+        ClaimTask.claim_id == claim.id,
+        ClaimTask.task_type == TaskType.DOCUMENT_REQUEST,
+        ClaimTask.status == TaskStatus.COMPLETED,
+    )))
+    for task in completed_tasks:
+        requirement = by_id.get(task.requirement_id)
+        if requirement is None or requirement.status in _USABLE_REQUIREMENT_STATUSES:
+            continue
+        if not (task.completion_reason or "").startswith(_AUTO_COMPLETION_PREFIX):
+            continue
+        previous_reason = task.completion_reason
+        task.status = TaskStatus.OPEN
+        task.completed_at = None
+        task.completed_by_id = None
+        task.completion_reason = None
+        count += 1
+        write_audit_log(
+            db,
+            organization_id=claim.organization_id,
+            user_id=user.id if user else None,
+            action="REOPEN_DOCUMENT_TASK",
+            entity_type="claim_task",
+            entity_id=task.id,
+            old_values={"status": "completed", "reason": previous_reason},
+            new_values={"requirement_id": str(requirement.id), "status": "open"},
+            details="System-auto-completed document request reopened because the evidence is no longer usable for completeness.",
+        )
+
     return count

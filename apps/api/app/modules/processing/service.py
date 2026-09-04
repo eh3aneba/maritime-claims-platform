@@ -34,6 +34,50 @@ def _storage() -> LocalDocumentStorage:
     return LocalDocumentStorage(settings.local_storage_path, max_upload_bytes=settings.max_upload_bytes)
 
 
+def _refresh_requirement_state_after_processing(
+    db: Session,
+    *,
+    job: DocumentProcessingJob,
+    document: Document | None,
+    trigger: str,
+) -> None:
+    """Refresh evidence completeness after a committed processing/security transition.
+
+    Rule refresh is secondary to evidence processing: a refresh failure must never
+    roll a successfully processed document back into a failed processing state.
+    The warning is retained on the job for operator diagnostics and a later manual
+    or lifecycle-triggered rule evaluation can safely retry the deterministic sync.
+    """
+    if document is None or document.deleted_at is not None or job.requested_by_id is None:
+        return
+    try:
+        from app.modules.claims.models import Claim
+        from app.modules.rules.service import evaluate_claim_rules
+        from app.modules.users.models import User
+
+        claim = db.get(Claim, document.claim_id)
+        user = db.get(User, job.requested_by_id)
+        if (
+            claim is None
+            or user is None
+            or user.organization_id != document.organization_id
+            or claim.organization_id != document.organization_id
+        ):
+            return
+        evaluate_claim_rules(db, claim=claim, user=user, trigger=trigger)
+    except Exception as exc:
+        db.rollback()
+        refreshed_job = db.get(DocumentProcessingJob, job.id)
+        if refreshed_job is None:
+            return
+        result = dict(refreshed_job.result or {})
+        result["requirement_refresh_warning"] = (
+            f"Evidence processing committed, but completeness refresh failed: {type(exc).__name__}."
+        )
+        refreshed_job.result = result
+        db.commit()
+
+
 def enqueue_processing_job(
     db: Session,
     *,
@@ -240,6 +284,12 @@ def _process_malware_rescan_job(db: Session, *, job: DocumentProcessingJob) -> N
                 other_job.locked_by = None
                 other_job.last_error = "Evidence was quarantined by malware rescan."
         db.commit()
+        _refresh_requirement_state_after_processing(
+            db,
+            job=job,
+            document=document,
+            trigger="document_security_change",
+        )
     except Exception as exc:
         db.rollback()
         refreshed_job = db.get(DocumentProcessingJob, job.id)
@@ -260,6 +310,12 @@ def _block_job_for_quarantined_evidence(
     job.locked_by = None
     job.last_error = f"Evidence processing is blocked: {document.malware_scan_status.value}."
     db.commit()
+    _refresh_requirement_state_after_processing(
+        db,
+        job=job,
+        document=document,
+        trigger="document_security_change",
+    )
 
 
 def _process_text_job(db: Session, *, job: DocumentProcessingJob) -> None:
@@ -338,6 +394,12 @@ def _process_text_job(db: Session, *, job: DocumentProcessingJob) -> None:
             new_values=job.result,
         )
         db.commit()
+        _refresh_requirement_state_after_processing(
+            db,
+            job=job,
+            document=document,
+            trigger="document_processing_complete",
+        )
     except Exception as exc:
         db.rollback()
         refreshed_job = db.get(DocumentProcessingJob, job.id)
@@ -474,6 +536,13 @@ def _fail_job(db: Session, *, job: DocumentProcessingJob, document: Document | N
     elif document is not None and job.job_type == ProcessingJobType.EXTRACT_TEXT:
         document.processing_status = DocumentProcessingStatus.UPLOADED
     db.commit()
+    if final_failure and job.job_type == ProcessingJobType.EXTRACT_TEXT:
+        _refresh_requirement_state_after_processing(
+            db,
+            job=job,
+            document=document,
+            trigger="document_processing_failed",
+        )
 
 
 def get_processing_summary(db: Session, *, document_id: UUID, organization_id: UUID) -> tuple[DocumentProcessingJob | None, DocumentTextExtraction | None]:

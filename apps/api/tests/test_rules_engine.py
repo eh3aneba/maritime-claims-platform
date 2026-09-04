@@ -8,6 +8,7 @@ from app.modules.audit.models import AuditLog
 from app.modules.claims.facts import ClaimFact
 from app.modules.claims.models import Claim, ClaimStatus
 from app.modules.documents import service as document_service
+from app.modules.documents.models import Document, DocumentMalwareScanStatus, DocumentProcessingStatus
 from app.modules.rules.models import ClaimDocumentRequirement, ClaimIssue, RuleEvaluationRun
 from tests.db_harness import TestingSessionLocal, client, reset_database
 from tests.test_claims_api import create_orion_claim, login
@@ -102,7 +103,10 @@ def test_upload_and_soft_delete_refresh_missing_document_status(tmp_path: Path) 
     summary = client.get(f"/api/v1/claims/{claim_id}/rules").json()
     ce = next(item for item in summary["requirements"] if item["document_type"] == "chief_engineer_report")
     assert ce["status"] == "received"
+    assert ce["satisfaction_basis"] == "document_processing_pending"
     assert ce["matched_document_id"] == uploaded.json()["id"]
+    assert summary["readiness"]["critical_missing_count"] == 3
+    assert summary["readiness"]["state"] == "not_ready"
 
     deleted = client.delete(f"/api/v1/claims/{claim_id}/documents/{uploaded.json()['id']}")
     assert deleted.status_code == 204
@@ -249,7 +253,7 @@ def test_equivalent_evidence_requires_human_acceptance_and_survives_rule_refresh
         assert audit is not None
 
 
-def test_direct_document_supersedes_previous_equivalent_evidence(tmp_path: Path) -> None:
+def test_pending_direct_document_does_not_displace_equivalent_until_usable(tmp_path: Path) -> None:
     result = create_orion_claim()
     claim_id = result["claim"]["id"]
     _set_status(claim_id, ClaimStatus.INVESTIGATION)
@@ -265,9 +269,24 @@ def test_direct_document_supersedes_previous_equivalent_evidence(tmp_path: Path)
     _configure_storage(tmp_path)
     uploaded = _upload_pdf(claim_id, "maker_recommendation", "maker_interval")
     assert uploaded.status_code == 201
-    refreshed = client.get(f"/api/v1/claims/{claim_id}/rules").json()
+
+    pending = client.get(f"/api/v1/claims/{claim_id}/rules").json()
+    maker_pending = next(item for item in pending["requirements"] if item["document_type"] == "maker_recommendation")
+    assert maker_pending["status"] == "accepted"
+    assert maker_pending["satisfaction_basis"] == "equivalent_evidence"
+    assert maker_pending["equivalent_claim_fact_id"] == fact_id
+    assert maker_pending["matched_document_id"] == uploaded.json()["id"]
+
+    with TestingSessionLocal() as db:
+        document = db.get(Document, UUID(uploaded.json()["id"]))
+        assert document is not None
+        document.processing_status = DocumentProcessingStatus.PROCESSED
+        document.malware_scan_status = DocumentMalwareScanStatus.CLEAN
+        db.commit()
+
+    refreshed = _evaluate(claim_id)
     maker_after = next(item for item in refreshed["requirements"] if item["document_type"] == "maker_recommendation")
-    assert maker_after["status"] == "received"
+    assert maker_after["status"] == "under_review"
     assert maker_after["satisfaction_basis"] == "direct_document"
     assert maker_after["equivalent_claim_fact_id"] is None
     assert maker_after["matched_document_id"] == uploaded.json()["id"]
