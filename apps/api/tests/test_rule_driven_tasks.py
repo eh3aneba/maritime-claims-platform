@@ -1,12 +1,16 @@
 from datetime import date
+from io import BytesIO
 from pathlib import Path
 from uuid import UUID
 
+from docx import Document as WordDocument
 from sqlalchemy import select
 
 from app.modules.audit.models import AuditLog
 from app.modules.claims.models import ClaimStatus
 from app.modules.documents import service as document_service
+from app.modules.processing import service as processing_service
+from app.modules.processing.service import claim_next_job, process_job
 from app.modules.rules.models import ClaimDocumentRequirement, RequirementStatus
 from app.modules.tasks.models import ClaimTask, DocumentRequestBatch, TaskStatus
 from tests.db_harness import TestingSessionLocal, client, reset_database
@@ -31,8 +35,19 @@ def _evaluate(claim_id: str) -> dict:
 
 
 def _configure_storage(tmp_path: Path) -> None:
-    document_service.settings.local_storage_path = str(tmp_path / "documents")
+    storage_path = str(tmp_path / "documents")
+    document_service.settings.local_storage_path = storage_path
     document_service.settings.max_upload_mb = 1
+    processing_service.settings.local_storage_path = storage_path
+
+
+def _chief_engineer_docx() -> bytes:
+    document = WordDocument()
+    document.add_heading("Chief Engineer Report", level=1)
+    document.add_paragraph("MT ORION experienced abnormal turbocharger vibration at 10:30 UTC.")
+    output = BytesIO()
+    document.save(output)
+    return output.getvalue()
 
 
 def _approve_and_mark_sent(claim_id: str, batch_id: str) -> dict:
@@ -98,7 +113,7 @@ def test_request_selected_requirement_does_not_duplicate_open_task() -> None:
         assert len(batches) == 2  # Each draft is preserved for audit; the follow-up task is reused.
 
 
-def test_document_upload_auto_completes_requirement_task(tmp_path: Path) -> None:
+def test_document_upload_waits_for_processing_then_auto_completes_and_reopens(tmp_path: Path) -> None:
     result = create_orion_claim(); claim_id = result["claim"]["id"]
     _set_status(claim_id, ClaimStatus.TRIAGE); _configure_storage(tmp_path)
     summary = _evaluate(claim_id)
@@ -110,20 +125,93 @@ def test_document_upload_auto_completes_requirement_task(tmp_path: Path) -> None
 
     upload = client.post(
         f"/api/v1/claims/{claim_id}/documents",
-        files={"file": ("ce.pdf", b"%PDF-1.4\nChief Engineer Report\n%%EOF", "application/pdf")},
+        files={
+            "file": (
+                "CE_Report.docx",
+                _chief_engineer_docx(),
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+        },
         data={"document_type": "chief_engineer_report", "confidentiality_level": "confidential"},
     )
     assert upload.status_code == 201, upload.text
-    rules = client.get(f"/api/v1/claims/{claim_id}/rules").json()
-    ce_after = next(r for r in rules["requirements"] if r["document_type"] == "chief_engineer_report")
-    assert ce_after["status"] == "received"
-    tasks = client.get(f"/api/v1/claims/{claim_id}/tasks").json()
-    task = next(t for t in tasks["items"] if t["id"] == task_id)
-    assert task["status"] == "completed"
-    assert "automatically completed" in task["completion_reason"].lower()
+    document_id = upload.json()["id"]
+
+    pending_rules = client.get(f"/api/v1/claims/{claim_id}/rules").json()
+    ce_pending = next(r for r in pending_rules["requirements"] if r["document_type"] == "chief_engineer_report")
+    assert ce_pending["status"] == "received"
+    assert ce_pending["satisfaction_basis"] == "document_processing_pending"
+    assert pending_rules["readiness"]["critical_missing_count"] == 3
+    pending_task = next(t for t in client.get(f"/api/v1/claims/{claim_id}/tasks").json()["items"] if t["id"] == task_id)
+    assert pending_task["status"] == "open"
+
+    with TestingSessionLocal() as db:
+        claimed = claim_next_job(db, worker_id="phase-13-4a-test")
+        assert claimed is not None
+        process_job(db, job=claimed)
+
+    processed_rules = client.get(f"/api/v1/claims/{claim_id}/rules").json()
+    ce_processed = next(r for r in processed_rules["requirements"] if r["document_type"] == "chief_engineer_report")
+    assert ce_processed["status"] == "under_review"
+    assert ce_processed["satisfaction_basis"] in {"direct_document", "direct_document_legacy_unscanned"}
+    assert processed_rules["readiness"]["critical_missing_count"] == 2
+    completed_task = next(t for t in client.get(f"/api/v1/claims/{claim_id}/tasks").json()["items"] if t["id"] == task_id)
+    assert completed_task["status"] == "completed"
+    assert "available for human review" in completed_task["completion_reason"].lower()
+
+    deleted = client.delete(f"/api/v1/claims/{claim_id}/documents/{document_id}")
+    assert deleted.status_code == 204, deleted.text
+    deleted_rules = client.get(f"/api/v1/claims/{claim_id}/rules").json()
+    ce_deleted = next(r for r in deleted_rules["requirements"] if r["document_type"] == "chief_engineer_report")
+    assert ce_deleted["status"] == "missing"
+    reopened_task = next(t for t in client.get(f"/api/v1/claims/{claim_id}/tasks").json()["items"] if t["id"] == task_id)
+    assert reopened_task["status"] == "open"
+    assert reopened_task["completion_reason"] is None
 
 
-def test_manual_task_completion_is_audited() -> None:
+def test_final_processing_failure_never_satisfies_or_closes_request(tmp_path: Path, monkeypatch) -> None:
+    result = create_orion_claim(); claim_id = result["claim"]["id"]
+    _set_status(claim_id, ClaimStatus.TRIAGE); _configure_storage(tmp_path)
+    summary = _evaluate(claim_id)
+    ce = next(r for r in summary["requirements"] if r["document_type"] == "chief_engineer_report")
+    request = client.post(f"/api/v1/claims/{claim_id}/document-requests", json={"requirement_ids": [ce["id"]]})
+    task_id = request.json()["tasks"][0]["id"]
+
+    upload = client.post(
+        f"/api/v1/claims/{claim_id}/documents",
+        files={
+            "file": (
+                "CE_Report.docx",
+                _chief_engineer_docx(),
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+        },
+        data={"document_type": "chief_engineer_report"},
+    )
+    assert upload.status_code == 201, upload.text
+
+    def fail_extraction(*args, **kwargs):
+        del args, kwargs
+        raise RuntimeError("synthetic extraction failure")
+
+    monkeypatch.setattr(processing_service, "extract_document_text", fail_extraction)
+    with TestingSessionLocal() as db:
+        claimed = claim_next_job(db, worker_id="phase-13-4a-failure")
+        assert claimed is not None
+        claimed.max_attempts = claimed.attempt_count
+        db.commit()
+        process_job(db, job=claimed)
+
+    failed_rules = client.get(f"/api/v1/claims/{claim_id}/rules").json()
+    ce_failed = next(r for r in failed_rules["requirements"] if r["document_type"] == "chief_engineer_report")
+    assert ce_failed["status"] == "received"
+    assert ce_failed["satisfaction_basis"] == "document_processing_failed"
+    assert failed_rules["readiness"]["critical_missing_count"] == 3
+    task = next(t for t in client.get(f"/api/v1/claims/{claim_id}/tasks").json()["items"] if t["id"] == task_id)
+    assert task["status"] == "open"
+
+
+def test_manual_task_completion_is_audited_and_never_auto_reopened() -> None:
     result = create_orion_claim(); claim_id = result["claim"]["id"]
     _set_status(claim_id, ClaimStatus.TRIAGE)
     summary = _evaluate(claim_id)
@@ -133,6 +221,10 @@ def test_manual_task_completion_is_audited() -> None:
     completed = client.post(f"/api/v1/claims/{claim_id}/tasks/{task_id}/complete", json={"reason": "Owner confirmed this document is unavailable."})
     assert completed.status_code == 200
     assert completed.json()["status"] == "completed"
+    _evaluate(claim_id)
+    task = next(t for t in client.get(f"/api/v1/claims/{claim_id}/tasks").json()["items"] if t["id"] == task_id)
+    assert task["status"] == "completed"
+    assert task["completion_reason"] == "Owner confirmed this document is unavailable."
     with TestingSessionLocal() as db:
         audit = db.scalar(select(AuditLog).where(AuditLog.action == "COMPLETE_CLAIM_TASK", AuditLog.entity_id == UUID(task_id)))
         assert audit is not None
@@ -158,7 +250,7 @@ def test_accepting_equivalent_evidence_auto_completes_open_requirement_task() ->
         fact = ClaimFact(
             organization_id=claim.organization_id, claim_id=claim.id,
             field_path="maintenance.recommended_overhaul_interval", value={"value": 12000, "unit": "hours"},
-            source_extraction_id=uuid4(), source_document_id=uuid4(), source_segment_id=None,
+            source_extraction_id=__import__('uuid').uuid4(), source_document_id=__import__('uuid').uuid4(), source_segment_id=None,
             approved_by_id=None, version=1,
         )
         db.add(fact); db.commit(); db.refresh(fact); fact_id=str(fact.id)
