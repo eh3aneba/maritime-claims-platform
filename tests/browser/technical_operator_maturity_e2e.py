@@ -171,7 +171,7 @@ def main() -> None:
 
         # A stale write fails closed, does not auto-replay, and preserves the human draft.
         page.get_by_role("button", name="Start deliberate re-review", exact=True).click()
-        expect(page.get_by_text("append a new decision", exact=False)).to_be_visible()
+        expect(page.get_by_text("A new decision will be appended", exact=False)).to_be_visible()
         note_box = page.get_by_placeholder("Explain what the current evidence supports, does not support, or still requires.")
         stale_note = "Preserve this draft while updated workshop evidence is loaded."
         note_box.fill(stale_note)
