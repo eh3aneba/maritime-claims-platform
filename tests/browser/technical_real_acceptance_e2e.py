@@ -118,17 +118,17 @@ def main() -> None:
             raise AssertionError("Stale state lost the prior human technical decision lineage")
 
         page.goto(f"{BASE_URL}/claims/{claim_id}/technical", wait_until="networkidle")
-        expect(page.get_by_text("Prior disposition is stale", exact=True)).to_be_visible()
-        page.get_by_role("button", name="Start deliberate re-review", exact=True).click()
-        note_box = page.get_by_placeholder(
-            "Explain what the current evidence supports, does not support, or still requires."
-        )
+        topic_card = page.get_by_test_id(f"technical-topic-{topic_key}")
+        expect(topic_card).to_have_count(1)
+        expect(topic_card.get_by_text("Prior disposition is stale", exact=True)).to_be_visible()
+        topic_card.get_by_role("button", name="Start deliberate re-review", exact=True).click()
+        note_box = topic_card.get_by_role("textbox", name="Human review note")
         note_box.fill(
             "Re-reviewed after the workshop opinion changed; keep investigation open pending independent evidence."
         )
-        page.get_by_role("button", name="Keep investigation open", exact=True).click()
-        expect(page.get_by_text("Current human disposition", exact=True)).to_be_visible()
-        expect(page.get_by_text("Decision history (2)", exact=True)).to_be_visible()
+        topic_card.get_by_role("button", name="Keep investigation open", exact=True).click()
+        expect(topic_card.get_by_text("Current human disposition", exact=True)).to_be_visible()
+        expect(topic_card.get_by_text("Decision history (2)", exact=True)).to_be_visible()
 
         history = _json(
             request.get(
