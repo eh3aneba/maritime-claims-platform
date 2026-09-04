@@ -32,7 +32,7 @@ def technical_review(claim_id: UUID, current_user: CurrentUser, db: Annotated[Se
     return TechnicalReviewResponse.model_validate(build_technical_review(db, claim_id=claim.id, organization_id=current_user.organization_id))
 
 
-@router.get("/topics/{topic_key:path}/decisions", response_model=TechnicalDecisionHistoryResponse)
+@router.get("/topics/{topic_key}/decisions", response_model=TechnicalDecisionHistoryResponse)
 def technical_topic_decision_history(
     claim_id: UUID,
     topic_key: str,
@@ -54,7 +54,7 @@ def technical_topic_decision_history(
     return TechnicalDecisionHistoryResponse.model_validate(payload)
 
 
-@router.post("/topics/{topic_key:path}/decisions", response_model=TechnicalInvestigationDecisionResponse)
+@router.post("/topics/{topic_key}/decisions", response_model=TechnicalInvestigationDecisionResponse)
 def decide_technical_topic(
     claim_id: UUID,
     topic_key: str,
