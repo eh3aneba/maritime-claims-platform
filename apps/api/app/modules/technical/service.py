@@ -104,7 +104,7 @@ def _technical_state_fingerprint(
             "field_path": fact.field_path,
             "version": fact.version,
             "value": fact.value,
-            "provenance_kind": fact.provenance_kind.value,
+            "provenance_kind": fact.provenance_kind,
             "source_document_id": fact.source_document_id,
             "source_extraction_id": fact.source_extraction_id,
             "source_text_extraction_id": fact.source_text_extraction_id,
