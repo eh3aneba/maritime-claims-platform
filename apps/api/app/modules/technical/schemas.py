@@ -49,6 +49,8 @@ class TechnicalDecisionCreate(BaseModel):
     expected_state_version: int = Field(ge=1)
     confirm_re_review: bool = False
 
+    model_config = {"str_strip_whitespace": True}
+
 
 class TechnicalDecisionHistoryResponse(BaseModel):
     topic_key: str
