@@ -9,7 +9,8 @@ from app.db import metadata as _metadata  # noqa: F401 - register all ORM models
 from app.db.session import create_session
 from app.modules import ai_runtime
 from app.modules import processing as _processing_package  # noqa: F401
-from app.modules.intake.service import claim_next_intake_job, process_intake_job
+from app.modules.intake.maturity import process_intake_job
+from app.modules.intake.service import claim_next_intake_job
 from app.modules.processing import service as processing_service
 
 # Worker-time AI authorization must use the newest applicable control plane.

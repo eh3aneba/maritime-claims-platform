@@ -1,10 +1,15 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.modules.claims.schemas import ClaimCreate, ClaimRead
 from app.modules.documents.models import DocumentMalwareScanStatus
+from app.modules.intake.document_types import (
+    DEFAULT_INTAKE_DOCUMENT_TYPE,
+    INTAKE_DOCUMENT_TYPES,
+    is_intake_document_type,
+)
 from app.modules.intake.models import ClaimIntakeStatus
 
 
@@ -41,10 +46,33 @@ class ClaimIntakeDraftList(BaseModel):
     total: int
 
 
+class ClaimIntakeDocumentTypeRegistry(BaseModel):
+    items: list[str]
+    default: str
+    unknown_requires_human_choice: bool = True
+
+    @classmethod
+    def current(cls) -> "ClaimIntakeDocumentTypeRegistry":
+        return cls(items=list(INTAKE_DOCUMENT_TYPES), default=DEFAULT_INTAKE_DOCUMENT_TYPE)
+
+
 class ClaimIntakeApprove(BaseModel):
     claim: ClaimCreate
-    document_type: str = Field(default="claim_notification", min_length=2, max_length=100)
+    # Deliberately required: the server must never turn an omitted classifier
+    # decision into authoritative claim evidence by choosing a default.
+    document_type: str = Field(min_length=2, max_length=100)
     review_note: str = Field(min_length=10, max_length=2000)
+
+    @field_validator("document_type")
+    @classmethod
+    def validate_document_type(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if not is_intake_document_type(normalized):
+            allowed = ", ".join(INTAKE_DOCUMENT_TYPES)
+            raise ValueError(
+                f"Select a controlled H&M document type before approval. Allowed values: {allowed}."
+            )
+        return normalized
 
 
 class ClaimIntakeReject(BaseModel):

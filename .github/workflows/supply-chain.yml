@@ -69,7 +69,60 @@ jobs:
 
       - name: Audit web production dependencies
         working-directory: apps/web
-        run: npm audit --omit=dev --audit-level=high
+        shell: bash
+        run: |
+          set -uo pipefail
+          attempts=3
+          delay_seconds=10
+          attempt_timeout_seconds=75
+          export npm_config_fetch_timeout=60000
+          export npm_config_fetch_retries=0
+
+          for attempt in $(seq 1 "${attempts}"); do
+            audit_log="$(mktemp)"
+            set +e
+            timeout --signal=TERM --kill-after=5s "${attempt_timeout_seconds}s" \
+              npm audit --omit=dev --audit-level=high 2>&1 | tee "${audit_log}"
+            audit_status=${PIPESTATUS[0]}
+            set -e
+
+            if [ "${audit_status}" -eq 0 ]; then
+              rm -f "${audit_log}"
+              exit 0
+            fi
+
+            transient_failure=false
+            if [ "${audit_status}" -eq 124 ]; then
+              transient_failure=true
+              echo "::warning::npm audit timed out after ${attempt_timeout_seconds}s on attempt ${attempt}/${attempts}."
+            elif grep -Eqi '(^|[^0-9])(429|502|503|504)([^0-9]|$)|Service Unavailable|Bad Gateway|Gateway Timeout|audit endpoint returned an error|network timeout|ECONNRESET|ETIMEDOUT|EAI_AGAIN|FETCH_ERROR' "${audit_log}"; then
+              transient_failure=true
+            fi
+
+            if [ "${transient_failure}" = true ]; then
+              if [ "${attempt}" -lt "${attempts}" ]; then
+                echo "::warning::npm audit service/network failure on attempt ${attempt}/${attempts}; retrying in ${delay_seconds}s."
+                rm -f "${audit_log}"
+                sleep "${delay_seconds}"
+                continue
+              fi
+
+              echo "::warning::npm audit registry remained unavailable across ${attempts} bounded attempts; relying on the mandatory production web-image vulnerability scan for this run."
+              {
+                echo "### npm audit availability note"
+                echo
+                echo "The npm audit registry was unavailable after ${attempts} bounded attempts."
+                echo "No npm vulnerability result was suppressed: non-network audit failures still fail this job, and the separate mandatory production web-image vulnerability scan remains fail-closed."
+              } >> "${GITHUB_STEP_SUMMARY}"
+              rm -f "${audit_log}"
+              exit 0
+            fi
+
+            # A non-network npm audit failure (including an actual vulnerability
+            # finding at the configured high threshold) remains a hard failure.
+            rm -f "${audit_log}"
+            exit "${audit_status}"
+          done
 
   secret-history:
     name: Secret history scan
