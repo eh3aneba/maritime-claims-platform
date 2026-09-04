@@ -9,7 +9,7 @@ import re
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.modules.audit.service import write_audit_log
@@ -19,6 +19,7 @@ from app.modules.chronology.models import (
     ConflictStatus,
     EventEvidence,
     EvidenceConflict,
+    EvidenceConflictDecision,
 )
 from app.modules.claims.models import Claim
 from app.modules.documents.models import Document
@@ -69,6 +70,27 @@ class ConflictCandidate:
     event_a: ChronologyEvent | None = None
     event_b: ChronologyEvent | None = None
     difference_minutes: Decimal | None = None
+
+
+def _postgresql(db: Session) -> bool:
+    return db.bind is not None and db.bind.dialect.name == "postgresql"
+
+
+def _lock_claim_chronology_scope(db: Session, *, claim_id: UUID, organization_id: UUID) -> None:
+    """Serialize chronology rebuild and conflict decisions for one claim on PostgreSQL."""
+    if not _postgresql(db):
+        return
+    locked = db.scalar(
+        select(Claim.id)
+        .where(
+            Claim.id == claim_id,
+            Claim.organization_id == organization_id,
+            Claim.deleted_at.is_(None),
+        )
+        .with_for_update()
+    )
+    if locked is None:
+        raise ValueError("Claim is unavailable for chronology review.")
 
 
 def _approved_value(extraction: DocumentExtraction) -> Any:
@@ -163,6 +185,18 @@ def _classify_action(text: str) -> tuple[str, str, ChronologyMateriality]:
     return "action", "Operational action", ChronologyMateriality.LOW
 
 
+def _canonical_hash(payload: dict[str, Any]) -> str:
+    # Keep the historical json.dumps byte format so existing event signatures and
+    # conflict keys remain stable across the Phase 13.3 maturity migration.
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, default=str).encode()).hexdigest()
+
+
+def _decimal_state(value: Decimal | None) -> str | None:
+    if value is None:
+        return None
+    return format(value.normalize(), "f")
+
+
 def _event_signature(candidate: EventCandidate) -> str:
     evidence_ids = sorted(str(item.extraction.id) for item in candidate.evidence)
     payload = {
@@ -171,7 +205,7 @@ def _event_signature(candidate: EventCandidate) -> str:
         "time": candidate.occurred_time.isoformat() if candidate.occurred_time else None,
         "evidence": evidence_ids,
     }
-    return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+    return _canonical_hash(payload)
 
 
 def _conflict_key(candidate: ConflictCandidate) -> str:
@@ -183,7 +217,66 @@ def _conflict_key(candidate: ConflictCandidate) -> str:
         "ea": str(candidate.event_a.id) if candidate.event_a else None,
         "eb": str(candidate.event_b.id) if candidate.event_b else None,
     }
-    return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+    return _canonical_hash(payload)
+
+
+def _conflict_state_fingerprint_values(
+    *,
+    conflict_type: str,
+    topic: str,
+    value_a: Any,
+    value_b: Any,
+    difference_minutes: Decimal | None,
+    materiality: ChronologyMateriality,
+    event_a_id: UUID | None,
+    event_b_id: UUID | None,
+    evidence_a_extraction_id: UUID | None,
+    evidence_b_extraction_id: UUID | None,
+) -> str:
+    return _canonical_hash(
+        {
+            "type": conflict_type,
+            "topic": topic,
+            "value_a": value_a,
+            "value_b": value_b,
+            "difference_minutes": _decimal_state(difference_minutes),
+            "materiality": materiality.value,
+            "event_a_id": str(event_a_id) if event_a_id else None,
+            "event_b_id": str(event_b_id) if event_b_id else None,
+            "evidence_a_extraction_id": str(evidence_a_extraction_id) if evidence_a_extraction_id else None,
+            "evidence_b_extraction_id": str(evidence_b_extraction_id) if evidence_b_extraction_id else None,
+        }
+    )
+
+
+def _candidate_conflict_state_fingerprint(candidate: ConflictCandidate) -> str:
+    return _conflict_state_fingerprint_values(
+        conflict_type=candidate.conflict_type,
+        topic=candidate.topic,
+        value_a=candidate.value_a,
+        value_b=candidate.value_b,
+        difference_minutes=candidate.difference_minutes,
+        materiality=candidate.materiality,
+        event_a_id=candidate.event_a.id if candidate.event_a else None,
+        event_b_id=candidate.event_b.id if candidate.event_b else None,
+        evidence_a_extraction_id=candidate.evidence_a.id if candidate.evidence_a else None,
+        evidence_b_extraction_id=candidate.evidence_b.id if candidate.evidence_b else None,
+    )
+
+
+def conflict_state_fingerprint(conflict: EvidenceConflict) -> str:
+    return _conflict_state_fingerprint_values(
+        conflict_type=conflict.conflict_type,
+        topic=conflict.topic,
+        value_a=conflict.value_a,
+        value_b=conflict.value_b,
+        difference_minutes=conflict.difference_minutes,
+        materiality=conflict.materiality,
+        event_a_id=conflict.event_a_id,
+        event_b_id=conflict.event_b_id,
+        evidence_a_extraction_id=conflict.evidence_a_extraction_id,
+        evidence_b_extraction_id=conflict.evidence_b_extraction_id,
+    )
 
 
 def _load_reviewed_extractions(db: Session, *, claim_id: UUID, organization_id: UUID) -> list[tuple[DocumentExtraction, Document]]:
@@ -230,9 +323,6 @@ def _build_ce_candidates(rows: list[tuple[DocumentExtraction, Document]]) -> tup
             if match:
                 grouped_events.setdefault(int(match.group(1)), {})[match.group(2)] = pair
 
-        # CE schema v2: reported_events is authoritative for chronology timing.
-        # We deliberately do not create additional action/operational candidates from
-        # immediate_actions or boolean impact fields when these event rows exist.
         if grouped_events:
             for index in sorted(grouped_events):
                 event_fields = grouped_events[index]
@@ -242,7 +332,6 @@ def _build_ce_candidates(rows: list[tuple[DocumentExtraction, Document]]) -> tup
                 description = _string(_approved_value(desc_pair[0]))
                 if not description:
                     continue
-
                 date_pair = event_fields.get("date")
                 time_pair = event_fields.get("time")
                 tz_pair = event_fields.get("timezone")
@@ -250,8 +339,6 @@ def _build_ce_candidates(rows: list[tuple[DocumentExtraction, Document]]) -> tup
                 event_date = _parse_date(_approved_value(date_pair[0])) if date_pair else None
                 event_time = _parse_time(_approved_value(time_pair[0])) if time_pair else None
                 timezone_label = _string(_approved_value(tz_pair[0])) if tz_pair else None
-
-                # Deterministic phrase taxonomy remains authoritative for event type.
                 kind, title, materiality = _classify_action(description)
                 if kind == "action" and type_pair is not None:
                     raw_type = (_string(_approved_value(type_pair[0])) or "").strip().lower().replace(" ", "_")
@@ -267,30 +354,14 @@ def _build_ce_candidates(rows: list[tuple[DocumentExtraction, Document]]) -> tup
                     }
                     if raw_type in allowed:
                         kind, title, materiality = allowed[raw_type]
-
                 evidence = [
                     CandidateEvidence(extraction=pair[0], document=pair[1], value=_approved_value(pair[0]))
                     for pair in event_fields.values()
                     if _approved_value(pair[0]) is not None
                 ]
-                candidates.append(
-                    EventCandidate(
-                        kind,
-                        title,
-                        description,
-                        event_date,
-                        event_time,
-                        timezone_label,
-                        materiality,
-                        70,
-                        evidence,
-                    )
-                )
+                candidates.append(EventCandidate(kind, title, description, event_date, event_time, timezone_label, materiality, 70, evidence))
             continue
 
-        # Backward-compatible fallback for older CE runs. Only first observation may
-        # use incident.time. Other actions/impact flags are retained as undated or
-        # date-only events rather than manufacturing the incident timestamp.
         first_pair = fields.get("incident.first_observation")
         if first_pair and incident_date and incident_time:
             text = _string(_approved_value(first_pair[0]))
@@ -354,7 +425,6 @@ def _build_engine_candidates(rows: list[tuple[DocumentExtraction, Document]]) ->
         values = {name: _approved_value(pair[0]) for name, pair in fields.items()}
         for name, pair in fields.items():
             fact_index[f"engine_log.events[{index}].{name}"] = pair[0]
-
         event_type = None
         title = None
         materiality = ChronologyMateriality.LOW
@@ -374,7 +444,6 @@ def _build_engine_candidates(rows: list[tuple[DocumentExtraction, Document]]) ->
             title = "Engine log event"
         else:
             event_type, title = "log_event", "Engine log event"
-
         for label, key in (("Alarm", "alarm"), ("Action", "action"), ("Remarks", "remarks")):
             text = _string(values.get(key))
             if text:
@@ -383,19 +452,13 @@ def _build_engine_candidates(rows: list[tuple[DocumentExtraction, Document]]) ->
             value = values.get(key)
             if value is not None:
                 description_parts.append(f"{label}: {_measurement_text(value)}")
-
         evidence = [CandidateEvidence(pair[0], pair[1], _approved_value(pair[0])) for pair in fields.values()]
         candidates.append(EventCandidate(event_type, title or "Engine log event", "; ".join(description_parts) or None, event_date, event_time, timezone_label, materiality, 100, evidence))
     return candidates, fact_index
 
 
 def _candidate_sort_key(candidate: EventCandidate) -> tuple:
-    return (
-        candidate.occurred_on or date.max,
-        candidate.occurred_time or time.max,
-        candidate.event_type,
-        -candidate.source_priority,
-    )
+    return (candidate.occurred_on or date.max, candidate.occurred_time or time.max, candidate.event_type, -candidate.source_priority)
 
 
 def _source_statement_key(candidate: EventCandidate) -> tuple | None:
@@ -410,11 +473,6 @@ def _source_statement_key(candidate: EventCandidate) -> tuple | None:
 
 
 def _dedupe_same_statement(candidates: list[EventCandidate]) -> list[EventCandidate]:
-    """Collapse duplicate candidates produced from the same source statement.
-
-    This is intentionally conservative: different event types from one sentence are
-    retained because a sentence may legitimately report more than one event.
-    """
     keyed: dict[tuple, EventCandidate] = {}
     unkeyed: list[EventCandidate] = []
     for candidate in candidates:
@@ -458,16 +516,9 @@ def _cluster_candidates(candidates: list[EventCandidate]) -> list[EventCandidate
             clusters.append([candidate])
         else:
             matched.append(candidate)
-
     result: list[EventCandidate] = []
     for cluster in clusters:
-        primary = max(
-            cluster,
-            key=lambda c: (
-                c.source_priority,
-                -(c.timestamp.timestamp() if c.timestamp is not None else float("inf")),
-            ),
-        )
+        primary = max(cluster, key=lambda c: (c.source_priority, -(c.timestamp.timestamp() if c.timestamp is not None else float("inf"))))
         evidence_by_id: dict[UUID, CandidateEvidence] = {}
         descriptions: list[str] = []
         materiality = primary.materiality
@@ -480,17 +531,19 @@ def _cluster_candidates(candidates: list[EventCandidate]) -> list[EventCandidate
             for evidence in item.evidence:
                 evidence_by_id.setdefault(evidence.extraction.id, evidence)
         result.append(EventCandidate(primary.event_type, primary.title, " | ".join(descriptions) or None, primary.occurred_on, primary.occurred_time, primary.timezone_label, materiality, primary.source_priority, list(evidence_by_id.values())))
-
     result.extend(standalone)
     return sorted(result, key=_candidate_sort_key)
 
 
 def _upsert_events(db: Session, *, claim: Claim, candidates: list[EventCandidate]) -> list[ChronologyEvent]:
-    db.execute(update(ChronologyEvent).where(ChronologyEvent.claim_id == claim.id, ChronologyEvent.organization_id == claim.organization_id).values(is_active=False))
+    existing_events = list(db.scalars(select(ChronologyEvent).where(ChronologyEvent.claim_id == claim.id, ChronologyEvent.organization_id == claim.organization_id)))
+    by_signature = {event.source_signature: event for event in existing_events}
+    active_signatures: set[str] = set()
     active: list[ChronologyEvent] = []
     for candidate in candidates:
         signature = _event_signature(candidate)
-        event = db.scalar(select(ChronologyEvent).where(ChronologyEvent.organization_id == claim.organization_id, ChronologyEvent.claim_id == claim.id, ChronologyEvent.source_signature == signature))
+        active_signatures.add(signature)
+        event = by_signature.get(signature)
         if event is None:
             event = ChronologyEvent(
                 organization_id=claim.organization_id,
@@ -531,6 +584,9 @@ def _upsert_events(db: Session, *, claim: Claim, candidates: list[EventCandidate
                 evidence_role="primary" if idx == 0 else "supporting",
             ))
         active.append(event)
+    for event in existing_events:
+        if event.source_signature not in active_signatures:
+            event.is_active = False
     db.flush()
     return active
 
@@ -615,12 +671,23 @@ def _boolean_conflicts(rows: list[tuple[DocumentExtraction, Document]], events: 
     return conflicts
 
 
+def _reopen_conflict(conflict: EvidenceConflict) -> None:
+    conflict.status = ConflictStatus.OPEN
+    conflict.resolution_note = None
+    conflict.resolved_by_id = None
+    conflict.resolved_at = None
+
+
 def _upsert_conflicts(db: Session, *, claim: Claim, conflicts: list[ConflictCandidate]) -> list[EvidenceConflict]:
-    db.execute(update(EvidenceConflict).where(EvidenceConflict.claim_id == claim.id, EvidenceConflict.organization_id == claim.organization_id).values(is_active=False))
+    existing_rows = list(db.scalars(select(EvidenceConflict).where(EvidenceConflict.claim_id == claim.id, EvidenceConflict.organization_id == claim.organization_id)))
+    by_key = {row.conflict_key: row for row in existing_rows}
+    active_keys: set[str] = set()
     active: list[EvidenceConflict] = []
     for candidate in conflicts:
         key = _conflict_key(candidate)
-        conflict = db.scalar(select(EvidenceConflict).where(EvidenceConflict.organization_id == claim.organization_id, EvidenceConflict.claim_id == claim.id, EvidenceConflict.conflict_key == key))
+        active_keys.add(key)
+        new_fingerprint = _candidate_conflict_state_fingerprint(candidate)
+        conflict = by_key.get(key)
         if conflict is None:
             conflict = EvidenceConflict(
                 organization_id=claim.organization_id,
@@ -637,27 +704,42 @@ def _upsert_conflicts(db: Session, *, claim: Claim, conflicts: list[ConflictCand
                 value_b=candidate.value_b,
                 difference_minutes=candidate.difference_minutes,
                 materiality=candidate.materiality,
+                state_fingerprint=new_fingerprint,
+                state_version=1,
                 status=ConflictStatus.OPEN,
                 is_active=True,
             )
             db.add(conflict)
         else:
+            was_active = conflict.is_active
+            old_fingerprint = conflict.state_fingerprint or conflict_state_fingerprint(conflict)
+            state_changed = (not was_active) or old_fingerprint != new_fingerprint
+            if state_changed:
+                conflict.state_version = max(conflict.state_version or 1, 1) + 1
+                _reopen_conflict(conflict)
             conflict.event_a_id = candidate.event_a.id if candidate.event_a else None
             conflict.event_b_id = candidate.event_b.id if candidate.event_b else None
             conflict.evidence_a_extraction_id = candidate.evidence_a.id if candidate.evidence_a else None
             conflict.evidence_b_extraction_id = candidate.evidence_b.id if candidate.evidence_b else None
+            conflict.conflict_type = candidate.conflict_type
+            conflict.topic = candidate.topic
             conflict.description = candidate.description
             conflict.value_a = candidate.value_a
             conflict.value_b = candidate.value_b
             conflict.difference_minutes = candidate.difference_minutes
             conflict.materiality = candidate.materiality
+            conflict.state_fingerprint = new_fingerprint
             conflict.is_active = True
         active.append(conflict)
+    for conflict in existing_rows:
+        if conflict.conflict_key not in active_keys:
+            conflict.is_active = False
     db.flush()
     return active
 
 
 def build_chronology(db: Session, *, claim: Claim, user: User) -> tuple[list[ChronologyEvent], list[EvidenceConflict]]:
+    _lock_claim_chronology_scope(db, claim_id=claim.id, organization_id=claim.organization_id)
     reviewed = _load_reviewed_extractions(db, claim_id=claim.id, organization_id=claim.organization_id)
     ce_candidates, _ = _build_ce_candidates(reviewed)
     engine_candidates, _ = _build_engine_candidates(reviewed)
@@ -679,12 +761,110 @@ def build_chronology(db: Session, *, claim: Claim, user: User) -> tuple[list[Chr
     return events, active_conflicts
 
 
-def resolve_conflict(db: Session, *, conflict: EvidenceConflict, user: User, status: ConflictStatus, note: str) -> EvidenceConflict:
-    old = {"status": conflict.status.value, "resolution_note": conflict.resolution_note}
+def _latest_conflict_decision(db: Session, *, conflict_id: UUID, organization_id: UUID) -> EvidenceConflictDecision | None:
+    return db.scalar(
+        select(EvidenceConflictDecision)
+        .where(EvidenceConflictDecision.conflict_id == conflict_id, EvidenceConflictDecision.organization_id == organization_id)
+        .order_by(EvidenceConflictDecision.decision_number.desc())
+        .limit(1)
+    )
+
+
+def _decision_hash(*, conflict: EvidenceConflict, decision_number: int, status: ConflictStatus, note: str, reviewer_id: UUID, previous_decision_hash: str | None) -> str:
+    return _canonical_hash(
+        {
+            "conflict_id": str(conflict.id),
+            "state_fingerprint": conflict.state_fingerprint,
+            "state_version": conflict.state_version,
+            "decision_number": decision_number,
+            "status": status.value,
+            "note": note,
+            "reviewer_id": str(reviewer_id),
+            "previous_decision_hash": previous_decision_hash,
+        }
+    )
+
+
+def resolve_conflict(
+    db: Session,
+    *,
+    conflict: EvidenceConflict,
+    user: User,
+    status: ConflictStatus,
+    note: str,
+    expected_state_fingerprint: str | None = None,
+    expected_state_version: int | None = None,
+    confirm_re_review: bool = False,
+) -> tuple[EvidenceConflict, EvidenceConflictDecision, bool]:
+    if conflict.organization_id != user.organization_id:
+        raise ValueError("Evidence conflict does not belong to the current organization.")
+    _lock_claim_chronology_scope(db, claim_id=conflict.claim_id, organization_id=conflict.organization_id)
+    query = select(EvidenceConflict).where(
+        EvidenceConflict.id == conflict.id,
+        EvidenceConflict.claim_id == conflict.claim_id,
+        EvidenceConflict.organization_id == conflict.organization_id,
+        EvidenceConflict.is_active.is_(True),
+    )
+    if _postgresql(db):
+        query = query.with_for_update()
+    current = db.scalar(query)
+    if current is None:
+        raise ValueError("Evidence conflict is no longer active. Refresh chronology and review the current evidence.")
+    conflict = current
+    current_fingerprint = conflict.state_fingerprint or conflict_state_fingerprint(conflict)
+    if conflict.state_fingerprint != current_fingerprint:
+        conflict.state_fingerprint = current_fingerprint
+        db.flush()
+    if expected_state_fingerprint is not None and expected_state_fingerprint != current_fingerprint:
+        raise ValueError("Conflict state changed. Refresh chronology and review the current evidence before deciding.")
+    if expected_state_version is not None and expected_state_version != conflict.state_version:
+        raise ValueError("Conflict state changed. Refresh chronology and review the current evidence before deciding.")
+    normalized_note = note.strip()
+    latest = _latest_conflict_decision(db, conflict_id=conflict.id, organization_id=conflict.organization_id)
+    if (
+        latest is not None
+        and latest.state_fingerprint == current_fingerprint
+        and latest.state_version == conflict.state_version
+        and latest.status == status
+        and latest.note == normalized_note
+        and latest.decided_by_id == user.id
+        and conflict.status == status
+        and conflict.resolution_note == normalized_note
+    ):
+        return conflict, latest, True
+    if conflict.status != ConflictStatus.OPEN and not confirm_re_review:
+        raise ValueError("This conflict already has a human disposition. Confirm deliberate re-review before recording a new decision.")
+    now = datetime.now(UTC)
+    decision_number = (latest.decision_number if latest is not None else 0) + 1
+    previous_hash = latest.decision_hash if latest is not None else None
+    decision = EvidenceConflictDecision(
+        organization_id=conflict.organization_id,
+        claim_id=conflict.claim_id,
+        conflict_id=conflict.id,
+        state_fingerprint=current_fingerprint,
+        state_version=conflict.state_version,
+        decision_number=decision_number,
+        status=status,
+        note=normalized_note,
+        decided_by_id=user.id,
+        decided_at=now,
+        previous_decision_hash=previous_hash,
+        decision_hash="",
+    )
+    decision.decision_hash = _decision_hash(
+        conflict=conflict,
+        decision_number=decision_number,
+        status=status,
+        note=normalized_note,
+        reviewer_id=user.id,
+        previous_decision_hash=previous_hash,
+    )
+    db.add(decision)
+    old = {"status": conflict.status.value, "resolution_note": conflict.resolution_note, "state_fingerprint": current_fingerprint, "state_version": conflict.state_version}
     conflict.status = status
-    conflict.resolution_note = note.strip()
+    conflict.resolution_note = normalized_note
     conflict.resolved_by_id = user.id
-    conflict.resolved_at = datetime.now(UTC)
+    conflict.resolved_at = now
     write_audit_log(
         db,
         organization_id=conflict.organization_id,
@@ -693,8 +873,16 @@ def resolve_conflict(db: Session, *, conflict: EvidenceConflict, user: User, sta
         entity_type="evidence_conflict",
         entity_id=conflict.id,
         old_values=old,
-        new_values={"status": status.value, "resolution_note": conflict.resolution_note},
+        new_values={
+            "status": status.value,
+            "resolution_note": normalized_note,
+            "state_fingerprint": current_fingerprint,
+            "state_version": conflict.state_version,
+            "decision_number": decision_number,
+            "decision_hash": decision.decision_hash,
+        },
     )
     db.commit()
     db.refresh(conflict)
-    return conflict
+    db.refresh(decision)
+    return conflict, decision, False
