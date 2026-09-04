@@ -94,7 +94,7 @@ export default function ClaimRulesPage() {
     candidate: VersionedEquivalentCandidate,
   ) {
     const note = equivalentNotes[requirement.id]?.trim() ?? "";
-    if (note.length < 5) { setError("Add a short justification before accepting equivalent evidence."); return; }
+    if (note.length < 5) { setError("Add a short justification before accepting or re-reviewing equivalent evidence."); return; }
 
     const versionedRequirement = requirement as VersionedRequirement;
     if (
@@ -103,10 +103,11 @@ export default function ClaimRulesPage() {
       !candidate.claim_fact_version
     ) {
       await load();
-      setError("The requirement evidence state is not current. Review the refreshed evidence before accepting an equivalent source.");
+      setError("The requirement evidence state is not current. Review the refreshed evidence before accepting or re-reviewing an equivalent source.");
       return;
     }
 
+    const reReview = requirement.status === "superseded";
     setBusy(true); setError("");
     try {
       await acceptRequirementEquivalentEvidence(id, requirement.id, {
@@ -115,7 +116,7 @@ export default function ClaimRulesPage() {
         expected_state_fingerprint: versionedRequirement.state_fingerprint,
         expected_state_version: versionedRequirement.state_version,
         note,
-        re_review: false,
+        re_review: reReview,
       });
       setEquivalentNotes((current) => { const next = { ...current }; delete next[requirement.id]; return next; });
       await load();
@@ -124,7 +125,7 @@ export default function ClaimRulesPage() {
         await load();
         setError(`${e.detail} The requirement was refreshed; review the current evidence before trying again.`);
       } else {
-        setError(e instanceof ApiError ? e.detail : "Equivalent evidence could not be accepted.");
+        setError(e instanceof ApiError ? e.detail : "Equivalent evidence could not be reviewed.");
       }
     }
     finally { setBusy(false); }
@@ -138,6 +139,7 @@ export default function ClaimRulesPage() {
   }, [summary]);
 
   const requestable = new Set(["missing", "rejected", "requested"]);
+  const equivalentReviewable = new Set(["missing", "rejected", "requested", "superseded"]);
   const criticalRequestable = (summary?.requirements ?? []).filter((r) => r.priority === "critical" && ["missing", "rejected"].includes(r.status)).length;
 
   if (loading) return <div className="py-20 text-center text-sm text-slate-500">Loading claim rules…</div>;
@@ -175,9 +177,9 @@ export default function ClaimRulesPage() {
     {summary.readiness.blocking_items.length ? <section className="mt-5 rounded-xl border border-red-200 bg-red-50 p-5"><h2 className="text-sm font-semibold text-red-900">Blocking evidence</h2><p className="mt-1 text-xs leading-5 text-red-700">Requested documents remain blocking until evidence is actually received or otherwise accepted.</p><div className="mt-3 flex flex-wrap gap-2">{summary.readiness.blocking_items.map((item) => <span key={item} className="rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-red-700 ring-1 ring-red-200">{item}</span>)}</div></section> : null}
 
     <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1.25fr)_minmax(340px,.75fr)]">
-      <section className="panel p-6"><h2 className="section-title">Current-stage document requirements</h2><p className="section-subtitle">Select missing/requested requirements to create a controlled follow-up draft.</p>
-        <div className="mt-5 space-y-6">{priorityOrder.map((priority) => { const items = grouped.get(priority) ?? []; if (!items.length) return null; return <div key={priority}><div className="mb-2 flex items-center gap-2"><h3 className="text-xs font-bold uppercase tracking-[.14em] text-slate-500">{priority}</h3><span className="text-xs text-slate-400">{items.length}</span></div><div className="divide-y divide-slate-200 rounded-xl border border-slate-200">{items.map((item) => <div key={item.id} className="flex gap-3 p-4"><input type="checkbox" className="mt-1" disabled={!requestable.has(item.status)} checked={selected.includes(item.id)} onChange={(e) => setSelected((current) => e.target.checked ? [...current, item.id] : current.filter((x) => x !== item.id))} /><div className="min-w-0 flex-1"><div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-start"><div><div className="flex flex-wrap items-center gap-2"><p className="text-sm font-semibold text-slate-900">{item.document_label}</p><span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold capitalize ${requirementTone(item.status)}`}>{item.status.replaceAll("_", " ")}</span>{item.satisfaction_basis === "equivalent_evidence" ? <span className="rounded-full bg-violet-50 px-2 py-0.5 text-[11px] font-semibold text-violet-700">Equivalent evidence accepted</span> : null}</div><p className="mt-2 text-xs leading-5 text-slate-500">{item.reason}</p>{item.satisfaction_note ? <p className="mt-2 text-xs leading-5 text-violet-700">Basis: {item.satisfaction_note}</p> : null}</div><div className="shrink-0 text-right text-[11px] text-slate-400"><div>{item.rule_id} · v{item.rule_version}</div><div>From {item.required_from_status.replaceAll("_", " ")}</div></div></div>
-                {requestable.has(item.status) && item.equivalent_evidence_candidates.length ? <div className="mt-3 rounded-lg border border-violet-200 bg-violet-50 p-3"><p className="text-[11px] font-bold uppercase tracking-[.12em] text-violet-700">Equivalent evidence candidate</p>{item.equivalent_evidence_candidates.map((candidate) => <div key={candidate.claim_fact_id} className="mt-2 rounded-lg bg-white p-3 ring-1 ring-violet-100"><div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-start"><div><p className="text-xs font-semibold text-slate-800">{candidate.field_path}</p><p className="mt-1 text-sm text-slate-700">{displayEvidenceValue(candidate.value)}</p><p className="mt-1 text-[11px] text-slate-400">Human-approved claim fact · alternative source</p></div><button disabled={busy || (equivalentNotes[item.id]?.trim().length ?? 0) < 5} onClick={() => acceptEquivalent(item, candidate as VersionedEquivalentCandidate)} className="secondary-button px-3 py-2 text-xs">Accept as equivalent</button></div><input className="field mt-3" value={equivalentNotes[item.id] ?? ""} onChange={(e) => setEquivalentNotes((current) => ({ ...current, [item.id]: e.target.value }))} placeholder="Why is this evidence sufficient for this requirement?" /></div>)}</div> : null}
+      <section className="panel p-6"><h2 className="section-title">Current-stage document requirements</h2><p className="section-subtitle">Select missing/requested requirements for follow-up. Superseded equivalent evidence requires a deliberate human re-review against the current evidence state.</p>
+        <div className="mt-5 space-y-6">{priorityOrder.map((priority) => { const items = grouped.get(priority) ?? []; if (!items.length) return null; return <div key={priority}><div className="mb-2 flex items-center gap-2"><h3 className="text-xs font-bold uppercase tracking-[.14em] text-slate-500">{priority}</h3><span className="text-xs text-slate-400">{items.length}</span></div><div className="divide-y divide-slate-200 rounded-xl border border-slate-200">{items.map((item) => <div key={item.id} className="flex gap-3 p-4" data-requirement-id={item.id}><input type="checkbox" className="mt-1" disabled={!requestable.has(item.status)} checked={selected.includes(item.id)} onChange={(e) => setSelected((current) => e.target.checked ? [...current, item.id] : current.filter((x) => x !== item.id))} /><div className="min-w-0 flex-1"><div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-start"><div><div className="flex flex-wrap items-center gap-2"><p className="text-sm font-semibold text-slate-900">{item.document_label}</p><span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold capitalize ${requirementTone(item.status)}`}>{item.status.replaceAll("_", " ")}</span>{item.satisfaction_basis === "equivalent_evidence" ? <span className="rounded-full bg-violet-50 px-2 py-0.5 text-[11px] font-semibold text-violet-700">Equivalent evidence accepted</span> : null}{item.satisfaction_basis === "equivalent_evidence_stale" ? <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-800">Equivalent evidence stale · re-review required</span> : null}</div><p className="mt-2 text-xs leading-5 text-slate-500">{item.reason}</p>{item.satisfaction_note ? <p className="mt-2 text-xs leading-5 text-violet-700">Basis: {item.satisfaction_note}</p> : null}</div><div className="shrink-0 text-right text-[11px] text-slate-400"><div>{item.rule_id} · v{item.rule_version}</div><div>From {item.required_from_status.replaceAll("_", " ")}</div></div></div>
+                {equivalentReviewable.has(item.status) && item.equivalent_evidence_candidates.length ? <div className={`mt-3 rounded-lg border p-3 ${item.status === "superseded" ? "border-amber-200 bg-amber-50" : "border-violet-200 bg-violet-50"}`}><p className={`text-[11px] font-bold uppercase tracking-[.12em] ${item.status === "superseded" ? "text-amber-800" : "text-violet-700"}`}>{item.status === "superseded" ? "Equivalent evidence changed · explicit re-review required" : "Equivalent evidence candidate"}</p>{item.equivalent_evidence_candidates.map((candidate) => <div key={candidate.claim_fact_id} className="mt-2 rounded-lg bg-white p-3 ring-1 ring-violet-100"><div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-start"><div><p className="text-xs font-semibold text-slate-800">{candidate.field_path}</p><p className="mt-1 text-sm text-slate-700">{displayEvidenceValue(candidate.value)}</p><p className="mt-1 text-[11px] text-slate-400">Human-approved claim fact · alternative source</p></div><button disabled={busy || (equivalentNotes[item.id]?.trim().length ?? 0) < 5} onClick={() => acceptEquivalent(item, candidate as VersionedEquivalentCandidate)} className="secondary-button px-3 py-2 text-xs">{item.status === "superseded" ? "Re-review equivalent" : "Accept as equivalent"}</button></div><input className="field mt-3" value={equivalentNotes[item.id] ?? ""} onChange={(e) => setEquivalentNotes((current) => ({ ...current, [item.id]: e.target.value }))} placeholder={item.status === "superseded" ? "Why does the changed evidence still satisfy this requirement?" : "Why is this evidence sufficient for this requirement?"} /></div>)}</div> : null}
               </div></div>)}</div></div>; })}</div>
       </section>
 
