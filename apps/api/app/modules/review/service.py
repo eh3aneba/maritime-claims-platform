@@ -290,11 +290,7 @@ def list_review_queue(
             DocumentExtraction.field_path.asc(),
         )
 
-    rows = db.execute(
-        query.order_by(*ordering)
-        .limit(limit)
-        .offset(offset)
-    ).all()
+    rows = db.execute(query.order_by(*ordering).limit(limit).offset(offset)).all()
     items = [
         ReviewQueueItem(
             extraction_id=extraction.id,
@@ -466,6 +462,8 @@ def review_extraction(
     action: str,
     value: Any | None = None,
     reason: str | None = None,
+    confirm_re_review: bool = False,
+    require_pending: bool = False,
 ) -> tuple[DocumentExtraction, ClaimFact | None, bool]:
     if extraction.organization_id != reviewer.organization_id:
         raise ValueError("Extraction does not belong to the current organization.")
@@ -486,6 +484,14 @@ def review_extraction(
     if locked_extraction is None:
         raise ValueError("Extraction is unavailable for review.")
     extraction = locked_extraction
+
+    # Group and bulk operations are intentionally pending-only. Re-check this
+    # invariant after the locked current-state read so a concurrent human review
+    # cannot silently turn a stale batch into an unintended re-review.
+    if require_pending and extraction.human_status != AIReviewStatus.PENDING:
+        raise ValueError(
+            "Review batch is stale because an extraction was already reviewed. Refresh the queue and retry."
+        )
 
     normalized_reason = (reason or "").strip() or None
     if not extraction.source_verified and action in {"approve", "edit"} and normalized_reason is None:
@@ -524,8 +530,7 @@ def review_extraction(
     )
 
     # Exact semantic replay is a transport/client retry, not a new human
-    # decision. A different reason is intentionally treated as a fresh review so
-    # a reviewer can explicitly re-assert the same value with new reasoning.
+    # decision. It remains idempotent without a re-review confirmation.
     if (
         extraction.human_status == human_status
         and extraction.approved_value == approved_value
@@ -541,6 +546,13 @@ def review_extraction(
             and claim_fact.source_extraction_id == extraction.id
         )
         return extraction, claim_fact, currently_promoted
+
+    # A materially different decision on a reviewed extraction is deliberate
+    # re-review, not a transport replay. It requires an explicit caller signal.
+    if extraction.human_status != AIReviewStatus.PENDING and not confirm_re_review:
+        raise ValueError(
+            "This extraction has already been reviewed. Confirm deliberate re-review before recording a new human decision."
+        )
 
     previous_status = extraction.human_status
     previous_approved_value = extraction.approved_value

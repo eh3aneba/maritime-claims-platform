@@ -148,8 +148,8 @@ def review_group(
         reviewed: list[ReviewResult] = []
         for extraction in extractions:
             # review_extraction re-selects under the claim/extraction write locks.
-            # Expire the earlier validation read so SQLAlchemy cannot reuse stale
-            # identity-map attributes after waiting for a concurrent reviewer.
+            # require_pending re-enforces the pending-only batch contract after
+            # that locked current-state read, closing stale concurrent-review races.
             db.expire(extraction)
             extraction, fact, promoted = review_extraction(
                 db,
@@ -157,6 +157,7 @@ def review_group(
                 reviewer=current_user,
                 action=payload.action,
                 reason=payload.reason,
+                require_pending=True,
             )
             reviewed.append(ReviewResult(
                 extraction_id=extraction.id,
@@ -283,6 +284,7 @@ def review_one(
             action=payload.action,
             value=payload.value,
             reason=payload.reason,
+            confirm_re_review=payload.confirm_re_review,
         )
         event_type = {"approve": "ai_review_approved", "edit": "ai_review_edited", "reject": "ai_review_rejected"}[payload.action]
         record_active_event(
@@ -341,6 +343,7 @@ def bulk_approve(
                 reviewer=current_user,
                 action="approve",
                 reason=payload.reason,
+                require_pending=True,
             )
             reviewed.append(
                 ReviewResult(

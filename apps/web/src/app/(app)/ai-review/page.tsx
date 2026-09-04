@@ -45,7 +45,12 @@ type ReviewDetailView = Omit<AIReviewDetail, "current_claim_fact"> & {
   claim_fact_revisions: ClaimFactRevisionView[];
 };
 
-type ReviewPayload = { action: "approve" | "edit" | "reject"; value?: unknown; reason?: string };
+type ReviewPayload = {
+  action: "approve" | "edit" | "reject";
+  value?: unknown;
+  reason?: string;
+  confirm_re_review?: boolean;
+};
 
 type PendingSupersession =
   | { kind: "single"; item: AIReviewItem; payload: ReviewPayload; facts: ClaimFactView[] }
@@ -121,6 +126,7 @@ export default function AIReviewPage() {
   const [selected, setSelected] = useState<string[]>([]);
   const [editing, setEditing] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
+  const [reReviewing, setReReviewing] = useState<string | null>(null);
   const [reviewReasons, setReviewReasons] = useState<Record<string, string>>({});
   const [source, setSource] = useState<Record<string, AISourcePreview | undefined>>({});
   const [sourceOpen, setSourceOpen] = useState<string | null>(null);
@@ -176,6 +182,8 @@ export default function AIReviewPage() {
     setHistory({});
     setSourceOpen(null);
     setSource({});
+    setReReviewing(null);
+    setEditing(null);
   }, [statusFilter, semanticFilter, claimId, viewMode]);
 
   const bulkEligible = useMemo(() => items.filter((item) => item.bulk_approvable), [items]);
@@ -215,6 +223,7 @@ export default function AIReviewPage() {
       await reviewAIExtraction(item.extraction_id, payload);
       setEditing(null);
       setEditText("");
+      setReReviewing(null);
       setReviewReasons((current) => { const next = { ...current }; delete next[item.extraction_id]; return next; });
       clearHistory([item.extraction_id]);
       await load();
@@ -227,6 +236,7 @@ export default function AIReviewPage() {
 
   async function review(item: AIReviewItem, action: "approve" | "edit" | "reject") {
     const payload: ReviewPayload = { action };
+    if (reReviewing === item.extraction_id) payload.confirm_re_review = true;
     if (action === "edit") payload.value = parseEditedValue(item.normalized_value ?? item.ai_value, editText);
     const itemReason = reviewReasons[item.extraction_id]?.trim();
     if (itemReason) payload.reason = itemReason;
@@ -417,6 +427,7 @@ export default function AIReviewPage() {
           const currentSource = source[item.extraction_id];
           const currentHistory = history[item.extraction_id];
           const isEditing = editing === item.extraction_id;
+          const isReReviewing = reReviewing === item.extraction_id;
           const checked = selected.includes(item.extraction_id);
           return (
             <article key={item.extraction_id} className="panel overflow-hidden">
@@ -439,14 +450,14 @@ export default function AIReviewPage() {
                   <p className="mt-2 text-sm leading-6 text-slate-700" dir="auto">{item.source_quote ? `“${item.source_quote}”` : L("No source quote supplied.", "نقل‌قول منبع ارائه نشده است.")}</p>
                   <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-xs text-slate-500"><span dir="auto">{item.document_name}</span><span dir="ltr">{item.source_locator_type && item.source_locator_value ? `${item.source_locator_type}: ${item.source_locator_value}` : L("Locator unavailable", "مکان‌یاب موجود نیست")}</span><span className={item.source_verified ? "font-semibold text-emerald-700" : "font-semibold text-amber-700"}>{item.source_verified ? L("Source verified", "منبع تأیید شده") : L("Manual source check required", "بررسی دستی منبع الزامی است")}</span></div>
                   {item.validation_warnings?.length ? <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-800" dir="auto">{item.validation_warnings.join(" ")}</div> : null}
-                  {!item.source_verified && item.human_status === "pending" ? <label className="mt-3 block"><span className="label">{L("Manual verification reason", "دلیل بررسی دستی")}</span><textarea dir="auto" className="field resize-y" rows={2} value={reviewReasons[item.extraction_id] ?? ""} onChange={(e) => setReviewReasons((current) => ({ ...current, [item.extraction_id]: e.target.value }))} placeholder={L("Required before approving or editing an unverified source citation.", "پیش از تأیید یا ویرایش استناد منبع تأییدنشده الزامی است.")} /></label> : null}
+                  {!item.source_verified && (item.human_status === "pending" || isReReviewing) ? <label className="mt-3 block"><span className="label">{L("Manual verification reason", "دلیل بررسی دستی")}</span><textarea dir="auto" className="field resize-y" rows={2} value={reviewReasons[item.extraction_id] ?? ""} onChange={(e) => setReviewReasons((current) => ({ ...current, [item.extraction_id]: e.target.value }))} placeholder={L("Required before approving or editing an unverified source citation.", "پیش از تأیید یا ویرایش استناد منبع تأییدنشده الزامی است.")} /></label> : null}
                   <div className="mt-3 flex flex-wrap gap-4"><button onClick={() => toggleSource(item)} className="text-xs font-semibold text-cyan-800 hover:text-cyan-950">{sourceOpen === item.extraction_id ? L("Hide source context", "پنهان کردن متن منبع") : L("View source context", "مشاهده متن منبع")}</button><button onClick={() => toggleHistory(item)} className="text-xs font-semibold text-slate-600 hover:text-slate-900">{historyOpen === item.extraction_id ? L("Hide provenance & history", "پنهان کردن منبع و سابقه") : L("Provenance & history", "منبع و سابقه")}</button></div>
                 </div>
 
-                <div className="flex min-w-[170px] flex-col gap-2 lg:items-stretch">
+                <div className="flex min-w-[190px] flex-col gap-2 lg:items-stretch">
                   <Link href={`/claims/${item.claim_id}`} className="text-sm font-semibold text-slate-900 hover:text-cyan-800" dir="ltr">{item.claim_reference}</Link>
                   <span className="text-xs text-slate-500" dir="auto">{item.vessel_name}</span>
-                  {item.human_status === "pending" ? <div className="mt-2 grid gap-2"><button disabled={working} onClick={() => review(item, "approve")} className="secondary-button justify-center">{L("Approve", "تأیید")}</button><button disabled={working} onClick={() => { setEditing(item.extraction_id); setEditText(editValue(item.normalized_value ?? item.ai_value)); }} className="secondary-button justify-center">{L("Edit", "ویرایش")}</button><button disabled={working} onClick={() => review(item, "reject")} className="rounded-lg border border-red-200 bg-white px-4 py-2.5 text-sm font-semibold text-red-700 hover:bg-red-50">{L("Reject", "رد")}</button></div> : null}
+                  {item.human_status === "pending" ? <div className="mt-2 grid gap-2"><button disabled={working} onClick={() => review(item, "approve")} className="secondary-button justify-center">{L("Approve", "تأیید")}</button><button disabled={working} onClick={() => { setEditing(item.extraction_id); setEditText(editValue(item.normalized_value ?? item.ai_value)); }} className="secondary-button justify-center">{L("Edit", "ویرایش")}</button><button disabled={working} onClick={() => review(item, "reject")} className="rounded-lg border border-red-200 bg-white px-4 py-2.5 text-sm font-semibold text-red-700 hover:bg-red-50">{L("Reject", "رد")}</button></div> : !isReReviewing ? <button disabled={working} onClick={() => { setReReviewing(item.extraction_id); setEditing(null); setEditText(""); }} className="secondary-button mt-2 justify-center">{L("Re-review decision", "بازبینی مجدد تصمیم")}</button> : <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-3"><p className="text-xs font-semibold text-amber-900">{L("Deliberate re-review", "بازبینی مجدد آگاهانه")}</p><p className="mt-1 text-xs leading-5 text-amber-800">{L("This records a new human decision and may replace or restore the canonical Claim Fact.", "این اقدام یک تصمیم انسانی جدید ثبت می‌کند و ممکن است واقعیت معتبر پرونده را جایگزین یا بازیابی کند.")}</p><div className="mt-3 grid gap-2"><button disabled={working} onClick={() => review(item, "approve")} className="secondary-button justify-center">{L("Approve again", "تأیید مجدد")}</button><button disabled={working} onClick={() => { setEditing(item.extraction_id); setEditText(editValue(item.normalized_value ?? item.ai_value)); }} className="secondary-button justify-center">{L("Edit decision", "ویرایش تصمیم")}</button><button disabled={working} onClick={() => review(item, "reject")} className="rounded-lg border border-red-200 bg-white px-4 py-2.5 text-sm font-semibold text-red-700 hover:bg-red-50">{L("Reject on re-review", "رد در بازبینی مجدد")}</button><button disabled={working} onClick={() => { setReReviewing(null); setEditing(null); setEditText(""); }} className="text-xs font-semibold text-slate-600 hover:text-slate-900">{L("Cancel re-review", "لغو بازبینی مجدد")}</button></div></div>}
                 </div>
               </div>
 

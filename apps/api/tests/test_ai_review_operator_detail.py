@@ -44,7 +44,11 @@ def test_review_detail_exposes_tenant_scoped_canonical_revision_history() -> Non
 
     rejected = client.post(
         f"/api/v1/ai-review/{candidate_id}",
-        json={"action": "reject", "reason": "Second review restores the intake-reviewed fact."},
+        json={
+            "action": "reject",
+            "reason": "Second review restores the intake-reviewed fact.",
+            "confirm_re_review": True,
+        },
     )
     assert rejected.status_code == 200, rejected.text
 

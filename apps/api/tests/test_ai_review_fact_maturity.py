@@ -151,18 +151,23 @@ def test_exact_individual_review_replay_is_idempotent() -> None:
         assert len(review_audit) == 1
 
 
-def test_same_value_with_new_reason_is_an_intentional_new_review() -> None:
+def test_same_value_with_new_reason_requires_deliberate_re_review_confirmation() -> None:
     ids = seed_review_candidates()
     login("alpha", "alpha@example.com")
     endpoint = f"/api/v1/ai-review/{ids['maker_id']}"
+    reason = "Reconfirmed against maker plate after second review."
 
     first = client.post(endpoint, json={"action": "approve"})
-    second = client.post(
-        endpoint,
-        json={"action": "approve", "reason": "Reconfirmed against maker plate after second review."},
-    )
+    denied = client.post(endpoint, json={"action": "approve", "reason": reason})
     assert first.status_code == 200
-    assert second.status_code == 200
+    assert denied.status_code == 409
+    assert "confirm deliberate re-review" in denied.json()["detail"].lower()
+
+    confirmed = client.post(
+        endpoint,
+        json={"action": "approve", "reason": reason, "confirm_re_review": True},
+    )
+    assert confirmed.status_code == 200, confirmed.text
 
     with TestingSessionLocal() as db:
         extraction_id = UUID(ids["maker_id"])
@@ -174,22 +179,26 @@ def test_same_value_with_new_reason_is_an_intentional_new_review() -> None:
             )
         )
         assert len(feedback) == 2
-        assert feedback[-1].reason == "Reconfirmed against maker plate after second review."
+        assert feedback[-1].reason == reason
         fact = db.scalar(select(ClaimFact).where(ClaimFact.source_extraction_id == extraction_id))
         assert fact is not None and fact.version == 2
 
 
-def test_rejecting_superseding_ai_fact_restores_previous_intake_fact() -> None:
+def test_rejecting_superseding_ai_fact_requires_confirmation_and_restores_previous_intake_fact() -> None:
     ids = seed_review_candidates()
     candidate_id = _add_intake_fact_and_ai_candidate(ids)
     login("alpha", "alpha@example.com")
     endpoint = f"/api/v1/ai-review/{candidate_id}"
+    reason = "Second human review found the AI description overstates the source."
 
     approved = client.post(endpoint, json={"action": "approve"})
     assert approved.status_code == 200, approved.text
+    denied = client.post(endpoint, json={"action": "reject", "reason": reason})
+    assert denied.status_code == 409
+
     rejected = client.post(
         endpoint,
-        json={"action": "reject", "reason": "Second human review found the AI description overstates the source."},
+        json={"action": "reject", "reason": reason, "confirm_re_review": True},
     )
     assert rejected.status_code == 200, rejected.text
     assert rejected.json()["human_status"] == "rejected"
