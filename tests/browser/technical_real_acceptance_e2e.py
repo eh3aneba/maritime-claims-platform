@@ -38,7 +38,7 @@ def main() -> None:
         page.goto(f"{BASE_URL}/claims", wait_until="networkidle")
         page.get_by_placeholder("Search claim, vessel or IMO…").fill("MCRI-DEMO-MT-ORION")
         page.get_by_role("button", name="Apply filters").click()
-        expect(page.get_by_text("MT ORION", exact=True)).to_be_visible()
+        expect(page.get_by_text("MT ORION", exact=True).first).to_be_visible()
         claim_link = page.locator('a[href^="/claims/"]').filter(has_text=re.compile(r"^MCRI-HM-")).first
         claim_href = claim_link.get_attribute("href")
         if not claim_href:
