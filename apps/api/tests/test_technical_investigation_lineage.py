@@ -174,6 +174,73 @@ def test_technical_decision_lineage_stale_re_review_and_idempotency() -> None:
         assert history["items"][1]["previous_decision_hash"] == history["items"][0]["decision_hash"]
 
 
+def test_exact_replay_is_scoped_to_same_human_reviewer() -> None:
+    organization_id, first_user_id, claim_id, _ = _seed_claim()
+    with TestingSessionLocal() as db:
+        second_user = User(
+            organization_id=organization_id,
+            email="second-handler@technical.test",
+            full_name="Second Technical Handler",
+            password_hash="not-used-in-service-test",
+            role=UserRole.CLAIMS_HANDLER,
+        )
+        db.add(second_user)
+        db.commit()
+        second_user_id = second_user.id
+
+        review = build_technical_review(db, claim_id=claim_id, organization_id=organization_id)
+        row = next(item for item in review["matrix"] if item["key"] == "TECH-LINEAGE-001")
+        note = "Keep the maintenance interval issue open pending maker evidence."
+
+        first = record_technical_decision(
+            db,
+            claim_id=claim_id,
+            organization_id=organization_id,
+            topic_key=row["key"],
+            action="keep_open",
+            note=note,
+            expected_state_fingerprint=row["state_fingerprint"],
+            expected_state_version=row["state_version"],
+            confirm_re_review=False,
+            decided_by_id=first_user_id,
+        )
+        db.commit()
+
+        with pytest.raises(TechnicalDecisionConflictError, match="Explicit re-review"):
+            record_technical_decision(
+                db,
+                claim_id=claim_id,
+                organization_id=organization_id,
+                topic_key=row["key"],
+                action="keep_open",
+                note=note,
+                expected_state_fingerprint=row["state_fingerprint"],
+                expected_state_version=row["state_version"],
+                confirm_re_review=False,
+                decided_by_id=second_user_id,
+            )
+        db.rollback()
+
+        second = record_technical_decision(
+            db,
+            claim_id=claim_id,
+            organization_id=organization_id,
+            topic_key=row["key"],
+            action="keep_open",
+            note=note,
+            expected_state_fingerprint=row["state_fingerprint"],
+            expected_state_version=row["state_version"],
+            confirm_re_review=True,
+            decided_by_id=second_user_id,
+        )
+        db.commit()
+
+        assert second.id != first.id
+        assert second.decision_number == 2
+        assert second.previous_decision_hash == first.decision_hash
+        assert second.decided_by_id == second_user_id
+
+
 def test_technical_topic_history_is_tenant_scoped() -> None:
     _, _, claim_id, _ = _seed_claim()
     with TestingSessionLocal() as db:
