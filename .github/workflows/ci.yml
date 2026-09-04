@@ -289,6 +289,7 @@ jobs:
           python tests/browser/correspondence_claim_pack_localization_e2e.py
           python tests/browser/ai_governance_localization_e2e.py
           python tests/browser/final_localization_accessibility_e2e.py
+          python tests/browser/intake_maturity_e2e.py
 
       - name: Capture container diagnostics
         if: failure()

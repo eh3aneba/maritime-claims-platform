@@ -9,9 +9,11 @@ from sqlalchemy.orm import Session
 
 from app.modules.claims.schemas import ClaimRead
 from app.modules.claims.service import ClaimPermissionError, ClaimValidationError
+from app.modules.intake.maturity import retry_failed_intake_draft
 from app.modules.intake.schemas import (
     ClaimIntakeApprovalResult,
     ClaimIntakeApprove,
+    ClaimIntakeDocumentTypeRegistry,
     ClaimIntakeDraftList,
     ClaimIntakeDraftRead,
     ClaimIntakeReject,
@@ -27,6 +29,11 @@ from app.modules.intake.service import (
 )
 
 router = APIRouter(prefix="/claim-intake", tags=["claim-intake"])
+
+
+@router.get("/document-types", response_model=ClaimIntakeDocumentTypeRegistry)
+def intake_document_types(_current_user: CurrentUser) -> ClaimIntakeDocumentTypeRegistry:
+    return ClaimIntakeDocumentTypeRegistry.current()
 
 
 @router.post("/drafts", response_model=ClaimIntakeDraftRead, status_code=status.HTTP_202_ACCEPTED)
@@ -65,6 +72,28 @@ def get_intake_draft_endpoint(
         )
     except ClaimIntakeNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Claim intake draft not found") from exc
+    return ClaimIntakeDraftRead.model_validate(draft)
+
+
+@router.post("/drafts/{draft_id}/retry", response_model=ClaimIntakeDraftRead, status_code=status.HTTP_202_ACCEPTED)
+def retry_intake_draft_endpoint(
+    draft_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: CurrentUser,
+) -> ClaimIntakeDraftRead:
+    try:
+        draft = retry_failed_intake_draft(
+            db,
+            draft_id=draft_id,
+            organization_id=current_user.organization_id,
+            current_user=current_user,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail="Claim intake draft not found") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     return ClaimIntakeDraftRead.model_validate(draft)
 
 
