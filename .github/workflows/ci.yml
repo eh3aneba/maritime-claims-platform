@@ -288,6 +288,7 @@ jobs:
           python tests/browser/claim_workbench_e2e.py
           python tests/browser/localization_e2e.py
           python tests/browser/chronology_localization_e2e.py
+          python tests/browser/chronology_conflict_maturity_e2e.py
           python tests/browser/review_surfaces_localization_e2e.py
           python tests/browser/correspondence_claim_pack_localization_e2e.py
           python tests/browser/ai_governance_localization_e2e.py
