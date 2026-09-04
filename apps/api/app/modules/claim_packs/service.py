@@ -32,10 +32,11 @@ from app.modules.financial.models import (
 from app.modules.rules.models import RequirementStatus
 from app.modules.rules.service import get_rule_summary
 from app.modules.tasks.models import ClaimTask, TaskStatus
+from app.modules.technical.service import build_technical_review
 from app.modules.users.models import User
 
 
-SNAPSHOT_SCHEMA_VERSION = "1.0"
+SNAPSHOT_SCHEMA_VERSION = "1.1"
 SATISFIED_REQUIREMENT_STATUSES = {
     RequirementStatus.RECEIVED,
     RequirementStatus.UNDER_REVIEW,
@@ -100,6 +101,37 @@ def _approved_assessment(db: Session, claim: Claim) -> dict[str, Any] | None:
     }
 
 
+def _technical_snapshot(review: dict[str, Any]) -> dict[str, Any]:
+    topics = []
+    for row in review.get("matrix", []):
+        topics.append(
+            {
+                "topic_key": row["key"],
+                "topic_kind": row["topic_kind"],
+                "title": row["title"],
+                "severity": row["severity"],
+                "status": row["status"],
+                "state_fingerprint": row["state_fingerprint"],
+                "state_version": row["state_version"],
+                "decision_state": row["decision_state"],
+                "latest_decision": row.get("latest_decision"),
+                "evidence_for": row.get("evidence_for", []),
+                "evidence_against": row.get("evidence_against", []),
+                "unknown_or_missing": row.get("unknown_or_missing", []),
+                "recommended_follow_up": row.get("recommended_follow_up", []),
+            }
+        )
+    return {
+        "authority": "human_investigation_review_only",
+        "disclaimer": (
+            "Technical investigation dispositions are evidence-review records only and do not "
+            "determine proximate cause, coverage, liability, negligence, unseaworthiness, "
+            "workmanship responsibility, fraud, reserve, settlement, payment or recovery."
+        ),
+        "topics": topics,
+    }
+
+
 def build_claim_pack_snapshot(
     db: Session,
     *,
@@ -118,6 +150,17 @@ def build_claim_pack_snapshot(
         claim_id=claim.id,
         organization_id=claim.organization_id,
     ).model_dump(mode="json")
+    technical_review = build_technical_review(
+        db,
+        claim_id=claim.id,
+        organization_id=claim.organization_id,
+    )
+    technical_investigation = _technical_snapshot(technical_review)
+    technical_topics = technical_investigation["topics"]
+    technical_current = [item for item in technical_topics if item["decision_state"] == "current"]
+    technical_stale = [item for item in technical_topics if item["decision_state"] == "stale"]
+    technical_unreviewed = [item for item in technical_topics if item["decision_state"] == "none"]
+
     rule_summary = get_rule_summary(db, claim=claim)
     outstanding = [
         requirement
@@ -163,9 +206,9 @@ def build_claim_pack_snapshot(
         totals[item.currency] = totals.get(item.currency, Decimal("0")) + item.amount
 
     open_conflicts = matrix["summary"]["open_conflict_count"]
-    if open_conflicts or outstanding:
+    if open_conflicts or outstanding or technical_stale:
         review_state = "attention_required"
-    elif tasks or open_flags or (assessment and assessment["is_preliminary"]):
+    elif tasks or open_flags or technical_unreviewed or (assessment and assessment["is_preliminary"]):
         review_state = "reviewed_with_open_items"
     else:
         review_state = "reviewed"
@@ -201,6 +244,7 @@ def build_claim_pack_snapshot(
         },
         "evidence_matrix": matrix,
         "policy_intelligence": policy_intelligence,
+        "technical_investigation": technical_investigation,
         "outstanding_requirements": [
             {
                 "id": str(item.id),
@@ -266,6 +310,10 @@ def build_claim_pack_snapshot(
             "open_financial_flag_count": len(open_flags),
             "policy_issue_count": policy_intelligence["summary"]["issue_count"],
             "high_priority_policy_issue_count": policy_intelligence["summary"]["high_priority_issue_count"],
+            "technical_topic_count": len(technical_topics),
+            "technical_current_disposition_count": len(technical_current),
+            "technical_stale_disposition_count": len(technical_stale),
+            "technical_unreviewed_topic_count": len(technical_unreviewed),
             "approved_assessment_version": assessment["version"] if assessment else None,
             "assessment_is_preliminary": (
                 assessment["is_preliminary"] if assessment else None
@@ -368,6 +416,8 @@ def generate_claim_pack(
                 "snapshot_hash": snapshot_hash,
                 "file_hash": stored.file_hash,
                 "review_state": snapshot["summary"]["review_state"],
+                "technical_topic_count": snapshot["summary"]["technical_topic_count"],
+                "technical_stale_disposition_count": snapshot["summary"]["technical_stale_disposition_count"],
             },
             details="Generated immutable controlled claim-pack snapshot.",
         )
