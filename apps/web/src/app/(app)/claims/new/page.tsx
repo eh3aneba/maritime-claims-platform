@@ -26,6 +26,8 @@ import type { ClaimIntakeDraft, Vessel } from "@/lib/types";
 
 type IntakeMode = "document" | "manual";
 
+const ACTIVE_INTAKE_DRAFT_KEY = "mcri.claimIntake.activeDraftId";
+
 export default function NewClaimPage() {
   const router = useRouter();
   const { locale, t } = useLocale();
@@ -53,6 +55,7 @@ export default function NewClaimPage() {
   const [submitting, setSubmitting] = useState(false);
   const [extracting, setExtracting] = useState(false);
   const [retrying, setRetrying] = useState(false);
+  const [checkingStatus, setCheckingStatus] = useState(false);
 
   useEffect(() => {
     listVessels()
@@ -65,6 +68,55 @@ export default function NewClaimPage() {
       .then((registry) => setDocumentTypes(registry.items))
       .catch((err) => setError(err instanceof ApiError ? err.detail : im("loadTypesError")));
   }, []);
+
+  useEffect(() => {
+    const savedDraftId = window.sessionStorage.getItem(ACTIVE_INTAKE_DRAFT_KEY);
+    if (!savedDraftId) return;
+    let cancelled = false;
+    setCheckingStatus(true);
+    getClaimIntakeDraft(savedDraftId)
+      .then((draft) => {
+        if (cancelled) return;
+        setIntakeDraft(draft);
+        rememberDraft(draft);
+        if (draft.status === "pending_review") {
+          prepareReview(draft);
+          setError("");
+        } else if (draft.status === "processing") {
+          setError(im("processingRestored"));
+        } else if (draft.status === "failed") {
+          setError(draft.extraction_warnings?.[0] ?? cw("documentReviewError"));
+        } else {
+          forgetDraft();
+        }
+      })
+      .catch((err) => {
+        window.sessionStorage.removeItem(ACTIVE_INTAKE_DRAFT_KEY);
+        if (!cancelled) setError(err instanceof ApiError ? err.detail : im("statusCheckError"));
+      })
+      .finally(() => {
+        if (!cancelled) setCheckingStatus(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (intakeDraft?.status === "pending_review" && documentTypes.length > 0) {
+      prepareReview(intakeDraft);
+    }
+  }, [documentTypes, vessels]);
+
+  function rememberDraft(draft: ClaimIntakeDraft) {
+    if (["processing", "pending_review", "failed"].includes(draft.status)) {
+      window.sessionStorage.setItem(ACTIVE_INTAKE_DRAFT_KEY, draft.id);
+    } else {
+      forgetDraft();
+    }
+  }
+
+  function forgetDraft() {
+    window.sessionStorage.removeItem(ACTIVE_INTAKE_DRAFT_KEY);
+  }
 
   function applyCandidates(draft: ClaimIntakeDraft) {
     const fields = draft.extracted_fields;
@@ -96,16 +148,22 @@ export default function NewClaimPage() {
       await new Promise((resolve) => window.setTimeout(resolve, 1000));
       draft = await getClaimIntakeDraft(draft.id);
       setIntakeDraft(draft);
+      rememberDraft(draft);
     }
     if (draft.status === "pending_review") {
       prepareReview(draft);
+      setError("");
       return draft;
     }
     if (draft.status === "processing") {
       setError(im("processingLonger"));
       return draft;
     }
-    setError(draft.extraction_warnings?.[0] ?? cw("documentReviewError"));
+    if (draft.status === "failed") {
+      setError(draft.extraction_warnings?.[0] ?? cw("documentReviewError"));
+      return draft;
+    }
+    forgetDraft();
     return draft;
   }
 
@@ -118,10 +176,34 @@ export default function NewClaimPage() {
     try {
       const draft = await uploadClaimIntakeDraft(intakeFile);
       setIntakeDraft(draft);
+      rememberDraft(draft);
       await pollDraft(draft);
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : cw("prepareDocumentError"));
     } finally { setExtracting(false); }
+  }
+
+  async function checkDraftStatus() {
+    if (!intakeDraft) return;
+    setError("");
+    setCheckingStatus(true);
+    try {
+      const draft = await getClaimIntakeDraft(intakeDraft.id);
+      setIntakeDraft(draft);
+      rememberDraft(draft);
+      if (draft.status === "pending_review") {
+        prepareReview(draft);
+        setError("");
+      } else if (draft.status === "processing") {
+        setError(im("processingStillRunning"));
+      } else if (draft.status === "failed") {
+        setError(draft.extraction_warnings?.[0] ?? cw("documentReviewError"));
+      } else {
+        forgetDraft();
+      }
+    } catch (err) {
+      setError(err instanceof ApiError ? err.detail : im("statusCheckError"));
+    } finally { setCheckingStatus(false); }
   }
 
   async function retryDraftProcessing() {
@@ -132,6 +214,7 @@ export default function NewClaimPage() {
     try {
       const draft = await retryClaimIntakeDraft(intakeDraft.id);
       setIntakeDraft(draft);
+      rememberDraft(draft);
       await pollDraft(draft);
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : im("retryError"));
@@ -151,7 +234,10 @@ export default function NewClaimPage() {
   async function rejectDraft() {
     if (!intakeDraft || reviewNote.trim().length < 10) { setError(cw("rejectNoteError")); return; }
     setSubmitting(true);
-    try { setIntakeDraft(await rejectClaimIntakeDraft(intakeDraft.id, reviewNote.trim())); }
+    try {
+      setIntakeDraft(await rejectClaimIntakeDraft(intakeDraft.id, reviewNote.trim()));
+      forgetDraft();
+    }
     catch (err) { setError(err instanceof ApiError ? err.detail : cw("rejectDraftError")); }
     finally { setSubmitting(false); }
   }
@@ -183,6 +269,7 @@ export default function NewClaimPage() {
           document_type: documentType,
           review_note: reviewNote.trim(),
         });
+        forgetDraft();
         router.push(`/claims/${result.claim.id}`);
       } else {
         const claim = await createClaim(claimPayload);
@@ -194,6 +281,7 @@ export default function NewClaimPage() {
 
   const pendingReview = intakeDraft?.status === "pending_review";
   const failedProcessing = intakeDraft?.status === "failed";
+  const processingDraft = intakeDraft?.status === "processing";
   return (
     <div className="max-w-5xl">
       <Link href="/claims" className="text-sm font-semibold text-slate-500 hover:text-slate-800">{locale === "fa" ? "→" : "←"} {cw("backToClaims")}</Link>
@@ -208,16 +296,18 @@ export default function NewClaimPage() {
         <div className="space-y-5">
           {mode === "document" ? <section className="panel p-6">
             <h2 className="section-title">{cw("secureSourceIntake")}</h2><p className="section-subtitle">{cw("secureSourceHelp")}</p>
-            <div className="mt-5 flex flex-col gap-3 sm:flex-row"><input type="file" accept=".pdf,.jpg,.jpeg,.png,.docx" onChange={(event) => setIntakeFile(event.target.files?.[0] ?? null)} className="field flex-1" /><button type="button" onClick={uploadAndExtract} disabled={extracting || retrying} className="secondary-button justify-center disabled:opacity-60">{extracting ? cw("scanningExtracting") : cw("uploadExtract")}</button></div>
+            <div className="mt-5 flex flex-col gap-3 sm:flex-row"><input type="file" accept=".pdf,.jpg,.jpeg,.png,.docx" onChange={(event) => setIntakeFile(event.target.files?.[0] ?? null)} className="field flex-1" /><button type="button" onClick={uploadAndExtract} disabled={extracting || retrying || checkingStatus} className="secondary-button justify-center disabled:opacity-60">{extracting ? cw("scanningExtracting") : cw("uploadExtract")}</button></div>
             {intakeDraft ? <div className={`mt-4 rounded-xl border p-4 text-sm ${pendingReview ? "border-emerald-200 bg-emerald-50 text-emerald-900" : failedProcessing ? "border-red-200 bg-red-50 text-red-800" : "border-slate-200 bg-slate-50 text-slate-700"}`}>
               <div className="flex flex-wrap items-center justify-between gap-2"><strong dir="ltr">{intakeDraft.original_filename}</strong><span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold" dir="ltr">{intakeDraft.status.replaceAll("_", " ")}</span></div>
+              <p className="mt-2 text-xs opacity-70">{im("draftReference")}: <span dir="ltr">{intakeDraft.id}</span></p>
               {pendingReview ? <div className="mt-3 space-y-3">
                 <p>{im("classificationAdvisory")}: <span dir="ltr">{intakeDraft.classification_candidate?.replaceAll("_", " ") || "unknown"}</span> · {cw("confidence")} <span dir="ltr">{intakeDraft.classification_confidence ?? 0}%</span> · {cw("method")} <span dir="ltr">{intakeDraft.extraction_method}</span></p>
                 {intakeDraft.classification_rule ? <p className="text-xs opacity-80">{im("classificationBasis")}: <span dir="ltr">{intakeDraft.classification_rule}</span></p> : null}
                 <label className="block"><span className="label">{im("documentType")}</span><select aria-label={im("documentType")} required value={documentType} onChange={(event) => setDocumentType(event.target.value)} className="field mt-1"><option value="">{im("selectDocumentType")}</option>{documentTypes.map((code) => <option key={code} value={code}>{intakeDocumentTypeLabel(locale, code)}</option>)}</select></label>
               </div> : null}
               {intakeDraft.extraction_warnings?.map((warning) => <p key={warning} className="mt-2 text-amber-800">{warning}</p>)}
-              {failedProcessing ? <button type="button" onClick={retryDraftProcessing} disabled={retrying} className="secondary-button mt-3 disabled:opacity-60">{retrying ? im("retrying") : im("retryProcessing")}</button> : null}
+              {processingDraft ? <button type="button" onClick={checkDraftStatus} disabled={checkingStatus || extracting || retrying} className="secondary-button mt-3 disabled:opacity-60">{checkingStatus ? im("checkingStatus") : im("checkStatus")}</button> : null}
+              {failedProcessing ? <button type="button" onClick={retryDraftProcessing} disabled={retrying || checkingStatus} className="secondary-button mt-3 disabled:opacity-60">{retrying ? im("retrying") : im("retryProcessing")}</button> : null}
             </div> : null}
           </section> : null}
 
@@ -240,7 +330,7 @@ export default function NewClaimPage() {
           {mode === "document" ? <section className="panel p-6"><h2 className="section-title">{cw("humanApproval")}</h2><p className="section-subtitle">{cw("humanApprovalHelp")}</p><label className="mt-5 block"><span className="label">{cw("reviewNote")}</span><textarea required minLength={10} rows={3} value={reviewNote} onChange={(event) => setReviewNote(event.target.value)} className="field resize-y" /></label>{pendingReview ? <button type="button" disabled={submitting} onClick={rejectDraft} className="mt-3 text-sm font-semibold text-red-700 hover:text-red-900">{cw("rejectDraft")}</button> : null}</section> : null}
         </div>
 
-        <aside><div className="panel sticky top-24 p-5"><p className="text-sm font-semibold text-slate-900">{cw("humanControlledIntake")}</p><dl className="mt-4 space-y-3 text-sm"><div className="flex justify-between gap-4"><dt className="text-slate-500">{cw("claimType")}</dt><dd className="font-medium" dir="ltr">H&amp;M</dd></div><div className="flex justify-between gap-4"><dt className="text-slate-500">{cw("source")}</dt><dd className="font-medium">{mode === "document" ? cw("reviewedUpload") : cw("manual")}</dd></div><div className="flex justify-between gap-4"><dt className="text-slate-500">{cw("initialStatus")}</dt><dd className="font-medium">{cw("statusNew")}</dd></div></dl><div className="my-5 border-t border-slate-200" />{error ? <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div> : null}<button disabled={submitting || extracting || retrying || (mode === "document" && (!pendingReview || !documentType))} className="primary-button w-full justify-center disabled:opacity-60">{submitting ? cw("creating") : mode === "document" ? cw("approveCreate") : cw("create")}</button><p className="mt-3 text-xs leading-5 text-slate-400">{cw("intakeBoundary")}</p></div></aside>
+        <aside><div className="panel sticky top-24 p-5"><p className="text-sm font-semibold text-slate-900">{cw("humanControlledIntake")}</p><dl className="mt-4 space-y-3 text-sm"><div className="flex justify-between gap-4"><dt className="text-slate-500">{cw("claimType")}</dt><dd className="font-medium" dir="ltr">H&amp;M</dd></div><div className="flex justify-between gap-4"><dt className="text-slate-500">{cw("source")}</dt><dd className="font-medium">{mode === "document" ? cw("reviewedUpload") : cw("manual")}</dd></div><div className="flex justify-between gap-4"><dt className="text-slate-500">{cw("initialStatus")}</dt><dd className="font-medium">{cw("statusNew")}</dd></div></dl><div className="my-5 border-t border-slate-200" />{error ? <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div> : null}<button disabled={submitting || extracting || retrying || checkingStatus || (mode === "document" && (!pendingReview || !documentType))} className="primary-button w-full justify-center disabled:opacity-60">{submitting ? cw("creating") : mode === "document" ? cw("approveCreate") : cw("create")}</button><p className="mt-3 text-xs leading-5 text-slate-400">{cw("intakeBoundary")}</p></div></aside>
       </form>
     </div>
   );

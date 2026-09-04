@@ -9,7 +9,7 @@ from app.db import metadata as _metadata  # noqa: F401 - register all ORM models
 from app.db.session import create_session
 from app.modules import ai_runtime
 from app.modules import processing as _processing_package  # noqa: F401
-from app.modules.intake.maturity import process_intake_job
+from app.modules.intake.maturity import process_intake_job, recover_stale_intake_jobs
 from app.modules.intake.service import claim_next_intake_job
 from app.modules.processing import service as processing_service
 
@@ -25,6 +25,9 @@ process_job = processing_service.process_job
 
 def run_once(worker_id: str) -> bool:
     with create_session() as db:
+        # Recover only leases old enough to exceed the configured worker window.
+        # Recovery reuses the existing attempt budget and remains auditable.
+        recover_stale_intake_jobs(db)
         security_job = claim_next_job(db, worker_id=worker_id, security_only=True)
         if security_job is not None:
             process_job(db, job=security_job)

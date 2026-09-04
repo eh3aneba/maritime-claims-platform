@@ -6,11 +6,14 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.modules.audit.service import write_audit_log
 from app.modules.intake.models import ClaimIntakeDraft, ClaimIntakeProcessingJob, ClaimIntakeStatus
 from app.modules.intake.service import process_intake_job as _legacy_process_intake_job
 from app.modules.processing.models import ProcessingJobStatus
 from app.modules.users.models import User
+
+settings = get_settings()
 
 _TERMINAL_FAILURE_MARKERS = (
     "No reviewable text was extracted from the intake source.",
@@ -20,6 +23,91 @@ _TERMINAL_FAILURE_MARKERS = (
 def _is_terminal_failure(error: str | None) -> bool:
     message = error or ""
     return any(marker in message for marker in _TERMINAL_FAILURE_MARKERS)
+
+
+def recover_stale_intake_jobs(db: Session, *, now: datetime | None = None) -> int:
+    """Recover abandoned RUNNING intake jobs using the existing attempt budget.
+
+    A worker claims a job by setting ``locked_at`` and incrementing attempt_count.
+    If the worker disappears before completing it, the durable row must not stay
+    RUNNING forever. Recovery is conservative: only leases older than the configured
+    threshold are touched, rows are locked on PostgreSQL, and an exhausted job is
+    made terminal rather than silently receiving extra attempts.
+    """
+
+    now = now or datetime.now(UTC)
+    stale_after = max(60, int(settings.processing_stale_after_seconds))
+    cutoff = now - timedelta(seconds=stale_after)
+    stmt = (
+        select(ClaimIntakeProcessingJob)
+        .where(
+            ClaimIntakeProcessingJob.status == ProcessingJobStatus.RUNNING,
+            ClaimIntakeProcessingJob.locked_at.is_not(None),
+            ClaimIntakeProcessingJob.locked_at <= cutoff,
+        )
+        .order_by(ClaimIntakeProcessingJob.locked_at.asc())
+    )
+    if db.bind is not None and db.bind.dialect.name == "postgresql":
+        stmt = stmt.with_for_update(skip_locked=True)
+    jobs = list(db.scalars(stmt))
+    if not jobs:
+        return 0
+
+    recovered = 0
+    for job in jobs:
+        draft = db.get(ClaimIntakeDraft, job.intake_draft_id)
+        expired_worker = job.locked_by
+        expired_at = job.locked_at
+        job.locked_at = None
+        job.locked_by = None
+
+        if draft is None or draft.status != ClaimIntakeStatus.PROCESSING:
+            job.status = ProcessingJobStatus.FAILED
+            job.completed_at = now
+            job.last_error = "Stale intake worker lease found for an unavailable/non-processing draft."
+            continue
+
+        if job.attempt_count >= job.max_attempts:
+            job.status = ProcessingJobStatus.FAILED
+            job.completed_at = now
+            job.last_error = "Worker lease expired on the final permitted processing attempt."
+            draft.status = ClaimIntakeStatus.FAILED
+            draft.extraction_warnings = [
+                "Processing worker stopped before completion and the configured attempt limit is exhausted. "
+                "An operator may request an explicit reprocess after reviewing the source."
+            ]
+            action = "FAIL_STALE_CLAIM_INTAKE_PROCESSING"
+        else:
+            job.status = ProcessingJobStatus.PENDING
+            job.available_at = now
+            job.completed_at = None
+            job.last_error = "Recovered an expired worker lease; processing will resume from the durable source."
+            draft.extraction_warnings = [
+                f"A stale processing worker lease was recovered. Automatic attempt {job.attempt_count + 1} "
+                f"of {job.max_attempts} is queued."
+            ]
+            action = "RECOVER_STALE_CLAIM_INTAKE_PROCESSING"
+
+        write_audit_log(
+            db,
+            organization_id=draft.organization_id,
+            user_id=job.requested_by_id,
+            action=action,
+            entity_type="claim_intake_draft",
+            entity_id=draft.id,
+            new_values={
+                "job_status": job.status.value,
+                "attempt_count": job.attempt_count,
+                "max_attempts": job.max_attempts,
+                "expired_worker": expired_worker,
+                "expired_locked_at": expired_at.isoformat() if expired_at else None,
+            },
+            details=f"Recovered stale intake worker lease older than {stale_after} seconds.",
+        )
+        recovered += 1
+
+    db.commit()
+    return recovered
 
 
 def process_intake_job(db: Session, *, job: ClaimIntakeProcessingJob) -> None:
