@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.modules.auth.dependencies import CurrentUser
+from app.modules.audit.service import write_audit_log
 from app.modules.claims.facts import ClaimFactRevision
 from app.modules.claims.security import get_claim_for_tenant
 from app.modules.documents.models import Document
@@ -33,11 +34,13 @@ from app.modules.review.service import (
     get_feedback_history,
     get_source_segment_for_extraction,
     is_bulk_approvable,
+    is_promotable,
     list_review_groups,
     list_review_queue,
     review_extraction,
     validate_same_review_group,
 )
+from app.modules.rules.service import evaluate_claim_rules
 from app.modules.users.models import User
 
 router = APIRouter(prefix="/ai-review", tags=["ai-review"])
@@ -56,6 +59,54 @@ def _feedback_response(db: Session, row) -> FeedbackResponse:
         reviewer_email=reviewer.email if reviewer else None,
         created_at=row.created_at,
     )
+
+
+def _refresh_rules_after_canonical_review(
+    db: Session,
+    *,
+    current_user,
+    extractions,
+) -> None:
+    """Refresh current evidence requirements once after a canonical-fact review action.
+
+    The human review commit is authoritative and must not be rolled back if this
+    secondary deterministic refresh fails. Promotable paths are the only review
+    rows that can create, replace, restore or remove a canonical ClaimFact.
+    """
+
+    rows = list(extractions)
+    if not rows or not any(is_promotable(row) for row in rows):
+        return
+    claim_id = rows[0].claim_id
+    claim = get_claim_for_tenant(
+        db,
+        claim_id=claim_id,
+        organization_id=current_user.organization_id,
+    )
+    if claim is None:
+        return
+    try:
+        evaluate_claim_rules(
+            db,
+            claim=claim,
+            user=current_user,
+            trigger="ai_review_fact_change",
+        )
+    except Exception as exc:  # noqa: BLE001 - review success must survive secondary refresh failure
+        db.rollback()
+        try:
+            write_audit_log(
+                db,
+                organization_id=current_user.organization_id,
+                user_id=current_user.id,
+                action="REFRESH_RULES_AFTER_AI_REVIEW_FAILED",
+                entity_type="claim",
+                entity_id=claim_id,
+                details=str(exc)[:1000],
+            )
+            db.commit()
+        except Exception:  # noqa: BLE001 - diagnostics must not turn review success into failure
+            db.rollback()
 
 
 @router.get("", response_model=ReviewQueueResponse)
@@ -176,6 +227,11 @@ def review_group(
             event_data={"count": len(extractions), "grouped": True},
         )
         db.commit()
+        _refresh_rules_after_canonical_review(
+            db,
+            current_user=current_user,
+            extractions=extractions,
+        )
         return GroupReviewResponse(reviewed=reviewed)
     except ValueError as exc:
         db.rollback()
@@ -301,6 +357,11 @@ def review_one(
         db.refresh(extraction)
         if fact is not None:
             db.refresh(fact)
+        _refresh_rules_after_canonical_review(
+            db,
+            current_user=current_user,
+            extractions=[extraction],
+        )
     except ValueError as exc:
         db.rollback()
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
@@ -365,6 +426,11 @@ def bulk_approve(
                 event_data={"count": len(extractions), "bulk": True},
             )
         db.commit()
+        _refresh_rules_after_canonical_review(
+            db,
+            current_user=current_user,
+            extractions=extractions,
+        )
     except ValueError as exc:
         db.rollback()
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc

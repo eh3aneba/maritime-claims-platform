@@ -239,7 +239,6 @@ def test_document_requests_are_tenant_scoped() -> None:
 
 
 def test_accepting_equivalent_evidence_auto_completes_open_requirement_task() -> None:
-    from uuid import uuid4
     from app.modules.claims.facts import ClaimFact
     from app.modules.claims.models import Claim
 
@@ -256,12 +255,20 @@ def test_accepting_equivalent_evidence_auto_completes_open_requirement_task() ->
         db.add(fact); db.commit(); db.refresh(fact); fact_id=str(fact.id)
     summary = _evaluate(claim_id)
     req = next(r for r in summary["requirements"] if r["document_type"] == "maker_recommendation")
+    candidate = next(row for row in req["equivalent_evidence_candidates"] if row["claim_fact_id"] == fact_id)
     request = client.post(f"/api/v1/claims/{claim_id}/document-requests", json={"requirement_ids": [req["id"]]})
     assert request.status_code == 201
     task_id = request.json()["tasks"][0]["id"]
     accepted = client.post(
         f"/api/v1/claims/{claim_id}/rules/requirements/{req['id']}/accept-equivalent",
-        json={"claim_fact_id": fact_id, "note": "Reviewed approved maintenance interval as sufficient equivalent evidence."},
+        json={
+            "claim_fact_id": fact_id,
+            "claim_fact_version": candidate["claim_fact_version"],
+            "expected_state_fingerprint": req["state_fingerprint"],
+            "expected_state_version": req["state_version"],
+            "note": "Reviewed approved maintenance interval as sufficient equivalent evidence.",
+            "re_review": False,
+        },
     )
     assert accepted.status_code == 200, accepted.text
     tasks = client.get(f"/api/v1/claims/{claim_id}/tasks").json()["items"]

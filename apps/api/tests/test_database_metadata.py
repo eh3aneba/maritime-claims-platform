@@ -62,6 +62,23 @@ def test_rules_engine_tables_exist() -> None:
     assert expected.issubset(set(Base.metadata.tables))
 
 
+def test_requirement_lineage_tables_exist() -> None:
+    expected = {"claim_document_requirement_states", "claim_document_requirement_decisions"}
+    assert expected.issubset(set(Base.metadata.tables))
+    state = Base.metadata.tables["claim_document_requirement_states"]
+    decisions = Base.metadata.tables["claim_document_requirement_decisions"]
+    assert {"requirement_id", "state_fingerprint", "state_version"}.issubset(state.c.keys())
+    assert {
+        "requirement_id",
+        "state_fingerprint",
+        "state_version",
+        "decision_number",
+        "decision_hash",
+        "previous_decision_hash",
+        "claim_fact_version",
+    }.issubset(decisions.c.keys())
+
+
 def test_rule_driven_task_tables_exist() -> None:
     assert "claim_tasks" in Base.metadata.tables
     assert "document_request_batches" in Base.metadata.tables

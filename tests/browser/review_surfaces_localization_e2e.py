@@ -155,6 +155,37 @@ def _api_detail(page, candidate_id: str) -> dict:
     return response.json()
 
 
+def _wait_for_review_queue_settled(page) -> None:
+    """Wait until both field and grouped queue reads have completed their shared load."""
+
+    expect(page.get_by_text("Loading review queue…", exact=True)).to_be_hidden(timeout=15_000)
+
+
+def _open_history(page, candidate_id: str, field_path: str):
+    """Open lineage only after the queue and real detail request are settled.
+
+    Status changes load the field and grouped queues in parallel. Waiting for the
+    page-level loading state avoids clicking an article while that Promise.all is
+    still replacing DOM nodes; the locator is then re-acquired after detail loads.
+    """
+
+    _wait_for_review_queue_settled(page)
+    candidate = page.locator("article").filter(has_text=field_path).first
+    expect(candidate).to_be_visible(timeout=15_000)
+    with page.expect_response(
+        lambda response: response.url.endswith(f"/api/v1/ai-review/{candidate_id}")
+        and response.request.method == "GET",
+        timeout=15_000,
+    ) as detail_info:
+        candidate.get_by_role("button", name="Provenance & history", exact=True).click()
+    detail_response = detail_info.value
+    if not detail_response.ok:
+        raise AssertionError(f"AI review provenance detail failed: HTTP {detail_response.status}")
+    candidate = page.locator("article").filter(has_text=field_path).first
+    expect(candidate).to_be_visible(timeout=15_000)
+    return candidate
+
+
 def main() -> None:
     if len(PASSWORD) < 12:
         raise SystemExit("Set MCRI_DEMO_PASSWORD (12+ characters) before running browser E2E")
@@ -259,7 +290,20 @@ def main() -> None:
         assert detail_before_confirm["current_claim_fact"]["version"] == 1
         assert detail_before_confirm["item"]["human_status"] == "pending"
 
-        page.get_by_role("button", name="تأیید جایگزینی", exact=True).click()
+        # Confirm the human decision and wait for its own pending-view queue refresh
+        # before changing filters. This prevents the test from racing the real reload.
+        with page.expect_response(
+            lambda response: "/api/v1/ai-review?" in response.url
+            and "review_status=pending" in response.url
+            and response.request.method == "GET",
+            timeout=15_000,
+        ) as post_approve_queue_info:
+            page.get_by_role("button", name="تأیید جایگزینی", exact=True).click()
+        post_approve_queue = post_approve_queue_info.value
+        if not post_approve_queue.ok:
+            raise AssertionError(f"Post-approval AI review queue failed: HTTP {post_approve_queue.status}")
+        _wait_for_review_queue_settled(page)
+
         page.get_by_role("button", name="EN", exact=True).click()
         detail_after_approve = _api_detail(page, fixture["candidate_id"])
         assert detail_after_approve["current_claim_fact"]["provenance_kind"] == "ai_review"
@@ -281,11 +325,14 @@ def main() -> None:
             item.get("extraction_id") for item in approved_payload.get("items", [])
         }:
             raise AssertionError("Approved AI review queue did not return the replaced candidate")
-        approved_candidate = page.locator("article").filter(has_text="claim.incident_description").first
-        expect(approved_candidate).to_be_visible(timeout=15_000)
-        approved_candidate.get_by_role("button", name="Provenance & history", exact=True).click()
-        expect(approved_candidate).to_contain_text("Human-approved AI review")
-        expect(approved_candidate).to_contain_text("Version 2")
+        _wait_for_review_queue_settled(page)
+        approved_candidate = _open_history(
+            page,
+            fixture["candidate_id"],
+            "claim.incident_description",
+        )
+        expect(approved_candidate).to_contain_text("Human-approved AI review", timeout=15_000)
+        expect(approved_candidate).to_contain_text("Version 2", timeout=15_000)
 
         # Reviewed items expose an explicit two-step re-review entry point. Locale
         # switching changes copy/direction only and must not itself record a decision.
@@ -304,14 +351,25 @@ def main() -> None:
         assert detail_after_locale_switch["current_claim_fact"]["version"] == 2
         page.get_by_role("button", name="EN", exact=True).click()
 
+        # Capture both the deliberate re-review intent and the ensuing approved-view
+        # reload before switching to the rejected filter.
         with page.expect_request(
             lambda request: request.url.endswith(f"/api/v1/ai-review/{fixture['candidate_id']}")
             and request.method == "POST"
-        ) as re_review_request_info:
+        ) as re_review_request_info, page.expect_response(
+            lambda response: "/api/v1/ai-review?" in response.url
+            and "review_status=approved" in response.url
+            and response.request.method == "GET",
+            timeout=15_000,
+        ) as post_reject_queue_info:
             approved_candidate.get_by_role("button", name="Reject on re-review", exact=True).click()
         re_review_payload = re_review_request_info.value.post_data_json
         if not re_review_payload or re_review_payload.get("confirm_re_review") is not True:
             raise AssertionError("Deliberate re-review did not send explicit confirmation intent")
+        post_reject_queue = post_reject_queue_info.value
+        if not post_reject_queue.ok:
+            raise AssertionError(f"Post-rejection AI review queue failed: HTTP {post_reject_queue.status}")
+        _wait_for_review_queue_settled(page)
 
         detail_after_reject = _api_detail(page, fixture["candidate_id"])
         assert detail_after_reject["item"]["human_status"] == "rejected"
@@ -334,12 +392,15 @@ def main() -> None:
             item.get("extraction_id") for item in rejected_payload.get("items", [])
         }:
             raise AssertionError("Rejected AI review queue did not return the restored candidate")
-        rejected_candidate = page.locator("article").filter(has_text="claim.incident_description").first
-        expect(rejected_candidate).to_be_visible(timeout=15_000)
-        rejected_candidate.get_by_role("button", name="Provenance & history", exact=True).click()
-        expect(rejected_candidate).to_contain_text("Human-reviewed intake")
-        expect(rejected_candidate).to_contain_text("Version 3")
-        expect(rejected_candidate).to_contain_text(fixture["intake_value"])
+        _wait_for_review_queue_settled(page)
+        rejected_candidate = _open_history(
+            page,
+            fixture["candidate_id"],
+            "claim.incident_description",
+        )
+        expect(rejected_candidate).to_contain_text("Human-reviewed intake", timeout=15_000)
+        expect(rejected_candidate).to_contain_text("Version 3", timeout=15_000)
+        expect(rejected_candidate).to_contain_text(fixture["intake_value"], timeout=15_000)
 
         page.get_by_role("button", name="FA", exact=True).click()
         expect(page.locator("html")).to_have_attribute("dir", "rtl")
