@@ -208,6 +208,23 @@ def _event_signature(candidate: EventCandidate) -> str:
     return _canonical_hash(payload)
 
 
+def _event_lineage_key(*, event_type: str, extraction_ids: list[UUID]) -> str:
+    """Stable source-linked identity for a reviewed event across mutable value corrections."""
+    return _canonical_hash(
+        {
+            "type": event_type,
+            "evidence": sorted(str(extraction_id) for extraction_id in extraction_ids),
+        }
+    )
+
+
+def _candidate_event_lineage_key(candidate: EventCandidate) -> str:
+    return _event_lineage_key(
+        event_type=candidate.event_type,
+        extraction_ids=[item.extraction.id for item in candidate.evidence],
+    )
+
+
 def _conflict_key(candidate: ConflictCandidate) -> str:
     payload = {
         "type": candidate.conflict_type,
@@ -536,14 +553,58 @@ def _cluster_candidates(candidates: list[EventCandidate]) -> list[EventCandidate
 
 
 def _upsert_events(db: Session, *, claim: Claim, candidates: list[EventCandidate]) -> list[ChronologyEvent]:
-    existing_events = list(db.scalars(select(ChronologyEvent).where(ChronologyEvent.claim_id == claim.id, ChronologyEvent.organization_id == claim.organization_id)))
+    existing_events = list(
+        db.scalars(
+            select(ChronologyEvent).where(
+                ChronologyEvent.claim_id == claim.id,
+                ChronologyEvent.organization_id == claim.organization_id,
+            )
+        )
+    )
     by_signature = {event.source_signature: event for event in existing_events}
+
+    evidence_ids_by_event: dict[UUID, list[UUID]] = {}
+    active_existing_ids = [event.id for event in existing_events if event.is_active]
+    if active_existing_ids:
+        for event_id, extraction_id in db.execute(
+            select(EventEvidence.event_id, EventEvidence.extraction_id).where(
+                EventEvidence.event_id.in_(active_existing_ids)
+            )
+        ).all():
+            evidence_ids_by_event.setdefault(event_id, []).append(extraction_id)
+
+    by_lineage: dict[str, list[ChronologyEvent]] = {}
+    for event in existing_events:
+        if not event.is_active:
+            continue
+        extraction_ids = evidence_ids_by_event.get(event.id, [])
+        if not extraction_ids:
+            continue
+        lineage_key = _event_lineage_key(
+            event_type=event.event_type,
+            extraction_ids=extraction_ids,
+        )
+        by_lineage.setdefault(lineage_key, []).append(event)
+
     active_signatures: set[str] = set()
+    claimed_event_ids: set[UUID] = set()
     active: list[ChronologyEvent] = []
     for candidate in candidates:
         signature = _event_signature(candidate)
         active_signatures.add(signature)
         event = by_signature.get(signature)
+        if event is not None and event.id in claimed_event_ids:
+            event = None
+        if event is None:
+            lineage_key = _candidate_event_lineage_key(candidate)
+            lineage_matches = [
+                existing
+                for existing in by_lineage.get(lineage_key, [])
+                if existing.id not in claimed_event_ids
+            ]
+            if len(lineage_matches) == 1:
+                event = lineage_matches[0]
+
         if event is None:
             event = ChronologyEvent(
                 organization_id=claim.organization_id,
@@ -569,21 +630,27 @@ def _upsert_events(db: Session, *, claim: Claim, candidates: list[EventCandidate
             event.occurred_time = candidate.occurred_time
             event.timezone_label = candidate.timezone_label
             event.materiality = candidate.materiality
+            event.source_signature = signature
             event.build_version = BUILD_VERSION
             event.is_active = True
             db.flush()
+
+        claimed_event_ids.add(event.id)
         db.execute(delete(EventEvidence).where(EventEvidence.event_id == event.id))
         for idx, evidence in enumerate(candidate.evidence):
-            db.add(EventEvidence(
-                organization_id=claim.organization_id,
-                claim_id=claim.id,
-                event_id=event.id,
-                extraction_id=evidence.extraction.id,
-                document_id=evidence.document.id,
-                source_segment_id=evidence.extraction.source_segment_id,
-                evidence_role="primary" if idx == 0 else "supporting",
-            ))
+            db.add(
+                EventEvidence(
+                    organization_id=claim.organization_id,
+                    claim_id=claim.id,
+                    event_id=event.id,
+                    extraction_id=evidence.extraction.id,
+                    document_id=evidence.document.id,
+                    source_segment_id=evidence.extraction.source_segment_id,
+                    evidence_role="primary" if idx == 0 else "supporting",
+                )
+            )
         active.append(event)
+
     for event in existing_events:
         if event.source_signature not in active_signatures:
             event.is_active = False
