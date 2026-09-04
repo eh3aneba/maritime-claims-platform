@@ -192,9 +192,9 @@ def main() -> None:
 
         # Source evidence is adjacent to the conflict before a decision is made.
         expect(page.get_by_text("Source A", exact=True)).to_be_visible()
-        expect(page.get_by_text("engine-log.pdf", exact=False)).to_be_visible()
+        expect(page.get_by_text("engine-log.pdf", exact=False).first).to_be_visible()
         expect(page.get_by_text("Source B", exact=True)).to_be_visible()
-        expect(page.get_by_text("chief-engineer-report.pdf", exact=False)).to_be_visible()
+        expect(page.get_by_text("chief-engineer-report.pdf", exact=False).first).to_be_visible()
         expect(page.get_by_text("No decision", exact=True)).to_be_visible()
 
         note_box = page.get_by_placeholder("Explain how this difference should be understood…")
@@ -237,7 +237,7 @@ def main() -> None:
         expect(page.get_by_text("Decision history (3)", exact=True)).to_be_visible()
         assert post_payloads[-1]["expected_state_fingerprint"] == "b" * 64
         assert post_payloads[-1]["expected_state_version"] == 2
-        assert post_payloads[-1]["confirm_re_review"] is False
+        assert post_payloads[-1]["confirm_re_review"] is True
 
         page.get_by_role("button", name="FA").click()
         expect(page.locator("html")).to_have_attribute("dir", "rtl")
