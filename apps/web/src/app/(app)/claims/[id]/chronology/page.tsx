@@ -4,18 +4,18 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
+import { ChronologyConflictReview } from "@/components/chronology-conflict-review";
 import { useLocale } from "@/components/locale-provider";
-import { ApiError, getClaim, getClaimChronology, rebuildClaimChronology, resolveEvidenceConflict } from "@/lib/api";
+import { ApiError, getClaim, getClaimChronology, rebuildClaimChronology } from "@/lib/api";
+import type { MatureClaimChronologyResponse } from "@/lib/chronology-maturity-api";
 import { formatStructuredValue, humanizeFieldLabel } from "@/lib/format";
 import {
   chronologyT,
-  conflictStatusLabel,
-  conflictTypeLabel,
   materialityLabel,
   type ChronologyKey,
 } from "@/lib/i18n-chronology";
 import type { Locale } from "@/lib/i18n";
-import type { Claim, ClaimChronologyResponse, ChronologyEvidence, EvidenceConflict, EvidenceConflictStatus } from "@/lib/types";
+import type { Claim, ChronologyEvidence } from "@/lib/types";
 
 const materialityClasses: Record<string, string> = {
   low: "bg-slate-100 text-slate-600",
@@ -66,31 +66,20 @@ function measurementEvidence(evidence: ChronologyEvidence[], locale: Locale) {
   return rows;
 }
 
-function formatConflictValue(value: unknown) {
-  if (value && typeof value === "object" && !Array.isArray(value)) {
-    const record = value as Record<string, unknown>;
-    if (record.date || record.time) {
-      return [record.date, record.time, record.timezone].filter(Boolean).join(" ");
-    }
-  }
-  return formatStructuredValue(value);
-}
-
 export default function ClaimChronologyPage() {
   const { id } = useParams<{ id: string }>();
   const { locale } = useLocale();
   const ct = (key: ChronologyKey, values?: Record<string, string | number>) => chronologyT(locale, key, values);
   const [claim, setClaim] = useState<Claim | null>(null);
-  const [chronology, setChronology] = useState<ClaimChronologyResponse | null>(null);
+  const [chronology, setChronology] = useState<MatureClaimChronologyResponse | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [notes, setNotes] = useState<Record<string, string>>({});
 
   async function load() {
     try {
       const [claimData, chronologyData] = await Promise.all([getClaim(id), getClaimChronology(id)]);
       setClaim(claimData);
-      setChronology(chronologyData);
+      setChronology(chronologyData as MatureClaimChronologyResponse);
       setError("");
     } catch (e) {
       setError(e instanceof ApiError ? e.detail : ct("loadError"));
@@ -103,18 +92,6 @@ export default function ClaimChronologyPage() {
     setBusy(true); setError("");
     try { await rebuildClaimChronology(id); await load(); }
     catch (e) { setError(e instanceof ApiError ? e.detail : ct("rebuildError")); }
-    finally { setBusy(false); }
-  }
-
-  async function resolve(conflict: EvidenceConflict, status: Exclude<EvidenceConflictStatus, "open">) {
-    const note = (notes[conflict.id] ?? "").trim();
-    if (note.length < 3) { setError(ct("noteRequired")); return; }
-    setBusy(true); setError("");
-    try {
-      await resolveEvidenceConflict(id, conflict.id, { status, note });
-      setNotes((current) => ({ ...current, [conflict.id]: "" }));
-      await load();
-    } catch (e) { setError(e instanceof ApiError ? e.detail : ct("conflictUpdateError")); }
     finally { setBusy(false); }
   }
 
@@ -173,13 +150,23 @@ export default function ClaimChronologyPage() {
         </section>
 
         <aside className="space-y-5">
-          <section className="panel p-5"><h2 className="section-title">{ct("section.conflicts")}</h2><p className="section-subtitle">{ct("section.conflictsHelp")}</p>
-            {chronology.conflicts.length ? <div className="mt-5 space-y-4">{chronology.conflicts.map((conflict) => {
-              const severity = materialityLabel(locale, conflict.materiality);
-              return <div key={conflict.id} className="rounded-xl border border-slate-200 p-4"><div className="flex items-start justify-between gap-3"><div><p className="text-sm font-semibold text-slate-950" dir="auto">{conflict.topic}</p><p className="mt-1 text-xs uppercase tracking-wide text-slate-400">{conflictTypeLabel(locale, conflict.conflict_type)} · {conflictStatusLabel(locale, conflict.status)}</p></div><span className={`rounded-full px-2 py-1 text-[11px] font-semibold uppercase ${materialityClasses[conflict.materiality]}`}>{ct("conflictSeverity", { value: severity })}</span></div><p className="mt-3 text-sm leading-6 text-slate-600" dir="auto">{conflict.description}</p><div className="mt-3 grid gap-2 rounded-lg bg-slate-50 p-3 text-xs text-slate-600"><div><span className="font-semibold">A:</span>{" "}<span dir="ltr">{formatConflictValue(conflict.value_a)}</span></div><div><span className="font-semibold">B:</span>{" "}<span dir="ltr">{formatConflictValue(conflict.value_b)}</span></div>{conflict.difference_minutes ? <div><span className="font-semibold">{ct("difference")}:</span>{" "}<span dir="ltr">{conflict.difference_minutes}</span> {ct("minutes")}</div> : null}</div>
-                {conflict.status === "open" ? <><textarea className="field mt-3 min-h-20" placeholder={ct("notePlaceholder")} value={notes[conflict.id] ?? ""} onChange={(e) => setNotes((current) => ({ ...current, [conflict.id]: e.target.value }))} dir="auto" /><div className="mt-2 flex flex-wrap gap-2"><button disabled={busy} className="secondary-button" onClick={() => resolve(conflict,"explained")}>{ct("action.explain")}</button><button disabled={busy} className="secondary-button" onClick={() => resolve(conflict,"accepted_difference")}>{ct("action.acceptDifference")}</button><button disabled={busy} className="secondary-button" onClick={() => resolve(conflict,"resolved")}>{ct("action.resolve")}</button><button disabled={busy} className="secondary-button" onClick={() => resolve(conflict,"irrelevant")}>{ct("action.irrelevant")}</button></div></> : conflict.resolution_note ? <div className="mt-3 rounded-lg bg-slate-50 p-3 text-xs text-slate-600"><span className="font-semibold">{ct("reviewNote")}:</span>{" "}<span dir="auto">{conflict.resolution_note}</span></div> : null}
-              </div>;
-            })}</div> : <p className="mt-4 text-sm text-slate-500">{ct("emptyConflicts")}</p>}
+          <section className="panel p-5">
+            <h2 className="section-title">{ct("section.conflicts")}</h2>
+            <p className="section-subtitle">{ct("section.conflictsHelp")}</p>
+            {chronology.conflicts.length ? (
+              <div className="mt-5 space-y-4">
+                {chronology.conflicts.map((conflict) => (
+                  <ChronologyConflictReview
+                    key={`${conflict.id}:${conflict.state_version}:${conflict.decision_history.length}`}
+                    claimId={id}
+                    conflict={conflict}
+                    events={chronology.events}
+                    locale={locale}
+                    onReload={load}
+                  />
+                ))}
+              </div>
+            ) : <p className="mt-4 text-sm text-slate-500">{ct("emptyConflicts")}</p>}
           </section>
         </aside>
       </div>
