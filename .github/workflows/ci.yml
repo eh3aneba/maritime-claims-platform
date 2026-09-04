@@ -258,6 +258,7 @@ jobs:
           SECRET_KEY=ci-only-not-a-deployment-secret-change-on-every-run-2026
           STORAGE_BACKEND=local
           LOCAL_STORAGE_PATH=/data/documents
+          PROCESSING_MAX_ATTEMPTS=1
           AI_PROVIDER=disabled
           AI_MODEL=
           OPENAI_API_KEY=
@@ -278,6 +279,8 @@ jobs:
           set +a
           export MCRI_WEB_URL=http://127.0.0.1:3000
           export MCRI_E2E_SCREENSHOT=artifacts/design-partner-e2e.png
+          export MCRI_E2E_RETRY_INFRA=true
+          export MCRI_COMPOSE_ENV_FILE=.env.ci
           python tests/browser/design_partner_e2e.py
           python tests/browser/claim_qa_synthesis_e2e.py
           python tests/browser/ai_operations_e2e.py
