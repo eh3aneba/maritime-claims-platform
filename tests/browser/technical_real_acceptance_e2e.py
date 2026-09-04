@@ -38,8 +38,15 @@ def main() -> None:
         page.goto(f"{BASE_URL}/claims", wait_until="networkidle")
         page.get_by_placeholder("Search claim, vessel or IMO…").fill("MCRI-DEMO-MT-ORION")
         page.get_by_role("button", name="Apply filters").click()
-        expect(page.get_by_text("MT ORION", exact=True).first).to_be_visible()
-        claim_link = page.locator('a[href^="/claims/"]').filter(has_text=re.compile(r"^MCRI-HM-")).first
+        mt_orion_row = page.get_by_role("row").filter(has_text="MT ORION").filter(
+            has_text="MCRI-DEMO-MT-ORION"
+        )
+        expect(mt_orion_row).to_have_count(1)
+        expect(mt_orion_row).to_contain_text("MT ORION")
+        claim_link = mt_orion_row.locator('a[href^="/claims/"]').filter(
+            has_text=re.compile(r"^MCRI-HM-")
+        )
+        expect(claim_link).to_have_count(1)
         claim_href = claim_link.get_attribute("href")
         if not claim_href:
             raise AssertionError("Expected MT ORION claim href")
