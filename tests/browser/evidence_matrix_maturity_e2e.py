@@ -259,18 +259,20 @@ def main() -> None:
         card = _requirement_card(page, requirement["id"])
         expect(card.get_by_text("Accepted", exact=True)).to_be_visible()
         card.get_by_role("button", name="View decision lineage", exact=True).click()
-        expect(card.get_by_text(first_note, exact=True)).to_be_visible()
-        expect(card.get_by_text(second_note, exact=True)).to_be_visible()
-        expect(card.get_by_text("#1 · Accept Equivalent", exact=True)).to_be_visible()
-        expect(card.get_by_text("#2 · Accept Equivalent", exact=True)).to_be_visible()
+        decision_history = card.get_by_role("list")
+        expect(decision_history.get_by_text(first_note, exact=True)).to_be_visible()
+        expect(decision_history.get_by_text(second_note, exact=True)).to_be_visible()
+        expect(decision_history.get_by_text("#1 · Accept Equivalent", exact=True)).to_be_visible()
+        expect(decision_history.get_by_text("#2 · Accept Equivalent", exact=True)).to_be_visible()
 
         page.get_by_role("button", name="FA", exact=True).click()
         expect(page.locator("html")).to_have_attribute("dir", "rtl")
         expect(page.get_by_role("heading", name="ماتریس شواهد")).to_be_visible()
         card = _requirement_card(page, requirement["id"])
         expect(card.get_by_text("پذیرفته‌شده", exact=True)).to_be_visible()
-        expect(card.get_by_text(first_note, exact=True)).to_be_visible()
-        expect(card.get_by_text(second_note, exact=True)).to_be_visible()
+        decision_history = card.get_by_role("list")
+        expect(decision_history.get_by_text(first_note, exact=True)).to_be_visible()
+        expect(decision_history.get_by_text(second_note, exact=True)).to_be_visible()
 
         history = _json_response(
             page.request.get(
