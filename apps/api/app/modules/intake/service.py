@@ -14,6 +14,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
+from app.modules.claims.fact_provenance import promote_human_approved_intake_facts
 from app.modules.claims.models import Claim
 from app.modules.claims.service import create_claim, get_claim
 from app.modules.documents.malware import MalwareScannerError, MalwareScanVerdict, scan_file
@@ -619,9 +620,10 @@ def approve_intake_draft(
         )
         db.add(text_extraction)
         db.flush()
+        segment_rows: list[DocumentTextSegment] = []
         for index, segment in enumerate(draft.extracted_segments or []):
             segment_text = str(segment.get("text") or "")
-            db.add(
+            segment_rows.append(
                 DocumentTextSegment(
                     organization_id=organization_id,
                     document_id=document.id,
@@ -633,12 +635,28 @@ def approve_intake_draft(
                     char_count=len(segment_text),
                 )
             )
+        if segment_rows:
+            db.add_all(segment_rows)
+            db.flush()
+
+        reviewed_at = datetime.now(UTC)
+        promote_human_approved_intake_facts(
+            db,
+            claim=claim,
+            text_extraction=text_extraction,
+            segments=segment_rows,
+            source_document_id=document.id,
+            reviewer=current_user,
+            extracted_fields=draft.extracted_fields,
+            field_evidence=draft.field_evidence,
+            approved_at=reviewed_at,
+        )
 
         draft.status = ClaimIntakeStatus.APPROVED
         draft.approved_claim_id = claim.id
         draft.source_document_id = document.id
         draft.reviewed_by_id = current_user.id
-        draft.reviewed_at = datetime.now(UTC)
+        draft.reviewed_at = reviewed_at
         draft.review_note = payload.review_note
         draft.review_payload = payload.model_dump(mode="json")
         draft.storage_key = active_key

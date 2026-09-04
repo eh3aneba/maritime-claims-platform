@@ -165,7 +165,7 @@ def test_fnol_candidates_require_review_before_exactly_one_claim_is_created(
     with TestingSessionLocal() as db:
         assert db.scalar(select(func.count(Claim.id))) == 1
         assert db.scalar(select(func.count(Document.id))) == 1
-        assert db.scalar(select(func.count(ClaimFact.id))) == 0
+        assert db.scalar(select(func.count(ClaimFact.id))) == 9
         source = db.scalar(select(Document))
         assert source is not None
         assert source.malware_scan_status == DocumentMalwareScanStatus.CLEAN
@@ -175,6 +175,7 @@ def test_fnol_candidates_require_review_before_exactly_one_claim_is_created(
         assert "EXTRACT_CLAIM_INTAKE_CANDIDATES" in actions
         assert "APPROVE_CLAIM_INTAKE_DRAFT" in actions
         assert "CREATE_CLAIM_FROM_INTAKE" in actions
+        assert "CREATE_APPROVED_CLAIM_FACT" in actions
 
 
 def test_intake_draft_is_tenant_scoped_and_cross_tenant_approval_is_hidden(
