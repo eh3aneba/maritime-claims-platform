@@ -155,14 +155,21 @@ def _api_detail(page, candidate_id: str) -> dict:
     return response.json()
 
 
-def _open_history(page, candidate_id: str, field_path: str):
-    """Open lineage only after the real detail request completes.
+def _wait_for_review_queue_settled(page) -> None:
+    """Wait until both field and grouped queue reads have completed their shared load."""
 
-    The queue can re-render the article while the detail request is in flight, so
-    re-acquire the locator after the response instead of retaining a DOM-backed
-    interaction target across that asynchronous update.
+    expect(page.get_by_text("Loading review queue…", exact=True)).to_be_hidden(timeout=15_000)
+
+
+def _open_history(page, candidate_id: str, field_path: str):
+    """Open lineage only after the queue and real detail request are settled.
+
+    Status changes load the field and grouped queues in parallel. Waiting for the
+    page-level loading state avoids clicking an article while that Promise.all is
+    still replacing DOM nodes; the locator is then re-acquired after detail loads.
     """
 
+    _wait_for_review_queue_settled(page)
     candidate = page.locator("article").filter(has_text=field_path).first
     expect(candidate).to_be_visible(timeout=15_000)
     with page.expect_response(
@@ -305,6 +312,7 @@ def main() -> None:
             item.get("extraction_id") for item in approved_payload.get("items", [])
         }:
             raise AssertionError("Approved AI review queue did not return the replaced candidate")
+        _wait_for_review_queue_settled(page)
         approved_candidate = _open_history(
             page,
             fixture["candidate_id"],
@@ -360,6 +368,7 @@ def main() -> None:
             item.get("extraction_id") for item in rejected_payload.get("items", [])
         }:
             raise AssertionError("Rejected AI review queue did not return the restored candidate")
+        _wait_for_review_queue_settled(page)
         rejected_candidate = _open_history(
             page,
             fixture["candidate_id"],
