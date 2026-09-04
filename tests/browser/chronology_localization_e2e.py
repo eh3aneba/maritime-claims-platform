@@ -133,7 +133,7 @@ def main() -> None:
         expect(page.get_by_text("Conflict severity: Medium", exact=True)).to_be_visible()
         expect(page.get_by_text("No decision", exact=True)).to_be_visible()
         expect(page.get_by_text("Source A", exact=True)).to_be_visible()
-        expect(page.get_by_text("Source locator:", exact=False)).to_be_visible()
+        expect(page.get_by_text("Source locator:", exact=False).first).to_be_visible()
         expect(page.get_by_role("button", name="Build / refresh chronology")).to_be_visible()
         expect(page.get_by_placeholder("Explain how this difference should be understood…")).to_be_visible()
         expect(page.get_by_role("button", name="Accept difference")).to_be_visible()
