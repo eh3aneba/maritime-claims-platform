@@ -146,6 +146,10 @@ def review_group(
             raise ValueError("A reason is required when grouped approval contains an unverified source citation.")
         reviewed: list[ReviewResult] = []
         for extraction in extractions:
+            # review_extraction re-selects under the claim/extraction write locks.
+            # Expire the earlier validation read so SQLAlchemy cannot reuse stale
+            # identity-map attributes after waiting for a concurrent reviewer.
+            db.expire(extraction)
             extraction, fact, promoted = review_extraction(
                 db,
                 extraction=extraction,
@@ -255,6 +259,9 @@ def review_one(
     if extraction is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="AI extraction not found")
     try:
+        # The service obtains write locks. Expiring this authorization read makes
+        # the subsequent locked select a true current-state read after any wait.
+        db.expire(extraction)
         extraction, fact, promoted = review_extraction(
             db,
             extraction=extraction,
@@ -313,6 +320,7 @@ def bulk_approve(
     reviewed: list[ReviewResult] = []
     try:
         for extraction in extractions:
+            db.expire(extraction)
             extraction, fact, promoted = review_extraction(
                 db,
                 extraction=extraction,

@@ -59,7 +59,9 @@ class ClaimFactResponse(BaseModel):
     claim_id: UUID
     field_path: str
     value: Any
-    source_extraction_id: UUID
+    provenance_kind: Literal["ai_review", "intake_review"]
+    source_extraction_id: UUID | None
+    source_text_extraction_id: UUID | None
     source_document_id: UUID
     source_segment_id: UUID | None
     approved_by_id: UUID | None
