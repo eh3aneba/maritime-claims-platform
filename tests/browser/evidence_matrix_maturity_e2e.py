@@ -66,14 +66,12 @@ def _advance_claim_fact_version(claim_fact_id: str) -> int:
             with create_session() as db:
                 next_version = db.execute(
                     text(
-                        """
-                        UPDATE claim_facts
-                        SET version = version + 1,
-                            approved_at = CURRENT_TIMESTAMP,
-                            updated_at = CURRENT_TIMESTAMP
-                        WHERE id = CAST(:fact_id AS uuid)
-                        RETURNING version
-                        """
+                        "UPDATE claim_facts "
+                        "SET version = version + 1, "
+                        "approved_at = CURRENT_TIMESTAMP, "
+                        "updated_at = CURRENT_TIMESTAMP "
+                        "WHERE id = CAST(:fact_id AS uuid) "
+                        "RETURNING version"
                     ),
                     {{"fact_id": fact_id}},
                 ).scalar_one_or_none()
