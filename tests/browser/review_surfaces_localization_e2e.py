@@ -290,7 +290,20 @@ def main() -> None:
         assert detail_before_confirm["current_claim_fact"]["version"] == 1
         assert detail_before_confirm["item"]["human_status"] == "pending"
 
-        page.get_by_role("button", name="تأیید جایگزینی", exact=True).click()
+        # Confirm the human decision and wait for its own pending-view queue refresh
+        # before changing filters. This prevents the test from racing the real reload.
+        with page.expect_response(
+            lambda response: "/api/v1/ai-review?" in response.url
+            and "review_status=pending" in response.url
+            and response.request.method == "GET",
+            timeout=15_000,
+        ) as post_approve_queue_info:
+            page.get_by_role("button", name="تأیید جایگزینی", exact=True).click()
+        post_approve_queue = post_approve_queue_info.value
+        if not post_approve_queue.ok:
+            raise AssertionError(f"Post-approval AI review queue failed: HTTP {post_approve_queue.status}")
+        _wait_for_review_queue_settled(page)
+
         page.get_by_role("button", name="EN", exact=True).click()
         detail_after_approve = _api_detail(page, fixture["candidate_id"])
         assert detail_after_approve["current_claim_fact"]["provenance_kind"] == "ai_review"
@@ -338,14 +351,25 @@ def main() -> None:
         assert detail_after_locale_switch["current_claim_fact"]["version"] == 2
         page.get_by_role("button", name="EN", exact=True).click()
 
+        # Capture both the deliberate re-review intent and the ensuing approved-view
+        # reload before switching to the rejected filter.
         with page.expect_request(
             lambda request: request.url.endswith(f"/api/v1/ai-review/{fixture['candidate_id']}")
             and request.method == "POST"
-        ) as re_review_request_info:
+        ) as re_review_request_info, page.expect_response(
+            lambda response: "/api/v1/ai-review?" in response.url
+            and "review_status=approved" in response.url
+            and response.request.method == "GET",
+            timeout=15_000,
+        ) as post_reject_queue_info:
             approved_candidate.get_by_role("button", name="Reject on re-review", exact=True).click()
         re_review_payload = re_review_request_info.value.post_data_json
         if not re_review_payload or re_review_payload.get("confirm_re_review") is not True:
             raise AssertionError("Deliberate re-review did not send explicit confirmation intent")
+        post_reject_queue = post_reject_queue_info.value
+        if not post_reject_queue.ok:
+            raise AssertionError(f"Post-rejection AI review queue failed: HTTP {post_reject_queue.status}")
+        _wait_for_review_queue_settled(page)
 
         detail_after_reject = _api_detail(page, fixture["candidate_id"])
         assert detail_after_reject["item"]["human_status"] == "rejected"
