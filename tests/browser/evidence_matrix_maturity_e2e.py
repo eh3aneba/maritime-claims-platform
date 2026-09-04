@@ -47,7 +47,10 @@ def _compose_exec_python(script: str) -> str:
     if COMPOSE_ENV_FILE:
         command.extend(["--env-file", COMPOSE_ENV_FILE])
     command.extend(["exec", "-T", "api", "python", "-"])
-    result = subprocess.run(command, input=script, check=True, text=True, capture_output=True)
+    result = subprocess.run(command, input=script, check=False, text=True, capture_output=True)
+    if result.returncode != 0:
+        details = result.stderr.strip() or result.stdout.strip() or f"exit code {result.returncode}"
+        raise AssertionError(f"Fixture command failed: {details}")
     return result.stdout.strip()
 
 
@@ -56,19 +59,28 @@ def _advance_claim_fact_version(claim_fact_id: str) -> int:
     output = _compose_exec_python(
         textwrap.dedent(
             f"""
-            from datetime import UTC, datetime
-            from uuid import UUID
+            from sqlalchemy import text
             from app.db.session import create_session
-            from app.modules.claims.facts import ClaimFact
 
+            fact_id = {fact_literal}
             with create_session() as db:
-                fact = db.get(ClaimFact, UUID({fact_literal}))
-                if fact is None:
+                next_version = db.execute(
+                    text(
+                        """
+                        UPDATE claim_facts
+                        SET version = version + 1,
+                            approved_at = CURRENT_TIMESTAMP,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = CAST(:fact_id AS uuid)
+                        RETURNING version
+                        """
+                    ),
+                    {{"fact_id": fact_id}},
+                ).scalar_one_or_none()
+                if next_version is None:
                     raise RuntimeError("Equivalent ClaimFact disappeared before stale-lineage test")
-                fact.version += 1
-                fact.approved_at = datetime.now(UTC)
                 db.commit()
-                print(fact.version)
+                print(next_version)
             """
         )
     )
