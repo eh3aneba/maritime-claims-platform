@@ -1,9 +1,8 @@
 """Browser acceptance for Phase 13.4C Evidence Matrix consolidation.
 
-Uses the real MT ORION synthetic design-partner claim and production APIs. The only
-DB-side fixture mutation advances one already human-approved ClaimFact version so
-we can exercise the real stale-lineage reconciliation path without adding a test-only
-HTTP endpoint or bypassing a human review authority control.
+Uses the real MT ORION synthetic design-partner claim and real operator surfaces.
+The only DB-side fixture mutation advances one already human-approved ClaimFact
+version so the stale-lineage path can be exercised without a test-only HTTP route.
 """
 from __future__ import annotations
 
@@ -54,25 +53,25 @@ def _compose_exec_python(script: str) -> str:
 
 def _advance_claim_fact_version(claim_fact_id: str) -> int:
     fact_literal = json.dumps(claim_fact_id)
-    script = textwrap.dedent(
-        f"""
-        from datetime import UTC, datetime
-        from uuid import UUID
+    output = _compose_exec_python(
+        textwrap.dedent(
+            f"""
+            from datetime import UTC, datetime
+            from uuid import UUID
+            from app.db.session import create_session
+            from app.modules.claims.facts import ClaimFact
 
-        from app.db.session import create_session
-        from app.modules.claims.facts import ClaimFact
-
-        with create_session() as db:
-            fact = db.get(ClaimFact, UUID({fact_literal}))
-            if fact is None:
-                raise RuntimeError("Equivalent ClaimFact disappeared before stale-lineage test")
-            fact.version += 1
-            fact.approved_at = datetime.now(UTC)
-            db.commit()
-            print(fact.version)
-        """
+            with create_session() as db:
+                fact = db.get(ClaimFact, UUID({fact_literal}))
+                if fact is None:
+                    raise RuntimeError("Equivalent ClaimFact disappeared before stale-lineage test")
+                fact.version += 1
+                fact.approved_at = datetime.now(UTC)
+                db.commit()
+                print(fact.version)
+            """
+        )
     )
-    output = _compose_exec_python(script)
     return int(output.splitlines()[-1])
 
 
@@ -96,10 +95,7 @@ def _find_claim(page) -> str:
 
 
 def _rules(page, claim_id: str) -> dict:
-    return _json_response(
-        page.request.get(f"{API_URL}/api/v1/claims/{claim_id}/rules"),
-        "Claim rules",
-    )
+    return _json_response(page.request.get(f"{API_URL}/api/v1/claims/{claim_id}/rules"), "Claim rules")
 
 
 def _candidate_requirement(summary: dict) -> tuple[dict, dict]:
@@ -113,15 +109,10 @@ def _candidate_requirement(summary: dict) -> tuple[dict, dict]:
         if not candidates or not requirement.get("state_fingerprint") or not requirement.get("state_version"):
             continue
         if requirement.get("matched_document_id"):
-            # Direct evidence remains the preferred current evidence path; this test
-            # intentionally exercises a requirement that genuinely relies on an
-            # equivalent ClaimFact rather than displacing a usable direct document.
             continue
         eligible.append((requirement, candidates[0]))
-
     if not eligible:
         raise AssertionError("MT ORION has no source-linked equivalent-evidence requirement candidate")
-
     eligible.sort(key=lambda item: 0 if item[0].get("status") == "requested" else 1)
     return eligible[0]
 
@@ -132,19 +123,28 @@ def _requirement_card(page, requirement_id: str):
     return card
 
 
-def _accept_equivalent(page, claim_id: str, requirement: dict, candidate: dict, *, note: str, re_review: bool) -> dict:
-    response = page.request.post(
-        f"{API_URL}/api/v1/claims/{claim_id}/rules/requirements/{requirement['id']}/accept-equivalent",
-        data={
-            "claim_fact_id": candidate["claim_fact_id"],
-            "claim_fact_version": candidate["claim_fact_version"],
-            "expected_state_fingerprint": requirement["state_fingerprint"],
-            "expected_state_version": requirement["state_version"],
-            "note": note,
-            "re_review": re_review,
-        },
-    )
-    return _json_response(response, "Equivalent evidence review")
+def _review_equivalent_in_rules(
+    page,
+    claim_id: str,
+    requirement_id: str,
+    *,
+    note: str,
+    re_review: bool,
+) -> None:
+    page.goto(f"{BASE_URL}/claims/{claim_id}/rules", wait_until="networkidle")
+    card = _requirement_card(page, requirement_id)
+    if re_review:
+        expect(card.get_by_text("superseded", exact=True)).to_be_visible()
+        expect(card.get_by_text("Equivalent evidence stale · re-review required", exact=True)).to_be_visible()
+        field = card.get_by_placeholder("Why does the changed evidence still satisfy this requirement?")
+        button = card.get_by_role("button", name="Re-review equivalent", exact=True)
+    else:
+        field = card.get_by_placeholder("Why is this evidence sufficient for this requirement?")
+        button = card.get_by_role("button", name="Accept as equivalent", exact=True)
+    field.fill(note)
+    expect(button).to_be_enabled()
+    button.click()
+    expect(card.get_by_text("accepted", exact=True)).to_be_visible(timeout=15_000)
 
 
 def main() -> None:
@@ -167,8 +167,7 @@ def main() -> None:
         requirement, candidate = _candidate_requirement(initial_summary)
         initial_status = requirement["status"]
 
-        # The consolidated matrix exposes readiness and active requirement lifecycle
-        # beside ClaimFact/source/conflict provenance, without adding a write surface.
+        # One read-only matrix now consolidates readiness, requirements and provenance.
         page.goto(f"{BASE_URL}/claims/{claim_id}/evidence-matrix", wait_until="networkidle")
         expect(page.get_by_role("heading", name="Evidence Matrix")).to_be_visible()
         expect(page.get_by_role("heading", name="Requirements & readiness")).to_be_visible()
@@ -179,8 +178,7 @@ def main() -> None:
             "href", f"/claims/{claim_id}/rules"
         )
 
-        # Locale switching is presentation-only and preserves the same requirement
-        # identity/readiness state while flipping directionality.
+        # Locale changes presentation only.
         page.get_by_role("button", name="FA", exact=True).click()
         expect(page.locator("html")).to_have_attribute("dir", "rtl")
         expect(page.get_by_role("heading", name="ماتریس شواهد")).to_be_visible()
@@ -190,42 +188,36 @@ def main() -> None:
         page.get_by_role("button", name="EN", exact=True).click()
         expect(page.locator("html")).to_have_attribute("dir", "ltr")
 
-        # Use the production human-review endpoint with the exact evidence-state and
-        # ClaimFact versions returned to the operator. This creates append-only lineage.
+        # Initial equivalent acceptance is performed through the real Rules UI.
         first_note = "MT ORION browser acceptance: equivalent evidence reviewed and accepted."
-        first_result = _accept_equivalent(
+        _review_equivalent_in_rules(
             page,
             claim_id,
-            requirement,
-            candidate,
+            requirement["id"],
             note=first_note,
             re_review=False,
         )
-        if first_result["requirement"]["status"] != "accepted":
-            raise AssertionError("Equivalent review did not move the requirement to accepted")
 
-        page.reload(wait_until="networkidle")
+        page.goto(f"{BASE_URL}/claims/{claim_id}/evidence-matrix", wait_until="networkidle")
         card = _requirement_card(page, requirement["id"])
         expect(card.get_by_text("Accepted", exact=True)).to_be_visible()
         expect(card.get_by_text("Equivalent evidence", exact=True)).to_be_visible()
         expect(card.get_by_text(first_note, exact=True)).to_be_visible()
         card.get_by_role("button", name="View decision lineage", exact=True).click()
-        expect(card.get_by_text(first_note, exact=True)).to_be_visible()
         expect(card.get_by_text("#1 · Accept Equivalent", exact=True)).to_be_visible()
 
-        # Advance the exact canonical ClaimFact version that was reviewed, then invoke
-        # the normal deterministic rules refresh. The prior acceptance must become stale
-        # rather than silently transferring to the changed fact.
+        # Change the exact canonical fact version, then use the normal rules refresh.
         next_fact_version = _advance_claim_fact_version(candidate["claim_fact_id"])
-        evaluate_response = page.request.post(f"{API_URL}/api/v1/claims/{claim_id}/rules/evaluate")
-        _json_response(evaluate_response, "Rules refresh after ClaimFact evolution")
+        _json_response(
+            page.request.post(f"{API_URL}/api/v1/claims/{claim_id}/rules/evaluate"),
+            "Rules refresh after ClaimFact evolution",
+        )
 
         page.reload(wait_until="networkidle")
         card = _requirement_card(page, requirement["id"])
         expect(card.get_by_text("Superseded", exact=True)).to_be_visible()
         expect(card.get_by_text("explicit human re-review is required", exact=False)).to_be_visible()
 
-        # Refresh the operator contract and explicitly re-review the changed evidence.
         refreshed_summary = _rules(page, claim_id)
         refreshed_requirement = next(
             item for item in refreshed_summary["requirements"] if item["id"] == requirement["id"]
@@ -238,19 +230,22 @@ def main() -> None:
         if refreshed_candidate["claim_fact_version"] != next_fact_version:
             raise AssertionError("Refreshed requirement did not expose the current ClaimFact version")
 
+        # Matrix points to Rules; Rules now exposes a deliberate re-review control and
+        # sends re_review=true only for the superseded state.
+        page.get_by_role("link", name="Review / request evidence", exact=True).click()
+        page.wait_for_url(f"**/claims/{claim_id}/rules")
         second_note = "MT ORION browser acceptance: changed equivalent evidence explicitly re-reviewed."
-        second_result = _accept_equivalent(
-            page,
-            claim_id,
-            refreshed_requirement,
-            refreshed_candidate,
-            note=second_note,
-            re_review=True,
-        )
-        if second_result["requirement"]["status"] != "accepted":
-            raise AssertionError("Explicit re-review did not restore accepted requirement state")
+        card = _requirement_card(page, requirement["id"])
+        expect(card.get_by_text("superseded", exact=True)).to_be_visible()
+        expect(card.get_by_text("Equivalent evidence stale · re-review required", exact=True)).to_be_visible()
+        card.get_by_placeholder("Why does the changed evidence still satisfy this requirement?").fill(second_note)
+        re_review_button = card.get_by_role("button", name="Re-review equivalent", exact=True)
+        expect(re_review_button).to_be_enabled()
+        re_review_button.click()
+        expect(card.get_by_text("accepted", exact=True)).to_be_visible(timeout=15_000)
 
-        page.reload(wait_until="networkidle")
+        # Both decisions remain visible and append-only in the consolidated matrix.
+        page.goto(f"{BASE_URL}/claims/{claim_id}/evidence-matrix", wait_until="networkidle")
         card = _requirement_card(page, requirement["id"])
         expect(card.get_by_text("Accepted", exact=True)).to_be_visible()
         card.get_by_role("button", name="View decision lineage", exact=True).click()
@@ -259,8 +254,6 @@ def main() -> None:
         expect(card.get_by_text("#1 · Accept Equivalent", exact=True)).to_be_visible()
         expect(card.get_by_text("#2 · Accept Equivalent", exact=True)).to_be_visible()
 
-        # The same post-re-review state must remain readable in Persian/RTL; locale
-        # switching cannot create another decision or alter canonical evidence state.
         page.get_by_role("button", name="FA", exact=True).click()
         expect(page.locator("html")).to_have_attribute("dir", "rtl")
         expect(page.get_by_role("heading", name="ماتریس شواهد")).to_be_visible()
@@ -269,10 +262,12 @@ def main() -> None:
         expect(card.get_by_text(first_note, exact=True)).to_be_visible()
         expect(card.get_by_text(second_note, exact=True)).to_be_visible()
 
-        history_response = page.request.get(
-            f"{API_URL}/api/v1/claims/{claim_id}/rules/requirements/{requirement['id']}/decisions"
+        history = _json_response(
+            page.request.get(
+                f"{API_URL}/api/v1/claims/{claim_id}/rules/requirements/{requirement['id']}/decisions"
+            ),
+            "Requirement decision history",
         )
-        history = _json_response(history_response, "Requirement decision history")
         if len(history["items"]) != 2:
             raise AssertionError(f"Expected exactly two append-only decisions, got {len(history['items'])}")
         if history["items"][1]["previous_decision_hash"] != history["items"][0]["decision_hash"]:
