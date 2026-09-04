@@ -433,7 +433,7 @@ def _sync_issues(
             db,
             claim=claim,
             rule=TECH_TEMP_REPAIR,
-            description="Reviewed facts indicate a temporary repair. Confirm Class conditions, expiry and the permanent repair plan.",
+            description="Reviewed claim facts indicate that a temporary repair has been performed or remains in place.",
             evidence={"temporary_repair": True},
             now=now,
         )
