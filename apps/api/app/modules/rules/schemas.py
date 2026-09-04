@@ -7,6 +7,25 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from app.modules.rules.models import IssueCategory, IssueSeverity, IssueStatus, RequirementPriority, RequirementStatus
 
 
+class RequirementDecisionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    requirement_id: UUID
+    decided_by_id: UUID | None
+    claim_fact_id: UUID | None
+    state_fingerprint: str
+    state_version: int
+    decision_number: int
+    action: str
+    note: str
+    claim_fact_version: int | None
+    source_document_id: UUID | None
+    source_document_version: int | None
+    previous_decision_hash: str | None
+    decision_hash: str
+    decided_at: datetime
+
+
 class DocumentRequirementResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: UUID
@@ -25,6 +44,9 @@ class DocumentRequirementResponse(BaseModel):
     satisfied_by_id: UUID | None
     satisfied_at: datetime | None
     equivalent_evidence_candidates: list[dict[str, Any]] = Field(default_factory=list)
+    state_fingerprint: str | None = None
+    state_version: int | None = None
+    latest_decision: RequirementDecisionResponse | None = None
     is_active: bool
     last_evaluated_at: datetime | None
 
@@ -135,8 +157,20 @@ class RuleEvaluationResponse(BaseModel):
 
 class EquivalentEvidenceRequest(BaseModel):
     claim_fact_id: UUID
-    note: str
+    claim_fact_version: int = Field(ge=1)
+    expected_state_fingerprint: str = Field(min_length=64, max_length=64)
+    expected_state_version: int = Field(ge=1)
+    note: str = Field(min_length=5, max_length=4000)
+    re_review: bool = False
 
 
 class EquivalentEvidenceResponse(BaseModel):
     requirement: DocumentRequirementResponse
+    decision: RequirementDecisionResponse
+
+
+class RequirementDecisionHistoryResponse(BaseModel):
+    requirement_id: UUID
+    state_fingerprint: str
+    state_version: int
+    items: list[RequirementDecisionResponse] = Field(default_factory=list)

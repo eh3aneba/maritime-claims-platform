@@ -46,6 +46,7 @@ from app.modules.pilot.models import PilotCommercialValidation, PilotEvent, Pilo
 from app.modules.pilot_operations.models import DeploymentReadinessReview, DesignPartnerRehearsal, OperationalAcceptance, OperationalAcceptanceApproval, OperationalAcceptanceCheck, OperationalIncident, OperationalMonitorRun, PilotExitManifest, PilotGovernanceProfile, PrivatePilotCaseRun, PrivatePilotExecution, ProductGapFinding, ProductionArchitectureBaseline, ProductionArchitectureControl, ProductionControlEvidence, ProductionControlVerificationGate, RehearsalControlEvidence, RehearsalRemediationFinding  # noqa: F401
 from app.modules.recovery_timebar.models import RecoveryTimebarDecision, RecoveryTimebarEvaluation, RecoveryTimebarSnapshot  # noqa: F401
 from app.modules.rules.models import ClaimDocumentRequirement, ClaimIssue, RuleEvaluationRun  # noqa: F401
+from app.modules.rules.requirement_lineage import ClaimDocumentRequirementDecision, ClaimDocumentRequirementState  # noqa: F401
 from app.modules.settlements.models import PaymentAuthorization, SettlementProposal  # noqa: F401
 from app.modules.severity_reserve.models import SeverityReserveDecision, SeverityReserveEvaluation, SeverityReserveSnapshot  # noqa: F401
 from app.modules.tasks.models import ClaimTask, DocumentRequestBatch  # noqa: F401

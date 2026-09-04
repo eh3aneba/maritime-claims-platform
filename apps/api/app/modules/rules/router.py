@@ -12,16 +12,24 @@ from app.modules.claims.facts import ClaimFact
 from app.modules.rules.marine_engine_service import latest_marine_rule_summary, record_marine_rule_decision
 from app.modules.rules.models import ClaimDocumentRequirement, RuleEvaluationRun
 from app.modules.rules.schemas import (
-    DocumentRequirementResponse,
     EquivalentEvidenceRequest,
     EquivalentEvidenceResponse,
     MarineRuleDecisionResponse,
     MarineRuleDecisionWrite,
     MarineRuleEvaluationResponse,
+    RequirementDecisionHistoryResponse,
+    RequirementDecisionResponse,
     RuleEvaluationResponse,
     RuleSummaryResponse,
 )
-from app.modules.rules.service import accept_equivalent_evidence, equivalent_evidence_candidates, evaluate_claim_rules, get_rule_summary
+from app.modules.rules.service import (
+    accept_equivalent_evidence,
+    enrich_requirement_response,
+    evaluate_claim_rules,
+    get_requirement_state,
+    get_rule_summary,
+    list_requirement_decisions,
+)
 
 router = APIRouter(prefix="/claims/{claim_id}/rules", tags=["rules"])
 
@@ -100,6 +108,44 @@ def decide_marine_rule_evaluation(
     return MarineRuleDecisionResponse.model_validate(decision)
 
 
+@router.get(
+    "/requirements/{requirement_id}/decisions",
+    response_model=RequirementDecisionHistoryResponse,
+)
+def requirement_decision_history(
+    claim_id: UUID,
+    requirement_id: UUID,
+    current_user: CurrentUser,
+    db: Annotated[Session, Depends(get_db)],
+) -> RequirementDecisionHistoryResponse:
+    claim = get_claim_for_tenant(db, claim_id=claim_id, organization_id=current_user.organization_id)
+    if claim is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Claim not found")
+    requirement = db.scalar(
+        select(ClaimDocumentRequirement).where(
+            ClaimDocumentRequirement.id == requirement_id,
+            ClaimDocumentRequirement.organization_id == current_user.organization_id,
+            ClaimDocumentRequirement.claim_id == claim.id,
+            ClaimDocumentRequirement.is_active.is_(True),
+        )
+    )
+    if requirement is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document requirement not found")
+    state_row = get_requirement_state(db, requirement=requirement)
+    if state_row is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Requirement evidence state is not initialized. Re-evaluate claim rules and retry.",
+        )
+    decisions = list_requirement_decisions(db, requirement=requirement)
+    return RequirementDecisionHistoryResponse(
+        requirement_id=requirement.id,
+        state_fingerprint=state_row.state_fingerprint,
+        state_version=state_row.state_version,
+        items=[RequirementDecisionResponse.model_validate(row) for row in decisions],
+    )
+
+
 @router.post("/requirements/{requirement_id}/accept-equivalent", response_model=EquivalentEvidenceResponse)
 def accept_equivalent_requirement(
     claim_id: UUID,
@@ -127,13 +173,22 @@ def accept_equivalent_requirement(
     if fact is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Approved claim fact not found")
     try:
-        requirement = accept_equivalent_evidence(
-            db, claim=claim, requirement=requirement, claim_fact=fact, user=current_user, note=payload.note
+        requirement, decision = accept_equivalent_evidence(
+            db,
+            claim=claim,
+            requirement=requirement,
+            claim_fact=fact,
+            user=current_user,
+            note=payload.note,
+            expected_state_fingerprint=payload.expected_state_fingerprint,
+            expected_state_version=payload.expected_state_version,
+            expected_claim_fact_version=payload.claim_fact_version,
+            re_review=payload.re_review,
         )
     except ValueError as exc:
         db.rollback()
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
-    response = DocumentRequirementResponse.model_validate(requirement).model_copy(
-        update={"equivalent_evidence_candidates": equivalent_evidence_candidates(db, claim=claim, requirement=requirement)}
+    return EquivalentEvidenceResponse(
+        requirement=enrich_requirement_response(db, claim=claim, requirement=requirement),
+        decision=RequirementDecisionResponse.model_validate(decision),
     )
-    return EquivalentEvidenceResponse(requirement=response)

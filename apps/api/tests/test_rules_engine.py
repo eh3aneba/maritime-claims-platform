@@ -65,6 +65,20 @@ def _upload_pdf(claim_id: str, document_type: str, marker: str):
     )
 
 
+def _equivalent_payload(requirement: dict, candidate: dict, note: str, *, re_review: bool = False) -> dict:
+    assert requirement["state_fingerprint"]
+    assert requirement["state_version"] >= 1
+    assert candidate["claim_fact_version"] >= 1
+    return {
+        "claim_fact_id": candidate["claim_fact_id"],
+        "claim_fact_version": candidate["claim_fact_version"],
+        "expected_state_fingerprint": requirement["state_fingerprint"],
+        "expected_state_version": requirement["state_version"],
+        "note": note,
+        "re_review": re_review,
+    }
+
+
 def test_triage_activates_only_stage_relevant_base_requirements() -> None:
     result = create_orion_claim()
     claim_id = result["claim"]["id"]
@@ -74,6 +88,7 @@ def test_triage_activates_only_stage_relevant_base_requirements() -> None:
     by_type = {item["document_type"]: item for item in summary["requirements"]}
     assert set(by_type) == {"chief_engineer_report", "engine_log", "policy"}
     assert all(item["priority"] == "critical" for item in by_type.values())
+    assert all(item["state_fingerprint"] and item["state_version"] >= 1 for item in by_type.values())
     assert summary["readiness"]["state"] == "not_ready"
     assert summary["readiness"]["critical_missing_count"] == 3
     assert "Workshop Report" not in summary["readiness"]["blocking_items"]
@@ -235,18 +250,26 @@ def test_equivalent_evidence_requires_human_acceptance_and_survives_rule_refresh
 
     accepted = client.post(
         f"/api/v1/claims/{claim_id}/rules/requirements/{maker['id']}/accept-equivalent",
-        json={"claim_fact_id": candidate["claim_fact_id"], "note": "Reviewed running-hours record expressly states the maker interval."},
+        json=_equivalent_payload(
+            maker,
+            candidate,
+            "Reviewed running-hours record expressly states the maker interval.",
+        ),
     )
     assert accepted.status_code == 200, accepted.text
-    requirement = accepted.json()["requirement"]
+    payload = accepted.json()
+    requirement = payload["requirement"]
     assert requirement["status"] == "accepted"
     assert requirement["satisfaction_basis"] == "equivalent_evidence"
     assert requirement["equivalent_claim_fact_id"] == candidate["claim_fact_id"]
+    assert payload["decision"]["decision_number"] == 1
+    assert len(payload["decision"]["decision_hash"]) == 64
 
     refreshed = _evaluate(claim_id)
     maker_after = next(item for item in refreshed["requirements"] if item["document_type"] == "maker_recommendation")
     assert maker_after["status"] == "accepted"
     assert maker_after["satisfaction_basis"] == "equivalent_evidence"
+    assert maker_after["latest_decision"]["decision_hash"] == payload["decision"]["decision_hash"]
     assert refreshed["readiness"]["important_missing_count"] == 0
     with TestingSessionLocal() as db:
         audit = db.scalar(select(AuditLog).where(AuditLog.action == "ACCEPT_EQUIVALENT_EVIDENCE"))
@@ -260,10 +283,15 @@ def test_pending_direct_document_does_not_displace_equivalent_until_usable(tmp_p
     _add_fact(claim_id, "maintenance.recommended_overhaul_interval", 12000)
     summary = _evaluate(claim_id)
     maker = next(item for item in summary["requirements"] if item["document_type"] == "maker_recommendation")
-    fact_id = maker["equivalent_evidence_candidates"][0]["claim_fact_id"]
+    candidate = maker["equivalent_evidence_candidates"][0]
+    fact_id = candidate["claim_fact_id"]
     accepted = client.post(
         f"/api/v1/claims/{claim_id}/rules/requirements/{maker['id']}/accept-equivalent",
-        json={"claim_fact_id": fact_id, "note": "Interim equivalent evidence accepted pending maker document."},
+        json=_equivalent_payload(
+            maker,
+            candidate,
+            "Interim equivalent evidence accepted pending maker document.",
+        ),
     )
     assert accepted.status_code == 200
     _configure_storage(tmp_path)
