@@ -142,7 +142,7 @@ export default function TechnicalReviewPage() {
 
       <div className="mt-5">
         <p className="eyebrow" dir="ltr">{claim.claim_reference}</p>
-        <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">{r("Technical investigation review", "بازبینی تحقیق فنی")}</h1>
+        <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">{r("Technical review matrix", "ماتریس بازبینی فنی")}</h1>
         <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
           {r(
             "Human-reviewed maintenance facts and source evidence are assembled into investigation topics. Human dispositions are append-only review decisions and never an autonomous causation, coverage or liability conclusion.",
