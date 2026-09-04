@@ -194,6 +194,8 @@ jobs:
           CUSTOM_COMPILE_COMMAND="pip-compile --generate-hashes --output-file=apps/api/requirements-dev.lock --strip-extras apps/api/requirements-dev.in" \
             pip-compile --generate-hashes --strip-extras --resolver=backtracking \
               --output-file=apps/api/requirements-dev.lock apps/api/requirements-dev.in
+          CUSTOM_COMPILE_COMMAND="pip-compile --generate-hashes --output-file=tests/browser/requirements.lock --strip-extras apps/api/requirements-dev.in" \
+            true
           CUSTOM_COMPILE_COMMAND="pip-compile --generate-hashes --output-file=tests/browser/requirements.lock --strip-extras tests/browser/requirements.txt" \
             pip-compile --generate-hashes --strip-extras --resolver=backtracking \
               --output-file=tests/browser/requirements.lock tests/browser/requirements.txt
@@ -290,6 +292,7 @@ jobs:
           python tests/browser/chronology_localization_e2e.py
           python tests/browser/chronology_conflict_maturity_e2e.py
           python tests/browser/review_surfaces_localization_e2e.py
+          python tests/browser/technical_operator_maturity_e2e.py
           python tests/browser/evidence_matrix_maturity_e2e.py
           python tests/browser/correspondence_claim_pack_localization_e2e.py
           python tests/browser/ai_governance_localization_e2e.py
