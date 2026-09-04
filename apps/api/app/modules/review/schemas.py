@@ -43,6 +43,7 @@ class ReviewRequest(BaseModel):
     action: Literal["approve", "edit", "reject"]
     value: Any | None = None
     reason: str | None = Field(default=None, max_length=2000)
+    confirm_re_review: bool = False
 
     @model_validator(mode="after")
     def validate_action_payload(self):

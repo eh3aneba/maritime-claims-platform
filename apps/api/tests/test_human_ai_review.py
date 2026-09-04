@@ -310,7 +310,7 @@ def test_rejecting_previously_approved_source_removes_current_claim_fact_but_kee
     assert approved.status_code == 200
     rejected = client.post(
         f"/api/v1/ai-review/{ids['maker_id']}",
-        json={"action": "reject", "reason": "Later review shows this maker belongs to another unit."},
+        json={"action": "reject", "reason": "Later review shows this maker belongs to another unit.", "confirm_re_review": True},
     )
     assert rejected.status_code == 200
     assert rejected.json()["human_status"] == "rejected"
@@ -362,7 +362,7 @@ def test_review_detail_returns_append_only_feedback_history_and_current_fact() -
     client.post(f"/api/v1/ai-review/{ids['maker_id']}", json={"action": "approve"})
     client.post(
         f"/api/v1/ai-review/{ids['maker_id']}",
-        json={"action": "edit", "value": "ABB Turbo Systems", "reason": "Expanded maker name."},
+        json={"action": "edit", "value": "ABB Turbo Systems", "reason": "Expanded maker name.", "confirm_re_review": True},
     )
     response = client.get(f"/api/v1/ai-review/{ids['maker_id']}")
     assert response.status_code == 200

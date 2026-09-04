@@ -287,17 +287,38 @@ def main() -> None:
         expect(approved_candidate).to_contain_text("Human-approved AI review")
         expect(approved_candidate).to_contain_text("Version 2")
 
-        # Restoration uses the same authenticated human-review endpoint. Phase 13.2C will
-        # expose deliberate re-review controls for already-reviewed items in the operator UI.
-        reject_response = page.request.post(
-            f"{API_URL}/api/v1/ai-review/{fixture['candidate_id']}",
-            data={
-                "action": "reject",
-                "reason": "Browser acceptance: second human review restores the earlier intake fact.",
-            },
-        )
-        if not reject_response.ok:
-            raise AssertionError(f"AI review rejection failed: HTTP {reject_response.status}")
+        # Reviewed items expose an explicit two-step re-review entry point. Locale
+        # switching changes copy/direction only and must not itself record a decision.
+        expect(approved_candidate.get_by_role("button", name="Reject on re-review", exact=True)).to_be_hidden()
+        approved_candidate.get_by_role("button", name="Re-review decision", exact=True).click()
+        expect(approved_candidate).to_contain_text("Deliberate re-review")
+        detail_before_re_review = _api_detail(page, fixture["candidate_id"])
+        assert detail_before_re_review["item"]["human_status"] == "approved"
+        assert detail_before_re_review["current_claim_fact"]["version"] == 2
+
+        page.get_by_role("button", name="FA", exact=True).click()
+        expect(page.locator("html")).to_have_attribute("dir", "rtl")
+        expect(approved_candidate).to_contain_text("بازبینی مجدد آگاهانه")
+        detail_after_locale_switch = _api_detail(page, fixture["candidate_id"])
+        assert detail_after_locale_switch["item"]["human_status"] == "approved"
+        assert detail_after_locale_switch["current_claim_fact"]["version"] == 2
+        page.get_by_role("button", name="EN", exact=True).click()
+
+        with page.expect_request(
+            lambda request: request.url.endswith(f"/api/v1/ai-review/{fixture['candidate_id']}")
+            and request.method == "POST"
+        ) as re_review_request_info:
+            approved_candidate.get_by_role("button", name="Reject on re-review", exact=True).click()
+        re_review_payload = re_review_request_info.value.post_data_json
+        if not re_review_payload or re_review_payload.get("confirm_re_review") is not True:
+            raise AssertionError("Deliberate re-review did not send explicit confirmation intent")
+
+        detail_after_reject = _api_detail(page, fixture["candidate_id"])
+        assert detail_after_reject["item"]["human_status"] == "rejected"
+        assert detail_after_reject["current_claim_fact"]["provenance_kind"] == "intake_review"
+        assert detail_after_reject["current_claim_fact"]["version"] == 3
+        assert detail_after_reject["current_claim_fact"]["value"] == fixture["intake_value"]
+        assert [row["version"] for row in detail_after_reject["claim_fact_revisions"][:3]] == [3, 2, 1]
 
         with page.expect_response(
             lambda response: "/api/v1/ai-review?" in response.url
@@ -319,12 +340,6 @@ def main() -> None:
         expect(rejected_candidate).to_contain_text("Human-reviewed intake")
         expect(rejected_candidate).to_contain_text("Version 3")
         expect(rejected_candidate).to_contain_text(fixture["intake_value"])
-        detail_after_reject = _api_detail(page, fixture["candidate_id"])
-        assert detail_after_reject["item"]["human_status"] == "rejected"
-        assert detail_after_reject["current_claim_fact"]["provenance_kind"] == "intake_review"
-        assert detail_after_reject["current_claim_fact"]["version"] == 3
-        assert detail_after_reject["current_claim_fact"]["value"] == fixture["intake_value"]
-        assert [row["version"] for row in detail_after_reject["claim_fact_revisions"][:3]] == [3, 2, 1]
 
         page.get_by_role("button", name="FA", exact=True).click()
         expect(page.locator("html")).to_have_attribute("dir", "rtl")
