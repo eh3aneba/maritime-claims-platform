@@ -10,6 +10,11 @@ class TechnicalEvidenceItem(BaseModel):
     field_path: str
     value: Any
     document_id: UUID | None = None
+    document_version: int
+    document_is_current: bool
+    document_processing_status: str
+    document_malware_scan_status: str
+    source_state: str
     source_quote: str | None = None
     source_locator_type: str | None = None
     source_locator_value: str | None = None
@@ -29,6 +34,8 @@ class TechnicalMatrixRow(BaseModel):
 
 
 class TechnicalReviewResponse(BaseModel):
+    evidence_state_fingerprint: str
+    canonical_fact_versions: dict[str, int]
     maintenance_facts: dict[str, Any]
     workshop_findings: list[TechnicalEvidenceItem]
     workshop_repair_options: list[TechnicalEvidenceItem]
