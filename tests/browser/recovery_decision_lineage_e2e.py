@@ -34,6 +34,20 @@ def _claim_id(page) -> str:
     return href.rstrip("/").split("/")[-1]
 
 
+def _control(panel, label_text: str, tag: str):
+    """Resolve nested form controls by their visible label text.
+
+    The application intentionally wraps controls in <label><span>…</span><control/></label>.
+    Target that DOM contract directly so this real-browser acceptance does not depend on
+    browser/accessibility-name quirks for nested translated labels.
+    """
+    label = panel.locator("label").filter(has_text=label_text)
+    expect(label).to_have_count(1)
+    control = label.locator(tag)
+    expect(control).to_have_count(1)
+    return control
+
+
 def main() -> None:
     if len(PASSWORD) < 12:
         raise SystemExit("Set MCRI_DEMO_PASSWORD (12+ characters) before running browser E2E")
@@ -100,19 +114,19 @@ def main() -> None:
         decision_heading = page.get_by_role("heading", name="Recovery decision & action lineage", exact=True)
         panel = decision_heading.locator("xpath=ancestor::section[contains(@class,'panel')][1]")
         expect(panel).to_have_count(1)
-        counterparty_select = panel.get_by_label("Current counterparty version", exact=True)
+        counterparty_select = _control(panel, "Current counterparty version", "select")
         counterparty_option_label = f"{counterparty_name} · {counterparty_role} · v1"
         expect(counterparty_select).to_contain_text(counterparty_name, timeout=15_000)
         counterparty_select.select_option(label=counterparty_option_label)
         expect(counterparty_select).to_have_value(counterparty["id"])
-        panel.get_by_label("Human disposition", exact=True).select_option("monitor")
-        panel.get_by_label("Human rationale", exact=True).fill(
+        _control(panel, "Human disposition", "select").select_option("monitor")
+        _control(panel, "Human rationale", "textarea").fill(
             "Human handler decision to monitor the recovery path while factual and legal review continues."
         )
-        panel.get_by_label("Basis / source reference", exact=True).fill(
+        _control(panel, "Basis / source reference", "input").fill(
             "MT ORION recovery review note — browser acceptance"
         )
-        panel.get_by_label("Next human review date (optional)", exact=True).fill("2026-09-30")
+        _control(panel, "Next human review date (optional)", "input").fill("2026-09-30")
         panel.get_by_role("button", name="Record human decision", exact=True).click()
 
         decision_card = panel.locator("div.rounded-xl.border.border-slate-200").filter(
@@ -139,13 +153,13 @@ def main() -> None:
         # records this human action; it does not compose or send the correspondence.
         decision_card.get_by_role("button", name="Add action / correspondence", exact=True).click()
         expect(panel.get_by_text("Append-only action log", exact=True)).to_be_visible(timeout=15_000)
-        panel.get_by_label("Action type", exact=True).select_option("correspondence")
-        panel.get_by_label("Direction", exact=True).select_option("outbound")
-        panel.get_by_label("Occurred on", exact=True).fill("2026-09-05")
-        panel.get_by_label("Human-entered summary", exact=True).fill(
+        _control(panel, "Action type", "select").select_option("correspondence")
+        _control(panel, "Direction", "select").select_option("outbound")
+        _control(panel, "Occurred on", "input").fill("2026-09-05")
+        _control(panel, "Human-entered summary", "textarea").fill(
             "Handler records that a human-approved preservation correspondence was sent outside autonomous platform authority."
         )
-        panel.get_by_label("Source reference", exact=True).fill("Recovery correspondence REC-E2E-001")
+        _control(panel, "Source reference", "input").fill("Recovery correspondence REC-E2E-001")
         panel.get_by_role("button", name="Append human action", exact=True).click()
 
         expect(
