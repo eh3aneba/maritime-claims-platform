@@ -117,8 +117,8 @@ def main() -> None:
             ),
             "generate 13.7C governed Claim Pack",
         )
-        if export["snapshot_schema_version"] != "1.2":
-            raise AssertionError(f"Expected Claim Pack snapshot schema 1.2, got {export['snapshot_schema_version']}")
+        if export["snapshot_schema_version"] != "1.3":
+            raise AssertionError(f"Expected Claim Pack snapshot schema 1.3, got {export['snapshot_schema_version']}")
 
         download = request.get(
             f"{API_URL}/api/v1/claims/{claim_id}/claim-pack-exports/{export['id']}/download"
