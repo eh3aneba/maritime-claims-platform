@@ -1,9 +1,10 @@
 """Phase 13.5C real MT ORION technical acceptance against the live local API.
 
-This remains the final CI browser entry point. Phase 13.6B Adjustment and Phase
-13.6C authoritative reserve acceptances are chained after the technical journey
-because they intentionally mutate reviewed MT ORION source evidence and therefore
-must run after all read-mostly browser journeys.
+This remains the final CI browser entry point. Phase 13.6B Adjustment, Phase
+13.6C authoritative reserve and Phase 13.7A Recovery / Time-bar maturity
+acceptances are chained after the technical journey because those later journeys
+intentionally mutate controlled MT ORION state and must run after all read-mostly
+browser journeys.
 """
 from __future__ import annotations
 
@@ -14,6 +15,7 @@ from playwright.sync_api import expect, sync_playwright
 
 from adjustment_source_evolution_e2e import main as run_adjustment_source_evolution_acceptance
 from authoritative_reserve_lineage_e2e import main as run_authoritative_reserve_acceptance
+from recovery_timebar_maturity_e2e import main as run_recovery_timebar_maturity_acceptance
 
 BASE_URL = os.getenv("MCRI_WEB_URL", "http://127.0.0.1:3000").rstrip("/")
 API_URL = os.getenv("MCRI_API_URL", "http://127.0.0.1:8000").rstrip("/")
@@ -169,3 +171,4 @@ if __name__ == "__main__":
     main()
     run_adjustment_source_evolution_acceptance()
     run_authoritative_reserve_acceptance()
+    run_recovery_timebar_maturity_acceptance()
