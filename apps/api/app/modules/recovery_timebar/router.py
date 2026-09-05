@@ -17,12 +17,11 @@ from app.modules.recovery_timebar.maturity import (
     current_counterparties,
     current_scenarios,
     review_response,
-    review_scenario,
     revise_counterparty,
     revise_scenario,
     scenario_history,
-    scenario_response,
 )
+from app.modules.recovery_timebar.maturity_context import review_scenario, scenario_response
 from app.modules.recovery_timebar.models import RecoveryTimebarEvaluation
 from app.modules.recovery_timebar.schemas import (
     RecoveryCounterpartyResponse,
@@ -64,14 +63,6 @@ def _claim(db: Session, claim_id: UUID, organization_id: UUID):
     if claim is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Claim not found")
     return claim
-
-
-def _conflict(callable_, *args, **kwargs):
-    try:
-        return callable_(*args, **kwargs)
-    except ValueError as exc:
-        kwargs.get("db") and kwargs["db"].rollback()
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
 
 @router.get("", response_model=RecoveryTimebarDashboardResponse)
