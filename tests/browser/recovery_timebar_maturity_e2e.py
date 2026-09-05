@@ -83,7 +83,7 @@ def main() -> None:
             "Reviewed workshop correspondence and overhaul contract file"
         )
         counterparty_section.get_by_role("button", name="Save human context", exact=True).click()
-        expect(counterparty_section.get_by_text("TurboMaker GmbH", exact=True)).to_be_visible(timeout=15_000)
+        expect(counterparty_section.get_by_text("Workshop overhaul contractor · v1", exact=True)).to_be_visible(timeout=15_000)
 
         first_dashboard = _json(
             request.get(f"{API_URL}/api/v1/claims/{claim_id}/recovery-timebar/maturity"),
@@ -97,12 +97,19 @@ def main() -> None:
             raise AssertionError("Initial counterparty did not preserve version/reference-only provenance")
 
         # Explicit counterparty revision: prior version remains immutable history.
-        counterparty_card = counterparty_section.locator("div.rounded-xl").filter(has_text="TurboMaker GmbH").first
+        counterparty_card = counterparty_section.locator("div.rounded-xl.border.border-slate-200").filter(
+            has=page.get_by_role("heading", name="TurboMaker GmbH", exact=True)
+        ).first
         counterparty_card.get_by_role("button", name="Create revised version", exact=True).click()
         counterparty_section.get_by_label("Human-assigned role", exact=True).fill(
             "Workshop contractor / overhaul provider"
         )
         counterparty_section.get_by_role("button", name="Save human context", exact=True).click()
+        # React click completion does not await the async API handler. Wait for the
+        # reloaded immutable v2 card rather than racing the following API assertion.
+        expect(
+            counterparty_section.get_by_text("Workshop contractor / overhaul provider · v2", exact=True)
+        ).to_be_visible(timeout=15_000)
 
         revised_dashboard = _json(
             request.get(f"{API_URL}/api/v1/claims/{claim_id}/recovery-timebar/maturity"),
@@ -110,7 +117,9 @@ def main() -> None:
         )
         current_counterparty = next(row for row in revised_dashboard["counterparties"] if row["name"] == "TurboMaker GmbH")
         if current_counterparty["version"] != 2:
-            raise AssertionError("Counterparty revision did not create immutable version 2")
+            raise AssertionError(
+                f"Counterparty revision did not create immutable version 2: {current_counterparty}"
+            )
         counterparty_history = _json(
             request.get(
                 f"{API_URL}/api/v1/claims/{claim_id}/recovery-timebar/counterparties/{current_counterparty['counterparty_key']}/history"
@@ -141,7 +150,13 @@ def main() -> None:
             "Assume solely for comparison that 10 July 2026 is the contractual trigger; no legal conclusion is made."
         )
         scenario_form.get_by_role("button", name="Compute candidate & save", exact=True).click()
-        expect(page.get_by_text("Workshop contractual notice scenario", exact=True)).to_be_visible(timeout=15_000)
+        scenarios_section = page.locator("section").filter(
+            has=page.get_by_role("heading", name="Alternative time-bar scenarios", exact=True)
+        )
+        scenario_a_card = scenarios_section.locator("div.rounded-xl.border.border-slate-200").filter(
+            has=page.get_by_role("heading", name="Workshop contractual notice scenario", exact=True)
+        ).first
+        expect(scenario_a_card.get_by_text("v1 · 6 months", exact=True)).to_be_visible(timeout=15_000)
 
         dashboard_a = _json(
             request.get(f"{API_URL}/api/v1/claims/{claim_id}/recovery-timebar/maturity"),
@@ -156,20 +171,22 @@ def main() -> None:
             raise AssertionError("Reference-only scenario provenance was not explicit")
 
         # Deliberate revision of Scenario A using optimistic scenario lineage.
-        scenarios_section = page.locator("section").filter(
-            has=page.get_by_role("heading", name="Alternative time-bar scenarios", exact=True)
-        )
-        scenario_a_card = scenarios_section.locator("div.rounded-xl").filter(
-            has_text="Workshop contractual notice scenario"
-        ).first
         scenario_a_card.get_by_role("button", name="Create revised version", exact=True).click()
         revised_form = page.locator("section").filter(
             has=page.get_by_role("heading", name="Revise time-bar scenario", exact=True)
         )
-        revised_form.get_by_label("Assumptions and uncertainty", exact=True).fill(
+        revised_assumption = (
             "Revised human assumption after contract review: anchor remains comparative only and requires legal verification."
         )
+        revised_form.get_by_label("Assumptions and uncertainty", exact=True).fill(revised_assumption)
         revised_form.get_by_role("button", name="Create new immutable version", exact=True).click()
+        # The title already existed at v1, so wait for content that can only be
+        # rendered from the completed v2 reload.
+        expect(scenarios_section.get_by_text(revised_assumption, exact=True)).to_be_visible(timeout=15_000)
+        scenario_a_card = scenarios_section.locator("div.rounded-xl.border.border-slate-200").filter(
+            has=page.get_by_role("heading", name="Workshop contractual notice scenario", exact=True)
+        ).first
+        expect(scenario_a_card.get_by_text("v2 · 6 months", exact=True)).to_be_visible(timeout=15_000)
 
         dashboard_v2 = _json(
             request.get(f"{API_URL}/api/v1/claims/{claim_id}/recovery-timebar/maturity"),
@@ -205,6 +222,10 @@ def main() -> None:
             "Compare a one-year period without treating it as selected governing law or an authoritative time bar."
         )
         create_form.get_by_role("button", name="Compute candidate & save", exact=True).click()
+        scenario_b_card = scenarios_section.locator("div.rounded-xl.border.border-slate-200").filter(
+            has=page.get_by_role("heading", name="Alternative annual limitation scenario", exact=True)
+        ).first
+        expect(scenario_b_card.get_by_text("v1 · 1 years", exact=True)).to_be_visible(timeout=15_000)
 
         alternatives = _json(
             request.get(f"{API_URL}/api/v1/claims/{claim_id}/recovery-timebar/maturity"),
@@ -218,8 +239,8 @@ def main() -> None:
             raise AssertionError("Alternative one-year candidate date was not deterministic")
 
         # Manager/Admin review is a separate explicit authority step.
-        reviewed_card = scenarios_section.locator("div.rounded-xl").filter(
-            has_text="Workshop contractual notice scenario"
+        reviewed_card = scenarios_section.locator("div.rounded-xl.border.border-slate-200").filter(
+            has=page.get_by_role("heading", name="Workshop contractual notice scenario", exact=True)
         ).first
         reviewed_card.get_by_role("button", name="Human/legal review", exact=True).click()
         review_section = page.locator("section").filter(
@@ -231,6 +252,9 @@ def main() -> None:
             "Manager reviewed the human inputs and source reference; confirming only this scenario's computed candidate for controlled diary use."
         )
         review_section.get_by_role("button", name="Record append-only human review", exact=True).click()
+        # Wait for the scenario card to render the separately persisted review.
+        expect(reviewed_card.get_by_text("Latest human/legal review", exact=True)).to_be_visible(timeout=15_000)
+        expect(reviewed_card).to_contain_text("#1 · confirm")
 
         final = _json(
             request.get(f"{API_URL}/api/v1/claims/{claim_id}/recovery-timebar/maturity"),
