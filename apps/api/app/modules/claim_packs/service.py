@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 import hashlib
 import json
@@ -48,7 +48,7 @@ SATISFIED_REQUIREMENT_STATUSES = {
 def _jsonable(value: Any) -> Any:
     if isinstance(value, Decimal):
         return str(value)
-    if isinstance(value, (datetime,)):
+    if isinstance(value, (date, datetime)):
         return value.isoformat()
     if isinstance(value, UUID):
         return str(value)
