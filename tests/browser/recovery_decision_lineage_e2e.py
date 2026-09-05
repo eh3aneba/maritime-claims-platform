@@ -40,6 +40,7 @@ def main() -> None:
 
     suffix = uuid4().hex[:8]
     counterparty_name = f"Recovery E2E Workshop {suffix}"
+    counterparty_role = "Potential workshop contractor"
 
     with sync_playwright() as pw:
         browser = pw.chromium.launch(headless=True)
@@ -63,7 +64,7 @@ def main() -> None:
                 f"{API_URL}/api/v1/claims/{claim_id}/recovery-timebar/counterparties",
                 data={
                     "name": counterparty_name,
-                    "role": "Potential workshop contractor",
+                    "role": counterparty_role,
                     "allegation_basis": (
                         "Human investigation hypothesis for browser acceptance only; no platform finding of fault or liability."
                     ),
@@ -72,6 +73,13 @@ def main() -> None:
             ),
             "create recovery counterparty",
         )
+
+        maturity = _json(
+            request.get(f"{API_URL}/api/v1/claims/{claim_id}/recovery-timebar/maturity"),
+            "recovery maturity after counterparty seed",
+        )
+        if not any(row["id"] == counterparty["id"] for row in maturity["counterparties"]):
+            raise AssertionError("Seeded recovery counterparty is missing from the canonical maturity dashboard")
 
         page.goto(f"{BASE_URL}/claims/{claim_id}/recovery-timebar/maturity", wait_until="networkidle")
         decision_heading = page.get_by_role("heading", name="Recovery decision & action lineage", exact=True)
@@ -93,8 +101,10 @@ def main() -> None:
         panel = decision_heading.locator("xpath=ancestor::section[contains(@class,'panel')][1]")
         expect(panel).to_have_count(1)
         counterparty_select = panel.get_by_label("Current counterparty version", exact=True)
-        expect(counterparty_select.locator(f'option[value="{counterparty["id"]}"]')).to_contain_text(counterparty_name)
-        counterparty_select.select_option(counterparty["id"])
+        counterparty_option_label = f"{counterparty_name} · {counterparty_role} · v1"
+        expect(counterparty_select).to_contain_text(counterparty_name, timeout=15_000)
+        counterparty_select.select_option(label=counterparty_option_label)
+        expect(counterparty_select).to_have_value(counterparty["id"])
         panel.get_by_label("Human disposition", exact=True).select_option("monitor")
         panel.get_by_label("Human rationale", exact=True).fill(
             "Human handler decision to monitor the recovery path while factual and legal review continues."
