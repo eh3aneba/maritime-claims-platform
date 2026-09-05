@@ -4,9 +4,16 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
-import { ApiError, approveInitialAssessment, generateInitialAssessment, getClaim, getInitialAssessment, reviewAssessmentSection } from "@/lib/api";
+import { ApiError, getClaim } from "@/lib/api";
+import {
+  approveInitialAssessment,
+  generateInitialAssessment,
+  getInitialAssessment,
+  reviewAssessmentSection,
+  type SourceAwareInitialAssessment,
+} from "@/lib/assessment-api";
 import { formatDateTime, humanizeFieldLabel } from "@/lib/format";
-import type { Claim, InitialAssessment } from "@/lib/types";
+import type { Claim } from "@/lib/types";
 
 function sourceKindLabel(kind: string) {
   const labels: Record<string, string> = {
@@ -29,79 +36,246 @@ function sourceKindLabel(kind: string) {
 export default function InitialAssessmentPage() {
   const { id } = useParams<{ id: string }>();
   const [claim, setClaim] = useState<Claim | null>(null);
-  const [assessment, setAssessment] = useState<InitialAssessment | null>(null);
+  const [assessment, setAssessment] = useState<SourceAwareInitialAssessment | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [overrideReason] = useState("Preliminary assessment required while outstanding evidence is being obtained.");
   const [editing, setEditing] = useState<Record<string, string>>({});
 
   async function load() {
-    try { const [c, a] = await Promise.all([getClaim(id), getInitialAssessment(id)]); setClaim(c); setAssessment(a); setError(""); }
-    catch (e) { setError(e instanceof ApiError ? e.detail : "Assessment could not be loaded."); }
+    try {
+      const [claimResult, assessmentResult] = await Promise.all([getClaim(id), getInitialAssessment(id)]);
+      setClaim(claimResult);
+      setAssessment(assessmentResult);
+      setError("");
+    } catch (e) {
+      setError(e instanceof ApiError ? e.detail : "Assessment could not be loaded.");
+    }
   }
-  useEffect(() => { load(); }, [id]);
+
+  useEffect(() => {
+    load();
+  }, [id]);
 
   async function generate(allow: boolean) {
-    setBusy(true); setError("");
-    try { setAssessment(await generateInitialAssessment(id, { allow_if_not_ready: allow, override_reason: allow ? overrideReason : null })); }
-    catch (e) {
-      if (e instanceof ApiError && e.status === 409) setError("Assessment is not ready. Review the blocking evidence below or generate a preliminary version with an explicit reason.");
-      else setError(e instanceof ApiError ? e.detail : "Assessment could not be generated.");
-    } finally { setBusy(false); }
+    setBusy(true);
+    setError("");
+    try {
+      setAssessment(
+        await generateInitialAssessment(id, {
+          allow_if_not_ready: allow,
+          override_reason: allow ? overrideReason : null,
+        }),
+      );
+      setEditing({});
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 409) {
+        setError(e.detail || "Assessment could not be generated from a stable claim state. Reload and try again.");
+      } else {
+        setError(e instanceof ApiError ? e.detail : "Assessment could not be generated.");
+      }
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function review(sectionId: string, action: "approve" | "edit") {
     if (!assessment) return;
-    setBusy(true); setError("");
+    if (!assessment.source_fingerprint || assessment.source_state !== "current") {
+      setError("This assessment is not bound to the current claim state. Generate a new version before reviewing it.");
+      return;
+    }
+    setBusy(true);
+    setError("");
     try {
-      const updated = await reviewAssessmentSection(id, sectionId, { action, text: action === "edit" ? editing[sectionId] : null });
-      setAssessment({ ...assessment, status: assessment.status === "draft" ? "under_review" : assessment.status, sections: assessment.sections.map((s) => s.id === updated.id ? updated : s) });
-      if (action === "edit") setEditing((current) => { const next = { ...current }; delete next[sectionId]; return next; });
-    } catch (e) { setError(e instanceof ApiError ? e.detail : "Section review failed."); }
-    finally { setBusy(false); }
+      const updated = await reviewAssessmentSection(id, sectionId, {
+        action,
+        text: action === "edit" ? editing[sectionId] : null,
+        expected_source_fingerprint: assessment.source_fingerprint,
+      });
+      setAssessment({
+        ...assessment,
+        status: assessment.status === "draft" ? "under_review" : assessment.status,
+        sections: assessment.sections.map((section) => (section.id === updated.id ? updated : section)),
+      });
+      if (action === "edit") {
+        setEditing((current) => {
+          const next = { ...current };
+          delete next[sectionId];
+          return next;
+        });
+      }
+    } catch (e) {
+      setError(e instanceof ApiError ? e.detail : "Section review failed.");
+      if (e instanceof ApiError && e.status === 409) await load();
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function approveAll() {
     if (!assessment) return;
-    setBusy(true); setError("");
-    try { setAssessment(await approveInitialAssessment(id, assessment.id, assessment.is_preliminary ? "Approved as preliminary assessment subject to outstanding evidence." : "Initial assessment reviewed.")); }
-    catch (e) { setError(e instanceof ApiError ? e.detail : "Assessment could not be approved. Manager access may be required."); }
-    finally { setBusy(false); }
+    if (!assessment.source_fingerprint || assessment.source_state !== "current") {
+      setError("This assessment is not bound to the current claim state. Generate a new version before approval.");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      setAssessment(
+        await approveInitialAssessment(
+          id,
+          assessment.id,
+          assessment.source_fingerprint,
+          assessment.is_preliminary
+            ? "Approved as preliminary assessment subject to outstanding evidence."
+            : "Initial assessment reviewed.",
+        ),
+      );
+    } catch (e) {
+      setError(e instanceof ApiError ? e.detail : "Assessment could not be approved. Manager access may be required.");
+      if (e instanceof ApiError && e.status === 409) await load();
+    } finally {
+      setBusy(false);
+    }
   }
 
   if (!claim) return <div className="py-20 text-center text-sm text-slate-500">Loading assessment…</div>;
 
+  const sourceWriteBlocked = Boolean(assessment && assessment.source_state !== "current");
+
   return <div>
     <Link href={`/claims/${id}`} className="text-sm font-semibold text-slate-500 hover:text-slate-800">← Back to claim</Link>
     <div className="mt-5 flex flex-col justify-between gap-4 xl:flex-row xl:items-start">
-      <div><p className="eyebrow">{claim.claim_reference}</p><h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">Initial Assessment</h1><p className="mt-2 text-sm text-slate-500">Source-linked structured assessment with section-by-section human review.</p></div>
+      <div>
+        <p className="eyebrow">{claim.claim_reference}</p>
+        <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">Initial Assessment</h1>
+        <p className="mt-2 text-sm text-slate-500">Source-linked structured assessment with section-by-section human review.</p>
+      </div>
       <div className="flex flex-wrap gap-2">
-        {assessment ? <button disabled={busy} onClick={() => generate(true)} className="secondary-button">Generate new version</button> : <button disabled={busy} onClick={() => generate(false)} className="secondary-button">Generate draft</button>}
-        {assessment && assessment.status !== "approved" ? <button disabled={busy} onClick={approveAll} className="primary-button">{assessment.is_preliminary ? "Approve preliminary" : "Approve final assessment"}</button> : null}
-        {assessment?.status === "approved" ? <span className={`rounded-lg px-4 py-2 text-sm font-semibold ${assessment.is_preliminary ? "bg-amber-100 text-amber-900" : "bg-emerald-100 text-emerald-900"}`}>{assessment.is_preliminary ? "Approved preliminary ✓" : "Final assessment approved ✓"}</span> : null}
+        {assessment ? (
+          <button disabled={busy} onClick={() => generate(true)} className="secondary-button">Generate new version</button>
+        ) : (
+          <button disabled={busy} onClick={() => generate(false)} className="secondary-button">Generate draft</button>
+        )}
+        {assessment && assessment.status !== "approved" ? (
+          <button disabled={busy || sourceWriteBlocked} onClick={approveAll} className="primary-button">
+            {assessment.is_preliminary ? "Approve preliminary" : "Approve final assessment"}
+          </button>
+        ) : null}
+        {assessment?.status === "approved" ? (
+          <span className={`rounded-lg px-4 py-2 text-sm font-semibold ${assessment.is_preliminary ? "bg-amber-100 text-amber-900" : "bg-emerald-100 text-emerald-900"}`}>
+            {assessment.is_preliminary ? "Approved preliminary ✓" : "Final assessment approved ✓"}
+          </span>
+        ) : null}
       </div>
     </div>
+
     {error ? <div className="mt-5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">{error}</div> : null}
 
-    {!assessment ? <section className="panel mt-6 p-6"><h2 className="section-title">No assessment generated yet</h2><p className="section-subtitle">A readiness gate prevents accidental generation when critical evidence is missing.</p><p className="mt-4 text-sm text-slate-600">If blocking evidence remains outstanding, generate a preliminary version. Preliminary approval supports interim handling and is never the final assessment.</p><button disabled={busy} onClick={() => generate(true)} className="secondary-button mt-4">Generate preliminary draft</button></section> : <>
-      <section className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    {assessment?.source_state === "stale" ? (
+      <section className="mt-5 rounded-xl border border-rose-200 bg-rose-50 p-5">
+        <h2 className="text-sm font-semibold text-rose-950">Source state changed — this assessment is historical</h2>
+        <p className="mt-2 text-sm leading-6 text-rose-800">
+          Claim evidence or a human-reviewed upstream record changed after v{assessment.version} was generated. This version remains visible but new review or approval writes are blocked. Generate a new version to continue.
+        </p>
+      </section>
+    ) : null}
+    {assessment?.source_state === "legacy_unbound" ? (
+      <section className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-5">
+        <h2 className="text-sm font-semibold text-amber-950">Legacy assessment — source state not bound</h2>
+        <p className="mt-2 text-sm leading-6 text-amber-800">
+          This historical version predates source fingerprinting. It remains readable, but review and approval writes require a newly generated version.
+        </p>
+      </section>
+    ) : null}
+
+    {!assessment ? (
+      <section className="panel mt-6 p-6">
+        <h2 className="section-title">No assessment generated yet</h2>
+        <p className="section-subtitle">A readiness gate prevents accidental generation when critical evidence is missing.</p>
+        <p className="mt-4 text-sm text-slate-600">If blocking evidence remains outstanding, generate a preliminary version. Preliminary approval supports interim handling and is never the final assessment.</p>
+        <button disabled={busy} onClick={() => generate(true)} className="secondary-button mt-4">Generate preliminary draft</button>
+      </section>
+    ) : <>
+      <section className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <div className="panel p-5"><p className="metric-label">Version</p><p className="metric-value">v{assessment.version}</p></div>
         <div className="panel p-5"><p className="metric-label">Readiness</p><p className="metric-value">{assessment.readiness_score}%</p><p className="mt-1 text-xs text-slate-500">{assessment.readiness_state.replaceAll("_", " ")}</p></div>
         <div className="panel p-5"><p className="metric-label">Assessment status</p><p className="metric-value text-xl capitalize">{assessment.status.replaceAll("_", " ")}</p>{assessment.approved_at ? <p className="mt-1 text-xs text-slate-500">Approved {formatDateTime(assessment.approved_at)}</p> : null}</div>
         <div className="panel p-5"><p className="metric-label">Classification</p><p className={`metric-value text-xl ${assessment.is_preliminary ? "text-amber-700" : "text-emerald-700"}`}>{assessment.is_preliminary ? "Preliminary" : "Ready"}</p></div>
+        <div className="panel p-5"><p className="metric-label">Source state</p><p className={`metric-value text-xl capitalize ${assessment.source_state === "current" ? "text-emerald-700" : "text-rose-700"}`}>{assessment.source_state.replaceAll("_", " ")}</p>{assessment.source_fingerprint ? <p className="mt-1 truncate font-mono text-[10px] text-slate-400" title={assessment.source_fingerprint}>{assessment.source_fingerprint}</p> : null}</div>
       </section>
-      {assessment.blocking_items.length ? <section className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-5"><h2 className="text-sm font-semibold text-amber-950">Outstanding blocking evidence</h2><ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-amber-900">{assessment.blocking_items.map((x) => <li key={x}>{x}</li>)}</ul><p className="mt-3 text-xs text-amber-700">This assessment is preliminary and remains subject to the outstanding evidence above.</p></section> : null}
-      {assessment.status === "approved" ? <section className={`mt-5 rounded-xl border p-5 ${assessment.is_preliminary ? "border-amber-300 bg-amber-50" : "border-emerald-300 bg-emerald-50"}`}><h2 className={`text-sm font-semibold ${assessment.is_preliminary ? "text-amber-950" : "text-emerald-950"}`}>{assessment.is_preliminary ? "Approved preliminary assessment — not final" : "Final initial assessment approved"}</h2><p className={`mt-2 text-xs leading-5 ${assessment.is_preliminary ? "text-amber-800" : "text-emerald-800"}`}>{assessment.is_preliminary ? "This version was approved for interim claims handling while blocking evidence remained outstanding. Once the evidence position improves, generate a new version; only a non-preliminary version should be treated as the final Initial Assessment." : "This non-preliminary version passed the readiness gate and all sections were human-reviewed before approval."}</p></section> : null}
+
+      {assessment.blocking_items.length ? (
+        <section className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-5">
+          <h2 className="text-sm font-semibold text-amber-950">Outstanding blocking evidence</h2>
+          <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-amber-900">{assessment.blocking_items.map((item) => <li key={item}>{item}</li>)}</ul>
+          <p className="mt-3 text-xs text-amber-700">This assessment is preliminary and remains subject to the outstanding evidence above.</p>
+        </section>
+      ) : null}
+
+      {assessment.status === "approved" ? (
+        <section className={`mt-5 rounded-xl border p-5 ${assessment.is_preliminary ? "border-amber-300 bg-amber-50" : "border-emerald-300 bg-emerald-50"}`}>
+          <h2 className={`text-sm font-semibold ${assessment.is_preliminary ? "text-amber-950" : "text-emerald-950"}`}>
+            {assessment.is_preliminary ? "Approved preliminary assessment — not final" : "Final initial assessment approved"}
+          </h2>
+          <p className={`mt-2 text-xs leading-5 ${assessment.is_preliminary ? "text-amber-800" : "text-emerald-800"}`}>
+            {assessment.is_preliminary
+              ? "This version was approved for interim claims handling while blocking evidence remained outstanding. Once the evidence position improves, generate a new version; only a non-preliminary version should be treated as the final Initial Assessment."
+              : "This non-preliminary version passed the readiness gate and all sections were human-reviewed before approval."}
+          </p>
+          {assessment.approved_content_hash ? <p className="mt-3 break-all font-mono text-[10px] text-slate-500">Approved content digest: {assessment.approved_content_hash}</p> : null}
+        </section>
+      ) : null}
 
       <div className="mt-6 space-y-5">{assessment.sections.map((section) => {
         const text = section.approved_text ?? section.draft_text;
         const reviewed = section.status !== "pending";
-        return <section key={section.id} className="panel p-6"><div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start"><div><p className="eyebrow">{String(section.sort_order / 10).padStart(2, "0")}</p><h2 className="section-title mt-1">{section.title}</h2><div className="mt-1 flex flex-wrap items-center gap-2"><span className={`text-xs font-semibold uppercase tracking-wide ${reviewed ? "text-emerald-700" : "text-slate-400"}`}>{reviewed ? `Reviewed — ${section.status}` : "Pending review"}</span>{section.reviewed_at ? <span className="text-xs text-slate-400">{formatDateTime(section.reviewed_at)}</span> : null}</div></div><div className="flex gap-2">{assessment.status !== "approved" && !reviewed ? <button disabled={busy} onClick={() => review(section.id, "approve")} className="secondary-button">Approve</button> : null}{assessment.status !== "approved" ? <button disabled={busy} onClick={() => { setEditing({ ...editing, [section.id]: editing[section.id] ?? text }); }} className="secondary-button">Edit</button> : <span className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-600">Locked approved version</span>}</div></div>
-          {editing[section.id] !== undefined ? <div className="mt-4"><textarea rows={7} className="field resize-y" value={editing[section.id]} onChange={(e) => setEditing({ ...editing, [section.id]: e.target.value })} /><div className="mt-2 flex gap-2"><button disabled={busy} onClick={() => review(section.id, "edit")} className="primary-button">Save edited section</button><button onClick={() => { const next={...editing}; delete next[section.id]; setEditing(next); }} className="secondary-button">Cancel</button></div></div> : <div className="mt-4 whitespace-pre-wrap text-sm leading-7 text-slate-700">{text}</div>}
-          <details className="mt-5 border-t border-slate-200 pt-4"><summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-slate-500">Sources ({section.source_manifest.length})</summary><div className="mt-3 space-y-2">{section.source_manifest.length ? section.source_manifest.map((source, index) => <div key={`${source.id}-${index}`} className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600"><span className="font-semibold">{sourceKindLabel(source.kind)}</span><span className="text-slate-400"> · </span>{source.label}</div>) : <p className="text-xs text-slate-400">No structured source records linked.</p>}</div></details>
+        const canWrite = assessment.status !== "approved" && assessment.source_state === "current";
+        return <section key={section.id} className="panel p-6">
+          <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+            <div>
+              <p className="eyebrow">{String(section.sort_order / 10).padStart(2, "0")}</p>
+              <h2 className="section-title mt-1">{section.title}</h2>
+              <div className="mt-1 flex flex-wrap items-center gap-2">
+                <span className={`text-xs font-semibold uppercase tracking-wide ${reviewed ? "text-emerald-700" : "text-slate-400"}`}>{reviewed ? `Reviewed — ${section.status}` : "Pending review"}</span>
+                {section.reviewed_at ? <span className="text-xs text-slate-400">{formatDateTime(section.reviewed_at)}</span> : null}
+              </div>
+            </div>
+            <div className="flex gap-2">
+              {canWrite && !reviewed ? <button disabled={busy} onClick={() => review(section.id, "approve")} className="secondary-button">Approve</button> : null}
+              {canWrite ? <button disabled={busy} onClick={() => setEditing({ ...editing, [section.id]: editing[section.id] ?? text })} className="secondary-button">Edit</button> : <span className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-600">Locked historical version</span>}
+            </div>
+          </div>
+          {editing[section.id] !== undefined && canWrite ? (
+            <div className="mt-4">
+              <textarea rows={7} className="field resize-y" value={editing[section.id]} onChange={(event) => setEditing({ ...editing, [section.id]: event.target.value })} />
+              <div className="mt-2 flex gap-2">
+                <button disabled={busy} onClick={() => review(section.id, "edit")} className="primary-button">Save edited section</button>
+                <button onClick={() => { const next = { ...editing }; delete next[section.id]; setEditing(next); }} className="secondary-button">Cancel</button>
+              </div>
+            </div>
+          ) : <div className="mt-4 whitespace-pre-wrap text-sm leading-7 text-slate-700">{text}</div>}
+          <details className="mt-5 border-t border-slate-200 pt-4">
+            <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-slate-500">Sources ({section.source_manifest.length})</summary>
+            <div className="mt-3 space-y-2">
+              {section.source_manifest.length ? section.source_manifest.map((source, index) => (
+                <div key={`${source.id}-${index}`} className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                  <span className="font-semibold">{sourceKindLabel(source.kind)}</span><span className="text-slate-400"> · </span>{source.label}
+                </div>
+              )) : <p className="text-xs text-slate-400">No structured source records linked.</p>}
+            </div>
+          </details>
         </section>;
       })}</div>
-      {assessment.status !== "approved" ? <div className="mt-6 flex justify-end"><button disabled={busy} onClick={approveAll} className="primary-button">{assessment.is_preliminary ? "Approve preliminary" : "Approve final assessment"}</button></div> : null}
+
+      {assessment.status !== "approved" ? (
+        <div className="mt-6 flex justify-end">
+          <button disabled={busy || sourceWriteBlocked} onClick={approveAll} className="primary-button">
+            {assessment.is_preliminary ? "Approve preliminary" : "Approve final assessment"}
+          </button>
+        </div>
+      ) : null}
     </>}
   </div>;
 }
