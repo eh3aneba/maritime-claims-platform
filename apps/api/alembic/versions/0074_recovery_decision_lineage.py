@@ -66,6 +66,11 @@ def upgrade() -> None:
         "recovery_pursuit_decisions",
         ["decision_key"],
     )
+    op.create_index(
+        "ix_recovery_pursuit_decisions_counterparty_id",
+        "recovery_pursuit_decisions",
+        ["counterparty_id"],
+    )
 
     op.create_table(
         "recovery_action_logs",
@@ -124,6 +129,7 @@ def downgrade() -> None:
     op.drop_index("ix_recovery_action_claim", table_name="recovery_action_logs")
     op.drop_table("recovery_action_logs")
 
+    op.drop_index("ix_recovery_pursuit_decisions_counterparty_id", table_name="recovery_pursuit_decisions")
     op.drop_index("ix_recovery_pursuit_decisions_decision_key", table_name="recovery_pursuit_decisions")
     op.drop_index("ix_recovery_pursuit_decisions_claim_id", table_name="recovery_pursuit_decisions")
     op.drop_index("ix_recovery_pursuit_decisions_organization_id", table_name="recovery_pursuit_decisions")
