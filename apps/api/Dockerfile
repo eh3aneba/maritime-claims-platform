@@ -3,7 +3,7 @@ FROM python:3.13-alpine AS libuuid-builder
 ARG UTIL_LINUX_VERSION=2.42.3
 ARG UTIL_LINUX_SHA256=66ac7c0e725278eb2b039e3104f2c91119341d941b41bac7a285c695f940bd57
 
-RUN apk add --no-cache build-base \
+RUN apk add --no-cache build-base linux-headers \
     && wget -q -O /tmp/util-linux.tar.xz \
         "https://www.kernel.org/pub/linux/utils/util-linux/v2.42/util-linux-${UTIL_LINUX_VERSION}.tar.xz" \
     && echo "${UTIL_LINUX_SHA256}  /tmp/util-linux.tar.xz" | sha256sum -c - \
