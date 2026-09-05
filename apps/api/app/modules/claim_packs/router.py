@@ -13,7 +13,7 @@ from app.modules.claim_packs.schemas import (
     ClaimPackExportResponse,
     ClaimPackGenerateRequest,
 )
-from app.modules.claim_packs.service import (
+from app.modules.claim_packs.recovery_service import (
     generate_claim_pack,
     get_claim_pack_export,
     list_claim_pack_exports,
