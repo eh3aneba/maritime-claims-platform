@@ -202,10 +202,26 @@ class FinancialFlag(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 
 class ReserveHistory(UUIDPrimaryKeyMixin, Base):
+    """Append-only authoritative reserve history.
+
+    New lineage-bound rows are versioned, idempotent and hash-chained. Historical
+    rows that predate Phase 13.6C deliberately retain NULL lineage fields and the
+    `legacy_unbound` source kind instead of fabricated provenance.
+    """
+
     __tablename__ = "reserve_history"
     __table_args__ = (
         Index("ix_reserve_history_org_claim_created", "organization_id", "claim_id", "created_at"),
+        Index("ix_reserve_history_org_claim_sequence", "organization_id", "claim_id", "sequence"),
+        Index("ix_reserve_history_reserve_hash", "reserve_hash"),
+        UniqueConstraint("organization_id", "claim_id", "sequence", name="uq_reserve_history_claim_sequence"),
+        UniqueConstraint("organization_id", "claim_id", "idempotency_key", name="uq_reserve_history_claim_idempotency"),
         CheckConstraint("amount >= 0", name="ck_reserve_history_amount_nonnegative"),
+        CheckConstraint("sequence IS NULL OR sequence >= 1", name="ck_reserve_history_sequence_positive"),
+        CheckConstraint(
+            "source_kind IN ('legacy_unbound','manual','reserve_support','adjustment')",
+            name="ck_reserve_history_source_kind",
+        ),
     )
 
     organization_id: Mapped[UUID] = mapped_column(
@@ -221,3 +237,12 @@ class ReserveHistory(UUIDPrimaryKeyMixin, Base):
         ForeignKey("users.id", ondelete="SET NULL")
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    sequence: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    idempotency_key: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    request_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    source_kind: Mapped[str] = mapped_column(String(32), nullable=False, default="legacy_unbound", server_default="legacy_unbound")
+    source_reference_id: Mapped[UUID | None] = mapped_column(nullable=True)
+    source_state_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    source_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    previous_reserve_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    reserve_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)

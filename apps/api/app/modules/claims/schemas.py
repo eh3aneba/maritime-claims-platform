@@ -1,9 +1,9 @@
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Any, Literal
 from uuid import UUID
-from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.modules.claims.models import ClaimPriority, ClaimStatus, ClaimSubtype, ClaimType
 from app.modules.users.models import UserRole
@@ -70,9 +70,59 @@ class ClaimStatusChange(BaseModel):
     reason: str | None = Field(default=None, max_length=1000)
 
 
+ReserveSourceKind = Literal["manual", "reserve_support", "adjustment"]
+
+
 class ClaimReserveChange(BaseModel):
     amount: Decimal = Field(ge=0, max_digits=18, decimal_places=2)
     reason: str = Field(min_length=3, max_length=1000)
+    idempotency_key: str = Field(min_length=8, max_length=120)
+    expected_reserve_version: int = Field(ge=0)
+    expected_reserve_hash: str | None = Field(default=None, min_length=64, max_length=64)
+    source_kind: ReserveSourceKind = "manual"
+    source_reference_id: UUID | None = None
+
+    model_config = {"str_strip_whitespace": True}
+
+    @model_validator(mode="after")
+    def validate_source_reference(self):
+        if self.source_kind == "manual" and self.source_reference_id is not None:
+            raise ValueError("Manual reserve changes must not identify an upstream financial source")
+        if self.source_kind != "manual" and self.source_reference_id is None:
+            raise ValueError("A source_reference_id is required for reserve_support or adjustment provenance")
+        if self.expected_reserve_version == 0 and self.expected_reserve_hash is not None:
+            raise ValueError("expected_reserve_hash must be omitted when expected_reserve_version is 0")
+        if self.expected_reserve_version > 0 and self.expected_reserve_hash is None:
+            raise ValueError("expected_reserve_hash is required when expected_reserve_version is greater than 0")
+        return self
+
+
+class ReserveHistoryRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    amount: Decimal
+    currency: str
+    reason: str
+    created_by_id: UUID | None
+    created_at: datetime
+    sequence: int | None
+    idempotency_key: str | None
+    source_kind: str
+    source_reference_id: UUID | None
+    source_state_hash: str | None
+    source_snapshot: dict[str, Any]
+    previous_reserve_hash: str | None
+    reserve_hash: str | None
+
+
+class ReserveHistoryResponse(BaseModel):
+    claim_id: UUID
+    currency: str
+    current_reserve: Decimal | None
+    current_version: int
+    current_hash: str | None
+    items: list[ReserveHistoryRead]
 
 
 class ClaimRead(BaseModel):
