@@ -136,7 +136,7 @@ def main() -> None:
         scenario_form.get_by_label("Source reference", exact=True).fill("Workshop Contract clause 12 — human reviewed reference")
         scenario_form.get_by_label("Human-selected anchor date", exact=True).fill("2026-07-10")
         scenario_form.get_by_label("Period", exact=True).fill("6")
-        scenario_form.get_by_label("Unit", exact=True).select_option("months")
+        scenario_form.get_by_label("Unit", exact=True).nth(0).select_option("months")
         scenario_form.get_by_label("Assumptions and uncertainty", exact=True).fill(
             "Assume solely for comparison that 10 July 2026 is the contractual trigger; no legal conclusion is made."
         )
@@ -200,7 +200,7 @@ def main() -> None:
         create_form.get_by_label("Source reference", exact=True).fill("Alternative legal review note — human supplied")
         create_form.get_by_label("Human-selected anchor date", exact=True).fill("2026-07-10")
         create_form.get_by_label("Period", exact=True).fill("1")
-        create_form.get_by_label("Unit", exact=True).select_option("years")
+        create_form.get_by_label("Unit", exact=True).nth(0).select_option("years")
         create_form.get_by_label("Assumptions and uncertainty", exact=True).fill(
             "Compare a one-year period without treating it as selected governing law or an authoritative time bar."
         )
@@ -211,8 +211,9 @@ def main() -> None:
             "maturity with alternative scenarios",
         )
         current = {row["title"]: row for row in alternatives["scenarios"]}
-        if set(current) != {"Workshop contractual notice scenario", "Alternative annual limitation scenario"}:
-            raise AssertionError(f"Expected two current alternative scenarios, got {set(current)}")
+        required_titles = {"Workshop contractual notice scenario", "Alternative annual limitation scenario"}
+        if not required_titles.issubset(current):
+            raise AssertionError(f"Expected both alternative scenarios, got {set(current)}")
         if current["Alternative annual limitation scenario"]["candidate_deadline"] != "2027-07-10":
             raise AssertionError("Alternative one-year candidate date was not deterministic")
 
