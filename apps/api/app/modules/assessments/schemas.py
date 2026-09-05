@@ -35,6 +35,15 @@ class AssessmentSectionRead(BaseModel):
     reviewed_at: datetime | None
 
 
+class AssessmentDomainStatusRead(BaseModel):
+    authority: Literal["read_only_cross_domain_projection"]
+    disclaimer: str
+    technical: dict
+    financial: dict
+    reserve: dict
+    recovery: dict
+
+
 class AssessmentRead(BaseModel):
     id: UUID
     claim_id: UUID
@@ -52,9 +61,34 @@ class AssessmentRead(BaseModel):
     current_source_fingerprint: str | None
     source_state: AssessmentSourceState
     approved_content_hash: str | None
+    is_latest: bool
+    latest_version: int
+    current_domain_status: AssessmentDomainStatusRead
     created_at: datetime
     updated_at: datetime
     sections: list[AssessmentSectionRead]
+
+
+class AssessmentHistoryItem(BaseModel):
+    id: UUID
+    version: int
+    status: AssessmentStatus
+    is_preliminary: bool
+    is_latest: bool
+    source_state: AssessmentSourceState
+    source_fingerprint: str | None
+    approved_content_hash: str | None
+    generated_by_id: UUID | None
+    approved_by_id: UUID | None
+    approved_at: datetime | None
+    created_at: datetime
+
+
+class AssessmentHistoryResponse(BaseModel):
+    claim_id: UUID
+    latest_version: int | None
+    current_source_fingerprint: str | None
+    items: list[AssessmentHistoryItem]
 
 
 class AssessmentSectionReview(BaseModel):
