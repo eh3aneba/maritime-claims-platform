@@ -6,6 +6,7 @@ from uuid import UUID, uuid4
 from sqlalchemy.orm import Session
 
 from app.modules.audit.service import write_audit_log
+from app.modules.claim_packs.assessment_snapshot import build_approved_assessment_handoff
 from app.modules.claim_packs.models import ClaimPackExport, ClaimPackFormat
 from app.modules.claim_packs.recovery_renderers import render_pdf, render_xlsx
 from app.modules.claim_packs.recovery_snapshot import build_recovery_snapshot
@@ -22,7 +23,7 @@ from app.modules.documents.service import _storage
 from app.modules.users.models import User
 
 
-SNAPSHOT_SCHEMA_VERSION = "1.2"
+SNAPSHOT_SCHEMA_VERSION = "1.3"
 
 
 def build_claim_pack_snapshot(
@@ -41,11 +42,24 @@ def build_claim_pack_snapshot(
         generated_at=generated_at,
     )
     recovery = _jsonable(build_recovery_snapshot(db, claim=claim))
+    approved_assessment = _jsonable(build_approved_assessment_handoff(db, claim=claim))
     summary = recovery["summary"]
+
     snapshot["snapshot_schema_version"] = SNAPSHOT_SCHEMA_VERSION
+    # Replace the legacy loose approved-assessment projection from the base snapshot. Only a digest-bound,
+    # explicitly approved assessment is eligible for downstream Claim Pack reporting in schema 1.3.
+    snapshot["approved_assessment"] = approved_assessment
     snapshot["recovery_review"] = recovery
     snapshot["summary"].update(
         {
+            "approved_assessment_version": approved_assessment["version"] if approved_assessment else None,
+            "assessment_is_preliminary": approved_assessment["is_preliminary"] if approved_assessment else None,
+            "approved_assessment_content_hash": (
+                approved_assessment["approved_content_hash"] if approved_assessment else None
+            ),
+            "approved_assessment_source_state_at_export": (
+                approved_assessment["source_state_at_export"] if approved_assessment else None
+            ),
             "recovery_human_closure_review_state": recovery["human_closure_review_state"],
             "recovery_counterparty_count": summary["counterparty_count"],
             "recovery_timebar_scenario_count": summary["timebar_scenario_count"],
@@ -121,6 +135,7 @@ def generate_claim_pack(
     try:
         db.add(record)
         db.flush()
+        assessment = snapshot.get("approved_assessment")
         write_audit_log(
             db,
             organization_id=organization_id,
@@ -135,11 +150,17 @@ def generate_claim_pack(
                 "snapshot_hash": snapshot_hash,
                 "file_hash": stored.file_hash,
                 "review_state": snapshot["summary"]["review_state"],
+                "approved_assessment_version": assessment["version"] if assessment else None,
+                "approved_assessment_content_hash": assessment["approved_content_hash"] if assessment else None,
+                "approved_assessment_source_state_at_export": assessment["source_state_at_export"] if assessment else None,
                 "recovery_human_closure_review_state": snapshot["summary"]["recovery_human_closure_review_state"],
                 "recovery_human_decision_count": snapshot["summary"]["recovery_human_decision_count"],
                 "recovery_human_action_count": snapshot["summary"]["recovery_human_action_count"],
             },
-            details="Generated immutable controlled claim-pack snapshot with downstream recovery/time-bar human-record projection.",
+            details=(
+                "Generated immutable controlled claim-pack snapshot with digest-bound approved Initial Assessment "
+                "context and downstream recovery/time-bar human-record projection. Neither projection creates decision authority."
+            ),
         )
         db.commit()
         db.refresh(record)
