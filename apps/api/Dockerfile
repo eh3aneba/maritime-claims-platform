@@ -50,7 +50,7 @@ WORKDIR /app
 
 COPY --from=libuuid-builder /tmp/libuuid-2.42.3-r0.apk /tmp/libuuid-2.42.3-r0.apk
 RUN apk add --no-cache --allow-untrusted --upgrade /tmp/libuuid-2.42.3-r0.apk \
-    && apk info -v libuuid | grep -Fx 'libuuid-2.42.3-r0' \
+    && apk info --installed 'libuuid=2.42.3-r0' >/dev/null \
     && python -c "import _uuid, uuid; value = uuid.uuid4(); assert value.version == 4; print(value)" \
     && rm -f /tmp/libuuid-2.42.3-r0.apk
 
