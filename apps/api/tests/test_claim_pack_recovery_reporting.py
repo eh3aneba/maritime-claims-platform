@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from io import BytesIO
 from unittest.mock import patch
 
@@ -8,6 +9,7 @@ from pypdf import PdfReader
 
 from app.modules.claim_packs.recovery_renderers import render_pdf, render_xlsx
 from app.modules.claim_packs.recovery_snapshot import build_recovery_snapshot
+from app.modules.claim_packs.service import _jsonable, _snapshot_hash
 
 
 def _counterparty(identifier: str, *, state: str = "reference_only") -> dict:
@@ -44,7 +46,7 @@ def _decision(identifier: str, *, disposition: str, state: str = "reference_only
         "disposition": disposition,
         "rationale": "Human rationale for recovery handling.",
         "basis_reference": "Recovery review note",
-        "next_review_date": None,
+        "next_review_date": date(2026, 9, 30),
         "previous_decision_hash": None,
         "decision_hash": "b" * 64,
         "context_state_status": state,
@@ -58,7 +60,7 @@ def _decision(identifier: str, *, disposition: str, state: str = "reference_only
                 "action_number": 1,
                 "action_type": "correspondence",
                 "direction": "outbound",
-                "occurred_on": "2026-09-05",
+                "occurred_on": date(2026, 9, 5),
                 "summary": "Human-approved preservation correspondence recorded.",
                 "source_reference": "REC-001",
                 "external_status": None,
@@ -87,14 +89,14 @@ def _scenario(*, state: str = "reference_only", reviewed: bool = True) -> dict:
         "source_document_version": None,
         "source_document_hash": None,
         "source_state_status": state,
-        "anchor_date": "2026-01-01",
+        "anchor_date": date(2026, 1, 1),
         "period_value": 12,
         "period_unit": "months",
         "extension_value": None,
         "extension_unit": None,
         "extension_basis": None,
         "assumptions": "Human assumptions",
-        "candidate_deadline": "2027-01-01",
+        "candidate_deadline": date(2027, 1, 1),
         "scenario_hash": "d" * 64,
         "created_at": "2026-09-05T00:00:00Z",
         "latest_review": (
@@ -105,7 +107,7 @@ def _scenario(*, state: str = "reference_only", reviewed: bool = True) -> dict:
                 "scenario_hash": "d" * 64,
                 "review_number": 1,
                 "action": "confirm",
-                "confirmed_deadline": "2027-01-01",
+                "confirmed_deadline": date(2027, 1, 1),
                 "note": "Human/legal review",
                 "source_reference": "Legal review note",
                 "previous_review_hash": None,
@@ -162,8 +164,18 @@ def test_recovery_projection_reports_terminal_human_path_without_auto_closure() 
     assert "human handler remains responsible" in snapshot["disclaimer"].lower()
 
 
+def test_recovery_projection_dates_are_json_safe_before_snapshot_hashing() -> None:
+    snapshot = _jsonable({"recovery_review": _build_with(disposition="monitor")})
+    decision = snapshot["recovery_review"]["decisions"][0]
+    scenario = snapshot["recovery_review"]["timebar_scenarios"][0]
+    assert decision["next_review_date"] == "2026-09-30"
+    assert decision["actions"][0]["occurred_on"] == "2026-09-05"
+    assert scenario["candidate_deadline"] == "2027-01-01"
+    assert len(_snapshot_hash(snapshot)) == 64
+
+
 def _export_snapshot() -> dict:
-    recovery = _build_with(disposition="monitor")
+    recovery = _jsonable(_build_with(disposition="monitor"))
     return {
         "snapshot_schema_version": "1.2",
         "generated_at": "2026-09-05T00:00:00+00:00",
