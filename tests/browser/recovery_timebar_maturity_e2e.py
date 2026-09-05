@@ -131,14 +131,24 @@ def main() -> None:
         if counterparty_history[0]["supersedes_id"] != counterparty_history[1]["id"]:
             raise AssertionError("Counterparty version lineage is broken")
 
-        scenario_form = page.locator("section").filter(
-            has=page.get_by_role("heading", name="Create alternative time-bar scenario", exact=True)
-        )
+        # Re-enter the persisted workspace after the write. This avoids testing a
+        # transient React tree and proves that the immutable v2 context is what a
+        # fresh operator view exposes to the scenario form.
+        page.reload(wait_until="networkidle")
+        expect(page.get_by_role("heading", name="Recovery counterparties & time-bar scenarios")).to_be_visible()
+        scenario_heading = page.get_by_role("heading", name="Create alternative time-bar scenario", exact=True)
+        expect(scenario_heading).to_be_visible(timeout=15_000)
+        scenario_form = page.locator("section").filter(has=scenario_heading)
         expect(scenario_form).to_have_count(1)
+        counterparty_select = scenario_form.get_by_label("Potential counterparty (optional)", exact=True)
+        expect(counterparty_select).to_be_visible()
+        expect(counterparty_select.locator(f'option[value="{current_counterparty["id"]}"]')).to_have_text(
+            "TurboMaker GmbH · v2"
+        )
 
         # Scenario A: six-month contractual notice hypothesis.
         scenario_form.get_by_label("Scenario title", exact=True).fill("Workshop contractual notice scenario")
-        scenario_form.get_by_label("Potential counterparty (optional)", exact=True).select_option(current_counterparty["id"])
+        counterparty_select.select_option(current_counterparty["id"])
         scenario_form.get_by_label("Human-entered legal/factual basis", exact=True).fill(
             "Human hypothesis based on the workshop contract notice wording; governing law and enforceability remain for legal review."
         )
