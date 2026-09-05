@@ -9,6 +9,11 @@ from app.db.session import get_db
 from app.modules.audit.service import write_audit_log
 from app.modules.auth.dependencies import CurrentUser, require_roles
 from app.modules.claims.models import ClaimPriority, ClaimStatus
+from app.modules.claims.reserve_lineage import (
+    ReserveLineageError,
+    record_authoritative_reserve,
+    reserve_history_response,
+)
 from app.modules.claims.schemas import (
     ClaimAssign,
     ClaimCreate,
@@ -19,6 +24,7 @@ from app.modules.claims.schemas import (
     ClaimReserveChange,
     ClaimStatusChange,
     ClaimUpdate,
+    ReserveHistoryResponse,
 )
 from app.modules.claims.service import (
     ClaimNotFoundError,
@@ -32,10 +38,9 @@ from app.modules.claims.service import (
     list_claims,
     list_claim_facts,
     update_claim_details,
-    update_current_reserve,
 )
-from app.modules.users.models import User, UserRole
 from app.modules.rules.service import evaluate_claim_rules
+from app.modules.users.models import User, UserRole
 
 router = APIRouter(prefix="/claims", tags=["claims"])
 
@@ -247,6 +252,19 @@ def change_claim_status_endpoint(
     return _read(claim)
 
 
+@router.get("/{claim_id}/reserve-history", response_model=ReserveHistoryResponse)
+def reserve_history_endpoint(
+    claim_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: CurrentUser,
+) -> ReserveHistoryResponse:
+    try:
+        claim = get_claim(db, claim_id=claim_id, organization_id=current_user.organization_id)
+    except ClaimNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Claim not found") from exc
+    return ReserveHistoryResponse.model_validate(reserve_history_response(db, claim=claim))
+
+
 @router.post("/{claim_id}/reserve", response_model=ClaimRead)
 def change_reserve_endpoint(
     claim_id: UUID,
@@ -254,26 +272,21 @@ def change_reserve_endpoint(
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[User, Depends(require_roles(UserRole.ADMIN, UserRole.CLAIMS_MANAGER))],
 ) -> ClaimRead:
-    """Append a reserve history record and update the claim current reserve pointer."""
+    """Append one versioned authoritative human reserve change."""
     try:
         claim = get_claim(db, claim_id=claim_id, organization_id=current_user.organization_id)
+        locked_claim, _entry, replayed = record_authoritative_reserve(
+            db,
+            claim=claim,
+            user=current_user,
+            payload=payload,
+        )
     except ClaimNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Claim not found") from exc
+    except ReserveLineageError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
-    old_reserve = update_current_reserve(db, claim=claim, amount=payload.amount)
-    from datetime import UTC, datetime
-    from app.modules.financial.models import ReserveHistory
-    db.add(ReserveHistory(organization_id=claim.organization_id, claim_id=claim.id, amount=payload.amount, currency=claim.currency, reason=payload.reason, created_by_id=current_user.id, created_at=datetime.now(UTC)))
-    write_audit_log(
-        db,
-        organization_id=current_user.organization_id,
-        user_id=current_user.id,
-        action="CHANGE_CLAIM_RESERVE",
-        entity_type="claim",
-        entity_id=claim.id,
-        old_values={"current_reserve": str(old_reserve) if old_reserve is not None else None},
-        new_values={"current_reserve": str(payload.amount)},
-        details=payload.reason,
-    )
-    db.commit()
-    return _read(claim)
+    if not replayed:
+        db.commit()
+    return _read(locked_claim)

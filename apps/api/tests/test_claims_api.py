@@ -15,8 +15,10 @@ TEST_PASSWORD = "Correct-Horse-Battery-2026"
 
 from tests.db_harness import TestingSessionLocal, client, reset_database
 
+
 def setup_function() -> None:
     reset_database()
+
 
 def seed() -> dict:
     with TestingSessionLocal() as db:
@@ -178,7 +180,6 @@ def test_list_search_and_filter_are_tenant_scoped() -> None:
     assert response.json()["total"] == 1
     assert response.json()["items"][0]["vessel"]["name"] == "MT ORION"
 
-    # Insert a Beta claim directly and prove Alpha never sees it.
     with TestingSessionLocal() as db:
         beta_claim = Claim(
             organization_id=data["beta"].id,
@@ -262,9 +263,8 @@ def test_status_state_machine_and_manager_only_terminal_states() -> None:
     login("alpha", "alpha-handler@example.com")
     assert client.post(f"/api/v1/claims/{claim_id}/status", json={"status": "triage"}).status_code == 200
     invalid = client.post(f"/api/v1/claims/{claim_id}/status", json={"status": "closed"})
-    assert invalid.status_code == 409  # invalid path from triage, before role even matters
+    assert invalid.status_code == 409
 
-    # Move through a valid path to negotiation as handler.
     for next_status in ["investigation", "financial_review", "negotiation"]:
         response = client.post(f"/api/v1/claims/{claim_id}/status", json={"status": next_status})
         assert response.status_code == 200, response.text
@@ -290,11 +290,23 @@ def test_manager_can_update_reserve_with_reason_and_audit() -> None:
     claim_id = result["claim"]["id"]
     client.cookies.clear()
     login("alpha", "alpha-manager@example.com")
+
+    history = client.get(f"/api/v1/claims/{claim_id}/reserve-history")
+    assert history.status_code == 200, history.text
+    token = history.json()
     response = client.post(
         f"/api/v1/claims/{claim_id}/reserve",
-        json={"amount": "575000.00", "reason": "Replacement quotation received"},
+        json={
+            "amount": "575000.00",
+            "reason": "Replacement quotation received",
+            "idempotency_key": "testkey1",
+            "expected_reserve_version": token["current_version"],
+            "expected_reserve_hash": token["current_hash"],
+            "source_kind": "manual",
+            "source_reference_id": None,
+        },
     )
-    assert response.status_code == 200
+    assert response.status_code == 200, response.text
     assert Decimal(response.json()["current_reserve"]) == Decimal("575000.00")
 
     with TestingSessionLocal() as db:

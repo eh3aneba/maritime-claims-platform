@@ -232,7 +232,8 @@ def test_adjustment_is_state_bound_versioned_human_reviewed_and_immutable() -> N
     assert blocked.status_code == 409
     assert "treatment is pending" in blocked.json()["detail"]
 
-    first, second = statement["lines"]
+    first = next(line for line in statement["lines"] if line["source_snapshot"]["line_index"] == 0)
+    second = next(line for line in statement["lines"] if line["source_snapshot"]["line_index"] == 1)
     updated = client.patch(
         f"/api/v1/claims/{claim_id}/adjustments/{statement['id']}/lines/{first['id']}",
         json={
@@ -315,8 +316,11 @@ def test_adjustment_is_state_bound_versioned_human_reviewed_and_immutable() -> N
     client.cookies.clear()
     login("alpha", "alpha-manager@example.com")
     preserved = client.get(f"/api/v1/claims/{claim_id}/adjustments").json()["items"][0]
+    preserved_changed_line = next(
+        line for line in preserved["lines"] if line["source_snapshot"]["line_index"] == 0
+    )
     assert preserved["gross_claimed"] == "1500.00"
-    assert preserved["lines"][0]["claimed_amount"] == "1000.00"
+    assert preserved_changed_line["claimed_amount"] == "1000.00"
     assert preserved["source_state_status"] == "stale"
     assert preserved["source_change_summary"]["changed_count"] == 1
 
