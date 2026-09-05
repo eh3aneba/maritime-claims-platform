@@ -7,6 +7,9 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from app.modules.assessments.models import AssessmentSectionStatus, AssessmentStatus
 
 
+AssessmentSourceState = Literal["current", "stale", "legacy_unbound"]
+
+
 class AssessmentGenerateRequest(BaseModel):
     allow_if_not_ready: bool = False
     override_reason: str | None = Field(default=None, max_length=2000)
@@ -45,6 +48,10 @@ class AssessmentRead(BaseModel):
     generated_by_id: UUID | None
     approved_by_id: UUID | None
     approved_at: datetime | None
+    source_fingerprint: str | None
+    current_source_fingerprint: str | None
+    source_state: AssessmentSourceState
+    approved_content_hash: str | None
     created_at: datetime
     updated_at: datetime
     sections: list[AssessmentSectionRead]
@@ -53,6 +60,7 @@ class AssessmentRead(BaseModel):
 class AssessmentSectionReview(BaseModel):
     action: Literal["approve", "edit"]
     text: str | None = Field(default=None, max_length=20000)
+    expected_source_fingerprint: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
 
     @model_validator(mode="after")
     def require_text_for_edit(self):
@@ -63,3 +71,4 @@ class AssessmentSectionReview(BaseModel):
 
 class AssessmentApproveRequest(BaseModel):
     note: str | None = Field(default=None, max_length=2000)
+    expected_source_fingerprint: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
