@@ -210,9 +210,9 @@ def main() -> None:
         )
         _control_by_label(revised_form, "Assumptions and uncertainty", "textarea").fill(revised_assumption)
         revised_form.get_by_role("button", name="Create new immutable version", exact=True).click()
-        # Wait for the immutable v2 UI state. Assumptions are deliberately not
-        # rendered in the compact scenario card, so verify that persisted field
-        # through the mature API below instead of asserting hidden UI content.
+        # Wait for the immutable v2 UI state. The compact card prefixes the field
+        # with "Assumptions:", so verify the raw persisted value through the API
+        # below instead of relying on an exact standalone text locator.
         scenario_a_card = scenarios_section.locator("div.rounded-xl.border.border-slate-200").filter(
             has=page.get_by_role("heading", name="Workshop contractual notice scenario", exact=True)
         ).first
