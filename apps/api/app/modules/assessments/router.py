@@ -5,10 +5,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
+from app.modules.assessments.consolidation import build_current_domain_status
+from app.modules.assessments.history import latest_assessment_version, list_assessment_history
 from app.modules.assessments.models import AssessmentSection, InitialAssessment
 from app.modules.assessments.schemas import (
     AssessmentApproveRequest,
     AssessmentGenerateRequest,
+    AssessmentHistoryResponse,
     AssessmentRead,
     AssessmentSectionRead,
     AssessmentSectionReview,
@@ -29,6 +32,7 @@ def _response(db: Session, claim, assessment, sections):
         claim=claim,
         assessment=assessment,
     )
+    latest_version = latest_assessment_version(db, claim=claim) or assessment.version
     return AssessmentRead(
         id=assessment.id,
         claim_id=assessment.claim_id,
@@ -46,6 +50,9 @@ def _response(db: Session, claim, assessment, sections):
         current_source_fingerprint=current_source_fingerprint,
         source_state=source_state,
         approved_content_hash=assessment.approved_content_hash,
+        is_latest=assessment.version == latest_version,
+        latest_version=latest_version,
+        current_domain_status=build_current_domain_status(db, claim=claim),
         created_at=assessment.created_at,
         updated_at=assessment.updated_at,
         sections=[AssessmentSectionRead.model_validate(section) for section in sections],
@@ -59,6 +66,30 @@ def latest(claim_id: UUID, current_user: CurrentUser, db: Annotated[Session, Dep
         raise HTTPException(status_code=404, detail="Claim not found")
     assessment, sections = get_assessment(db, claim=claim)
     return _response(db, claim, assessment, sections) if assessment else None
+
+
+@router.get("/history", response_model=AssessmentHistoryResponse)
+def history(claim_id: UUID, current_user: CurrentUser, db: Annotated[Session, Depends(get_db)]):
+    claim = get_claim_for_tenant(db, claim_id=claim_id, organization_id=current_user.organization_id)
+    if not claim:
+        raise HTTPException(status_code=404, detail="Claim not found")
+    return AssessmentHistoryResponse.model_validate(list_assessment_history(db, claim=claim))
+
+
+@router.get("/versions/{assessment_id}", response_model=AssessmentRead)
+def version(
+    claim_id: UUID,
+    assessment_id: UUID,
+    current_user: CurrentUser,
+    db: Annotated[Session, Depends(get_db)],
+):
+    claim = get_claim_for_tenant(db, claim_id=claim_id, organization_id=current_user.organization_id)
+    if not claim:
+        raise HTTPException(status_code=404, detail="Claim not found")
+    assessment, sections = get_assessment(db, claim=claim, assessment_id=assessment_id)
+    if not assessment:
+        raise HTTPException(status_code=404, detail="Assessment version not found")
+    return _response(db, claim, assessment, sections)
 
 
 @router.post("/generate", response_model=AssessmentRead)
