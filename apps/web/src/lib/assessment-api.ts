@@ -3,11 +3,45 @@ import type { AssessmentSection, InitialAssessment } from "./types";
 
 export type AssessmentSourceState = "current" | "stale" | "legacy_unbound";
 
+export type AssessmentDomainStatus = {
+  authority: "read_only_cross_domain_projection";
+  disclaimer: string;
+  technical: Record<string, unknown>;
+  financial: Record<string, unknown>;
+  reserve: Record<string, unknown>;
+  recovery: Record<string, unknown>;
+};
+
 export type SourceAwareInitialAssessment = InitialAssessment & {
   source_fingerprint: string | null;
   current_source_fingerprint: string | null;
   source_state: AssessmentSourceState;
   approved_content_hash: string | null;
+  is_latest: boolean;
+  latest_version: number;
+  current_domain_status: AssessmentDomainStatus;
+};
+
+export type AssessmentHistoryItem = {
+  id: string;
+  version: number;
+  status: "draft" | "under_review" | "approved";
+  is_preliminary: boolean;
+  is_latest: boolean;
+  source_state: AssessmentSourceState;
+  source_fingerprint: string | null;
+  approved_content_hash: string | null;
+  generated_by_id: string | null;
+  approved_by_id: string | null;
+  approved_at: string | null;
+  created_at: string;
+};
+
+export type AssessmentHistoryResponse = {
+  claim_id: string;
+  latest_version: number | null;
+  current_source_fingerprint: string | null;
+  items: AssessmentHistoryItem[];
 };
 
 async function assessmentFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -34,6 +68,16 @@ async function assessmentFetch<T>(path: string, init: RequestInit = {}): Promise
 
 export function getInitialAssessment(claimId: string) {
   return assessmentFetch<SourceAwareInitialAssessment | null>(`/claims/${claimId}/initial-assessment`);
+}
+
+export function getInitialAssessmentHistory(claimId: string) {
+  return assessmentFetch<AssessmentHistoryResponse>(`/claims/${claimId}/initial-assessment/history`);
+}
+
+export function getInitialAssessmentVersion(claimId: string, assessmentId: string) {
+  return assessmentFetch<SourceAwareInitialAssessment>(
+    `/claims/${claimId}/initial-assessment/versions/${assessmentId}`,
+  );
 }
 
 export function generateInitialAssessment(
