@@ -1,18 +1,23 @@
+import hashlib
+from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import UUID, uuid4
 
 from sqlalchemy import func, select
 
 from app.modules.claims.models import Claim, ClaimStatus
+from app.modules.documents.models import ConfidentialityLevel, Document, DocumentProcessingStatus
 from app.modules.financial.models import (
     CostItem,
     CostReviewStatus,
     FinancialFlag,
-    FinancialFlagStatus,
-    FinancialFlagType,
     ReserveHistory,
 )
+from app.modules.financial.service import sync_financial_review
+from app.modules.intelligence.models import AIRun, AIRunStatus, AISemanticKind, AIReviewStatus, DocumentExtraction
+from app.modules.intelligence.service import TASK_INVOICE, TASK_QUOTATION
 from app.modules.severity_reserve.models import SeverityReserveDecision, SeverityReserveSnapshot
+from app.modules.users.models import User
 from tests.db_harness import TestingSessionLocal, client, reset_database
 from tests.test_claim_intelligence import _add_fact, _set_status
 from tests.test_claims_api import create_orion_claim
@@ -28,6 +33,113 @@ def _build(claim_id: str) -> dict:
     return response.json()
 
 
+def _upsert_reviewed_extraction(
+    db,
+    *,
+    run: AIRun,
+    document: Document,
+    field_path: str,
+    value,
+) -> None:
+    row = db.scalar(
+        select(DocumentExtraction).where(
+            DocumentExtraction.ai_run_id == run.id,
+            DocumentExtraction.field_path == field_path,
+        )
+    )
+    if row is None:
+        row = DocumentExtraction(
+            organization_id=run.organization_id,
+            claim_id=run.claim_id,
+            document_id=document.id,
+            ai_run_id=run.id,
+            field_path=field_path,
+            semantic_kind=AISemanticKind.FACT,
+            raw_value=value,
+            normalized_value=value,
+            confidence=Decimal("0.990"),
+            source_locator_type="page",
+            source_locator_value="1",
+            source_quote=str(value) if value is not None else None,
+            source_verified=True,
+            human_status=AIReviewStatus.APPROVED,
+            approved_value=value,
+            reviewed_at=datetime.now(UTC),
+        )
+        db.add(row)
+    else:
+        row.raw_value = value
+        row.normalized_value = value
+        row.approved_value = value
+        row.human_status = AIReviewStatus.APPROVED
+        row.source_verified = True
+        row.reviewed_at = datetime.now(UTC)
+
+
+def _source_document_and_run(
+    db,
+    *,
+    claim: Claim,
+    kind: str,
+    document_id: UUID | None,
+) -> tuple[Document, AIRun, User]:
+    user = db.scalar(select(User).where(User.organization_id == claim.organization_id))
+    assert user is not None
+    task = TASK_QUOTATION if kind == "quotation" else TASK_INVOICE
+    document = db.get(Document, document_id) if document_id is not None else None
+    if document is None:
+        chosen_id = document_id or uuid4()
+        digest = hashlib.sha256(str(chosen_id).encode("utf-8")).hexdigest()
+        document = Document(
+            id=chosen_id,
+            organization_id=claim.organization_id,
+            claim_id=claim.id,
+            uploaded_by_id=user.id,
+            filename=f"{kind}-{chosen_id}.pdf",
+            original_filename=f"{kind}-{chosen_id}.pdf",
+            document_type=kind,
+            mime_type="application/pdf",
+            file_size_bytes=100,
+            file_hash=digest,
+            storage_key=f"tests/{digest}",
+            processing_status=DocumentProcessingStatus.PROCESSED,
+            confidentiality_level=ConfidentialityLevel.CONFIDENTIAL,
+        )
+        db.add(document)
+        db.flush()
+
+    run = db.scalar(
+        select(AIRun).where(
+            AIRun.organization_id == claim.organization_id,
+            AIRun.claim_id == claim.id,
+            AIRun.document_id == document.id,
+            AIRun.task == task,
+            AIRun.status == AIRunStatus.COMPLETED,
+        )
+    )
+    if run is None:
+        run = AIRun(
+            organization_id=claim.organization_id,
+            claim_id=claim.id,
+            document_id=document.id,
+            requested_by_id=user.id,
+            task=task,
+            status=AIRunStatus.COMPLETED,
+            provider="fixture",
+            model="fixture-financial-v1",
+            prompt_name=f"{kind}_fixture",
+            prompt_version="1",
+            schema_name=f"{kind}_fixture",
+            schema_version="1",
+            input_text_hash=document.file_hash,
+            input_char_count=100,
+            completed_at=datetime.now(UTC),
+        )
+        db.add(run)
+        db.flush()
+    return document, run, user
+
+
 def _add_cost(
     claim_id: str,
     *,
@@ -35,55 +147,96 @@ def _add_cost(
     currency: str,
     status: CostReviewStatus,
     kind: str = "invoice",
-    document_id=None,
+    document_id: UUID | None = None,
     line_index: int = 0,
     supplier: str | None = None,
+    document_number: str | None = None,
 ) -> UUID:
     with TestingSessionLocal() as db:
         claim = db.get(Claim, UUID(claim_id))
         assert claim is not None
-        item = CostItem(
-            organization_id=claim.organization_id,
-            claim_id=claim.id,
-            document_id=document_id or uuid4(),
-            ai_run_id=uuid4(),
-            line_index=line_index,
-            document_kind=kind,
-            supplier=supplier,
-            description=f"{kind} evidence {amount} {currency}",
-            amount=Decimal(amount),
-            currency=currency,
-            review_status=status,
-            source_field_prefix=f"{kind}.line_items[{line_index}]",
+        document, run, user = _source_document_and_run(
+            db,
+            claim=claim,
+            kind=kind,
+            document_id=document_id,
         )
-        db.add(item)
+        prefix = "quotation" if kind == "quotation" else "invoice"
+        number_field = "quotation_number" if kind == "quotation" else "invoice_number"
+        date_field = "quotation_date" if kind == "quotation" else "invoice_date"
+        supplier_value = supplier or f"{kind.title()} Supplier"
+        number_value = document_number or f"{kind.upper()}-{str(document.id)[:8]}"
+        _upsert_reviewed_extraction(db, run=run, document=document, field_path=f"{prefix}.supplier", value=supplier_value)
+        _upsert_reviewed_extraction(db, run=run, document=document, field_path=f"{prefix}.{number_field}", value=number_value)
+        _upsert_reviewed_extraction(db, run=run, document=document, field_path=f"{prefix}.{date_field}", value="2026-07-12")
+        _upsert_reviewed_extraction(db, run=run, document=document, field_path=f"{prefix}.currency", value=currency)
+        _upsert_reviewed_extraction(db, run=run, document=document, field_path=f"{prefix}.total", value=amount)
+        base = f"{prefix}.line_items[{line_index}]"
+        _upsert_reviewed_extraction(
+            db,
+            run=run,
+            document=document,
+            field_path=f"{base}.description",
+            value=f"{kind} evidence {amount} {currency}",
+        )
+        _upsert_reviewed_extraction(db, run=run, document=document, field_path=f"{base}.amount", value=amount)
+        _upsert_reviewed_extraction(db, run=run, document=document, field_path=f"{base}.category_candidate", value="Fixture")
+        db.flush()
+        sync_financial_review(db, claim=claim, user_id=user.id)
+        item = db.scalar(
+            select(CostItem).where(
+                CostItem.organization_id == claim.organization_id,
+                CostItem.claim_id == claim.id,
+                CostItem.ai_run_id == run.id,
+                CostItem.source_field_prefix == base,
+            )
+        )
+        assert item is not None
+        item.review_status = status
         db.commit()
         return item.id
 
 
 def _add_flag(claim_id: str, *, severity: str = "high") -> UUID:
+    assert severity == "high", "This fixture intentionally exercises the deterministic high duplicate-invoice flag."
+    _add_cost(
+        claim_id,
+        amount="1250",
+        currency="USD",
+        status=CostReviewStatus.UNDER_REVIEW,
+        supplier="Duplicate Supplier",
+        document_number="DUP-INV-1",
+    )
+    _add_cost(
+        claim_id,
+        amount="1250",
+        currency="USD",
+        status=CostReviewStatus.UNDER_REVIEW,
+        supplier="Duplicate Supplier",
+        document_number="DUP-INV-1",
+    )
     with TestingSessionLocal() as db:
         claim = db.get(Claim, UUID(claim_id))
-        assert claim is not None
-        flag = FinancialFlag(
-            organization_id=claim.organization_id,
-            claim_id=claim.id,
-            flag_type=FinancialFlagType.POSSIBLE_DUPLICATE,
-            fingerprint=f"test-{uuid4()}",
-            severity=severity,
-            title="Source-linked financial review flag",
-            explanation="Human review is required; this flag is not a recoverability decision.",
-            evidence={"fixture": True},
-            status=FinancialFlagStatus.OPEN,
+        user = db.scalar(select(User).where(User.organization_id == claim.organization_id))
+        sync_financial_review(db, claim=claim, user_id=user.id)
+        flag = db.scalar(
+            select(FinancialFlag).where(
+                FinancialFlag.organization_id == claim.organization_id,
+                FinancialFlag.claim_id == claim.id,
+                FinancialFlag.flag_type == "possible_duplicate",
+                FinancialFlag.status == "open",
+            )
         )
-        db.add(flag)
+        assert flag is not None
         db.commit()
         return flag.id
 
 
 def _reserve_count(claim_id: str) -> int:
     with TestingSessionLocal() as db:
-        return db.scalar(select(func.count()).select_from(ReserveHistory).where(ReserveHistory.claim_id == UUID(claim_id))) or 0
+        return db.scalar(
+            select(func.count()).select_from(ReserveHistory).where(ReserveHistory.claim_id == UUID(claim_id))
+        ) or 0
 
 
 def test_no_monetary_evidence_never_invents_reserve_range_and_reuses_snapshot() -> None:
@@ -103,6 +256,8 @@ def test_no_monetary_evidence_never_invents_reserve_range_and_reuses_snapshot() 
     assert len(first["snapshot_hash"]) == 64
     assert first["summary"]["reserve_history_updated"] is False
     assert first["summary"]["financial_review_state_mutated"] is False
+    assert first["summary"]["financial_evidence_refreshed"] is True
+    assert first["summary"]["human_cost_review_decision_mutated"] is False
     assert before == after == 0
 
     reserve = next(row for row in first["evaluations"] if row["kind"] == "reserve")
@@ -161,7 +316,10 @@ def test_reserve_range_uses_reviewed_target_currency_evidence_without_fx_or_reje
         for factor in reserve["factors"]
     )
     assert any("EUR" in item for item in reserve["missing_prerequisites"])
-    assert not any(source.get("amount") == "900000.00" and source.get("review_status") != "rejected" for source in reserve["source_refs"])
+    assert not any(
+        source.get("amount") == "900000.00" and source.get("review_status") != "rejected"
+        for source in reserve["source_refs"]
+    )
     assert _reserve_count(claim_id) == 0
 
 
@@ -264,4 +422,6 @@ def test_human_decisions_are_hash_chained_stale_safe_and_never_change_reserve_hi
             )
         )
         assert [row.snapshot_version for row in snapshots] == [1, 2]
-        assert db.scalar(select(func.count()).select_from(ReserveHistory).where(ReserveHistory.claim_id == UUID(claim_id))) == 0
+        assert db.scalar(
+            select(func.count()).select_from(ReserveHistory).where(ReserveHistory.claim_id == UUID(claim_id))
+        ) == 0
