@@ -49,13 +49,15 @@ Only a Claims Manager or Admin may record a `TimebarScenarioReview`.
 
 Reviews are append-only, bind to the exact scenario hash and form a previous-review-hash chain. A review never rewrites the scenario that was reviewed.
 
-### 5. Source provenance is optional but explicit
+### 5. Source and human-context provenance are explicit
 
 Every counterparty/scenario requires a human-readable source reference. It may additionally bind to one exact current usable claim document version.
 
 Document-bound records snapshot document id, family id, version and file hash. If that document family later evolves, the historical record remains visible but becomes `stale`; if the source disappears it becomes `source_unavailable`. New legal review of stale/unavailable scenarios fails closed and requires a deliberate new scenario version against current evidence.
 
-A record without a document binding is explicitly `reference_only`; the platform does not pretend it has stronger provenance than the user supplied.
+A scenario that points to a recovery counterparty also binds the exact immutable counterparty record/hash that was current when the scenario was created. If that logical counterparty later receives a revised version, the linked scenario becomes `stale` for further legal review even when its document source did not change. The prior scenario remains immutable history; a deliberate scenario revision must select the current counterparty version before review can continue.
+
+A record without a document binding is explicitly `reference_only`; the platform does not pretend it has stronger document provenance than the user supplied. `reference_only` does not bypass the counterparty-version guard when a scenario is linked to human counterparty context.
 
 ### 6. Existing 12C intelligence remains canonical and separate
 
@@ -67,19 +69,22 @@ Existing 12C evaluations remain source-linked decision support. Scenario reviews
 
 Counterparty and scenario revisions require the exact current record/scenario hash. Claim-level write locking serializes competing writes. Cross-tenant, cross-claim, historical-counterparty and non-current-document references are rejected.
 
-No stale write is auto-rebased and no source is silently substituted.
+The claim lock is also held while validating linked counterparty context before Manager/Admin scenario review, so a concurrent counterparty revision cannot race confirmation of the prior context.
+
+No stale write is auto-rebased and no source or counterparty version is silently substituted.
 
 ## Failure and recovery contract
 
 - stale counterparty/scenario hash -> HTTP conflict; reload and deliberately create the next version;
 - historical counterparty referenced by a new scenario -> rejected; select the latest version;
+- linked counterparty evolves after scenario creation -> scenario becomes stale for review; deliberately revise it against the current counterparty version;
 - superseded/unprocessed/unusable document selected as a source -> rejected;
-- source evolves after scenario creation -> scenario remains historical, source state becomes stale, and further legal review is blocked;
+- document source evolves after scenario creation -> scenario remains historical, source state becomes stale, and further legal review is blocked;
 - confirm with a client-supplied different date -> rejected; use explicit override;
 - override without verified date or source reference -> rejected;
 - handler attempts Manager/Admin legal review -> forbidden by RBAC;
-- evidence or legal analysis changes after confirmation -> prior review remains immutable; create/revise the scenario and record a new deliberate review.
+- evidence, counterparty context or legal analysis changes after confirmation -> prior review remains immutable; create/revise the scenario and record a new deliberate review.
 
 ## Consequences
 
-MCRI can now represent uncertainty instead of collapsing it into one legal answer. Recovery leads, competing time-bar hypotheses, source evolution and human legal confirmation are auditable without granting the platform authority to decide liability or limitation.
+MCRI can now represent uncertainty instead of collapsing it into one legal answer. Recovery leads, competing time-bar hypotheses, document and counterparty evolution, and human legal confirmation are auditable without granting the platform authority to decide liability or limitation.
