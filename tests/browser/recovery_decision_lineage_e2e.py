@@ -35,12 +35,12 @@ def _claim_id(page) -> str:
 
 
 def _control(panel, label_text: str, tag: str):
-    """Resolve a direct nested form control from its visible label prefix."""
-    label = panel.locator(f"label:has(> {tag})").filter(
-        has_text=re.compile(rf"^\s*{re.escape(label_text)}(?:\s|$)", re.IGNORECASE)
+    """Resolve a nested form control from an anchored visible label prefix."""
+    label = panel.locator("label").filter(
+        has_text=re.compile(rf"^\s*{re.escape(label_text)}", re.IGNORECASE)
     )
     expect(label).to_have_count(1)
-    control = label.locator(f":scope > {tag}")
+    control = label.locator(tag)
     expect(control).to_have_count(1)
     return control
 
