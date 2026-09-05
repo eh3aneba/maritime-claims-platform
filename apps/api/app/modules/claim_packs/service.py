@@ -78,27 +78,57 @@ def _approved_assessment(db: Session, claim: Claim) -> dict[str, Any] | None:
         db.scalars(
             select(AssessmentSection)
             .where(AssessmentSection.assessment_id == assessment.id)
-            .order_by(AssessmentSection.section_order.asc())
+            .order_by(AssessmentSection.sort_order.asc())
         )
     )
     return {
         "id": str(assessment.id),
         "version": assessment.version,
-        "title": assessment.title,
-        "summary": assessment.summary,
-        "status": assessment.status.value,
         "is_preliminary": assessment.is_preliminary,
-        "approved_at": assessment.approved_at,
-        "approved_by_id": str(assessment.approved_by_id) if assessment.approved_by_id else None,
+        "approved_at": _jsonable(assessment.approved_at),
+        "readiness_score": assessment.readiness_score,
+        "readiness_state": assessment.readiness_state,
+        "blocking_items": _jsonable(assessment.blocking_items),
         "sections": [
             {
                 "section_key": section.section_key,
-                "heading": section.heading,
-                "body": section.body,
-                "section_order": section.section_order,
+                "title": section.title,
+                "text": section.approved_text or section.draft_text,
+                "sources": _jsonable(section.source_manifest),
             }
             for section in sections
         ],
+    }
+
+
+def _technical_snapshot(review: dict[str, Any]) -> dict[str, Any]:
+    topics = []
+    for row in review.get("matrix", []):
+        topics.append(
+            {
+                "topic_key": row["key"],
+                "topic_kind": row["topic_kind"],
+                "title": row["title"],
+                "severity": row["severity"],
+                "status": row["status"],
+                "state_fingerprint": row["state_fingerprint"],
+                "state_version": row["state_version"],
+                "decision_state": row["decision_state"],
+                "latest_decision": row.get("latest_decision"),
+                "evidence_for": row.get("evidence_for", []),
+                "evidence_against": row.get("evidence_against", []),
+                "unknown_or_missing": row.get("unknown_or_missing", []),
+                "recommended_follow_up": row.get("recommended_follow_up", []),
+            }
+        )
+    return {
+        "authority": "human_investigation_review_only",
+        "disclaimer": (
+            "Technical investigation dispositions are evidence-review records only and do not "
+            "determine proximate cause, coverage, liability, negligence, unseaworthiness, "
+            "workmanship responsibility, fraud, reserve, settlement, payment or recovery."
+        ),
+        "topics": topics,
     }
 
 
@@ -110,22 +140,31 @@ def build_claim_pack_snapshot(
     generation_note: str | None,
     generated_at: datetime,
 ) -> dict[str, Any]:
-    matrix = build_evidence_matrix(db, claim=claim)
-    policy_intelligence = build_policy_intelligence(db, claim=claim)
-    technical_review = build_technical_review(db, claim=claim)
-    technical_topics = technical_review.get("topics", [])
-    technical_current = [
-        item for item in technical_topics if item.get("disposition_source_state") == "current"
-    ]
-    technical_stale = [
-        item for item in technical_topics if item.get("disposition_source_state") == "stale"
-    ]
-    technical_unreviewed = [item for item in technical_topics if item.get("disposition") is None]
+    matrix = build_evidence_matrix(
+        db,
+        claim_id=claim.id,
+        organization_id=claim.organization_id,
+    ).model_dump(mode="json")
+    policy_intelligence = build_policy_intelligence(
+        db,
+        claim_id=claim.id,
+        organization_id=claim.organization_id,
+    ).model_dump(mode="json")
+    technical_review = build_technical_review(
+        db,
+        claim_id=claim.id,
+        organization_id=claim.organization_id,
+    )
+    technical_investigation = _technical_snapshot(technical_review)
+    technical_topics = technical_investigation["topics"]
+    technical_current = [item for item in technical_topics if item["decision_state"] == "current"]
+    technical_stale = [item for item in technical_topics if item["decision_state"] == "stale"]
+    technical_unreviewed = [item for item in technical_topics if item["decision_state"] == "none"]
+
     rule_summary = get_rule_summary(db, claim=claim)
-    requirements = rule_summary.requirements
     outstanding = [
         requirement
-        for requirement in requirements
+        for requirement in rule_summary.requirements
         if requirement.status not in SATISFIED_REQUIREMENT_STATUSES
     ]
     tasks = list(
@@ -134,9 +173,9 @@ def build_claim_pack_snapshot(
             .where(
                 ClaimTask.organization_id == claim.organization_id,
                 ClaimTask.claim_id == claim.id,
-                ClaimTask.status.in_([TaskStatus.OPEN, TaskStatus.IN_PROGRESS]),
+                ClaimTask.status == TaskStatus.OPEN,
             )
-            .order_by(ClaimTask.due_at.asc().nullslast(), ClaimTask.created_at.asc())
+            .order_by(ClaimTask.due_date.asc().nullslast(), ClaimTask.created_at.asc())
         )
     )
     cost_items = list(
@@ -161,76 +200,80 @@ def build_claim_pack_snapshot(
         )
     )
     assessment = _approved_assessment(db, claim)
+
+    totals: dict[str, Decimal] = {}
+    for item in cost_items:
+        totals[item.currency] = totals.get(item.currency, Decimal("0")) + item.amount
+
     open_conflicts = matrix["summary"]["open_conflict_count"]
-    if open_conflicts or outstanding or tasks or open_flags or technical_stale or technical_unreviewed:
+    if open_conflicts or outstanding or technical_stale:
         review_state = "attention_required"
-    elif assessment is None:
+    elif tasks or open_flags or technical_unreviewed or (assessment and assessment["is_preliminary"]):
         review_state = "reviewed_with_open_items"
     else:
         review_state = "reviewed"
 
     snapshot = {
         "snapshot_schema_version": SNAPSHOT_SCHEMA_VERSION,
-        "generated_at": generated_at,
+        "generated_at": generated_at.isoformat(),
+        "generation_note": generation_note,
+        "review_aid_only": True,
+        "claim": {
+            "id": str(claim.id),
+            "claim_reference": claim.claim_reference,
+            "external_reference": claim.external_reference,
+            "claim_type": claim.claim_type.value,
+            "claim_subtype": claim.claim_subtype.value,
+            "status": claim.status.value,
+            "priority": claim.priority.value,
+            "incident_date": claim.incident_date.isoformat(),
+            "notification_date": claim.notification_date.isoformat(),
+            "incident_description": claim.incident_description,
+            "currency": claim.currency,
+            "estimated_loss": _jsonable(claim.estimated_loss),
+            "current_reserve": _jsonable(claim.current_reserve),
+            "vessel_name": claim.vessel.name,
+            "imo_number": claim.vessel.imo_number,
+            "handler_name": claim.handler.full_name if claim.handler else None,
+        },
         "generated_by": {
             "id": str(user.id),
             "full_name": user.full_name,
             "email": user.email,
-        },
-        "generation_note": generation_note,
-        "claim": {
-            "id": str(claim.id),
-            "claim_reference": claim.claim_reference,
-            "claim_type": claim.claim_type.value,
-            "status": claim.status.value,
-            "vessel_name": claim.vessel_name,
-            "imo_number": claim.imo_number,
-            "incident_date": claim.incident_date,
-            "incident_location": claim.incident_location,
-            "incident_description": claim.incident_description,
-            "created_at": claim.created_at,
-            "updated_at": claim.updated_at,
+            "role": user.role.value,
         },
         "evidence_matrix": matrix,
         "policy_intelligence": policy_intelligence,
-        "technical_investigation": technical_review,
-        "requirements": [
-            {
-                "id": str(requirement.id),
-                "requirement_key": requirement.requirement_key,
-                "title": requirement.title,
-                "description": requirement.description,
-                "status": requirement.status.value,
-                "source": requirement.source,
-                "is_mandatory": requirement.is_mandatory,
-            }
-            for requirement in requirements
-        ],
+        "technical_investigation": technical_investigation,
         "outstanding_requirements": [
             {
-                "id": str(requirement.id),
-                "requirement_key": requirement.requirement_key,
-                "title": requirement.title,
-                "description": requirement.description,
-                "status": requirement.status.value,
-                "source": requirement.source,
-                "is_mandatory": requirement.is_mandatory,
+                "id": str(item.id),
+                "rule_id": item.rule_id,
+                "document_type": item.document_type,
+                "document_label": item.document_label,
+                "priority": item.priority.value,
+                "status": item.status.value,
+                "reason": item.reason,
+                "last_evaluated_at": _jsonable(item.last_evaluated_at),
             }
-            for requirement in outstanding
+            for item in outstanding
         ],
         "open_tasks": [
             {
                 "id": str(task.id),
                 "title": task.title,
                 "description": task.description,
-                "status": task.status.value,
+                "task_type": task.task_type.value,
                 "priority": task.priority.value,
-                "due_at": task.due_at,
-                "assigned_to_id": str(task.assigned_to_id) if task.assigned_to_id else None,
+                "source": task.source.value,
+                "due_date": task.due_date.isoformat() if task.due_date else None,
             }
             for task in tasks
         ],
         "financial": {
+            "totals_by_currency": {
+                currency: str(amount) for currency, amount in sorted(totals.items())
+            },
             "items": [
                 {
                     "id": str(item.id),
@@ -305,7 +348,11 @@ def generate_claim_pack(
     export_format: ClaimPackFormat,
     generation_note: str | None,
 ) -> ClaimPackExport:
-    claim = get_claim(db, claim_id=claim_id, organization_id=organization_id)
+    claim = get_claim(
+        db,
+        claim_id=claim_id,
+        organization_id=organization_id,
+    )
     generated_at = datetime.now(UTC)
     note = generation_note.strip() if generation_note and generation_note.strip() else None
     snapshot = build_claim_pack_snapshot(
@@ -322,14 +369,21 @@ def generate_claim_pack(
         suffix = "pdf"
     else:
         payload = render_xlsx(snapshot)
-        mime_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        mime_type = (
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
         suffix = "xlsx"
 
     export_id = uuid4()
     timestamp = generated_at.strftime("%Y%m%dT%H%M%SZ")
-    filename = f"{_safe_reference(claim.claim_reference)}-claim-pack-{timestamp}.{suffix}"
-    storage_key = f"claim-pack-exports/{organization_id}/{claim.id}/{export_id}/{filename}"
+    filename = (
+        f"{_safe_reference(claim.claim_reference)}-claim-pack-{timestamp}.{suffix}"
+    )
+    storage_key = (
+        f"claim-pack-exports/{organization_id}/{claim.id}/{export_id}/{filename}"
+    )
     stored = _storage().save_bytes(payload, storage_key)
+
     record = ClaimPackExport(
         id=export_id,
         organization_id=organization_id,
@@ -359,12 +413,13 @@ def generate_claim_pack(
             new_values={
                 "claim_id": str(claim.id),
                 "format": export_format.value,
-                "snapshot_schema_version": SNAPSHOT_SCHEMA_VERSION,
                 "snapshot_hash": snapshot_hash,
                 "file_hash": stored.file_hash,
                 "review_state": snapshot["summary"]["review_state"],
+                "technical_topic_count": snapshot["summary"]["technical_topic_count"],
+                "technical_stale_disposition_count": snapshot["summary"]["technical_stale_disposition_count"],
             },
-            details="Generated immutable controlled claim-pack snapshot for human review.",
+            details="Generated immutable controlled claim-pack snapshot.",
         )
         db.commit()
         db.refresh(record)
