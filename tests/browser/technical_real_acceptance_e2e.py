@@ -1,10 +1,17 @@
-"""Phase 13.5C real MT ORION technical acceptance against the live local API."""
+"""Phase 13.5C real MT ORION technical acceptance against the live local API.
+
+This remains the final CI browser entry point. Phase 13.6B Adjustment acceptance is
+chained after the technical journey because both intentionally mutate reviewed MT
+ORION source evidence and therefore must run after all read-mostly browser journeys.
+"""
 from __future__ import annotations
 
 import os
 import re
 
 from playwright.sync_api import expect, sync_playwright
+
+from adjustment_source_evolution_e2e import main as run_adjustment_source_evolution_acceptance
 
 BASE_URL = os.getenv("MCRI_WEB_URL", "http://127.0.0.1:3000").rstrip("/")
 API_URL = os.getenv("MCRI_API_URL", "http://127.0.0.1:8000").rstrip("/")
@@ -143,7 +150,6 @@ def main() -> None:
         if history["decision_state"] != "current":
             raise AssertionError("Explicit re-review did not restore current technical disposition state")
 
-        # Existing downstream surfaces remain distinct claim-workspace authorities.
         surface_checks = [
             ("evidence-matrix", "Evidence Matrix"),
             ("chronology", "Chronology"),
@@ -159,3 +165,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+    run_adjustment_source_evolution_acceptance()
