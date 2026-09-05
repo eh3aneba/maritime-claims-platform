@@ -76,7 +76,7 @@ def main() -> None:
         page.goto(f"{BASE_URL}/claims/{claim_id}/recovery-timebar/maturity", wait_until="networkidle")
         decision_heading = page.get_by_role("heading", name="Recovery decision & action lineage", exact=True)
         expect(decision_heading).to_be_visible(timeout=15_000)
-        panel = page.locator("section").filter(has=decision_heading)
+        panel = decision_heading.locator("xpath=ancestor::section[contains(@class,'panel')][1]")
         expect(panel).to_have_count(1)
         expect(panel.get_by_text("Human decision only.", exact=True)).to_be_visible()
 
@@ -89,9 +89,9 @@ def main() -> None:
         expect(page.locator("html")).to_have_attribute("lang", "en")
         expect(page.locator("html")).to_have_attribute("dir", "ltr")
 
-        panel = page.locator("section").filter(
-            has=page.get_by_role("heading", name="Recovery decision & action lineage", exact=True)
-        )
+        decision_heading = page.get_by_role("heading", name="Recovery decision & action lineage", exact=True)
+        panel = decision_heading.locator("xpath=ancestor::section[contains(@class,'panel')][1]")
+        expect(panel).to_have_count(1)
         counterparty_select = panel.get_by_label("Current counterparty version", exact=True)
         expect(counterparty_select.locator(f'option[value="{counterparty["id"]}"]')).to_contain_text(counterparty_name)
         counterparty_select.select_option(counterparty["id"])
