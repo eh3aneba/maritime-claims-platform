@@ -12,6 +12,7 @@ from app.modules.claim_intelligence.service import build_claim_intelligence
 from app.modules.claims.facts import ClaimFact
 from app.modules.claims.models import Claim
 from app.modules.financial.models import CostItem, CostReviewStatus, FinancialFlag, ReserveHistory
+from app.modules.financial.service import sync_financial_review
 from app.modules.recovery_timebar.models import RecoveryTimebarEvaluation
 from app.modules.severity_reserve import service_core as core
 from app.modules.severity_reserve.models import SeverityReserveEvaluation, SeverityReserveSnapshot
@@ -52,8 +53,14 @@ def _quotation_summaries(items: list[CostItem]) -> list[dict]:
 
 
 def build_severity_reserve_support(db: Session, *, claim: Claim, user: User) -> SeverityReserveSnapshot:
-    """Build Phase 12D without rebuilding or mutating Financial Review state."""
+    """Build non-authoritative reserve support from current source-admissible evidence.
+
+    Refreshing Financial Review here only maintains the derived CostItem/flag cache from
+    current usable source evidence. It never appends or changes a human CostReviewDecision
+    and never writes authoritative ReserveHistory.
+    """
     intelligence_snapshot = build_claim_intelligence(db, claim=claim, user=user)
+    sync_financial_review(db, claim=claim, user_id=user.id)
 
     intelligence_items = list(
         db.scalars(
@@ -151,7 +158,10 @@ def build_severity_reserve_support(db: Session, *, claim: Claim, user: User) -> 
         "reserve_lower_amount": str(reserve["lower_amount"]) if reserve["lower_amount"] is not None else None,
         "reserve_upper_amount": str(reserve["upper_amount"]) if reserve["upper_amount"] is not None else None,
         "reserve_history_updated": False,
+        # Backward-compatible field: no human financial-review authority is mutated here.
         "financial_review_state_mutated": False,
+        "financial_evidence_refreshed": True,
+        "human_cost_review_decision_mutated": False,
         "coverage_decision_made": False,
         "liability_decision_made": False,
         "causation_decision_made": False,
@@ -201,8 +211,16 @@ def build_severity_reserve_support(db: Session, *, claim: Claim, user: User) -> 
         action="BUILD_SEVERITY_RESERVE_SUPPORT",
         entity_type="claim",
         entity_id=claim.id,
-        new_values={"snapshot_id": str(snapshot.id), "snapshot_version": snapshot.snapshot_version, "snapshot_hash": snapshot_hash, **summary},
-        details="Built immutable source-linked handling severity and reserve-range support without rebuilding Financial Review or changing authoritative reserve state.",
+        new_values={
+            "snapshot_id": str(snapshot.id),
+            "snapshot_version": snapshot.snapshot_version,
+            "snapshot_hash": snapshot_hash,
+            **summary,
+        },
+        details=(
+            "Built immutable source-linked handling severity and reserve-range support after refreshing current "
+            "derived financial evidence. No human cost-review decision or authoritative reserve was changed."
+        ),
     )
     db.commit()
     db.refresh(snapshot)
