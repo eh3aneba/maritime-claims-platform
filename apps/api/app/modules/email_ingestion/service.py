@@ -19,6 +19,7 @@ from app.modules.correspondence.models import (
     ClaimCorrespondence, CorrespondenceChannel, CorrespondenceDirection, CorrespondenceKind,
     CorrespondenceStatus,
 )
+from app.modules.correspondence.state_identity import bind_initial_correspondence_state
 from app.modules.email_ingestion.models import (
     EmailAdapterRun, EmailAttachmentManifest, EmailConnectionStatus, EmailIngestionConnection,
     EmailMessageStatus, EmailProviderAdapter, EmailRetentionRun, IngestedEmailMessage,
@@ -201,14 +202,18 @@ def review_email(db: Session, item: IngestedEmailMessage, user: User, payload: E
             recipient_label=", ".join(item.recipients)[:180] or None, subject=item.subject[:240],
             body=item.body_text or "(No plain-text body supplied)", requirement_ids=[],
             external_reference=(item.internet_message_id or item.provider_message_id)[:240], occurred_at=item.received_at,
+            state_fingerprint="0" * 64, state_version=1,
         )
+        bind_initial_correspondence_state(correspondence)
         db.add(correspondence); db.flush()
         item.status = EmailMessageStatus.LINKED; item.linked_claim_id = claim.id
         item.correspondence_id = correspondence.id
         item.body_text = f"[Promoted to correspondence {correspondence.id}; staging body redacted]"
         _audit(db, organization_id=item.organization_id, user_id=user.id, action="LINK_INGESTED_EMAIL_TO_CLAIM",
                entity_type="ingested_email_message", entity_id=item.id,
-               values={"status": item.status.value, "claim_id": str(claim.id), "correspondence_id": str(correspondence.id)},
+               values={"status": item.status.value, "claim_id": str(claim.id), "correspondence_id": str(correspondence.id),
+                       "correspondence_state_fingerprint": correspondence.state_fingerprint,
+                       "correspondence_state_version": correspondence.state_version},
                details="Human-confirmed claim link. Attachment manifests remain blocked pending quarantine admission.")
     db.commit(); db.refresh(item)
     return item

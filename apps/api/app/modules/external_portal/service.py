@@ -15,6 +15,7 @@ from app.modules.correspondence.models import (
     ClaimCorrespondence, CorrespondenceChannel, CorrespondenceDirection, CorrespondenceKind,
     CorrespondenceSensitivity, CorrespondenceStatus,
 )
+from app.modules.correspondence.state_identity import bind_initial_correspondence_state
 from app.modules.documents.models import ConfidentialityLevel, Document, DocumentMalwareScanStatus
 from app.modules.external_portal.models import (
     ExternalPortalInvitation, ExternalPortalPublicationProposal, ExternalPortalPublishedItem,
@@ -301,13 +302,18 @@ def review_submission(db: Session, item: ExternalPortalSubmission, user: User,
             channel=CorrespondenceChannel.PORTAL, sender_label=invitation.participant_name[:180],
             recipient_label="Claims team", subject=item.subject, body=item.body,
             requirement_ids=[], external_reference=f"portal-submission:{item.id}", occurred_at=item.submitted_at,
+            state_fingerprint="0" * 64, state_version=1,
         )
+        bind_initial_correspondence_state(correspondence)
         db.add(correspondence); db.flush()
         item.status = "promoted"; item.correspondence_id = correspondence.id
     _audit(db, org=item.organization_id, user=user.id,
            action="PROMOTE_EXTERNAL_PORTAL_SUBMISSION" if item.status == "promoted" else "REJECT_EXTERNAL_PORTAL_SUBMISSION",
            kind="external_portal_submission", entity=item.id,
-           values={"status": item.status, "correspondence_id": str(item.correspondence_id) if item.correspondence_id else None},
+           values={"status": item.status,
+                   "correspondence_id": str(item.correspondence_id) if item.correspondence_id else None,
+                   "correspondence_state_fingerprint": correspondence.state_fingerprint if item.status == "promoted" else None,
+                   "correspondence_state_version": correspondence.state_version if item.status == "promoted" else None},
            details=payload.note.strip() + " Attachment manifests remain blocked pending quarantine admission.")
     db.commit(); db.refresh(item)
     return item

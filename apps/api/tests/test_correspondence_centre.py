@@ -27,44 +27,80 @@ def _create_outbound(claim_id: str, sensitivity: str = "standard") -> dict:
     return response.json()
 
 
+def _expected(item: dict) -> dict:
+    return {
+        "expected_state_fingerprint": item["state_fingerprint"],
+        "expected_state_version": item["state_version"],
+    }
+
+
 def test_outbound_correspondence_requires_review_and_explicit_dispatch_confirmation() -> None:
     result = create_orion_claim()
     claim_id = result["claim"]["id"]
     item = _create_outbound(claim_id, "without_prejudice")
     assert item["status"] == "draft"
     assert item["body"].startswith("WITHOUT PREJUDICE")
+    assert len(item["state_fingerprint"]) == 64
+    assert item["state_version"] == 1
+    assert item["review_history"] == []
 
     premature = client.post(
         f"/api/v1/claims/{claim_id}/correspondence/{item['id']}/mark-sent",
-        json={"confirm_sent": True, "channel": "email"},
+        json={
+            "confirm_sent": True,
+            "channel": "email",
+            "expected_review_hash": "0" * 64,
+            **_expected(item),
+        },
     )
     assert premature.status_code == 409
 
-    submitted = client.post(f"/api/v1/claims/{claim_id}/correspondence/{item['id']}/submit")
+    submitted = client.post(
+        f"/api/v1/claims/{claim_id}/correspondence/{item['id']}/submit",
+        json=_expected(item),
+    )
     assert submitted.status_code == 200
+    submitted_item = submitted.json()
     approved = client.post(
         f"/api/v1/claims/{claim_id}/correspondence/{item['id']}/approve",
-        json={"note": "Factual framing and recipients reviewed."},
+        json={"note": "Factual framing and recipients reviewed.", **_expected(submitted_item)},
     )
     assert approved.status_code == 200
-    assert len(approved.json()["content_hash"]) == 64
+    approved_item = approved.json()
+    assert len(approved_item["content_hash"]) == 64
+    assert approved_item["review_state"] == "current"
+    assert approved_item["latest_review"]["action"] == "approve"
+    assert approved_item["latest_review"]["content_hash"] == approved_item["content_hash"]
 
     unconfirmed = client.post(
         f"/api/v1/claims/{claim_id}/correspondence/{item['id']}/mark-sent",
-        json={"confirm_sent": False, "channel": "email"},
+        json={
+            "confirm_sent": False,
+            "channel": "email",
+            "expected_review_hash": approved_item["latest_review"]["review_hash"],
+            **_expected(approved_item),
+        },
     )
     assert unconfirmed.status_code == 422
     sent = client.post(
         f"/api/v1/claims/{claim_id}/correspondence/{item['id']}/mark-sent",
-        json={"confirm_sent": True, "channel": "email", "external_reference": "MAIL-42"},
+        json={
+            "confirm_sent": True,
+            "channel": "email",
+            "external_reference": "MAIL-42",
+            "expected_review_hash": approved_item["latest_review"]["review_hash"],
+            **_expected(approved_item),
+        },
     )
     assert sent.status_code == 200, sent.text
-    assert sent.json()["status"] == "sent_externally"
-    assert sent.json()["sent_at"] is not None
+    sent_item = sent.json()
+    assert sent_item["status"] == "sent_externally"
+    assert sent_item["sent_at"] is not None
+    assert sent_item["sent_review_hash"] == approved_item["latest_review"]["review_hash"]
 
     immutable = client.patch(
         f"/api/v1/claims/{claim_id}/correspondence/{item['id']}",
-        json={"subject": "Changed after approval"},
+        json={"subject": "Changed after approval", **_expected(sent_item)},
     )
     assert immutable.status_code == 409
 
@@ -77,13 +113,18 @@ def test_handler_cannot_approve_but_manager_can() -> None:
     result = create_orion_claim()
     claim_id = result["claim"]["id"]
     item = _create_outbound(claim_id)
-    assert client.post(f"/api/v1/claims/{claim_id}/correspondence/{item['id']}/submit").status_code == 200
+    submitted = client.post(
+        f"/api/v1/claims/{claim_id}/correspondence/{item['id']}/submit",
+        json=_expected(item),
+    )
+    assert submitted.status_code == 200
+    submitted_item = submitted.json()
 
     client.cookies.clear()
     login("alpha", "alpha-handler@example.com")
     denied = client.post(
         f"/api/v1/claims/{claim_id}/correspondence/{item['id']}/approve",
-        json={"note": "Handler attempt must be rejected."},
+        json={"note": "Handler attempt must be rejected.", **_expected(submitted_item)},
     )
     assert denied.status_code == 403
 
@@ -91,7 +132,7 @@ def test_handler_cannot_approve_but_manager_can() -> None:
     login("alpha", "alpha-manager@example.com")
     approved = client.post(
         f"/api/v1/claims/{claim_id}/correspondence/{item['id']}/approve",
-        json={"note": "Manager reviewed and approved the wording."},
+        json={"note": "Manager reviewed and approved the wording.", **_expected(submitted_item)},
     )
     assert approved.status_code == 200
 
@@ -115,6 +156,7 @@ def test_inbound_and_internal_records_are_filed_without_fake_sending() -> None:
     assert inbound.status_code == 201, inbound.text
     assert inbound.json()["status"] == "received_external"
     assert inbound.json()["sent_at"] is None
+    assert len(inbound.json()["state_fingerprint"]) == 64
 
     internal = client.post(
         f"/api/v1/claims/{claim_id}/correspondence",
