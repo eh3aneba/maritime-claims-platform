@@ -43,12 +43,16 @@ class AdjustmentStatement(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         Index("ix_adjustment_statements_org_claim_created", "organization_id", "claim_id", "created_at"),
         CheckConstraint("deductible_amount >= 0", name="ck_adjustment_deductible_nonnegative"),
         CheckConstraint("other_deduction_amount >= 0", name="ck_adjustment_other_deduction_nonnegative"),
+        CheckConstraint("source_manifest_version >= 1", name="ck_adjustment_source_manifest_version"),
     )
 
     organization_id: Mapped[UUID] = mapped_column(ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False, index=True)
     claim_id: Mapped[UUID] = mapped_column(ForeignKey("claims.id", ondelete="RESTRICT"), nullable=False, index=True)
     created_by_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     reviewed_by_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    rebased_from_statement_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("adjustment_statements.id", ondelete="SET NULL"), nullable=True, index=True
+    )
 
     version: Mapped[int] = mapped_column(nullable=False)
     title: Mapped[str] = mapped_column(String(240), nullable=False)
@@ -65,6 +69,8 @@ class AdjustmentStatement(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     net_adjusted: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False, default=Decimal("0"), server_default="0")
 
     source_manifest: Mapped[list] = mapped_column(JSON, nullable=False)
+    source_manifest_version: Mapped[int] = mapped_column(nullable=False, default=2, server_default="1")
+    source_state_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     review_note: Mapped[str | None] = mapped_column(Text, nullable=True)
     content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -96,3 +102,4 @@ class AdjustmentLine(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
     source_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    financial_controls: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
