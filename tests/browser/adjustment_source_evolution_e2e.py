@@ -44,7 +44,7 @@ def _current_invoice_amount_extractions() -> dict:
             if claim is None:
                 raise RuntimeError("MT ORION demo claim is unavailable")
             candidates = []
-            for run in _latest_completed_runs(db, claim, [TASK_INVOICE]):
+            for run, _document in _latest_completed_runs(db, claim, [TASK_INVOICE]):
                 rows = _reviewed_rows(db, run)
                 for field_path, extraction in rows.items():
                     match = re.fullmatch(r"invoice\.line_items\[(\d+)\]\.amount", field_path)
