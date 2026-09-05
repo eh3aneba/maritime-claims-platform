@@ -73,6 +73,19 @@ def upgrade() -> None:
         ["item_key"],
     )
 
+    # Pre-0070 CostItem review_status values were mutable cache state with no
+    # durable evidence fingerprint, reviewer lineage or decision hash. Treating
+    # those legacy values as current authority after introducing state-bound
+    # decisions would silently promote an unverifiable disposition. Fail closed:
+    # retain the cost evidence but require a deliberate human re-review under the
+    # new append-only lineage model before any non-default disposition is current.
+    op.execute(
+        sa.text(
+            "UPDATE cost_items SET review_status = 'under_review' "
+            "WHERE review_status <> 'under_review'"
+        )
+    )
+
 
 def downgrade() -> None:
     op.drop_index("ix_cost_review_decisions_item_key", table_name="cost_review_decisions")
