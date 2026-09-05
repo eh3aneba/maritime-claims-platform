@@ -19,6 +19,11 @@ class TechnicalEvidenceItem(BaseModel):
     field_path: str
     value: Any
     document_id: UUID | None = None
+    document_version: int | None = None
+    document_is_current: bool | None = None
+    document_processing_status: str | None = None
+    document_malware_scan_status: str | None = None
+    source_state: str | None = None
     source_quote: str | None = None
     source_locator_type: str | None = None
     source_locator_value: str | None = None

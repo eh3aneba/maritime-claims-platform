@@ -13,6 +13,11 @@ export interface TechnicalEvidenceItem {
   field_path: string;
   value: unknown;
   document_id: string | null;
+  document_version: number | null;
+  document_is_current: boolean | null;
+  document_processing_status: string | null;
+  document_malware_scan_status: string | null;
+  source_state: string | null;
   source_quote: string | null;
   source_locator_type: string | null;
   source_locator_value: string | null;
