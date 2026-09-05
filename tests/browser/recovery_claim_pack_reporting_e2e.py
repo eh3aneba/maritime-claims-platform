@@ -140,7 +140,7 @@ def main() -> None:
                 raise AssertionError(f"Recovery Claim Pack XLSX is missing expected governed content: {expected}")
 
         page.goto(f"{BASE_URL}/claims/{claim_id}/claim-pack", wait_until="networkidle")
-        expect(page.get_by_role("heading", name="Claim Pack", exact=True)).to_be_visible(timeout=15_000)
+        expect(page.get_by_role("heading", name="Claim Pack Export", exact=True)).to_be_visible(timeout=15_000)
         expect(page.get_by_text(export["filename"], exact=True)).to_be_visible(timeout=15_000)
 
         browser.close()
