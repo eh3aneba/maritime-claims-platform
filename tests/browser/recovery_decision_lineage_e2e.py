@@ -160,21 +160,24 @@ def main() -> None:
         # Append a real operator-entered correspondence record. The platform only
         # records this human action; it does not compose or send the correspondence.
         decision_card.get_by_role("button", name="Add action / correspondence", exact=True).click()
-        expect(panel.get_by_text("Append-only action log", exact=True)).to_be_visible(timeout=15_000)
-        _control(panel, "Action type", "select").select_option("correspondence")
-        _control(panel, "Direction", "select").select_option("outbound")
-        _control(panel, "Occurred on", "input").fill("2026-09-05")
-        _control(panel, "Human-entered summary", "textarea").fill(
+        action_heading = panel.get_by_text("Append-only action log", exact=True)
+        expect(action_heading).to_be_visible(timeout=15_000)
+        action_form = action_heading.locator("xpath=ancestor::div[contains(@class,'border-t')][1]")
+        expect(action_form).to_have_count(1)
+        _control(action_form, "Action type", "select").select_option("correspondence")
+        _control(action_form, "Direction", "select").select_option("outbound")
+        _control(action_form, "Occurred on", "input").fill("2026-09-05")
+        _control(action_form, "Human-entered summary", "textarea").fill(
             "Handler records that a human-approved preservation correspondence was sent outside autonomous platform authority."
         )
-        _control(panel, "Source reference", "input").fill("Recovery correspondence REC-E2E-001")
+        _control(action_form, "Source reference", "input").fill("Recovery correspondence REC-E2E-001")
 
         action_endpoint = f"/api/v1/claims/{claim_id}/recovery-timebar/decisions/{decision['decision_key']}/actions"
         with page.expect_response(
             lambda response: response.request.method == "POST" and response.url.endswith(action_endpoint),
             timeout=15_000,
         ) as action_info:
-            panel.get_by_role("button", name="Append human action", exact=True).click()
+            action_form.get_by_role("button", name="Append human action", exact=True).click()
         _json(action_info.value, "browser recovery action append")
 
         expect(
