@@ -5,7 +5,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-RUN apk upgrade --no-cache libssl3 libcrypto3
+RUN apk upgrade --no-cache libssl3 libcrypto3 libuuid
 
 COPY requirements.lock .
 RUN pip install --no-cache-dir --require-hashes -r requirements.lock
