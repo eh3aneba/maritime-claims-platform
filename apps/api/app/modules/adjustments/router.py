@@ -9,6 +9,7 @@ from app.modules.adjustments.schemas import (
     AdjustmentCreate,
     AdjustmentLineUpdate,
     AdjustmentListResponse,
+    AdjustmentRebase,
     AdjustmentReview,
     AdjustmentStatementResponse,
     AdjustmentStatementUpdate,
@@ -17,6 +18,7 @@ from app.modules.adjustments.service import (
     create_statement,
     get_statement,
     list_statements,
+    rebase_statement,
     review_statement,
     statement_response,
     submit_statement,
@@ -28,6 +30,10 @@ from app.modules.claims.security import get_claim_for_tenant
 from app.modules.users.models import User, UserRole
 
 router = APIRouter(prefix="/claims/{claim_id}/adjustments", tags=["adjustments"])
+AdjustmentEditor = Annotated[
+    User,
+    Depends(require_roles(UserRole.ADMIN, UserRole.CLAIMS_MANAGER, UserRole.CLAIMS_HANDLER)),
+]
 
 
 def _claim(db: Session, claim_id: UUID, organization_id: UUID):
@@ -38,40 +44,81 @@ def _claim(db: Session, claim_id: UUID, organization_id: UUID):
 
 
 @router.get("", response_model=AdjustmentListResponse)
-def adjustment_list(claim_id: UUID, current_user: CurrentUser, db: Annotated[Session, Depends(get_db)]) -> AdjustmentListResponse:
+def adjustment_list(
+    claim_id: UUID,
+    current_user: CurrentUser,
+    db: Annotated[Session, Depends(get_db)],
+) -> AdjustmentListResponse:
     claim = _claim(db, claim_id, current_user.organization_id)
     items = [statement_response(db, item) for item in list_statements(db, claim=claim)]
     return AdjustmentListResponse(items=items, total=len(items))
 
 
 @router.post("", response_model=AdjustmentStatementResponse, status_code=status.HTTP_201_CREATED)
-def adjustment_create(claim_id: UUID, payload: AdjustmentCreate, current_user: CurrentUser, db: Annotated[Session, Depends(get_db)]) -> AdjustmentStatementResponse:
-    claim = _claim(db, claim_id, current_user.organization_id)
-    item = create_statement(db, claim=claim, user=current_user, payload=payload)
+def adjustment_create(
+    claim_id: UUID,
+    payload: AdjustmentCreate,
+    editor: AdjustmentEditor,
+    db: Annotated[Session, Depends(get_db)],
+) -> AdjustmentStatementResponse:
+    claim = _claim(db, claim_id, editor.organization_id)
+    item = create_statement(db, claim=claim, user=editor, payload=payload)
     return AdjustmentStatementResponse(**statement_response(db, item))
 
 
 @router.patch("/{statement_id}", response_model=AdjustmentStatementResponse)
-def adjustment_update(claim_id: UUID, statement_id: UUID, payload: AdjustmentStatementUpdate, current_user: CurrentUser, db: Annotated[Session, Depends(get_db)]) -> AdjustmentStatementResponse:
-    claim = _claim(db, claim_id, current_user.organization_id)
+def adjustment_update(
+    claim_id: UUID,
+    statement_id: UUID,
+    payload: AdjustmentStatementUpdate,
+    editor: AdjustmentEditor,
+    db: Annotated[Session, Depends(get_db)],
+) -> AdjustmentStatementResponse:
+    claim = _claim(db, claim_id, editor.organization_id)
     item = get_statement(db, claim=claim, statement_id=statement_id)
-    updated = update_statement(db, statement=item, user=current_user, payload=payload)
+    updated = update_statement(db, statement=item, user=editor, payload=payload)
     return AdjustmentStatementResponse(**statement_response(db, updated))
 
 
 @router.patch("/{statement_id}/lines/{line_id}", response_model=AdjustmentStatementResponse)
-def adjustment_line_update(claim_id: UUID, statement_id: UUID, line_id: UUID, payload: AdjustmentLineUpdate, current_user: CurrentUser, db: Annotated[Session, Depends(get_db)]) -> AdjustmentStatementResponse:
-    claim = _claim(db, claim_id, current_user.organization_id)
+def adjustment_line_update(
+    claim_id: UUID,
+    statement_id: UUID,
+    line_id: UUID,
+    payload: AdjustmentLineUpdate,
+    editor: AdjustmentEditor,
+    db: Annotated[Session, Depends(get_db)],
+) -> AdjustmentStatementResponse:
+    claim = _claim(db, claim_id, editor.organization_id)
     item = get_statement(db, claim=claim, statement_id=statement_id)
-    updated = update_line(db, statement=item, line_id=line_id, user=current_user, payload=payload)
+    updated = update_line(db, statement=item, line_id=line_id, user=editor, payload=payload)
     return AdjustmentStatementResponse(**statement_response(db, updated))
 
 
-@router.post("/{statement_id}/submit", response_model=AdjustmentStatementResponse)
-def adjustment_submit(claim_id: UUID, statement_id: UUID, current_user: CurrentUser, db: Annotated[Session, Depends(get_db)]) -> AdjustmentStatementResponse:
-    claim = _claim(db, claim_id, current_user.organization_id)
+@router.post("/{statement_id}/rebase", response_model=AdjustmentStatementResponse, status_code=status.HTTP_201_CREATED)
+def adjustment_rebase(
+    claim_id: UUID,
+    statement_id: UUID,
+    payload: AdjustmentRebase,
+    editor: AdjustmentEditor,
+    db: Annotated[Session, Depends(get_db)],
+) -> AdjustmentStatementResponse:
+    claim = _claim(db, claim_id, editor.organization_id)
     item = get_statement(db, claim=claim, statement_id=statement_id)
-    updated = submit_statement(db, statement=item, user=current_user)
+    rebased = rebase_statement(db, claim=claim, statement=item, user=editor, payload=payload)
+    return AdjustmentStatementResponse(**statement_response(db, rebased))
+
+
+@router.post("/{statement_id}/submit", response_model=AdjustmentStatementResponse)
+def adjustment_submit(
+    claim_id: UUID,
+    statement_id: UUID,
+    editor: AdjustmentEditor,
+    db: Annotated[Session, Depends(get_db)],
+) -> AdjustmentStatementResponse:
+    claim = _claim(db, claim_id, editor.organization_id)
+    item = get_statement(db, claim=claim, statement_id=statement_id)
+    updated = submit_statement(db, statement=item, user=editor)
     return AdjustmentStatementResponse(**statement_response(db, updated))
 
 
