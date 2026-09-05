@@ -35,12 +35,7 @@ def _claim_id(page) -> str:
 
 
 def _control(panel, label_text: str, tag: str):
-    """Resolve nested form controls by their visible label text.
-
-    The application intentionally wraps controls in <label><span>…</span><control/></label>.
-    Target that DOM contract directly so this real-browser acceptance does not depend on
-    browser/accessibility-name quirks for nested translated labels.
-    """
+    """Resolve nested form controls by their visible label text."""
     label = panel.locator("label").filter(has_text=label_text)
     expect(label).to_have_count(1)
     control = label.locator(tag)
@@ -127,15 +122,19 @@ def main() -> None:
             "MT ORION recovery review note — browser acceptance"
         )
         _control(panel, "Next human review date (optional)", "input").fill("2026-09-30")
-        panel.get_by_role("button", name="Record human decision", exact=True).click()
 
-        decision_card = panel.locator("div.rounded-xl.border.border-slate-200").filter(
-            has=page.get_by_role("heading", name=counterparty_name, exact=True)
-        ).first
-        expect(decision_card).to_be_visible(timeout=15_000)
-        expect(decision_card.get_by_text("monitor", exact=True)).to_be_visible()
-        expect(decision_card.get_by_text("reference only", exact=True)).to_be_visible()
+        decision_endpoint = f"/api/v1/claims/{claim_id}/recovery-timebar/decisions"
+        with page.expect_response(
+            lambda response: response.request.method == "POST" and response.url.endswith(decision_endpoint),
+            timeout=15_000,
+        ) as save_info:
+            panel.get_by_role("button", name="Record human decision", exact=True).click()
+        created_decision = _json(save_info.value, "browser recovery decision save")
+        if created_decision["counterparty_id"] != counterparty["id"]:
+            raise AssertionError(f"Browser decision bound to unexpected counterparty: {created_decision}")
 
+        # Verify persistence before asserting React rendering. Then locate the card
+        # from its own heading rather than filtering a broad CSS collection.
         decision_dashboard = _json(
             request.get(f"{API_URL}/api/v1/claims/{claim_id}/recovery-timebar/decisions"),
             "recovery decision dashboard",
@@ -149,6 +148,13 @@ def main() -> None:
         if decision["context_state_status"] != "reference_only":
             raise AssertionError("Reference-only human counterparty context was not preserved on the decision")
 
+        saved_heading = panel.get_by_role("heading", name=counterparty_name, exact=True)
+        expect(saved_heading).to_be_visible(timeout=15_000)
+        decision_card = saved_heading.locator("xpath=ancestor::div[contains(@class,'rounded-xl')][1]")
+        expect(decision_card).to_have_count(1)
+        expect(decision_card.get_by_text("monitor", exact=True)).to_be_visible()
+        expect(decision_card.get_by_text("reference only", exact=True)).to_be_visible()
+
         # Append a real operator-entered correspondence record. The platform only
         # records this human action; it does not compose or send the correspondence.
         decision_card.get_by_role("button", name="Add action / correspondence", exact=True).click()
@@ -160,7 +166,14 @@ def main() -> None:
             "Handler records that a human-approved preservation correspondence was sent outside autonomous platform authority."
         )
         _control(panel, "Source reference", "input").fill("Recovery correspondence REC-E2E-001")
-        panel.get_by_role("button", name="Append human action", exact=True).click()
+
+        action_endpoint = f"/api/v1/claims/{claim_id}/recovery-timebar/decisions/{decision['decision_key']}/actions"
+        with page.expect_response(
+            lambda response: response.request.method == "POST" and response.url.endswith(action_endpoint),
+            timeout=15_000,
+        ) as action_info:
+            panel.get_by_role("button", name="Append human action", exact=True).click()
+        _json(action_info.value, "browser recovery action append")
 
         expect(
             decision_card.get_by_text(
