@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from sqlalchemy import select
 
 from app.modules.correspondence.models import CorrespondenceReviewDecision
@@ -107,7 +109,7 @@ def test_exact_review_retry_is_idempotent_and_does_not_duplicate_lineage() -> No
 
     with TestingSessionLocal() as db:
         rows = list(db.scalars(select(CorrespondenceReviewDecision).where(
-            CorrespondenceReviewDecision.correspondence_id == first_item["id"]
+            CorrespondenceReviewDecision.correspondence_id == UUID(first_item["id"])
         )))
         assert len(rows) == 1
 
