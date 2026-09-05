@@ -49,6 +49,8 @@ Only a Claims Manager or Admin may record a `TimebarScenarioReview`.
 
 Reviews are append-only, bind to the exact scenario hash and form a previous-review-hash chain. A review never rewrites the scenario that was reviewed.
 
+A confirmed or overridden scenario date remains a controlled human/legal review record inside MCRI. Phase 13.7A does not itself create court filings, notices, external correspondence, settlement authority or recovery entitlement.
+
 ### 5. Source and human-context provenance are explicit
 
 Every counterparty/scenario requires a human-readable source reference. It may additionally bind to one exact current usable claim document version.
