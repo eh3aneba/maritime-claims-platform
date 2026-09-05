@@ -297,6 +297,7 @@ jobs:
           python tests/browser/final_localization_accessibility_e2e.py
           python tests/browser/intake_maturity_e2e.py
           python tests/browser/technical_real_acceptance_e2e.py
+          python tests/browser/recovery_decision_lineage_e2e.py
 
       - name: Capture container diagnostics
         if: failure()
