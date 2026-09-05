@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import RecoveryDecisionPanel from "@/components/recovery-decision-panel";
 import { useLocale } from "@/components/locale-provider";
 import { ApiError, getClaim } from "@/lib/api";
 import { formatDate } from "@/lib/format";
@@ -280,6 +281,8 @@ export default function RecoveryMaturityPage() {
       </div>
       <div className="mt-4 flex gap-2"><button disabled={busy} className="primary-button" onClick={saveScenario}>{busy ? r("Working…", "در حال انجام…") : scenarioEdit ? r("Create new immutable version", "ایجاد نسخه تغییرناپذیر جدید") : r("Compute candidate & save", "محاسبه تاریخ پیشنهادی و ذخیره")}</button>{scenarioEdit ? <button className="secondary-button" onClick={() => { setScenarioEdit(null); setScenarioForm(emptyScenario); }}>{r("Cancel revision", "لغو اصلاح")}</button> : null}</div>
     </section>
+
+    <RecoveryDecisionPanel claimId={id} />
 
     {reviewScenario ? <section className="panel mt-6 p-5">
       <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="eyebrow">{r("Manager/Admin human/legal review", "بازبینی انسانی/حقوقی مدیر")}</p><h2 className="mt-1 text-xl font-semibold text-slate-950" dir="auto">{reviewScenario.title}</h2></div><button className="secondary-button" onClick={() => setReviewScenario(null)}>{r("Close", "بستن")}</button></div>
