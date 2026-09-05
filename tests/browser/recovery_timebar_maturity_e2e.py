@@ -19,6 +19,16 @@ def _json(response, label: str):
     return response.json()
 
 
+def _control_by_label(scope, label_text: str, selector: str):
+    """Resolve a form control from the real label container, not ARIA heuristics."""
+    label = scope.locator("label").filter(has_text=label_text).first
+    expect(label).to_be_visible(timeout=15_000)
+    control = label.locator(selector)
+    expect(control).to_have_count(1)
+    expect(control).to_be_visible()
+    return control
+
+
 def _claim_id(page) -> str:
     page.goto(f"{BASE_URL}/claims", wait_until="networkidle")
     page.get_by_placeholder("Search claim, vessel or IMO…").fill("MCRI-DEMO-MT-ORION")
@@ -165,7 +175,7 @@ def main() -> None:
         period_unit_select = period_unit_label.locator("select")
         expect(period_unit_select).to_have_count(1)
         period_unit_select.select_option("months")
-        scenario_form.get_by_label("Assumptions and uncertainty", exact=True).fill(
+        _control_by_label(scenario_form, "Assumptions and uncertainty", "textarea").fill(
             "Assume solely for comparison that 10 July 2026 is the contractual trigger; no legal conclusion is made."
         )
         scenario_form.get_by_role("button", name="Compute candidate & save", exact=True).click()
@@ -191,13 +201,14 @@ def main() -> None:
 
         # Deliberate revision of Scenario A using optimistic scenario lineage.
         scenario_a_card.get_by_role("button", name="Create revised version", exact=True).click()
-        revised_form = page.locator("section").filter(
-            has=page.get_by_role("heading", name="Revise time-bar scenario", exact=True)
-        )
+        revised_heading = page.get_by_role("heading", name="Revise time-bar scenario", exact=True)
+        expect(revised_heading).to_be_visible(timeout=15_000)
+        revised_form = page.locator("section").filter(has=revised_heading)
+        expect(revised_form).to_have_count(1)
         revised_assumption = (
             "Revised human assumption after contract review: anchor remains comparative only and requires legal verification."
         )
-        revised_form.get_by_label("Assumptions and uncertainty", exact=True).fill(revised_assumption)
+        _control_by_label(revised_form, "Assumptions and uncertainty", "textarea").fill(revised_assumption)
         revised_form.get_by_role("button", name="Create new immutable version", exact=True).click()
         # The title already existed at v1, so wait for content that can only be
         # rendered from the completed v2 reload.
@@ -226,9 +237,10 @@ def main() -> None:
             raise AssertionError("Scenario version lineage is broken")
 
         # Scenario B: alternative one-year hypothesis. Both must coexist.
-        create_form = page.locator("section").filter(
-            has=page.get_by_role("heading", name="Create alternative time-bar scenario", exact=True)
-        )
+        create_heading = page.get_by_role("heading", name="Create alternative time-bar scenario", exact=True)
+        expect(create_heading).to_be_visible(timeout=15_000)
+        create_form = page.locator("section").filter(has=create_heading)
+        expect(create_form).to_have_count(1)
         create_form.get_by_label("Scenario title", exact=True).fill("Alternative annual limitation scenario")
         create_form.get_by_label("Human-entered legal/factual basis", exact=True).fill(
             "Alternative human hypothesis for comparison only; legal applicability has not been determined."
@@ -241,7 +253,7 @@ def main() -> None:
         create_period_unit_select = create_period_unit_label.locator("select")
         expect(create_period_unit_select).to_have_count(1)
         create_period_unit_select.select_option("years")
-        create_form.get_by_label("Assumptions and uncertainty", exact=True).fill(
+        _control_by_label(create_form, "Assumptions and uncertainty", "textarea").fill(
             "Compare a one-year period without treating it as selected governing law or an authoritative time bar."
         )
         create_form.get_by_role("button", name="Compute candidate & save", exact=True).click()
@@ -266,12 +278,14 @@ def main() -> None:
             has=page.get_by_role("heading", name="Workshop contractual notice scenario", exact=True)
         ).first
         reviewed_card.get_by_role("button", name="Human/legal review", exact=True).click()
+        review_marker = page.get_by_text("Manager/Admin human/legal review", exact=True)
+        expect(review_marker).to_be_visible(timeout=15_000)
         review_section = page.locator("section").filter(
             has=page.get_by_role("heading", name="Workshop contractual notice scenario", exact=True)
-        ).filter(has_text="Manager/Admin human/legal review")
+        ).filter(has=review_marker)
         expect(review_section).to_have_count(1)
-        review_section.get_by_label("Review action", exact=True).select_option("confirm")
-        review_section.get_by_label("Human/legal review note", exact=True).fill(
+        _control_by_label(review_section, "Review action", "select").select_option("confirm")
+        _control_by_label(review_section, "Human/legal review note", "textarea").fill(
             "Manager reviewed the human inputs and source reference; confirming only this scenario's computed candidate for controlled diary use."
         )
         review_section.get_by_role("button", name="Record append-only human review", exact=True).click()
