@@ -1,11 +1,9 @@
-FROM python:3.13-alpine AS base
+FROM python:3.13-slim-trixie AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
 WORKDIR /app
-
-RUN apk upgrade --no-cache libssl3 libcrypto3 libuuid
 
 COPY requirements.lock .
 RUN pip install --no-cache-dir --require-hashes -r requirements.lock
@@ -16,7 +14,7 @@ COPY app ./app
 
 EXPOSE 8000
 
-FROM python:3.13-slim AS worker
+FROM python:3.13-slim-trixie AS worker
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
