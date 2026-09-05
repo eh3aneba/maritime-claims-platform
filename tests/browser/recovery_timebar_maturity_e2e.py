@@ -210,9 +210,9 @@ def main() -> None:
         )
         _control_by_label(revised_form, "Assumptions and uncertainty", "textarea").fill(revised_assumption)
         revised_form.get_by_role("button", name="Create new immutable version", exact=True).click()
-        # The title already existed at v1, so wait for content that can only be
-        # rendered from the completed v2 reload.
-        expect(scenarios_section.get_by_text(revised_assumption, exact=True)).to_be_visible(timeout=15_000)
+        # Wait for the immutable v2 UI state. Assumptions are deliberately not
+        # rendered in the compact scenario card, so verify that persisted field
+        # through the mature API below instead of asserting hidden UI content.
         scenario_a_card = scenarios_section.locator("div.rounded-xl.border.border-slate-200").filter(
             has=page.get_by_role("heading", name="Workshop contractual notice scenario", exact=True)
         ).first
@@ -225,6 +225,8 @@ def main() -> None:
         scenario_a_v2 = next(row for row in dashboard_v2["scenarios"] if row["title"] == "Workshop contractual notice scenario")
         if scenario_a_v2["version"] != 2 or scenario_a_v2["candidate_deadline"] != "2027-01-10":
             raise AssertionError("Scenario revision did not preserve deterministic candidate arithmetic/versioning")
+        if scenario_a_v2["assumptions"] != revised_assumption:
+            raise AssertionError("Scenario revision did not persist the revised human assumptions")
         scenario_history = _json(
             request.get(
                 f"{API_URL}/api/v1/claims/{claim_id}/recovery-timebar/scenarios/{scenario_a_v2['scenario_key']}/history"
