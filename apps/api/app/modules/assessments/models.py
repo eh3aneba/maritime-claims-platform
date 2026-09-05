@@ -41,6 +41,9 @@ class InitialAssessment(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     generated_by_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     approved_by_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    source_snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    source_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    approved_content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
 class AssessmentSection(UUIDPrimaryKeyMixin, TimestampMixin, Base):
