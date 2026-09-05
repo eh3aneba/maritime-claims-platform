@@ -160,7 +160,11 @@ def main() -> None:
         scenario_form.get_by_label("Source reference", exact=True).fill("Workshop Contract clause 12 — human reviewed reference")
         scenario_form.get_by_label("Human-selected anchor date", exact=True).fill("2026-07-10")
         scenario_form.get_by_label("Period", exact=True).fill("6")
-        scenario_form.get_by_label("Unit", exact=True).nth(0).select_option("months")
+        period_unit_label = scenario_form.locator("label").filter(has_text="Unit").nth(0)
+        expect(period_unit_label).to_be_visible()
+        period_unit_select = period_unit_label.locator("select")
+        expect(period_unit_select).to_have_count(1)
+        period_unit_select.select_option("months")
         scenario_form.get_by_label("Assumptions and uncertainty", exact=True).fill(
             "Assume solely for comparison that 10 July 2026 is the contractual trigger; no legal conclusion is made."
         )
@@ -232,7 +236,11 @@ def main() -> None:
         create_form.get_by_label("Source reference", exact=True).fill("Alternative legal review note — human supplied")
         create_form.get_by_label("Human-selected anchor date", exact=True).fill("2026-07-10")
         create_form.get_by_label("Period", exact=True).fill("1")
-        create_form.get_by_label("Unit", exact=True).nth(0).select_option("years")
+        create_period_unit_label = create_form.locator("label").filter(has_text="Unit").nth(0)
+        expect(create_period_unit_label).to_be_visible()
+        create_period_unit_select = create_period_unit_label.locator("select")
+        expect(create_period_unit_select).to_have_count(1)
+        create_period_unit_select.select_option("years")
         create_form.get_by_label("Assumptions and uncertainty", exact=True).fill(
             "Compare a one-year period without treating it as selected governing law or an authoritative time bar."
         )
