@@ -26,8 +26,8 @@ from app.modules.claims.models import Claim, ClaimPriority, ClaimStatus, ClaimTy
 from app.modules.claims.schemas import ClaimCreate
 from app.modules.claims.service import change_claim_status, create_claim, update_current_reserve
 from app.modules.correspondence.models import ClaimCorrespondence
-from app.modules.correspondence.schemas import CorrespondenceMarkSent
-from app.modules.correspondence.service import mark_correspondence_sent, review_correspondence, submit_correspondence
+from app.modules.correspondence.schemas import CorrespondenceMarkSent, CorrespondenceReview, CorrespondenceTransition
+from app.modules.correspondence.service import mark_correspondence_sent, review_correspondence, review_history, submit_correspondence
 from app.modules.documents.models import ConfidentialityLevel, Document, DocumentProcessingStatus
 from app.modules.documents.service import create_document_from_upload
 from app.modules.financial.models import FinancialFlagType, ReserveHistory
@@ -522,14 +522,28 @@ def test_mt_orion_full_pilot_workflow(tmp_path):
             assert "Last Overhaul Report" in missing_labels
             batch, tasks = create_document_request(db, claim=claim, user=manager, payload=DocumentRequestCreate(all_critical=True, due_date=date(2026,7,17), recipient_label="Shipowner / Technical Manager"))
             correspondence = db.scalar(select(ClaimCorrespondence).where(ClaimCorrespondence.request_batch_id == batch.id))
-            submit_correspondence(db, item=correspondence, user=manager)
-            review_correspondence(
+            assert correspondence is not None
+            correspondence = submit_correspondence(
+                db,
+                item=correspondence,
+                user=manager,
+                payload=CorrespondenceTransition(
+                    expected_state_fingerprint=correspondence.state_fingerprint,
+                    expected_state_version=correspondence.state_version,
+                ),
+            )
+            correspondence = review_correspondence(
                 db,
                 item=correspondence,
                 user=manager,
                 approve=True,
-                note="Synthetic pilot correspondence reviewed before recorded dispatch.",
+                payload=CorrespondenceReview(
+                    note="Synthetic pilot correspondence reviewed before recorded dispatch.",
+                    expected_state_fingerprint=correspondence.state_fingerprint,
+                    expected_state_version=correspondence.state_version,
+                ),
             )
+            latest_review = review_history(db, item=correspondence)[-1]
             mark_correspondence_sent(
                 db,
                 claim=claim,
@@ -539,6 +553,9 @@ def test_mt_orion_full_pilot_workflow(tmp_path):
                     confirm_sent=True,
                     channel="email",
                     external_reference="SYNTHETIC-DEMO-DISPATCH",
+                    expected_state_fingerprint=correspondence.state_fingerprint,
+                    expected_state_version=correspondence.state_version,
+                    expected_review_hash=latest_review.review_hash,
                 ),
             )
             assert len(tasks) == len(critical_missing)
