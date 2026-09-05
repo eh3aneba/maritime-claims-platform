@@ -33,10 +33,15 @@ def _counterparty_context_state(db: Session, row: TimebarScenario) -> str | None
     if counterparty is None:
         return "source_unavailable"
 
-    latest = base._latest_counterparty(
-        db,
-        claim=Claim(id=row.claim_id, organization_id=row.organization_id),
-        counterparty_key=counterparty.counterparty_key,
+    latest = db.scalar(
+        select(RecoveryCounterparty)
+        .where(
+            RecoveryCounterparty.organization_id == row.organization_id,
+            RecoveryCounterparty.claim_id == row.claim_id,
+            RecoveryCounterparty.counterparty_key == counterparty.counterparty_key,
+        )
+        .order_by(RecoveryCounterparty.version.desc())
+        .limit(1)
     )
     if latest is None:
         return "source_unavailable"
