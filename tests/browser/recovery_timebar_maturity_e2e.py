@@ -140,7 +140,12 @@ def main() -> None:
         expect(scenario_heading).to_be_visible(timeout=15_000)
         scenario_form = page.locator("section").filter(has=scenario_heading)
         expect(scenario_form).to_have_count(1)
-        counterparty_select = scenario_form.get_by_label("Potential counterparty (optional)", exact=True)
+        counterparty_label = scenario_form.locator("label").filter(
+            has_text="Potential counterparty (optional)"
+        ).first
+        expect(counterparty_label).to_be_visible()
+        counterparty_select = counterparty_label.locator("select")
+        expect(counterparty_select).to_have_count(1)
         expect(counterparty_select).to_be_visible()
         expect(counterparty_select.locator(f'option[value="{current_counterparty["id"]}"]')).to_have_text(
             "TurboMaker GmbH · v2"
