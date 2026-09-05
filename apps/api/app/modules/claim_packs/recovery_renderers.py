@@ -20,6 +20,31 @@ def _safe(value: Any) -> str:
     return str(value)
 
 
+def _assessment_lines(snapshot: dict[str, Any]) -> list[str]:
+    assessment = snapshot.get("approved_assessment")
+    lines = ["APPROVED INITIAL ASSESSMENT — IMMUTABLE AUDIT HANDOFF"]
+    if not assessment:
+        lines.append("No digest-bound approved Initial Assessment is included in this Claim Pack.")
+        return lines
+    lines.extend(
+        [
+            assessment.get("disclaimer", "Approved assessment reporting context only."),
+            "",
+            f"Assessment version: v{assessment.get('version')}",
+            f"Classification: {_safe(assessment.get('classification'))}",
+            f"Status: {_safe(assessment.get('status'))}",
+            f"Approved at: {_safe(assessment.get('approved_at'))}",
+            f"Source state at export: {_safe(assessment.get('source_state_at_export'))}",
+            f"Bound source fingerprint: {_safe(assessment.get('source_fingerprint'))}",
+            f"Approved content digest: {_safe(assessment.get('approved_content_hash'))}",
+            "",
+            "The digest above identifies the persisted human-approved assessment. Later source evolution may mark the "
+            "historical version stale but never rewrites its approved content or digest.",
+        ]
+    )
+    return lines
+
+
 def _recovery_lines(snapshot: dict[str, Any]) -> list[str]:
     recovery = snapshot.get("recovery_review") or {}
     summary = recovery.get("summary") or {}
@@ -83,7 +108,11 @@ def _recovery_lines(snapshot: dict[str, Any]) -> list[str]:
         )
         lines.append(f"  Legal basis entered by human: {scenario.get('legal_basis')}")
         lines.append(f"  Source reference: {scenario.get('source_reference')}")
+    return lines
 
+
+def _appendix_lines(snapshot: dict[str, Any]) -> list[str]:
+    lines = _assessment_lines(snapshot) + ["", ""] + _recovery_lines(snapshot)
     wrapped: list[str] = []
     for line in lines:
         if not line:
@@ -115,7 +144,7 @@ def _text_pdf(lines: list[str]) -> bytes:
         for line in page_lines:
             commands.append(f"({_pdf_safe(line)}) Tj")
             commands.append("T*")
-        commands.extend(["ET", "BT", "/F1 8 Tf", "54 28 Td", f"(Recovery review appendix - page {page_index} of {len(pages)}) Tj", "ET"])
+        commands.extend(["ET", "BT", "/F1 8 Tf", "54 28 Td", f"(Governed review appendix - page {page_index} of {len(pages)}) Tj", "ET"])
         stream = "\n".join(commands).encode("cp1252", "replace")
         content_obj = f"<< /Length {len(stream)} >>\nstream\n".encode("ascii") + stream + b"\nendstream"
         objects.extend([page_obj, content_obj])
@@ -137,7 +166,7 @@ def _text_pdf(lines: list[str]) -> bytes:
 
 def render_pdf(snapshot: dict[str, Any]) -> bytes:
     base = PdfReader(BytesIO(_render_base_pdf(snapshot)))
-    appendix = PdfReader(BytesIO(_text_pdf(_recovery_lines(snapshot))))
+    appendix = PdfReader(BytesIO(_text_pdf(_appendix_lines(snapshot))))
     writer = PdfWriter()
     for page in base.pages:
         writer.add_page(page)
@@ -148,8 +177,35 @@ def render_pdf(snapshot: dict[str, Any]) -> bytes:
     return output.getvalue()
 
 
+def _prepare_assessment_sheet(workbook, snapshot: dict[str, Any]) -> None:
+    if "Approved Assessment" not in workbook.sheetnames:
+        return
+    sheet = workbook["Approved Assessment"]
+    sheet.insert_rows(1, amount=9)
+    assessment = snapshot.get("approved_assessment")
+    rows = [
+        ("Control", "Digest-bound approved assessment handoff only"),
+        ("Authority", assessment.get("authority") if assessment else "No eligible approved assessment"),
+        ("Version", f"v{assessment.get('version')}" if assessment else "None"),
+        ("Classification", assessment.get("classification") if assessment else "None"),
+        ("Source state at export", assessment.get("source_state_at_export") if assessment else "None"),
+        ("Source fingerprint", assessment.get("source_fingerprint") if assessment else "None"),
+        ("Approved content digest", assessment.get("approved_content_hash") if assessment else "None"),
+        ("Control notice", assessment.get("disclaimer") if assessment else "Draft, under-review and undigested legacy assessments are excluded."),
+    ]
+    for index, row in enumerate(rows, start=1):
+        sheet.cell(index, 1, row[0])
+        sheet.cell(index, 2, row[1])
+        sheet.cell(index, 1).font = Font(bold=True)
+    sheet.freeze_panes = "A11"
+    for row in sheet.iter_rows():
+        for cell in row:
+            cell.alignment = Alignment(vertical="top", wrap_text=True)
+
+
 def render_xlsx(snapshot: dict[str, Any]) -> bytes:
     workbook = load_workbook(BytesIO(_render_base_xlsx(snapshot)))
+    _prepare_assessment_sheet(workbook, snapshot)
     if "Recovery Review" in workbook.sheetnames:
         del workbook["Recovery Review"]
     sheet = workbook.create_sheet("Recovery Review")
