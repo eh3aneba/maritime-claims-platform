@@ -11,6 +11,7 @@ from fastapi import Request, Response
 REQUEST_ID_HEADER = "X-Request-ID"
 _REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 request_logger = logging.getLogger("mcri.request")
+request_logger.setLevel(logging.INFO)
 
 
 def _request_id(raw_value: str | None) -> str:
