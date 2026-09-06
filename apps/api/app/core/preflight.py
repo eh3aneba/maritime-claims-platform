@@ -8,10 +8,10 @@ from urllib.parse import urlparse
 from sqlalchemy import text
 
 from app.core.config import get_settings
+from app.core.deployment_policy import DEFAULT_SECRET, validate_production_deployment
 from app.db.session import create_session
 from app.modules.documents.malware import MalwareScannerError, ping_clamd
 
-DEFAULT_SECRET = "replace-with-a-long-random-secret"
 DEFAULT_DB_PASSWORD_FRAGMENT = "change-me-in-local-env"
 
 
@@ -32,8 +32,16 @@ def run_preflight(*, require_db: bool = True) -> tuple[list[str], list[str]]:
         _fail(errors, "Wildcard CORS is not allowed when credential cookies are used")
 
     if strict:
-        if settings.secret_key == DEFAULT_SECRET or len(settings.secret_key) < 32:
+        if env == "production":
+            errors.extend(
+                validate_production_deployment(
+                    secret_key=settings.secret_key,
+                    public_api_base_url=settings.next_public_api_base_url,
+                )
+            )
+        elif settings.secret_key == DEFAULT_SECRET or len(settings.secret_key) < 32:
             _fail(errors, "SECRET_KEY must be replaced with at least 32 random characters")
+
         if DEFAULT_DB_PASSWORD_FRAGMENT in settings.database_url:
             _fail(errors, "DATABASE_URL still contains the local demo password")
         if env in {"staging", "production"}:
@@ -95,8 +103,13 @@ def run_preflight(*, require_db: bool = True) -> tuple[list[str], list[str]]:
         except Exception as exc:  # deployment diagnostic intentionally broad
             _fail(errors, f"Database connectivity failed: {type(exc).__name__}: {exc}")
 
-    parsed = urlparse(os.getenv("NEXT_PUBLIC_API_BASE_URL", ""))
-    if strict and parsed.scheme == "http" and parsed.hostname not in {"localhost", "127.0.0.1", None}:
+    parsed = urlparse(settings.next_public_api_base_url)
+    if (
+        strict
+        and env != "production"
+        and parsed.scheme == "http"
+        and parsed.hostname not in {"localhost", "127.0.0.1", None}
+    ):
         warnings.append("NEXT_PUBLIC_API_BASE_URL uses HTTP in a shared environment; terminate TLS before external access")
 
     return errors, warnings
