@@ -29,6 +29,15 @@ const roleKeys: Record<string, TranslationKey> = {
   claims_handler: "role.claims_handler",
 };
 
+const focusableSelector = [
+  "a[href]",
+  "button:not([disabled])",
+  "input:not([disabled])",
+  "select:not([disabled])",
+  "textarea:not([disabled])",
+  '[tabindex]:not([tabindex="-1"])',
+].join(",");
+
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -38,6 +47,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const menuButtonRef = useRef<HTMLButtonElement | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const drawerRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     getCurrentUser()
@@ -60,8 +70,37 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
+        event.preventDefault();
         setMobileNavOpen(false);
         requestAnimationFrame(() => menuButtonRef.current?.focus());
+        return;
+      }
+
+      if (event.key !== "Tab") return;
+      const drawer = drawerRef.current;
+      if (!drawer) return;
+
+      const focusable = Array.from(drawer.querySelectorAll<HTMLElement>(focusableSelector)).filter(
+        (element) => element.getAttribute("aria-hidden") !== "true",
+      );
+      if (focusable.length === 0) return;
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = document.activeElement;
+
+      if (!drawer.contains(active)) {
+        event.preventDefault();
+        first.focus();
+        return;
+      }
+
+      if (event.shiftKey && active === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && active === last) {
+        event.preventDefault();
+        first.focus();
       }
     }
 
@@ -78,7 +117,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   if (checking) {
-    return <div className="grid min-h-screen place-items-center bg-slate-50 text-sm text-slate-500">{t("common.loadingSession")}</div>;
+    return (
+      <div
+        role="status"
+        aria-live="polite"
+        aria-busy="true"
+        className="grid min-h-screen place-items-center bg-slate-50 text-sm text-slate-500"
+      >
+        {t("common.loadingSession")}
+      </div>
+    );
   }
   if (!user) return null;
 
@@ -144,11 +192,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <div className="fixed inset-0 z-40 lg:hidden">
           <button
             type="button"
-            aria-label={closeNavLabel}
+            tabIndex={-1}
+            aria-hidden="true"
             className="absolute inset-0 h-full w-full bg-slate-950/55"
             onClick={() => setMobileNavOpen(false)}
           />
           <aside
+            ref={drawerRef}
             id="mobile-navigation"
             role="dialog"
             aria-modal="true"
