@@ -127,7 +127,8 @@ class EmailProviderAdapter(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     @property
     def credential_backend(self) -> str:
-        return self.credential_reference.partition("://")[0] or "invalid"
+        backend, separator, _ = self.credential_reference.partition("://")
+        return backend if separator and backend in {"env", "vault", "secret-manager"} else "invalid"
 
     @property
     def credential_reference_configured(self) -> bool:
