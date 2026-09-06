@@ -56,7 +56,10 @@ async def request_observability_middleware(request: Request, call_next) -> Respo
         response = await call_next(request)
     except Exception:
         duration_ms = (perf_counter() - started) * 1000
-        request_logger.exception(
+        # Keep this sink metadata-minimal. Exception text and tracebacks can embed
+        # claim, evidence, credential or dependency details, so they are excluded
+        # from the operational request event by design.
+        request_logger.error(
             _event_payload(
                 event="http_request_failed",
                 request_id=request_id,
