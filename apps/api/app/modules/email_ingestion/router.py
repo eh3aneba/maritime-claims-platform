@@ -14,13 +14,16 @@ from app.modules.email_ingestion.provider_attachment_retention import (
     expire_due_with_provider_attachment_purge,
     run_retention_with_provider_attachment_purge,
 )
+from app.modules.email_ingestion.provider_checkpoint_controls import (
+    execute_governed_provider_adapter_with_history,
+    list_provider_reconciliation_with_checkpoint_controls,
+    reset_gmail_checkpoint,
+)
 from app.modules.email_ingestion.provider_evidence_admission import (
     admit_provider_attachment_to_evidence,
 )
 from app.modules.email_ingestion.provider_operations import (
     create_governed_adapter,
-    execute_governed_provider_adapter,
-    list_provider_reconciliation,
     record_governed_adapter_run,
     transition_governed_adapter,
 )
@@ -31,8 +34,8 @@ from app.modules.email_ingestion.schemas import (
     EmailAttachmentEvidenceAdmissionRequest, EmailAttachmentEvidenceAdmissionResponse,
     EmailConnectionCreate, EmailConnectionResponse, EmailConnectionTransition, EmailInboxResponse,
     EmailProviderExecutionRequest, EmailProviderExecutionResponse, EmailReview,
-    ExpiryResponse, IngestedEmailResponse, NormalizedEmailInput, RetentionRunCreate,
-    RetentionRunResponse,
+    ExpiryResponse, GmailCheckpointResetRequest, GmailCheckpointResetResponse,
+    IngestedEmailResponse, NormalizedEmailInput, RetentionRunCreate, RetentionRunResponse,
 )
 from app.modules.email_ingestion.service import (
     create_connection, get_adapter, get_connection, get_message,
@@ -154,7 +157,7 @@ def adapter_operations(current_user: CurrentUser, db: Annotated[Session, Depends
 
 @router.get("/adapter-reconciliation")
 def adapter_reconciliation(manager: Manager, db: Annotated[Session, Depends(get_db)]):
-    return list_provider_reconciliation(db, manager)
+    return list_provider_reconciliation_with_checkpoint_controls(db, manager)
 
 
 @router.post("/adapters", response_model=EmailAdapterResponse, status_code=201)
@@ -188,7 +191,25 @@ def adapter_run(adapter_id: UUID, payload: EmailAdapterRunCreate, manager: Manag
 @router.post("/adapters/{adapter_id}/execute", response_model=EmailProviderExecutionResponse)
 def adapter_execute(adapter_id: UUID, payload: EmailProviderExecutionRequest, manager: Manager,
                     db: Annotated[Session, Depends(get_db)]):
-    return execute_governed_provider_adapter(
+    return execute_governed_provider_adapter_with_history(
+        db,
+        get_adapter(db, manager.organization_id, adapter_id),
+        manager,
+        payload,
+    )
+
+
+@router.post(
+    "/adapters/{adapter_id}/checkpoint-reset",
+    response_model=GmailCheckpointResetResponse,
+)
+def adapter_checkpoint_reset(
+    adapter_id: UUID,
+    payload: GmailCheckpointResetRequest,
+    manager: Manager,
+    db: Annotated[Session, Depends(get_db)],
+):
+    return reset_gmail_checkpoint(
         db,
         get_adapter(db, manager.organization_id, adapter_id),
         manager,
