@@ -66,6 +66,20 @@ class AttachmentManifestResponse(BaseModel):
     admission_status: str
 
 
+class EmailAttachmentAcquisitionResponse(BaseModel):
+    manifest_id: UUID
+    message_id: UUID
+    acquired_claim_id: UUID | None
+    admission_status: str
+    acquired_file_size_bytes: int | None
+    acquired_file_hash: str | None
+    malware_scan_status: str | None
+    acquired_at: datetime | None
+    malware_scanned_at: datetime | None
+    acquisition_failure_code: str | None
+    replayed: bool
+
+
 class IngestedEmailResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: UUID

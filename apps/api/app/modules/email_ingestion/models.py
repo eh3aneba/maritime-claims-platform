@@ -2,7 +2,7 @@ import enum
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, DateTime, Enum, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -74,7 +74,10 @@ class IngestedEmailMessage(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 class EmailAttachmentManifest(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "email_attachment_manifests"
-    __table_args__ = (Index("ix_email_attachment_message", "message_id", "created_at"),)
+    __table_args__ = (
+        Index("ix_email_attachment_message", "message_id", "created_at"),
+        Index("ix_email_attachment_acquired_claim", "acquired_claim_id"),
+    )
 
     organization_id: Mapped[UUID] = mapped_column(ForeignKey("organizations.id", ondelete="RESTRICT"), index=True)
     message_id: Mapped[UUID] = mapped_column(ForeignKey("ingested_email_messages.id", ondelete="CASCADE"), index=True)
@@ -82,6 +85,16 @@ class EmailAttachmentManifest(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     mime_type: Mapped[str] = mapped_column(String(150))
     file_size_bytes: Mapped[int] = mapped_column(Integer)
     provider_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    provider_attachment_id: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    acquired_claim_id: Mapped[UUID | None] = mapped_column(ForeignKey("claims.id", ondelete="RESTRICT"), nullable=True)
+    acquired_by_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    quarantine_key: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    acquired_file_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    acquired_file_size_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    malware_scan_status: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    acquisition_failure_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    acquired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    malware_scanned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     admission_status: Mapped[str] = mapped_column(String(60), default="blocked_pending_quarantine", server_default="blocked_pending_quarantine")
 
 
