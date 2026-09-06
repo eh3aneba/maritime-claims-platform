@@ -1,8 +1,9 @@
-"""Final Phase 12K mobile, RTL and accessibility browser coverage."""
+"""Mobile, RTL and accessibility browser coverage for the governed operator shell."""
 from __future__ import annotations
 
 import os
 import re
+import time
 
 from playwright.sync_api import expect, sync_playwright
 
@@ -29,13 +30,7 @@ def main() -> None:
         page.wait_for_url("**/dashboard")
 
         def observe_request(request) -> None:
-            watched_paths = (
-                "/api/v1/claims",
-                "/api/v1/claim-workbench",
-                "/api/v1/ai-",
-                "/api/v1/governance-",
-            )
-            if any(path in request.url for path in watched_paths) and request.method not in {"GET", "HEAD", "OPTIONS"}:
+            if "/api/v1/" in request.url and request.method not in {"GET", "HEAD", "OPTIONS"}:
                 mutating_requests.append(f"{request.method} {request.url}")
 
         page.on("request", observe_request)
@@ -65,10 +60,34 @@ def main() -> None:
         expect(current_dashboard).to_have_count(1)
         expect(current_dashboard).to_have_attribute("href", "/dashboard")
 
+        close_button = drawer.get_by_role("button", name="Close navigation")
+        sign_out_button = drawer.get_by_role("button", name="Sign out")
+        expect(close_button).to_be_focused()
+        expect(page.locator('button[aria-hidden="true"][tabindex="-1"]')).to_have_count(1)
+
+        sign_out_button.focus()
+        page.keyboard.press("Tab")
+        expect(close_button).to_be_focused()
+        close_button.focus()
+        page.keyboard.press("Shift+Tab")
+        expect(sign_out_button).to_be_focused()
+
         page.keyboard.press("Escape")
         expect(drawer).to_have_count(0)
         expect(menu_button).to_be_focused()
         expect(menu_button).to_have_attribute("aria-expanded", "false")
+
+        def delay_current_user(route) -> None:
+            time.sleep(0.75)
+            route.continue_()
+
+        page.route("**/api/v1/auth/me", delay_current_user)
+        page.reload(wait_until="domcontentloaded")
+        session_status = page.get_by_role("status")
+        expect(session_status).to_have_attribute("aria-busy", "true")
+        expect(session_status).to_contain_text("Checking secure session")
+        expect(page.get_by_role("heading", name="Dashboard")).to_be_visible(timeout=10_000)
+        page.unroute("**/api/v1/auth/me", delay_current_user)
 
         page.get_by_role("button", name="FA").click()
         expect(page.locator("html")).to_have_attribute("lang", "fa")
@@ -88,7 +107,16 @@ def main() -> None:
         expect(rtl_drawer).to_be_visible()
         expect(rtl_drawer).to_have_class(re.compile(r"\bright-0\b"))
         expect(rtl_drawer.locator('a[aria-current="page"]')).to_have_count(1)
-        expect(rtl_drawer.get_by_role("button", name="خروج")).to_be_visible()
+
+        rtl_close_button = rtl_drawer.get_by_role("button", name="بستن منو")
+        rtl_sign_out_button = rtl_drawer.get_by_role("button", name="خروج")
+        expect(rtl_close_button).to_be_focused()
+        rtl_sign_out_button.focus()
+        page.keyboard.press("Tab")
+        expect(rtl_close_button).to_be_focused()
+        rtl_close_button.focus()
+        page.keyboard.press("Shift+Tab")
+        expect(rtl_sign_out_button).to_be_focused()
 
         rtl_drawer.locator('a[href="/claims"]').click()
         page.wait_for_url("**/claims")
@@ -96,15 +124,23 @@ def main() -> None:
         expect(page.get_by_role("heading", name="پرونده‌ها")).to_be_visible()
         expect(page.locator("#mobile-navigation")).to_have_count(0)
 
+        page.route("**/api/v1/auth/me", delay_current_user)
+        page.reload(wait_until="domcontentloaded")
+        fa_session_status = page.get_by_role("status")
+        expect(fa_session_status).to_have_attribute("aria-busy", "true")
+        expect(fa_session_status).to_contain_text("در حال بررسی نشست امن")
+        expect(page.get_by_role("heading", name="پرونده‌ها")).to_be_visible(timeout=10_000)
+        page.unroute("**/api/v1/auth/me", delay_current_user)
+
         page.get_by_role("button", name="EN").click()
         expect(page.locator("html")).to_have_attribute("lang", "en")
         expect(page.locator("html")).to_have_attribute("dir", "ltr")
         expect(page.get_by_role("heading", name="Claims")).to_be_visible()
 
-        assert not mutating_requests, f"Locale/mobile navigation must not mutate claim or AI/governance APIs: {mutating_requests}"
+        assert not mutating_requests, f"Accessibility/localization interactions must not mutate APIs: {mutating_requests}"
         browser.close()
 
-    print("Final localization / RTL / accessibility browser E2E passed.")
+    print("Localization / RTL / accessibility browser E2E passed.")
 
 
 if __name__ == "__main__":
