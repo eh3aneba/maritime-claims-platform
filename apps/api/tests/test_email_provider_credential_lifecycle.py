@@ -32,7 +32,7 @@ def _rotate(adapter_id: str, reference: str, *, confirm: bool = True, reason: st
     )
 
 
-def test_rotation_redacts_locators_preserves_checkpoint_and_never_calls_provider(monkeypatch) -> None:
+def test_rotation_redacts_locators_preserves_checkpoint_and_invalidates_live_authority(monkeypatch) -> None:
     old_reference = "env://MCRI_PROVIDER_TEST_TOKEN"
     new_reference = "vault://production/mcri/graph-alpha"
     reason = "Rotate after an external credential custody change for the production mailbox."
@@ -40,6 +40,7 @@ def test_rotation_redacts_locators_preserves_checkpoint_and_never_calls_provider
     checkpoint_hash = sha256(b"already-acknowledged-cursor").hexdigest()
     with TestingSessionLocal() as db:
         item = db.get(EmailProviderAdapter, UUID(adapter["id"]))
+        assert item.live_execution_enabled is True
         item.checkpoint_hash = checkpoint_hash
         db.commit()
 
@@ -58,7 +59,8 @@ def test_rotation_redacts_locators_preserves_checkpoint_and_never_calls_provider
     assert payload["credential_reference_changed_at"] is not None
     assert payload["credential_resolver_available"] is False
     assert payload["checkpoint_preserved"] is True
-    assert payload["next_sync_at"] is not None
+    assert payload["live_execution_enabled"] is False
+    assert payload["next_sync_at"] is None
     assert old_reference not in str(payload)
     assert new_reference not in str(payload)
     assert checkpoint_hash not in str(payload)
@@ -75,6 +77,8 @@ def test_rotation_redacts_locators_preserves_checkpoint_and_never_calls_provider
     assert adapter_view["credential_reference_configured"] is True
     assert adapter_view["credential_reference_version"] == 2
     assert adapter_view["checkpoint_present"] is True
+    assert adapter_view["live_execution_enabled"] is False
+    assert adapter_view["next_sync_at"] is None
     assert "credential_reference" not in adapter_view
     assert "checkpoint_hash" not in adapter_view
 
@@ -83,6 +87,7 @@ def test_rotation_redacts_locators_preserves_checkpoint_and_never_calls_provider
         assert item.credential_reference == new_reference
         assert item.credential_reference_version == 2
         assert item.checkpoint_hash == checkpoint_hash
+        assert item.live_execution_enabled is False
         audit = db.scalar(
             select(AuditLog).where(
                 AuditLog.entity_id == item.id,
@@ -98,27 +103,32 @@ def test_rotation_redacts_locators_preserves_checkpoint_and_never_calls_provider
         assert reason not in serialized_audit
         assert audit.new_values["credential_backend_before"] == "env"
         assert audit.new_values["credential_backend_after"] == "vault"
+        assert audit.new_values["live_execution_invalidated"] is True
 
 
-def test_unsupported_external_secret_backend_remains_fail_closed_and_content_free() -> None:
+def test_unsupported_external_secret_backend_requires_reactivation_and_remains_fail_closed() -> None:
     _, _, adapter = _adapter("microsoft_graph")
     locator = "secret-manager://mcri/provider/graph-alpha"
     rotated = _rotate(adapter["id"], locator)
     assert rotated.status_code == 200, rotated.text
     assert rotated.json()["credential_backend"] == "secret-manager"
     assert rotated.json()["credential_resolver_available"] is False
+    assert rotated.json()["live_execution_enabled"] is False
 
     execution = client.post(
         f"/api/v1/email-ingestion/adapters/{adapter['id']}/execute",
         json={"idempotency_key": "credential-resolver-unavailable-0001", "trigger": "manual"},
     )
-    assert execution.status_code == 200, execution.text
-    body = execution.json()
-    assert body["run"]["status"] == "failed"
-    assert body["run"]["failure_summary"] == "credential_resolver_unavailable"
-    assert body["run"]["checkpoint_present"] is False
-    assert "checkpoint_hash" not in body["run"]
-    assert locator not in str(body)
+    assert execution.status_code == 409
+
+    activation = client.post(
+        f"/api/v1/email-ingestion/adapters/{adapter['id']}/live-activation",
+        json={
+            "confirm_activation": True,
+            "reason": "Verify unsupported external secret backend remains fail closed before live access.",
+        },
+    )
+    assert activation.status_code == 409
 
     reconciliation = client.get("/api/v1/email-ingestion/adapter-reconciliation")
     assert reconciliation.status_code == 200
@@ -126,6 +136,9 @@ def test_unsupported_external_secret_backend_remains_fail_closed_and_content_fre
     assert item["credential_backend"] == "secret-manager"
     assert item["credential_reference_configured"] is True
     assert item["credential_resolver_available"] is False
+    assert item["live_execution_enabled"] is False
+    assert item["operational_state"] == "activation_required"
+    assert item["activation_blocker"] == "credential_resolver_unavailable"
     assert locator not in str(item)
     assert "mcri/provider/graph-alpha" not in str(item)
 
@@ -167,6 +180,7 @@ def test_rotation_is_explicit_manager_only_tenant_scoped_and_revoked_gated() -> 
         json={"action": "revoke", "note": "Revoke source before credential rotation gate test."},
     )
     assert revoked.status_code == 200
+    assert revoked.json()["live_execution_enabled"] is False
     blocked = _rotate(adapter["id"], "env://ROTATED_GMAIL_TOKEN")
     assert blocked.status_code == 409
 
@@ -199,9 +213,10 @@ def test_pending_checkpoint_handoff_blocks_rotation() -> None:
         item = db.get(EmailProviderAdapter, UUID(adapter["id"]))
         assert item.credential_reference == "env://MCRI_PROVIDER_TEST_TOKEN"
         assert item.credential_reference_version == 1
+        assert item.live_execution_enabled is True
 
 
-def test_suspended_adapter_can_rotate_but_remains_unscheduled() -> None:
+def test_suspended_adapter_can_rotate_but_remains_unscheduled_and_disabled() -> None:
     _, _, adapter = _adapter("gmail_api")
     suspended = client.post(
         f"/api/v1/email-ingestion/adapters/{adapter['id']}/transition",
@@ -209,12 +224,14 @@ def test_suspended_adapter_can_rotate_but_remains_unscheduled() -> None:
     )
     assert suspended.status_code == 200
     assert suspended.json()["next_sync_at"] is None
+    assert suspended.json()["live_execution_enabled"] is False
 
     rotated = _rotate(adapter["id"], "env://ROTATED_GMAIL_TOKEN")
     assert rotated.status_code == 200, rotated.text
     assert rotated.json()["credential_backend"] == "env"
     assert rotated.json()["credential_reference_version"] == 2
     assert rotated.json()["next_sync_at"] is None
+    assert rotated.json()["live_execution_enabled"] is False
 
 
 def test_invalid_reference_is_rejected_but_legacy_invalid_reference_can_be_repaired() -> None:
@@ -230,8 +247,6 @@ def test_invalid_reference_is_rejected_but_legacy_invalid_reference_can_be_repai
             "permission_manifest": ["messages.read.allowed_folder"],
         },
     )
-    # The helper-created connection already has an adapter, but validation must
-    # still reject the invalid env locator before any duplicate adapter mutation.
     assert invalid_create.status_code == 422
 
     reset_database()
@@ -245,6 +260,7 @@ def test_invalid_reference_is_rejected_but_legacy_invalid_reference_can_be_repai
     assert repaired.status_code == 200, repaired.text
     assert repaired.json()["credential_backend"] == "env"
     assert repaired.json()["credential_reference_version"] == 2
+    assert repaired.json()["live_execution_enabled"] is False
     with TestingSessionLocal() as db:
         item = db.get(EmailProviderAdapter, UUID(adapter["id"]))
         audit = db.scalar(

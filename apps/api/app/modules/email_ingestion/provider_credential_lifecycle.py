@@ -22,6 +22,7 @@ from app.modules.email_ingestion.provider_credentials import (
     ProviderCredentialMetadata,
     inspect_credential_reference,
 )
+from app.modules.email_ingestion.provider_live_activation import invalidate_live_provider_activation
 from app.modules.email_ingestion.schemas import CredentialReferenceRotationRequest
 from app.modules.users.models import User
 
@@ -104,19 +105,12 @@ def rotate_provider_credential_reference(
         raise HTTPException(409, "Credential reference is unchanged")
 
     previous_checkpoint_hash = adapter.checkpoint_hash
+    was_live = bool(adapter.live_execution_enabled)
     now = datetime.now(UTC)
+    invalidate_live_provider_activation(adapter)
     adapter.credential_reference = payload.credential_reference
     adapter.credential_reference_version = max(adapter.credential_reference_version or 1, 1) + 1
     adapter.credential_reference_changed_at = now
-
-    connection = _connection_for_adapter(db, adapter)
-    active_pull_source = (
-        adapter.provider_kind in _PULL_KINDS
-        and adapter.status == "active"
-        and connection is not None
-        and connection.status == EmailConnectionStatus.ACTIVE
-    )
-    adapter.next_sync_at = now if active_pull_source else None
 
     write_audit_log(
         db,
@@ -133,9 +127,10 @@ def rotate_provider_credential_reference(
             "operator_reason_supplied": True,
             "checkpoint_preserved": adapter.checkpoint_hash == previous_checkpoint_hash,
             "resolver_available": new_metadata.resolver_available,
+            "live_execution_invalidated": was_live,
         },
         details=(
-            "External credential reference rotated by explicit operator action. "
+            "External credential reference rotated by explicit operator action and live provider authority cleared. "
             "Credential locators, resolved credential values, checkpoint values/hashes and operator reason text are excluded from audit metadata."
         ),
     )
@@ -149,6 +144,7 @@ def rotate_provider_credential_reference(
         "credential_resolver_available": new_metadata.resolver_available,
         "checkpoint_preserved": adapter.checkpoint_hash == previous_checkpoint_hash,
         "next_sync_at": adapter.next_sync_at,
+        "live_execution_enabled": adapter.live_execution_enabled,
     }
 
 
@@ -161,4 +157,23 @@ def list_provider_reconciliation_with_credentials(db: Session, user: User) -> di
         item.update(_metadata_dict(adapter))
         item["credential_reference_version"] = adapter.credential_reference_version
         item["credential_reference_changed_at"] = adapter.credential_reference_changed_at
+        item["live_execution_enabled"] = adapter.live_execution_enabled
+        item["live_execution_enabled_at"] = adapter.live_execution_enabled_at
+        if adapter.provider_kind in _PULL_KINDS and adapter.status == "active":
+            connection = _connection_for_adapter(db, adapter)
+            if connection is not None and connection.status == EmailConnectionStatus.ACTIVE and not adapter.live_execution_enabled:
+                metadata = _safe_metadata(adapter.credential_reference)
+                if metadata.backend == "invalid":
+                    blocker = "credential_reference_invalid"
+                elif not metadata.resolver_available:
+                    blocker = "credential_resolver_unavailable"
+                else:
+                    blocker = "operator_activation_required"
+                item["operational_state"] = "activation_required"
+                item["activation_blocker"] = blocker
+                item["next_sync_at"] = None
+            else:
+                item["activation_blocker"] = None
+        else:
+            item["activation_blocker"] = None
     return result

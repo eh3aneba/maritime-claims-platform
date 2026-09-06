@@ -15,6 +15,7 @@ from app.modules.email_ingestion.models import (
     EmailProviderAdapter,
 )
 from app.modules.email_ingestion.provider_execution import execute_provider_adapter
+from app.modules.email_ingestion.provider_live_activation import invalidate_live_provider_activation
 from app.modules.email_ingestion.schemas import (
     EmailAdapterCreate,
     EmailAdapterRunCreate,
@@ -38,9 +39,6 @@ def _is_pull_adapter(item: EmailProviderAdapter) -> bool:
 
 
 def _as_utc(value: datetime) -> datetime:
-    # SQLite test/dev adapters can return timezone-aware columns as naive values.
-    # Treat stored provider scheduling timestamps as UTC at this boundary so the
-    # operational-state comparison is stable across SQLite and PostgreSQL.
     if value.tzinfo is None:
         return value.replace(tzinfo=UTC)
     return value.astimezone(UTC)
@@ -48,10 +46,14 @@ def _as_utc(value: datetime) -> datetime:
 
 def create_governed_adapter(db: Session, user: User, payload: EmailAdapterCreate) -> EmailProviderAdapter:
     item = create_adapter(db, user, payload)
-    if not _is_pull_adapter(item):
+    # Pull adapters are configured but not live-authorized at creation. Provider
+    # webhooks never use the pull activation model.
+    if _is_pull_adapter(item):
+        invalidate_live_provider_activation(item)
+    else:
         item.next_sync_at = None
-        db.commit()
-        db.refresh(item)
+    db.commit()
+    db.refresh(item)
     return item
 
 
@@ -62,11 +64,11 @@ def transition_governed_adapter(
     action: str,
     note: str,
 ) -> EmailProviderAdapter:
+    # Clear live authority before transition_adapter commits so suspension,
+    # revocation and later reactivation cannot implicitly restore network access.
+    invalidate_live_provider_activation(item)
     item = transition_adapter(db, item, user, action, note)
-    if item.status in {"suspended", "revoked"}:
-        item.next_sync_at = None
-    elif item.status == "active":
-        item.next_sync_at = datetime.now(UTC) if _is_pull_adapter(item) else None
+    item.next_sync_at = None
     db.commit()
     db.refresh(item)
     return item

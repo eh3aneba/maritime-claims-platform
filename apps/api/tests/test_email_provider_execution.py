@@ -1,4 +1,5 @@
 import base64
+from datetime import UTC, datetime
 from hashlib import sha256
 from uuid import UUID
 
@@ -42,7 +43,19 @@ def _adapter(
         },
     )
     assert created.status_code == 201, created.text
-    return claim_id, connection, created.json()
+    adapter = created.json()
+    # These legacy regression tests exercise provider execution/checkpoint logic,
+    # not the Phase 15.9 activation endpoint. Seed the persisted readiness state
+    # directly so their historical assertions remain focused and deterministic.
+    if provider_kind in {"microsoft_graph", "gmail_api"}:
+        with TestingSessionLocal() as db:
+            db_adapter = db.get(EmailProviderAdapter, UUID(adapter["id"]))
+            db_adapter.live_execution_enabled = True
+            db_adapter.live_execution_enabled_at = datetime.now(UTC)
+            db_adapter.next_sync_at = datetime.now(UTC)
+            db.commit()
+        adapter["live_execution_enabled"] = True
+    return claim_id, connection, adapter
 
 
 def _ack(adapter_id: str, run_id: str, checkpoint: str):

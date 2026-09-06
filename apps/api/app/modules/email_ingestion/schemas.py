@@ -174,6 +174,8 @@ class EmailAdapterResponse(BaseModel):
     next_sync_at: datetime | None
     last_sync_at: datetime | None
     checkpoint_present: bool
+    live_execution_enabled: bool
+    live_execution_enabled_at: datetime | None
     revoked_at: datetime | None
     created_at: datetime
 
@@ -192,6 +194,23 @@ class CredentialReferenceRotationResponse(BaseModel):
     credential_resolver_available: bool
     checkpoint_preserved: bool
     next_sync_at: datetime | None
+    live_execution_enabled: bool
+
+
+class LiveProviderActivationRequest(BaseModel):
+    confirm_activation: bool = False
+    reason: str = Field(min_length=20, max_length=1000)
+
+
+class LiveProviderActivationResponse(BaseModel):
+    adapter_id: UUID
+    provider_kind: str
+    live_execution_enabled: bool
+    live_execution_enabled_at: datetime
+    credential_backend: str
+    credential_reference_version: int
+    checkpoint_present: bool
+    next_sync_at: datetime
 
 
 class EmailAdapterRunCreate(BaseModel):

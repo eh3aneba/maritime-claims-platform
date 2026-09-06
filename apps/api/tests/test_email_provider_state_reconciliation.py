@@ -80,7 +80,7 @@ def test_provider_webhook_has_no_pull_schedule_or_checkpoint_authority() -> None
         assert item.checkpoint_hash is None
 
 
-def test_pull_lifecycle_controls_due_schedule() -> None:
+def test_pull_lifecycle_controls_due_schedule_and_requires_fresh_live_activation() -> None:
     _, _, adapter = _adapter("gmail_api")
     reconciliation = client.get("/api/v1/email-ingestion/adapter-reconciliation")
     assert reconciliation.status_code == 200
@@ -92,6 +92,7 @@ def test_pull_lifecycle_controls_due_schedule() -> None:
     assert current["credential_reference_configured"] is True
     assert current["credential_reference_version"] == 1
     assert current["credential_resolver_available"] is True
+    assert current["live_execution_enabled"] is True
 
     suspended = client.post(
         f"/api/v1/email-ingestion/adapters/{adapter['id']}/transition",
@@ -99,17 +100,20 @@ def test_pull_lifecycle_controls_due_schedule() -> None:
     )
     assert suspended.status_code == 200
     assert suspended.json()["next_sync_at"] is None
+    assert suspended.json()["live_execution_enabled"] is False
     state = client.get("/api/v1/email-ingestion/adapter-reconciliation").json()["items"][0]
     assert state["operational_state"] == "suspended"
 
     reactivated = client.post(
         f"/api/v1/email-ingestion/adapters/{adapter['id']}/transition",
-        json={"action": "reactivate", "note": "Provider maintenance completed."},
+        json={"action": "reactivate", "note": "Provider maintenance completed; require live preflight again."},
     )
     assert reactivated.status_code == 200
-    assert reactivated.json()["next_sync_at"] is not None
+    assert reactivated.json()["next_sync_at"] is None
+    assert reactivated.json()["live_execution_enabled"] is False
     state = client.get("/api/v1/email-ingestion/adapter-reconciliation").json()["items"][0]
-    assert state["operational_state"] == "due"
+    assert state["operational_state"] == "activation_required"
+    assert state["activation_blocker"] == "operator_activation_required"
 
 
 def test_failed_pull_uses_bounded_backoff_and_surfaces_reconciliation(monkeypatch) -> None:
@@ -146,6 +150,7 @@ def test_failed_pull_uses_bounded_backoff_and_surfaces_reconciliation(monkeypatc
     assert item["last_run_status"] == "failed"
     assert item["credential_backend"] == "env"
     assert item["credential_resolver_available"] is True
+    assert item["live_execution_enabled"] is True
     serialized = str(payload)
     assert "runtime-only-secret" not in serialized
     assert "env://MCRI_PROVIDER_TEST_TOKEN" not in serialized
