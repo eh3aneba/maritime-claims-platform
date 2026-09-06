@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
+from app.core.observability import request_observability_middleware
 from app.modules.adjustments.router import router as adjustments_router
 from app.modules.ai_bounded_full_production.router import router as ai_bounded_full_production_router
 from app.modules.ai_bounded_full_production_outcomes.router import router as ai_bounded_full_production_outcomes_router
@@ -73,6 +74,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.middleware("http")(request_observability_middleware)
 
 app.include_router(health_router, prefix=settings.api_v1_prefix)
 app.include_router(ai_evaluation_router, prefix=settings.api_v1_prefix)
