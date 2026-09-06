@@ -52,6 +52,10 @@ def _canonical_hash(payload: dict) -> str:
     ).hexdigest()
 
 
+def _enum_value(value):
+    return value.value if hasattr(value, "value") else value
+
+
 def _content_hash(item: ClaimCorrespondence) -> str:
     canonical = "\n".join([
         item.direction.value,
@@ -66,12 +70,11 @@ def _content_hash(item: ClaimCorrespondence) -> str:
 
 
 def _state_fingerprint(item: ClaimCorrespondence) -> str:
-    """Identity of the exact communication state a human reviews.
+    """Identity of the exact communication content/linkage state a human reviews.
 
-    Dispatch metadata (channel/reference/sent timestamp) is deliberately excluded because it is
-    recorded only after approval. Dynamic requirement status is also excluded here and will be
-    handled as request-context binding in Phase 13.9B rather than invalidating unrelated free-form
-    correspondence when the claim changes elsewhere.
+    Dispatch metadata and dynamic document-request state are deliberately excluded. Request-linked
+    correspondence receives a second, independently computed request-context fingerprint so an
+    unrelated claim change does not invalidate free-form correspondence.
     """
 
     return _canonical_hash({
@@ -87,6 +90,90 @@ def _state_fingerprint(item: ClaimCorrespondence) -> str:
     })
 
 
+def _request_context(
+    db: Session,
+    *,
+    item: ClaimCorrespondence,
+    lock: bool = False,
+    fail_closed: bool = True,
+) -> tuple[str | None, DocumentRequestBatch | None, list[ClaimDocumentRequirement]]:
+    """Return the exact dynamic request/requirement context for request-linked correspondence.
+
+    Volatile timestamps are excluded. Only material request content and requirement state enter the
+    fingerprint, so timestamp churn or unrelated claim activity cannot invalidate a human review.
+    """
+
+    if not item.request_batch_id:
+        return None, None, []
+
+    batch_stmt = select(DocumentRequestBatch).where(
+        DocumentRequestBatch.id == item.request_batch_id,
+        DocumentRequestBatch.organization_id == item.organization_id,
+        DocumentRequestBatch.claim_id == item.claim_id,
+    )
+    if lock:
+        batch_stmt = batch_stmt.with_for_update()
+    batch = db.scalar(batch_stmt)
+    if batch is None:
+        if fail_closed:
+            raise HTTPException(status_code=409, detail="Linked document request is no longer available")
+        return None, None, []
+
+    item_ids = {UUID(str(value)) for value in (item.requirement_ids or [])}
+    batch_ids = {UUID(str(value)) for value in (batch.requirement_ids or [])}
+    context_ids = item_ids | batch_ids
+    if context_ids:
+        requirement_stmt = select(ClaimDocumentRequirement).where(
+            ClaimDocumentRequirement.organization_id == item.organization_id,
+            ClaimDocumentRequirement.claim_id == item.claim_id,
+            ClaimDocumentRequirement.id.in_(context_ids),
+        )
+        if lock:
+            requirement_stmt = requirement_stmt.with_for_update()
+        requirements = list(db.scalars(requirement_stmt))
+    else:
+        requirements = []
+    if len(requirements) != len(context_ids):
+        if fail_closed:
+            raise HTTPException(status_code=409, detail="One or more linked document requirements are no longer available")
+        return None, batch, requirements
+
+    requirement_payload = []
+    for requirement in sorted(requirements, key=lambda row: str(row.id)):
+        requirement_payload.append({
+            "id": str(requirement.id),
+            "rule_id": requirement.rule_id,
+            "rule_version": requirement.rule_version,
+            "document_type": requirement.document_type,
+            "document_label": requirement.document_label,
+            "priority": _enum_value(requirement.priority),
+            "required_from_status": requirement.required_from_status,
+            "reason": requirement.reason,
+            "status": _enum_value(requirement.status),
+            "is_active": requirement.is_active,
+            "matched_document_id": str(requirement.matched_document_id) if requirement.matched_document_id else None,
+            "equivalent_claim_fact_id": str(requirement.equivalent_claim_fact_id) if requirement.equivalent_claim_fact_id else None,
+            "satisfaction_basis": requirement.satisfaction_basis,
+            "satisfaction_note": requirement.satisfaction_note,
+            "satisfied_at": requirement.satisfied_at.isoformat() if requirement.satisfied_at else None,
+        })
+
+    fingerprint = _canonical_hash({
+        "request_batch": {
+            "id": str(batch.id),
+            "recipient_label": batch.recipient_label,
+            "subject": batch.subject,
+            "draft_body": batch.draft_body,
+            "requirement_ids": sorted(str(value) for value in (batch.requirement_ids or [])),
+            "status": _enum_value(batch.status),
+            "due_date": batch.due_date.isoformat() if batch.due_date else None,
+        },
+        "correspondence_requirement_ids": sorted(str(value) for value in (item.requirement_ids or [])),
+        "requirements": requirement_payload,
+    })
+    return fingerprint, batch, requirements
+
+
 def _review_hash(
     *,
     item: ClaimCorrespondence,
@@ -94,6 +181,7 @@ def _review_hash(
     action: str,
     note: str,
     content_hash: str | None,
+    request_context_fingerprint: str | None,
     reviewed_by_id: UUID | None,
     previous_review_hash: str | None,
 ) -> str:
@@ -102,6 +190,7 @@ def _review_hash(
         "claim_id": str(item.claim_id),
         "correspondence_id": str(item.id),
         "correspondence_state_fingerprint": item.state_fingerprint,
+        "request_context_fingerprint": request_context_fingerprint,
         "state_version": item.state_version,
         "review_number": review_number,
         "action": action,
@@ -174,6 +263,7 @@ def _review_payload(decision: CorrespondenceReviewDecision) -> dict:
         "correspondence_id": decision.correspondence_id,
         "reviewed_by_id": decision.reviewed_by_id,
         "correspondence_state_fingerprint": decision.correspondence_state_fingerprint,
+        "request_context_fingerprint": decision.request_context_fingerprint,
         "state_version": decision.state_version,
         "review_number": decision.review_number,
         "action": decision.action,
@@ -188,17 +278,33 @@ def _review_payload(decision: CorrespondenceReviewDecision) -> dict:
 def correspondence_response(db: Session, *, item: ClaimCorrespondence) -> dict:
     history = review_history(db, item=item)
     latest = history[-1] if history else None
+    state_matches = bool(
+        latest is not None
+        and latest.correspondence_state_fingerprint == item.state_fingerprint
+        and latest.state_version == item.state_version
+    )
     if not item.state_fingerprint:
         review_state = "legacy_unbound"
     elif latest is None:
         review_state = "none"
-    elif (
-        latest.correspondence_state_fingerprint == item.state_fingerprint
-        and latest.state_version == item.state_version
-    ):
-        review_state = "current"
-    else:
+    elif not state_matches:
         review_state = "stale"
+    elif item.status == CorrespondenceStatus.SENT_EXTERNALLY:
+        review_state = (
+            "current"
+            if latest.action == "approve" and item.sent_review_hash == latest.review_hash
+            else "stale"
+        )
+    elif item.request_batch_id:
+        current_context, _, _ = _request_context(db, item=item, fail_closed=False)
+        if latest.request_context_fingerprint is None:
+            review_state = "legacy_unbound"
+        elif current_context is None or latest.request_context_fingerprint != current_context:
+            review_state = "stale"
+        else:
+            review_state = "current"
+    else:
+        review_state = "current"
     return {
         "id": item.id,
         "claim_id": item.claim_id,
@@ -418,6 +524,48 @@ def submit_correspondence(
         raise HTTPException(status_code=409, detail="Only outbound correspondence can be submitted for review")
     if item.status == CorrespondenceStatus.UNDER_REVIEW:
         return item
+
+    if item.status == CorrespondenceStatus.APPROVED and item.request_batch_id:
+        history = review_history(db, item=item)
+        latest = history[-1] if history else None
+        if (
+            latest is None
+            or latest.action != "approve"
+            or latest.correspondence_state_fingerprint != item.state_fingerprint
+            or latest.state_version != item.state_version
+        ):
+            raise HTTPException(status_code=409, detail="Current approved correspondence state is unavailable for request-context re-review")
+        current_context, _, _ = _request_context(db, item=item, lock=True)
+        if (
+            latest.request_context_fingerprint is not None
+            and latest.request_context_fingerprint == current_context
+        ):
+            raise HTTPException(status_code=409, detail="The approved document-request context is still current")
+        previous_context = latest.request_context_fingerprint
+        item.status = CorrespondenceStatus.UNDER_REVIEW
+        item.review_note = None
+        item.reviewed_by_id = None
+        item.reviewed_at = None
+        item.content_hash = None
+        item.sent_review_hash = None
+        _audit(
+            db,
+            item=item,
+            user=user,
+            action="RESUBMIT_CORRESPONDENCE_FOR_REQUEST_CONTEXT_REVIEW",
+            values={
+                "status": item.status.value,
+                "state_fingerprint": item.state_fingerprint,
+                "state_version": item.state_version,
+                "previous_request_context_fingerprint": previous_context,
+                "current_request_context_fingerprint": current_context,
+            },
+            details="The linked document-request context changed or was legacy-unbound. The unchanged communication content was deliberately returned to human review.",
+        )
+        db.commit()
+        db.refresh(item)
+        return item
+
     if item.status != CorrespondenceStatus.DRAFT:
         raise HTTPException(status_code=409, detail="Only outbound drafts can be submitted for review")
     item.status = CorrespondenceStatus.UNDER_REVIEW
@@ -451,6 +599,7 @@ def review_correspondence(
         expected_state_fingerprint=payload.expected_state_fingerprint,
         expected_state_version=payload.expected_state_version,
     )
+    request_context_fingerprint, _, _ = _request_context(db, item=item, lock=bool(item.request_batch_id))
     history = review_history(db, item=item)
     latest = history[-1] if history else None
     action = "approve" if approve else "reject"
@@ -460,6 +609,7 @@ def review_correspondence(
     if (
         latest is not None
         and latest.correspondence_state_fingerprint == item.state_fingerprint
+        and latest.request_context_fingerprint == request_context_fingerprint
         and latest.state_version == item.state_version
         and latest.action == action
         and latest.note == clean_note
@@ -473,7 +623,7 @@ def review_correspondence(
     if latest is not None and not payload.confirm_re_review:
         raise HTTPException(
             status_code=409,
-            detail="A prior human correspondence review exists. Explicit re-review confirmation is required for the revised state.",
+            detail="A prior human correspondence review exists. Explicit re-review confirmation is required for the revised state or request context.",
         )
 
     review_number = latest.review_number + 1 if latest is not None else 1
@@ -486,6 +636,7 @@ def review_correspondence(
         action=action,
         note=clean_note,
         content_hash=approved_content_hash,
+        request_context_fingerprint=request_context_fingerprint,
         reviewed_by_id=user.id,
         previous_review_hash=previous_hash,
     )
@@ -495,6 +646,7 @@ def review_correspondence(
         correspondence_id=item.id,
         reviewed_by_id=user.id,
         correspondence_state_fingerprint=item.state_fingerprint,
+        request_context_fingerprint=request_context_fingerprint,
         state_version=item.state_version,
         review_number=review_number,
         action=action,
@@ -522,11 +674,12 @@ def review_correspondence(
             "content_hash": item.content_hash,
             "state_fingerprint": item.state_fingerprint,
             "state_version": item.state_version,
+            "request_context_fingerprint": decision.request_context_fingerprint,
             "review_number": decision.review_number,
             "review_hash": decision.review_hash,
             "previous_review_hash": decision.previous_review_hash,
         },
-        details="Human correspondence review was appended to immutable review lineage and bound to the exact reviewed communication state.",
+        details="Human correspondence review was appended to immutable lineage and bound to the exact communication state and, where applicable, exact document-request context.",
     )
     db.commit()
     db.refresh(item)
@@ -579,6 +732,24 @@ def mark_correspondence_sent(db: Session, *, claim: Claim, item: ClaimCorrespond
     ):
         raise HTTPException(status_code=409, detail="Approved content has changed and must be reviewed again")
 
+    request_context_fingerprint = None
+    batch = None
+    requirements: list[ClaimDocumentRequirement] = []
+    if item.request_batch_id:
+        request_context_fingerprint, batch, requirements = _request_context(db, item=item, lock=True)
+        if latest.request_context_fingerprint is None:
+            raise HTTPException(
+                status_code=409,
+                detail="The approved document request is not bound to a reviewed request context. Submit it for deliberate re-review.",
+            )
+        if latest.request_context_fingerprint != request_context_fingerprint:
+            raise HTTPException(
+                status_code=409,
+                detail="The linked document-request context changed after approval. Submit it for deliberate re-review before dispatch.",
+            )
+        if batch is None or batch.status != RequestBatchStatus.DRAFT:
+            raise HTTPException(status_code=409, detail="Linked document request is unavailable or no longer a draft")
+
     item.status = CorrespondenceStatus.SENT_EXTERNALLY
     item.channel = payload.channel
     item.external_reference = clean_reference
@@ -587,22 +758,7 @@ def mark_correspondence_sent(db: Session, *, claim: Claim, item: ClaimCorrespond
     item.occurred_at = item.sent_at
     item.sent_review_hash = latest.review_hash
 
-    if item.request_batch_id:
-        batch = db.scalar(select(DocumentRequestBatch).where(
-            DocumentRequestBatch.id == item.request_batch_id,
-            DocumentRequestBatch.organization_id == claim.organization_id,
-            DocumentRequestBatch.claim_id == claim.id,
-        ).with_for_update())
-        if batch is None or batch.status != RequestBatchStatus.DRAFT:
-            raise HTTPException(status_code=409, detail="Linked document request is unavailable or no longer a draft")
-        ids = {UUID(value) for value in item.requirement_ids}
-        requirements = list(db.scalars(select(ClaimDocumentRequirement).where(
-            ClaimDocumentRequirement.organization_id == claim.organization_id,
-            ClaimDocumentRequirement.claim_id == claim.id,
-            ClaimDocumentRequirement.id.in_(ids),
-        ).with_for_update())) if ids else []
-        if len(requirements) != len(ids):
-            raise HTTPException(status_code=409, detail="One or more linked document requirements are no longer available")
+    if batch is not None:
         for requirement in requirements:
             if requirement.status in {RequirementStatus.MISSING, RequirementStatus.REJECTED}:
                 requirement.status = RequirementStatus.REQUESTED
@@ -619,10 +775,11 @@ def mark_correspondence_sent(db: Session, *, claim: Claim, item: ClaimCorrespond
             "external_reference": item.external_reference,
             "state_fingerprint": item.state_fingerprint,
             "state_version": item.state_version,
+            "request_context_fingerprint": request_context_fingerprint,
             "approved_review_hash": latest.review_hash,
             "content_hash": item.content_hash,
         },
-        details="User explicitly confirmed dispatch outside the platform; the platform did not send this correspondence. Dispatch was bound to the exact current human approval and content state.",
+        details="User explicitly confirmed dispatch outside the platform; the platform did not send this correspondence. Dispatch was bound to the exact current human approval, content state and, where applicable, request context.",
     )
     db.commit()
     db.refresh(item)
