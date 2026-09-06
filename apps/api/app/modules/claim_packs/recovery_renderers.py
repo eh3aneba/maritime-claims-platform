@@ -111,8 +111,69 @@ def _recovery_lines(snapshot: dict[str, Any]) -> list[str]:
     return lines
 
 
+def _correspondence_lines(snapshot: dict[str, Any]) -> list[str]:
+    correspondence = snapshot.get("correspondence_history") or {}
+    summary = correspondence.get("summary") or {}
+    policy = correspondence.get("policy") or {}
+    lines = [
+        "GOVERNED CORRESPONDENCE HISTORY — REPORTING CONTEXT ONLY",
+        correspondence.get("disclaimer", "Governed correspondence projection not available."),
+        correspondence.get(
+            "confidentiality_notice",
+            "Privileged & Confidential and Without Prejudice records are excluded by default.",
+        ),
+        "",
+        f"Included historical records: {_safe(summary.get('included_count', 0))}",
+        f"Sensitive records excluded by default: {_safe(summary.get('excluded_sensitive_count', 0))}",
+        f"Additional records omitted by bounded export: {_safe(summary.get('omitted_for_bound_count', 0))}",
+        f"Bounded record limit: {_safe(policy.get('max_records', 0))}",
+        "",
+    ]
+    items = correspondence.get("items") or []
+    if not items:
+        lines.append("No eligible governed correspondence history is included in this Claim Pack.")
+        return lines
+    for item in items:
+        latest_review = item.get("latest_review") or {}
+        lines.append(
+            f"{item.get('occurred_at') or item.get('sent_at') or item.get('created_at')} | "
+            f"{item.get('direction')} / {item.get('status')} / {item.get('sensitivity')} | {item.get('subject')}"
+        )
+        parties = item.get("sender_label") or item.get("recipient_label")
+        if parties:
+            lines.append(f"  Party label: {parties}")
+        if item.get("channel") or item.get("external_reference"):
+            lines.append(
+                f"  External record: {item.get('channel') or 'channel not established'} / "
+                f"{item.get('external_reference') or 'reference not established'}"
+            )
+        lines.append(f"  Content: {item.get('body_excerpt') or ''}")
+        if item.get("body_truncated"):
+            lines.append("  [Body excerpt truncated by bounded Claim Pack policy]")
+        lines.append(
+            f"  State v{item.get('state_version')} {item.get('state_fingerprint')} | "
+            f"content hash {_safe(item.get('content_hash'))}"
+        )
+        if latest_review:
+            lines.append(
+                f"  Human review #{latest_review.get('review_number')} {latest_review.get('action')} | "
+                f"review hash {latest_review.get('review_hash')} | request context "
+                f"{_safe(latest_review.get('request_context_fingerprint'))}"
+            )
+        if item.get("sent_review_hash"):
+            lines.append(f"  Sent-record approval hash: {item.get('sent_review_hash')}")
+        lines.append("")
+    return lines
+
+
 def _appendix_lines(snapshot: dict[str, Any]) -> list[str]:
-    lines = _assessment_lines(snapshot) + ["", ""] + _recovery_lines(snapshot)
+    lines = (
+        _assessment_lines(snapshot)
+        + ["", ""]
+        + _recovery_lines(snapshot)
+        + ["", ""]
+        + _correspondence_lines(snapshot)
+    )
     wrapped: list[str] = []
     for line in lines:
         if not line:
@@ -203,6 +264,63 @@ def _prepare_assessment_sheet(workbook, snapshot: dict[str, Any]) -> None:
             cell.alignment = Alignment(vertical="top", wrap_text=True)
 
 
+def _prepare_correspondence_sheet(workbook, snapshot: dict[str, Any]) -> None:
+    if "Correspondence" in workbook.sheetnames:
+        del workbook["Correspondence"]
+    sheet = workbook.create_sheet("Correspondence")
+    correspondence = snapshot.get("correspondence_history") or {}
+    summary = correspondence.get("summary") or {}
+    policy = correspondence.get("policy") or {}
+    sheet.append(["Governed correspondence history", "Reporting context only"])
+    sheet.append(["Authority", correspondence.get("disclaimer")])
+    sheet.append(["Confidentiality control", correspondence.get("confidentiality_notice")])
+    sheet.append(["Included records", summary.get("included_count", 0)])
+    sheet.append(["Sensitive records excluded by default", summary.get("excluded_sensitive_count", 0)])
+    sheet.append(["Records omitted by bound", summary.get("omitted_for_bound_count", 0)])
+    sheet.append(["Maximum records", policy.get("max_records", 0)])
+    sheet.append([])
+    sheet.append([
+        "Occurred / recorded",
+        "Direction / status",
+        "Sensitivity",
+        "Subject",
+        "Party label",
+        "Channel / external reference",
+        "Body excerpt",
+        "State / integrity",
+        "Human review",
+    ])
+    for cell in sheet[9]:
+        cell.font = Font(bold=True)
+    for item in correspondence.get("items") or []:
+        review = item.get("latest_review") or {}
+        sheet.append([
+            item.get("occurred_at") or item.get("sent_at") or item.get("created_at"),
+            f"{item.get('direction')} / {item.get('status')}",
+            item.get("sensitivity"),
+            item.get("subject"),
+            item.get("sender_label") or item.get("recipient_label"),
+            f"{item.get('channel') or ''} / {item.get('external_reference') or ''}",
+            (item.get("body_excerpt") or "") + (" [TRUNCATED]" if item.get("body_truncated") else ""),
+            f"state v{item.get('state_version')} {item.get('state_fingerprint')} | content {item.get('content_hash') or 'n/a'} | sent review {item.get('sent_review_hash') or 'n/a'}",
+            (
+                f"#{review.get('review_number')} {review.get('action')} | review {review.get('review_hash')} | "
+                f"request context {review.get('request_context_fingerprint') or 'n/a'}"
+                if review
+                else "No human review lineage required/recorded"
+            ),
+        ])
+    widths = [24, 24, 24, 42, 32, 38, 90, 100, 100]
+    for index, width in enumerate(widths, start=1):
+        sheet.column_dimensions[chr(64 + index)].width = width
+    for row in sheet.iter_rows():
+        for cell in row:
+            cell.alignment = Alignment(vertical="top", wrap_text=True)
+    for row in range(1, 8):
+        sheet.cell(row, 1).font = Font(bold=True)
+    sheet.freeze_panes = "A10"
+
+
 def render_xlsx(snapshot: dict[str, Any]) -> bytes:
     workbook = load_workbook(BytesIO(_render_base_xlsx(snapshot)))
     _prepare_assessment_sheet(workbook, snapshot)
@@ -254,6 +372,7 @@ def render_xlsx(snapshot: dict[str, Any]) -> bytes:
         for cell in row:
             cell.alignment = Alignment(vertical="top", wrap_text=True)
     sheet.freeze_panes = "A2"
+    _prepare_correspondence_sheet(workbook, snapshot)
     output = BytesIO()
     workbook.save(output)
     return output.getvalue()

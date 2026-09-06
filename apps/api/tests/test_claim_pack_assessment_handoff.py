@@ -70,7 +70,7 @@ def test_claim_pack_uses_only_digest_bound_approved_assessment_and_preserves_sta
             override_reason="Draft must not flow downstream",
         )
         draft_snapshot = _snapshot(db, claim, user)
-        assert draft_snapshot["snapshot_schema_version"] == "1.3"
+        assert draft_snapshot["snapshot_schema_version"] == "1.4"
         assert draft_snapshot["approved_assessment"] is None
         assert draft_snapshot["summary"]["approved_assessment_content_hash"] is None
 
