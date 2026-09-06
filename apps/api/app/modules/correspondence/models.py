@@ -91,7 +91,7 @@ class ClaimCorrespondence(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 
 class CorrespondenceReviewDecision(UUIDPrimaryKeyMixin, Base):
-    """Append-only human review lineage bound to one exact correspondence state."""
+    """Append-only human review lineage bound to one exact correspondence and request state."""
 
     __tablename__ = "correspondence_review_decisions"
     __table_args__ = (
@@ -103,6 +103,7 @@ class CorrespondenceReviewDecision(UUIDPrimaryKeyMixin, Base):
             "correspondence_id",
             "review_number",
         ),
+        Index("ix_correspondence_review_request_context", "request_context_fingerprint"),
         CheckConstraint("state_version >= 1", name="ck_correspondence_review_state_version"),
         CheckConstraint("review_number >= 1", name="ck_correspondence_review_number"),
         CheckConstraint("action IN ('approve','reject')", name="ck_correspondence_review_action"),
@@ -114,6 +115,7 @@ class CorrespondenceReviewDecision(UUIDPrimaryKeyMixin, Base):
     reviewed_by_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
     correspondence_state_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    request_context_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
     state_version: Mapped[int] = mapped_column(Integer, nullable=False)
     review_number: Mapped[int] = mapped_column(Integer, nullable=False)
     action: Mapped[str] = mapped_column(String(16), nullable=False)
