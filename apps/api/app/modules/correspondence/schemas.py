@@ -72,6 +72,7 @@ class CorrespondenceReviewDecisionResponse(BaseModel):
     correspondence_id: UUID
     reviewed_by_id: UUID | None
     correspondence_state_fingerprint: str
+    request_context_fingerprint: str | None
     state_version: int
     review_number: int
     action: Literal["approve", "reject"]
