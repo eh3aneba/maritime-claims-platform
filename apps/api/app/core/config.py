@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     app_env: str = "development"
     app_name: str = "Maritime Claims & Risk Intelligence Platform"
     api_v1_prefix: str = "/api/v1"
+    next_public_api_base_url: str = ""
     database_url: str = "postgresql+psycopg://maritime:change-me@localhost:5432/maritime_claims"
     secret_key: str = "replace-with-a-long-random-secret"
     jwt_algorithm: str = "HS256"
