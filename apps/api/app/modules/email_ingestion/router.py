@@ -6,9 +6,9 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.modules.auth.dependencies import CurrentUser, require_roles
-from app.modules.email_ingestion.provider_attachment_acquisition import (
-    acquire_provider_attachment,
-    get_attachment_for_tenant,
+from app.modules.email_ingestion.provider_attachment_acquisition import get_attachment_for_tenant
+from app.modules.email_ingestion.provider_attachment_integrity import (
+    acquire_provider_attachment_with_integrity,
 )
 from app.modules.email_ingestion.provider_attachment_retention import (
     expire_due_with_provider_attachment_purge,
@@ -100,7 +100,7 @@ def acquire_message_attachment(
     # SQLite ignores row-level FOR UPDATE semantics, which is sufficient for test/dev.
     db.refresh(message, with_for_update=True)
     db.refresh(manifest, with_for_update=True)
-    return acquire_provider_attachment(
+    return acquire_provider_attachment_with_integrity(
         db,
         message=message,
         manifest=manifest,
