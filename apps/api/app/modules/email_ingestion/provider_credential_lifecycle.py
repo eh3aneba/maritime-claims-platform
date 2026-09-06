@@ -19,6 +19,7 @@ from app.modules.email_ingestion.provider_checkpoint_handoff import (
 )
 from app.modules.email_ingestion.provider_credentials import (
     CredentialReferenceError,
+    ProviderCredentialMetadata,
     inspect_credential_reference,
 )
 from app.modules.email_ingestion.schemas import CredentialReferenceRotationRequest
@@ -51,20 +52,24 @@ def _connection_for_adapter(
     )
 
 
-def _metadata_dict(adapter: EmailProviderAdapter) -> dict:
+def _safe_metadata(reference: str) -> ProviderCredentialMetadata:
     try:
-        metadata = inspect_credential_reference(adapter.credential_reference)
-        return {
-            "credential_backend": metadata.backend,
-            "credential_reference_configured": metadata.reference_configured,
-            "credential_resolver_available": metadata.resolver_available,
-        }
+        return inspect_credential_reference(reference)
     except CredentialReferenceError:
-        return {
-            "credential_backend": "invalid",
-            "credential_reference_configured": bool(adapter.credential_reference),
-            "credential_resolver_available": False,
-        }
+        return ProviderCredentialMetadata(
+            backend="invalid",
+            reference_configured=bool(reference),
+            resolver_available=False,
+        )
+
+
+def _metadata_dict(adapter: EmailProviderAdapter) -> dict:
+    metadata = _safe_metadata(adapter.credential_reference)
+    return {
+        "credential_backend": metadata.backend,
+        "credential_reference_configured": metadata.reference_configured,
+        "credential_resolver_available": metadata.resolver_available,
+    }
 
 
 def rotate_provider_credential_reference(
@@ -91,9 +96,9 @@ def rotate_provider_credential_reference(
 
     try:
         new_metadata = inspect_credential_reference(payload.credential_reference)
-        old_metadata = inspect_credential_reference(adapter.credential_reference)
     except CredentialReferenceError as exc:
         raise HTTPException(422, "Credential reference is invalid") from exc
+    old_metadata = _safe_metadata(adapter.credential_reference)
 
     if payload.credential_reference == adapter.credential_reference:
         raise HTTPException(409, "Credential reference is unchanged")
