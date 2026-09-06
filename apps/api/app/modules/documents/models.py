@@ -9,6 +9,10 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 from app.db.mixins import SoftDeleteMixin, TimestampMixin, UUIDPrimaryKeyMixin
 from app.db.types import enum_values
+# Document carries an optional FK into email-ingestion staging. Register that
+# target table even in processes that import Document models directly instead
+# of loading the full app.db.metadata registry (for example demo/perf seeds).
+from app.modules.email_ingestion import models as _email_ingestion_models  # noqa: F401
 
 if TYPE_CHECKING:
     from app.modules.claims.models import Claim
