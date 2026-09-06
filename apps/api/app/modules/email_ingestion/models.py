@@ -129,6 +129,7 @@ class EmailAdapterRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __table_args__ = (
         UniqueConstraint("adapter_id", "idempotency_key", name="uq_email_adapter_run_idempotency"),
         Index("ix_email_adapter_run_org_started", "organization_id", "started_at"),
+        Index("ix_email_adapter_run_handoff", "adapter_id", "checkpoint_handoff_status", "started_at"),
     )
 
     organization_id: Mapped[UUID] = mapped_column(ForeignKey("organizations.id", ondelete="RESTRICT"), index=True)
@@ -140,6 +141,11 @@ class EmailAdapterRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     messages_seen: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     messages_ingested: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     checkpoint_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    checkpoint_handoff_status: Mapped[str] = mapped_column(
+        String(30), nullable=False, default="not_required", server_default="not_required"
+    )
+    checkpoint_acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    checkpoint_abandoned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     failure_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
