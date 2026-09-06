@@ -45,7 +45,14 @@ def _adapter(
     return claim_id, connection, created.json()
 
 
-def test_graph_pull_is_folder_scoped_idempotent_and_stages_only(monkeypatch) -> None:
+def _ack(adapter_id: str, run_id: str, checkpoint: str):
+    return client.post(
+        f"/api/v1/email-ingestion/adapters/{adapter_id}/runs/{run_id}/checkpoint-ack",
+        json={"confirm_ack": True, "provider_checkpoint": checkpoint},
+    )
+
+
+def test_graph_pull_is_folder_scoped_idempotent_stages_only_and_requires_ack(monkeypatch) -> None:
     claim_id, connection, adapter = _adapter("microsoft_graph")
     monkeypatch.setenv("MCRI_PROVIDER_TEST_TOKEN", "graph-secret-value")
     calls: list[tuple[str, str]] = []
@@ -99,6 +106,8 @@ def test_graph_pull_is_folder_scoped_idempotent_and_stages_only(monkeypatch) -> 
     assert payload["run"]["status"] == "succeeded"
     assert payload["run"]["messages_seen"] == 1
     assert payload["run"]["messages_ingested"] == 1
+    assert payload["run"]["checkpoint_handoff_status"] == "pending"
+    assert payload["checkpoint_handoff_required"] is True
     assert payload["next_checkpoint"] == next_checkpoint
     assert payload["replayed"] is False
 
@@ -112,7 +121,8 @@ def test_graph_pull_is_folder_scoped_idempotent_and_stages_only(monkeypatch) -> 
 
     with TestingSessionLocal() as db:
         db_adapter = db.get(EmailProviderAdapter, UUID(adapter["id"]))
-        assert db_adapter.checkpoint_hash == sha256(next_checkpoint.encode()).hexdigest()
+        assert db_adapter.checkpoint_hash is None
+        assert db_adapter.next_sync_at is None
         message = db.scalar(
             select(IngestedEmailMessage).where(
                 IngestedEmailMessage.provider_message_id == "graph-message-1"
@@ -129,14 +139,24 @@ def test_graph_pull_is_folder_scoped_idempotent_and_stages_only(monkeypatch) -> 
     assert replay.status_code == 200
     assert replay.json()["replayed"] is True
     assert replay.json()["next_checkpoint"] is None
+    assert replay.json()["checkpoint_handoff_required"] is True
     assert len(calls) == first_call_count
 
-    missing_checkpoint = client.post(
+    blocked = client.post(
         f"/api/v1/email-ingestion/adapters/{adapter['id']}/execute",
         json={"idempotency_key": "graph-exec-0002", "trigger": "manual"},
     )
-    assert missing_checkpoint.status_code == 409
+    assert blocked.status_code == 409
     assert len(calls) == first_call_count
+
+    acknowledged = _ack(adapter["id"], payload["run"]["id"], next_checkpoint)
+    assert acknowledged.status_code == 200, acknowledged.text
+    assert acknowledged.json()["checkpoint_handoff_status"] == "acknowledged"
+    with TestingSessionLocal() as db:
+        db_adapter = db.get(EmailProviderAdapter, UUID(adapter["id"]))
+        assert db_adapter.checkpoint_hash == sha256(next_checkpoint.encode()).hexdigest()
+        assert db_adapter.next_sync_at is not None
+
     assert all("sendMail" not in url and "/$value" not in url for url, _ in calls)
 
 
@@ -193,6 +213,7 @@ def test_gmail_pull_uses_label_scope_and_never_downloads_attachment_bytes(monkey
     )
     assert first.status_code == 200, first.text
     assert first.json()["run"]["status"] == "succeeded"
+    assert first.json()["checkpoint_handoff_required"] is True
     bootstrap_checkpoint = first.json()["next_checkpoint"]
     parsed_bootstrap = provider_gmail_history.decode_gmail_checkpoint(bootstrap_checkpoint)
     assert parsed_bootstrap.mode == "bootstrap_page"
@@ -208,16 +229,27 @@ def test_gmail_pull_uses_label_scope_and_never_downloads_attachment_bytes(monkey
     assert staged["attachments"][0]["admission_status"] == "blocked_pending_quarantine"
     assert staged["correspondence_id"] is None
 
+    ack_first = _ack(adapter["id"], first.json()["run"]["id"], bootstrap_checkpoint)
+    assert ack_first.status_code == 200, ack_first.text
+
     second = client.post(
         f"/api/v1/email-ingestion/adapters/{adapter['id']}/execute",
         json={"idempotency_key": "gmail-exec-0002", "provider_checkpoint": bootstrap_checkpoint},
     )
     assert second.status_code == 200, second.text
     assert second.json()["run"]["messages_seen"] == 0
+    assert second.json()["run"]["checkpoint_handoff_status"] == "pending"
     history_checkpoint = second.json()["next_checkpoint"]
     parsed_history = provider_gmail_history.decode_gmail_checkpoint(history_checkpoint)
     assert parsed_history.mode == "history"
     assert parsed_history.history_id == "9000"
+    with TestingSessionLocal() as db:
+        assert db.get(EmailProviderAdapter, UUID(adapter["id"])).checkpoint_hash == sha256(
+            bootstrap_checkpoint.encode()
+        ).hexdigest()
+
+    ack_second = _ack(adapter["id"], second.json()["run"]["id"], history_checkpoint)
+    assert ack_second.status_code == 200
     with TestingSessionLocal() as db:
         assert db.get(EmailProviderAdapter, UUID(adapter["id"])).checkpoint_hash == sha256(
             history_checkpoint.encode()
@@ -245,6 +277,7 @@ def test_unsupported_secret_resolver_fails_closed_without_leaking_reference(monk
     assert response.status_code == 200, response.text
     assert response.json()["run"]["status"] == "failed"
     assert response.json()["run"]["failure_summary"] == "credential_resolver_unavailable"
+    assert response.json()["checkpoint_handoff_required"] is False
     assert calls == []
 
     with TestingSessionLocal() as db:

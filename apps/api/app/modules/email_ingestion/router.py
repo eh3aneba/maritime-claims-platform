@@ -14,10 +14,12 @@ from app.modules.email_ingestion.provider_attachment_retention import (
     expire_due_with_provider_attachment_purge,
     run_retention_with_provider_attachment_purge,
 )
-from app.modules.email_ingestion.provider_checkpoint_controls import (
-    execute_governed_provider_adapter_with_history,
-    list_provider_reconciliation_with_checkpoint_controls,
-    reset_gmail_checkpoint,
+from app.modules.email_ingestion.provider_checkpoint_handoff import (
+    abandon_checkpoint_handoff,
+    acknowledge_checkpoint_handoff,
+    execute_provider_adapter_with_checkpoint_handoff,
+    list_provider_reconciliation_with_handoff,
+    reset_gmail_checkpoint_with_handoff_guard,
 )
 from app.modules.email_ingestion.provider_evidence_admission import (
     admit_provider_attachment_to_evidence,
@@ -29,6 +31,8 @@ from app.modules.email_ingestion.provider_operations import (
 )
 from app.modules.email_ingestion.provider_source import ingest_legacy_webhook, ingest_provider_webhook
 from app.modules.email_ingestion.schemas import (
+    CheckpointHandoffAbandonRequest, CheckpointHandoffAbandonResponse,
+    CheckpointHandoffAckRequest, CheckpointHandoffAckResponse,
     EmailAdapterCreate, EmailAdapterOperations, EmailAdapterResponse, EmailAdapterRunCreate,
     EmailAdapterRunResponse, EmailAttachmentAcquisitionResponse,
     EmailAttachmentEvidenceAdmissionRequest, EmailAttachmentEvidenceAdmissionResponse,
@@ -157,7 +161,7 @@ def adapter_operations(current_user: CurrentUser, db: Annotated[Session, Depends
 
 @router.get("/adapter-reconciliation")
 def adapter_reconciliation(manager: Manager, db: Annotated[Session, Depends(get_db)]):
-    return list_provider_reconciliation_with_checkpoint_controls(db, manager)
+    return list_provider_reconciliation_with_handoff(db, manager)
 
 
 @router.post("/adapters", response_model=EmailAdapterResponse, status_code=201)
@@ -191,11 +195,51 @@ def adapter_run(adapter_id: UUID, payload: EmailAdapterRunCreate, manager: Manag
 @router.post("/adapters/{adapter_id}/execute", response_model=EmailProviderExecutionResponse)
 def adapter_execute(adapter_id: UUID, payload: EmailProviderExecutionRequest, manager: Manager,
                     db: Annotated[Session, Depends(get_db)]):
-    return execute_governed_provider_adapter_with_history(
+    return execute_provider_adapter_with_checkpoint_handoff(
         db,
         get_adapter(db, manager.organization_id, adapter_id),
         manager,
         payload,
+    )
+
+
+@router.post(
+    "/adapters/{adapter_id}/runs/{run_id}/checkpoint-ack",
+    response_model=CheckpointHandoffAckResponse,
+)
+def adapter_checkpoint_ack(
+    adapter_id: UUID,
+    run_id: UUID,
+    payload: CheckpointHandoffAckRequest,
+    manager: Manager,
+    db: Annotated[Session, Depends(get_db)],
+):
+    return acknowledge_checkpoint_handoff(
+        db,
+        adapter=get_adapter(db, manager.organization_id, adapter_id),
+        run_id=run_id,
+        user=manager,
+        payload=payload,
+    )
+
+
+@router.post(
+    "/adapters/{adapter_id}/runs/{run_id}/checkpoint-abandon",
+    response_model=CheckpointHandoffAbandonResponse,
+)
+def adapter_checkpoint_abandon(
+    adapter_id: UUID,
+    run_id: UUID,
+    payload: CheckpointHandoffAbandonRequest,
+    manager: Manager,
+    db: Annotated[Session, Depends(get_db)],
+):
+    return abandon_checkpoint_handoff(
+        db,
+        adapter=get_adapter(db, manager.organization_id, adapter_id),
+        run_id=run_id,
+        user=manager,
+        payload=payload,
     )
 
 
@@ -209,7 +253,7 @@ def adapter_checkpoint_reset(
     manager: Manager,
     db: Annotated[Session, Depends(get_db)],
 ):
-    return reset_gmail_checkpoint(
+    return reset_gmail_checkpoint_with_handoff_guard(
         db,
         get_adapter(db, manager.organization_id, adapter_id),
         manager,

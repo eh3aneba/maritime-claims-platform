@@ -193,6 +193,9 @@ class EmailAdapterRunResponse(BaseModel):
     messages_seen: int
     messages_ingested: int
     checkpoint_hash: str | None
+    checkpoint_handoff_status: str = "not_required"
+    checkpoint_acknowledged_at: datetime | None = None
+    checkpoint_abandoned_at: datetime | None = None
     failure_summary: str | None
     started_at: datetime
     finished_at: datetime | None
@@ -208,6 +211,33 @@ class EmailProviderExecutionResponse(BaseModel):
     run: EmailAdapterRunResponse
     next_checkpoint: str | None = Field(default=None, max_length=4000)
     replayed: bool
+    checkpoint_handoff_required: bool = False
+
+
+class CheckpointHandoffAckRequest(BaseModel):
+    confirm_ack: bool = False
+    provider_checkpoint: str = Field(min_length=1, max_length=4000)
+
+
+class CheckpointHandoffAckResponse(BaseModel):
+    adapter_id: UUID
+    run_id: UUID
+    checkpoint_handoff_status: str
+    checkpoint_committed: bool
+    next_sync_at: datetime
+
+
+class CheckpointHandoffAbandonRequest(BaseModel):
+    confirm_abandon: bool = False
+    reason: str = Field(min_length=20, max_length=1000)
+
+
+class CheckpointHandoffAbandonResponse(BaseModel):
+    adapter_id: UUID
+    run_id: UUID
+    checkpoint_handoff_status: str
+    previous_cursor_preserved: bool
+    next_sync_at: datetime | None
 
 
 class GmailCheckpointResetRequest(BaseModel):

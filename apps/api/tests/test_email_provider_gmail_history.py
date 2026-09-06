@@ -61,6 +61,13 @@ def _set_checkpoint(adapter_id: str, checkpoint: str) -> None:
         db.commit()
 
 
+def _ack(adapter_id: str, run_id: str, checkpoint: str):
+    return client.post(
+        f"/api/v1/email-ingestion/adapters/{adapter_id}/runs/{run_id}/checkpoint-ack",
+        json={"confirm_ack": True, "provider_checkpoint": checkpoint},
+    )
+
+
 def test_gmail_history_incremental_sync_uses_history_id_and_exact_message_ids(monkeypatch) -> None:
     _, connection, adapter = _adapter("gmail_api", allowed_folder="INBOX")
     monkeypatch.setenv("MCRI_PROVIDER_TEST_TOKEN", "gmail-secret-value")
@@ -106,11 +113,20 @@ def test_gmail_history_incremental_sync_uses_history_id_and_exact_message_ids(mo
     assert first.json()["run"]["status"] == "succeeded"
     assert first.json()["run"]["messages_seen"] == 1
     assert first.json()["run"]["messages_ingested"] == 1
+    assert first.json()["run"]["checkpoint_handoff_status"] == "pending"
     page_checkpoint = first.json()["next_checkpoint"]
     page = provider_gmail_history.decode_gmail_checkpoint(page_checkpoint)
     assert page.mode == "history_page"
     assert page.history_id == "9000"
     assert page.page_token == "hist-page-2"
+
+    with TestingSessionLocal() as db:
+        assert db.get(EmailProviderAdapter, UUID(adapter["id"])).checkpoint_hash == sha256(
+            start_checkpoint.encode()
+        ).hexdigest()
+
+    ack_first = _ack(adapter["id"], first.json()["run"]["id"], page_checkpoint)
+    assert ack_first.status_code == 200, ack_first.text
 
     second = client.post(
         f"/api/v1/email-ingestion/adapters/{adapter['id']}/execute",
@@ -133,6 +149,13 @@ def test_gmail_history_incremental_sync_uses_history_id_and_exact_message_ids(mo
         assert db.query(IngestedEmailMessage).filter(
             IngestedEmailMessage.provider_message_id == "gmail-new-1"
         ).count() == 1
+        assert db.get(EmailProviderAdapter, UUID(adapter["id"])).checkpoint_hash == sha256(
+            page_checkpoint.encode()
+        ).hexdigest()
+
+    ack_second = _ack(adapter["id"], second.json()["run"]["id"], steady_checkpoint)
+    assert ack_second.status_code == 200
+    with TestingSessionLocal() as db:
         assert db.get(EmailProviderAdapter, UUID(adapter["id"])).checkpoint_hash == sha256(
             steady_checkpoint.encode()
         ).hexdigest()
