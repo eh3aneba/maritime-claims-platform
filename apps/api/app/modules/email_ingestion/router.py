@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.modules.auth.dependencies import CurrentUser, require_roles
+from app.modules.email_ingestion.provider_source import ingest_legacy_webhook, ingest_provider_webhook
 from app.modules.email_ingestion.schemas import (
     EmailAdapterCreate, EmailAdapterOperations, EmailAdapterResponse, EmailAdapterRunCreate,
     EmailAdapterRunResponse, EmailConnectionCreate, EmailConnectionResponse,
@@ -14,7 +15,7 @@ from app.modules.email_ingestion.schemas import (
 )
 from app.modules.email_ingestion.service import (
     create_adapter, create_connection, expire_due, get_adapter, get_connection, get_message,
-    ingest_email, list_adapter_operations, list_inbox, message_response, record_adapter_run,
+    list_adapter_operations, list_inbox, message_response, record_adapter_run,
     review_email, run_retention, transition_adapter, transition_connection,
 )
 from app.modules.users.models import User, UserRole
@@ -44,7 +45,15 @@ def connection_transition(connection_id: UUID, payload: EmailConnectionTransitio
 def webhook(connection_id: UUID, payload: NormalizedEmailInput,
             db: Annotated[Session, Depends(get_db)],
             token: Annotated[str | None, Header(alias="X-MCRI-Ingestion-Token")] = None):
-    item = ingest_email(db, connection_id, token, payload)
+    item = ingest_legacy_webhook(db, connection_id, token, payload)
+    return IngestedEmailResponse(**message_response(db, item))
+
+
+@router.post("/adapters/{adapter_id}/webhook", response_model=IngestedEmailResponse, status_code=201)
+def adapter_webhook(adapter_id: UUID, payload: NormalizedEmailInput,
+                    db: Annotated[Session, Depends(get_db)],
+                    token: Annotated[str | None, Header(alias="X-MCRI-Ingestion-Token")] = None):
+    item = ingest_provider_webhook(db, adapter_id, token, payload)
     return IngestedEmailResponse(**message_response(db, item))
 
 
