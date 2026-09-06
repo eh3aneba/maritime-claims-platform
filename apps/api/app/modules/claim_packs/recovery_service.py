@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.modules.audit.service import write_audit_log
 from app.modules.claim_packs.assessment_snapshot import build_approved_assessment_handoff
+from app.modules.claim_packs.correspondence_snapshot import build_correspondence_snapshot
 from app.modules.claim_packs.models import ClaimPackExport, ClaimPackFormat
 from app.modules.claim_packs.recovery_renderers import render_pdf, render_xlsx
 from app.modules.claim_packs.recovery_snapshot import build_recovery_snapshot
@@ -23,7 +24,7 @@ from app.modules.documents.service import _storage
 from app.modules.users.models import User
 
 
-SNAPSHOT_SCHEMA_VERSION = "1.3"
+SNAPSHOT_SCHEMA_VERSION = "1.4"
 
 
 def build_claim_pack_snapshot(
@@ -43,13 +44,16 @@ def build_claim_pack_snapshot(
     )
     recovery = _jsonable(build_recovery_snapshot(db, claim=claim))
     approved_assessment = _jsonable(build_approved_assessment_handoff(db, claim=claim))
+    correspondence = _jsonable(build_correspondence_snapshot(db, claim=claim))
     summary = recovery["summary"]
+    correspondence_summary = correspondence["summary"]
 
     snapshot["snapshot_schema_version"] = SNAPSHOT_SCHEMA_VERSION
     # Replace the legacy loose approved-assessment projection from the base snapshot. Only a digest-bound,
-    # explicitly approved assessment is eligible for downstream Claim Pack reporting in schema 1.3.
+    # explicitly approved assessment is eligible for downstream Claim Pack reporting.
     snapshot["approved_assessment"] = approved_assessment
     snapshot["recovery_review"] = recovery
+    snapshot["correspondence_history"] = correspondence
     snapshot["summary"].update(
         {
             "approved_assessment_version": approved_assessment["version"] if approved_assessment else None,
@@ -70,6 +74,9 @@ def build_claim_pack_snapshot(
             "recovery_unreviewed_counterparty_count": summary["unreviewed_counterparty_count"],
             "recovery_stale_timebar_scenario_count": summary["stale_timebar_scenario_count"],
             "recovery_unreviewed_timebar_scenario_count": summary["unreviewed_timebar_scenario_count"],
+            "correspondence_included_count": correspondence_summary["included_count"],
+            "correspondence_excluded_sensitive_count": correspondence_summary["excluded_sensitive_count"],
+            "correspondence_omitted_for_bound_count": correspondence_summary["omitted_for_bound_count"],
         }
     )
     if recovery["human_closure_review_state"] == "attention_required":
@@ -156,10 +163,15 @@ def generate_claim_pack(
                 "recovery_human_closure_review_state": snapshot["summary"]["recovery_human_closure_review_state"],
                 "recovery_human_decision_count": snapshot["summary"]["recovery_human_decision_count"],
                 "recovery_human_action_count": snapshot["summary"]["recovery_human_action_count"],
+                "correspondence_included_count": snapshot["summary"]["correspondence_included_count"],
+                "correspondence_excluded_sensitive_count": snapshot["summary"]["correspondence_excluded_sensitive_count"],
+                "correspondence_omitted_for_bound_count": snapshot["summary"]["correspondence_omitted_for_bound_count"],
             },
             details=(
-                "Generated immutable controlled claim-pack snapshot with digest-bound approved Initial Assessment "
-                "context and downstream recovery/time-bar human-record projection. Neither projection creates decision authority."
+                "Generated immutable controlled claim-pack snapshot with digest-bound approved Initial Assessment, "
+                "downstream recovery/time-bar human-record projection and bounded governed correspondence history. "
+                "Privileged & Confidential and Without Prejudice correspondence is excluded by default. These "
+                "projections create no communication, privilege, insurance, legal or claim-decision authority."
             ),
         )
         db.commit()
