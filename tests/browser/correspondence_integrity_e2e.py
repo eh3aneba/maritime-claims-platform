@@ -185,7 +185,11 @@ def main() -> None:
         expect(record_button).to_be_visible(timeout=15_000)
         record_button.click()
         expect(page.get_by_role("heading", name=subject)).to_be_visible(timeout=15_000)
-        expect(page.get_by_text(re.compile(r"state v2 .* review current"))).to_be_visible(timeout=15_000)
+        integrity = page.get_by_test_id("correspondence-review-integrity")
+        expect(integrity).to_be_visible(timeout=15_000)
+        expect(integrity.get_by_text("Review integrity", exact=True)).to_be_visible(timeout=15_000)
+        expect(integrity.get_by_text("Review matches current state", exact=True)).to_be_visible(timeout=15_000)
+        expect(page.get_by_test_id("correspondence-review-lineage")).to_be_visible(timeout=15_000)
         expect(page.get_by_text(external_reference, exact=False)).to_be_visible(timeout=15_000)
         expect(page.get_by_text(re.compile(r"The platform did not send this message\.$"))).to_be_visible(timeout=15_000)
 
