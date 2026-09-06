@@ -210,6 +210,17 @@ class EmailProviderExecutionResponse(BaseModel):
     replayed: bool
 
 
+class GmailCheckpointResetRequest(BaseModel):
+    confirm_reset: bool = False
+
+
+class GmailCheckpointResetResponse(BaseModel):
+    adapter_id: UUID
+    reset_performed: bool
+    last_failure_code: str
+    next_sync_at: datetime
+
+
 class RetentionRunCreate(BaseModel):
     idempotency_key: str = Field(min_length=8, max_length=120)
 
