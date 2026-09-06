@@ -70,6 +70,7 @@ class IngestedEmailResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: UUID
     connection_id: UUID
+    adapter_id: UUID | None
     suggested_claim_id: UUID | None
     linked_claim_id: UUID | None
     correspondence_id: UUID | None
