@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.modules.audit.service import write_audit_log
+from app.modules.email_ingestion import provider_gmail_history
 from app.modules.email_ingestion.models import (
     EmailAdapterRun,
     EmailConnectionStatus,
@@ -25,7 +26,6 @@ from app.modules.email_ingestion.provider_execution import (
     _hash_checkpoint,
     _resolve_credential,
 )
-from app.modules.email_ingestion.provider_gmail_history import fetch_gmail_provider_page
 from app.modules.email_ingestion.provider_operations import _consecutive_failures
 from app.modules.email_ingestion.provider_source import _stage_email
 from app.modules.email_ingestion.schemas import (
@@ -228,7 +228,7 @@ def execute_provider_adapter_with_checkpoint_handoff(
                 payload.provider_checkpoint,
             )
         else:
-            messages, next_checkpoint = fetch_gmail_provider_page(
+            messages, next_checkpoint = provider_gmail_history.fetch_gmail_provider_page(
                 connection,
                 adapter,
                 token,
