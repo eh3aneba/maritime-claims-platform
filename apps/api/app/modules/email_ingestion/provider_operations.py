@@ -37,6 +37,15 @@ def _is_pull_adapter(item: EmailProviderAdapter) -> bool:
     return item.provider_kind in _PULL_KINDS
 
 
+def _as_utc(value: datetime) -> datetime:
+    # SQLite test/dev adapters can return timezone-aware columns as naive values.
+    # Treat stored provider scheduling timestamps as UTC at this boundary so the
+    # operational-state comparison is stable across SQLite and PostgreSQL.
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
 def create_governed_adapter(db: Session, user: User, payload: EmailAdapterCreate) -> EmailProviderAdapter:
     item = create_adapter(db, user, payload)
     if not _is_pull_adapter(item):
@@ -234,7 +243,7 @@ def list_provider_reconciliation(db: Session, user: User) -> dict:
             operational_state = "blocked_connection"
         elif failure_streak >= _RECONCILIATION_FAILURE_THRESHOLD or adapter.next_sync_at is None:
             operational_state = "reconciliation_required"
-        elif adapter.next_sync_at <= now:
+        elif _as_utc(adapter.next_sync_at) <= now:
             operational_state = "due"
         else:
             operational_state = "waiting"
