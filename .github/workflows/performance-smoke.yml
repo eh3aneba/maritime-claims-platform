@@ -1,0 +1,100 @@
+name: Operational Performance Smoke
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: performance-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  performance-smoke:
+    name: Live-stack performance smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Compile performance harness
+        run: python -m py_compile scripts/operational_performance_smoke.py
+
+      - name: Prepare isolated performance environment
+        run: |
+          umask 077
+          cat > .env.performance <<'EOF'
+          APP_ENV=test
+          APP_NAME="Maritime Claims & Risk Intelligence Platform"
+          API_V1_PREFIX=/api/v1
+          NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000/api/v1
+          CORS_ALLOWED_ORIGINS=http://127.0.0.1:3000
+          POSTGRES_DB=mcri_performance
+          POSTGRES_USER=mcri_performance
+          POSTGRES_PASSWORD=mcri_performance_password
+          DATABASE_URL=postgresql+psycopg://mcri_performance:mcri_performance_password@db:5432/mcri_performance
+          SECRET_KEY=ci-performance-only-not-a-deployment-secret-2026
+          STORAGE_BACKEND=local
+          LOCAL_STORAGE_PATH=/data/documents
+          PROCESSING_MAX_ATTEMPTS=1
+          AI_PROVIDER=disabled
+          AI_MODEL=
+          OPENAI_API_KEY=
+          ALLOW_EXTERNAL_AI_RESTRICTED=false
+          MCRI_DEMO_ORG_NAME="CI Performance Marine Insurer"
+          MCRI_DEMO_ORG_SLUG=pilot
+          MCRI_DEMO_EMAIL=manager@demo.mcri.app
+          MCRI_DEMO_PASSWORD=ci-performance-password-2026
+          EOF
+
+      - name: Start and validate design-partner stack
+        run: bash scripts/design_partner_preflight.sh .env.performance
+
+      - name: Run bounded operational performance smoke
+        run: |
+          set -a
+          source .env.performance
+          set +a
+          export MCRI_API_URL=http://127.0.0.1:8000/api/v1
+          export MCRI_PERF_OUTPUT=artifacts/performance-smoke.json
+          export MCRI_PERF_WARMUP_REQUESTS=3
+          export MCRI_PERF_SAMPLE_REQUESTS=24
+          export MCRI_PERF_CONCURRENCY=4
+          export MCRI_PERF_MAX_ERROR_RATIO=0
+          export MCRI_PERF_LIVENESS_P95_MS=1000
+          export MCRI_PERF_READINESS_P95_MS=1500
+          export MCRI_PERF_CLAIM_LIST_P95_MS=2500
+          python scripts/operational_performance_smoke.py
+
+      - name: Capture container diagnostics
+        if: failure()
+        run: |
+          mkdir -p artifacts
+          docker compose --env-file .env.performance ps -a > artifacts/performance-docker-compose-ps.txt || true
+          docker compose --env-file .env.performance logs --no-color > artifacts/performance-docker-compose.log || true
+
+      - name: Upload performance artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: operational-performance-smoke
+          path: artifacts/
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Remove performance containers and volumes
+        if: always()
+        run: docker compose --env-file .env.performance down -v --remove-orphans || true
