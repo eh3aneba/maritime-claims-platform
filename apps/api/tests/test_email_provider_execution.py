@@ -7,7 +7,7 @@ from sqlalchemy import select
 from app.modules.audit.models import AuditLog
 from app.modules.correspondence.models import ClaimCorrespondence
 from app.modules.email_ingestion.models import EmailProviderAdapter, IngestedEmailMessage
-from app.modules.email_ingestion import provider_execution
+from app.modules.email_ingestion import provider_execution, provider_gmail_history
 from tests.db_harness import TestingSessionLocal, client, reset_database
 from tests.test_claims_api import login
 from tests.test_controlled_email_ingestion import _connection
@@ -146,10 +146,13 @@ def test_gmail_pull_uses_label_scope_and_never_downloads_attachment_bytes(monkey
     calls: list[str] = []
     body_data = base64.urlsafe_b64encode(b"Provider body from Gmail.").decode().rstrip("=")
 
-    def fake_http(url: str, token: str, *, headers=None):
+    def fake_http(url: str, token: str, *, map_history_404=False):
         assert token == "gmail-secret-value"
         calls.append(url)
         assert "/attachments/" not in url
+        assert map_history_404 is False
+        if url.endswith("/profile"):
+            return {"historyId": "9000"}
         if url.endswith("?format=full"):
             return {
                 "id": "gmail-message-1",
@@ -183,14 +186,18 @@ def test_gmail_pull_uses_label_scope_and_never_downloads_attachment_bytes(monkey
             return {"messages": []}
         return {"messages": [{"id": "gmail-message-1"}], "nextPageToken": "page-2"}
 
-    monkeypatch.setattr(provider_execution, "_http_json", fake_http)
+    monkeypatch.setattr(provider_gmail_history, "_gmail_http_json", fake_http)
     first = client.post(
         f"/api/v1/email-ingestion/adapters/{adapter['id']}/execute",
         json={"idempotency_key": "gmail-exec-0001"},
     )
     assert first.status_code == 200, first.text
     assert first.json()["run"]["status"] == "succeeded"
-    assert first.json()["next_checkpoint"] == "page-2"
+    bootstrap_checkpoint = first.json()["next_checkpoint"]
+    parsed_bootstrap = provider_gmail_history.decode_gmail_checkpoint(bootstrap_checkpoint)
+    assert parsed_bootstrap.mode == "bootstrap_page"
+    assert parsed_bootstrap.history_id == "9000"
+    assert parsed_bootstrap.page_token == "page-2"
 
     inbox = client.get("/api/v1/email-ingestion/inbox").json()
     staged = next(message for message in inbox["messages"] if message["provider_message_id"] == "gmail-message-1")
@@ -203,13 +210,19 @@ def test_gmail_pull_uses_label_scope_and_never_downloads_attachment_bytes(monkey
 
     second = client.post(
         f"/api/v1/email-ingestion/adapters/{adapter['id']}/execute",
-        json={"idempotency_key": "gmail-exec-0002", "provider_checkpoint": "page-2"},
+        json={"idempotency_key": "gmail-exec-0002", "provider_checkpoint": bootstrap_checkpoint},
     )
     assert second.status_code == 200, second.text
     assert second.json()["run"]["messages_seen"] == 0
-    assert second.json()["next_checkpoint"] is None
+    history_checkpoint = second.json()["next_checkpoint"]
+    parsed_history = provider_gmail_history.decode_gmail_checkpoint(history_checkpoint)
+    assert parsed_history.mode == "history"
+    assert parsed_history.history_id == "9000"
     with TestingSessionLocal() as db:
-        assert db.get(EmailProviderAdapter, UUID(adapter["id"])).checkpoint_hash is None
+        assert db.get(EmailProviderAdapter, UUID(adapter["id"])).checkpoint_hash == sha256(
+            history_checkpoint.encode()
+        ).hexdigest()
+    assert calls[0].endswith("/profile")
     assert all("/attachments/" not in url and "/send" not in url for url in calls)
 
 
