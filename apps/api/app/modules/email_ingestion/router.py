@@ -6,12 +6,14 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.modules.auth.dependencies import CurrentUser, require_roles
+from app.modules.email_ingestion.provider_execution import execute_provider_adapter
 from app.modules.email_ingestion.provider_source import ingest_legacy_webhook, ingest_provider_webhook
 from app.modules.email_ingestion.schemas import (
     EmailAdapterCreate, EmailAdapterOperations, EmailAdapterResponse, EmailAdapterRunCreate,
     EmailAdapterRunResponse, EmailConnectionCreate, EmailConnectionResponse,
-    EmailConnectionTransition, EmailInboxResponse, EmailReview, ExpiryResponse,
-    IngestedEmailResponse, NormalizedEmailInput, RetentionRunCreate, RetentionRunResponse,
+    EmailConnectionTransition, EmailInboxResponse, EmailProviderExecutionRequest,
+    EmailProviderExecutionResponse, EmailReview, ExpiryResponse, IngestedEmailResponse,
+    NormalizedEmailInput, RetentionRunCreate, RetentionRunResponse,
 )
 from app.modules.email_ingestion.service import (
     create_adapter, create_connection, expire_due, get_adapter, get_connection, get_message,
@@ -90,6 +92,17 @@ def adapter_transition(adapter_id: UUID, payload: EmailConnectionTransition, man
 def adapter_run(adapter_id: UUID, payload: EmailAdapterRunCreate, manager: Manager,
                 db: Annotated[Session, Depends(get_db)]):
     return record_adapter_run(db, get_adapter(db, manager.organization_id, adapter_id), manager, payload)
+
+
+@router.post("/adapters/{adapter_id}/execute", response_model=EmailProviderExecutionResponse)
+def adapter_execute(adapter_id: UUID, payload: EmailProviderExecutionRequest, manager: Manager,
+                    db: Annotated[Session, Depends(get_db)]):
+    return execute_provider_adapter(
+        db,
+        get_adapter(db, manager.organization_id, adapter_id),
+        manager,
+        payload,
+    )
 
 
 @router.post("/retention-runs", response_model=RetentionRunResponse, status_code=201)
