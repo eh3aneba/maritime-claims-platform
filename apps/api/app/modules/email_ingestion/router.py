@@ -6,6 +6,14 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.modules.auth.dependencies import CurrentUser, require_roles
+from app.modules.email_ingestion.provider_attachment_acquisition import (
+    acquire_provider_attachment,
+    get_attachment_for_tenant,
+)
+from app.modules.email_ingestion.provider_attachment_retention import (
+    expire_due_with_provider_attachment_purge,
+    run_retention_with_provider_attachment_purge,
+)
 from app.modules.email_ingestion.provider_operations import (
     create_governed_adapter,
     execute_governed_provider_adapter,
@@ -16,15 +24,16 @@ from app.modules.email_ingestion.provider_operations import (
 from app.modules.email_ingestion.provider_source import ingest_legacy_webhook, ingest_provider_webhook
 from app.modules.email_ingestion.schemas import (
     EmailAdapterCreate, EmailAdapterOperations, EmailAdapterResponse, EmailAdapterRunCreate,
-    EmailAdapterRunResponse, EmailConnectionCreate, EmailConnectionResponse,
-    EmailConnectionTransition, EmailInboxResponse, EmailProviderExecutionRequest,
-    EmailProviderExecutionResponse, EmailReview, ExpiryResponse, IngestedEmailResponse,
-    NormalizedEmailInput, RetentionRunCreate, RetentionRunResponse,
+    EmailAdapterRunResponse, EmailAttachmentAcquisitionResponse, EmailConnectionCreate,
+    EmailConnectionResponse, EmailConnectionTransition, EmailInboxResponse,
+    EmailProviderExecutionRequest, EmailProviderExecutionResponse, EmailReview,
+    ExpiryResponse, IngestedEmailResponse, NormalizedEmailInput, RetentionRunCreate,
+    RetentionRunResponse,
 )
 from app.modules.email_ingestion.service import (
-    create_connection, expire_due, get_adapter, get_connection, get_message,
+    create_connection, get_adapter, get_connection, get_message,
     list_adapter_operations, list_inbox, message_response,
-    review_email, run_retention, transition_connection,
+    review_email, transition_connection,
 )
 from app.modules.users.models import User, UserRole
 
@@ -71,9 +80,33 @@ def message_review(message_id: UUID, payload: EmailReview, current_user: Current
     return IngestedEmailResponse(**message_response(db, item))
 
 
+@router.post(
+    "/messages/{message_id}/attachments/{manifest_id}/acquire",
+    response_model=EmailAttachmentAcquisitionResponse,
+)
+def acquire_message_attachment(
+    message_id: UUID,
+    manifest_id: UUID,
+    manager: Manager,
+    db: Annotated[Session, Depends(get_db)],
+):
+    message, manifest = get_attachment_for_tenant(
+        db,
+        organization_id=manager.organization_id,
+        message_id=message_id,
+        manifest_id=manifest_id,
+    )
+    return acquire_provider_attachment(
+        db,
+        message=message,
+        manifest=manifest,
+        user=manager,
+    )
+
+
 @router.post("/expire-due", response_model=ExpiryResponse)
 def expiry(manager: Manager, db: Annotated[Session, Depends(get_db)]):
-    return ExpiryResponse(expired_count=expire_due(db, manager))
+    return ExpiryResponse(expired_count=expire_due_with_provider_attachment_purge(db, manager))
 
 
 @router.get("/adapter-operations", response_model=EmailAdapterOperations)
@@ -128,4 +161,4 @@ def adapter_execute(adapter_id: UUID, payload: EmailProviderExecutionRequest, ma
 
 @router.post("/retention-runs", response_model=RetentionRunResponse, status_code=201)
 def retention_run(payload: RetentionRunCreate, manager: Manager, db: Annotated[Session, Depends(get_db)]):
-    return run_retention(db, manager, payload.idempotency_key)
+    return run_retention_with_provider_attachment_purge(db, manager, payload.idempotency_key)
