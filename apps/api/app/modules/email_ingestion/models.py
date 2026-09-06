@@ -52,6 +52,7 @@ class IngestedEmailMessage(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     organization_id: Mapped[UUID] = mapped_column(ForeignKey("organizations.id", ondelete="RESTRICT"), index=True)
     connection_id: Mapped[UUID] = mapped_column(ForeignKey("email_ingestion_connections.id", ondelete="RESTRICT"), index=True)
+    adapter_id: Mapped[UUID | None] = mapped_column(ForeignKey("email_provider_adapters.id", ondelete="RESTRICT"), nullable=True, index=True)
     suggested_claim_id: Mapped[UUID | None] = mapped_column(ForeignKey("claims.id", ondelete="SET NULL"), nullable=True, index=True)
     linked_claim_id: Mapped[UUID | None] = mapped_column(ForeignKey("claims.id", ondelete="SET NULL"), nullable=True, index=True)
     linked_by_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
