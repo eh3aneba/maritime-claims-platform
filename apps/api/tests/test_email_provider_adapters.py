@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from sqlalchemy import select
 
 from app.modules.audit.models import AuditLog
@@ -42,7 +44,7 @@ def test_adapter_is_least_privilege_and_pull_runs_require_governed_execution() -
         audit = db.scalar(
             select(AuditLog).where(
                 AuditLog.action == "CREATE_EMAIL_PROVIDER_ADAPTER",
-                AuditLog.entity_id == adapter["id"],
+                AuditLog.entity_id == UUID(adapter["id"]),
             )
         )
         assert audit is not None
