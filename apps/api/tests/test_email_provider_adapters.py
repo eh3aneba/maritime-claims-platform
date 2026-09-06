@@ -1,3 +1,6 @@
+from sqlalchemy import select
+
+from app.modules.audit.models import AuditLog
 from app.modules.email_ingestion.models import EmailAdapterRun, EmailProviderAdapter, EmailRetentionRun
 from tests.db_harness import TestingSessionLocal, client, reset_database
 from tests.test_claims_api import login
@@ -16,17 +19,36 @@ def test_adapter_is_least_privilege_and_pull_runs_require_governed_execution() -
         "allowed_folder": "Claims Intake", "permission_manifest": ["mail.send"], "batch_limit": 50,
     })
     assert denied.status_code == 422
+    credential_reference = "vault://mcri/graph-alpha"
     created = client.post("/api/v1/email-ingestion/adapters", json={
         "connection_id": connection["id"], "provider_kind": "microsoft_graph",
-        "display_name": "Graph intake", "credential_reference": "vault://mcri/graph-alpha",
+        "display_name": "Graph intake", "credential_reference": credential_reference,
         "allowed_folder": "Claims Intake",
         "permission_manifest": ["messages.read.allowed_folder", "attachments.metadata.read"],
         "batch_limit": 25, "retention_schedule_enabled": True,
     })
     assert created.status_code == 201, created.text
     adapter = created.json()
-    assert adapter["credential_reference"].startswith("vault://")
+    assert "credential_reference" not in adapter
+    assert "checkpoint_hash" not in adapter
+    assert adapter["credential_backend"] == "vault"
+    assert adapter["credential_reference_configured"] is True
+    assert adapter["credential_resolver_available"] is False
+    assert adapter["credential_reference_version"] == 1
+    assert adapter["checkpoint_present"] is False
     assert "token" not in adapter
+
+    with TestingSessionLocal() as db:
+        audit = db.scalar(
+            select(AuditLog).where(
+                AuditLog.action == "CREATE_EMAIL_PROVIDER_ADAPTER",
+                AuditLog.entity_id == adapter["id"],
+            )
+        )
+        assert audit is not None
+        serialized = str(audit.new_values) + str(audit.details)
+        assert credential_reference not in serialized
+        assert "mcri/graph-alpha" not in serialized
 
     # Phase 15.3 makes Graph/Gmail execution state authoritative only through
     # the governed /execute path. The historical manual run-reporting endpoint
@@ -66,6 +88,9 @@ def test_adapter_lifecycle_and_roles_follow_consented_connection() -> None:
         "display_name": "Worker", "credential_reference": "env://WORKER_SECRET",
         "allowed_folder": "Claims", "permission_manifest": ["messages.read.allowed_folder"],
     }).json()
+    assert "credential_reference" not in adapter
+    assert adapter["credential_backend"] == "env"
+    assert adapter["credential_resolver_available"] is True
     assert client.post(f"/api/v1/email-ingestion/adapters/{adapter['id']}/transition",
                        json={"action": "suspend", "note": "Operational review."}).status_code == 200
     blocked = client.post(f"/api/v1/email-ingestion/adapters/{adapter['id']}/runs", json={
