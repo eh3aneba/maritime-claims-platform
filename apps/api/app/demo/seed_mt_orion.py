@@ -26,8 +26,8 @@ from app.modules.claims.models import Claim, ClaimPriority, ClaimStatus, ClaimTy
 from app.modules.claims.schemas import ClaimCreate
 from app.modules.claims.service import change_claim_status, create_claim, update_current_reserve
 from app.modules.correspondence.models import ClaimCorrespondence
-from app.modules.correspondence.schemas import CorrespondenceMarkSent
-from app.modules.correspondence.service import mark_correspondence_sent, review_correspondence, submit_correspondence
+from app.modules.correspondence.schemas import CorrespondenceMarkSent, CorrespondenceReview, CorrespondenceTransition
+from app.modules.correspondence.service import mark_correspondence_sent, review_correspondence, review_history, submit_correspondence
 from app.modules.documents.models import ConfidentialityLevel, DocumentProcessingStatus
 from app.modules.documents.service import create_document_from_upload
 from app.modules.financial.models import ReserveHistory
@@ -313,14 +313,29 @@ def main() -> None:
                 ),
             )
             correspondence = db.scalar(select(ClaimCorrespondence).where(ClaimCorrespondence.request_batch_id == batch.id))
-            submit_correspondence(db, item=correspondence, user=manager)
-            review_correspondence(
+            if correspondence is None:
+                raise RuntimeError("Synthetic demo document request did not create correspondence")
+            correspondence = submit_correspondence(
+                db,
+                item=correspondence,
+                user=manager,
+                payload=CorrespondenceTransition(
+                    expected_state_fingerprint=correspondence.state_fingerprint,
+                    expected_state_version=correspondence.state_version,
+                ),
+            )
+            correspondence = review_correspondence(
                 db,
                 item=correspondence,
                 user=manager,
                 approve=True,
-                note="Synthetic pilot correspondence reviewed before recorded dispatch.",
+                payload=CorrespondenceReview(
+                    note="Synthetic pilot correspondence reviewed before recorded dispatch.",
+                    expected_state_fingerprint=correspondence.state_fingerprint,
+                    expected_state_version=correspondence.state_version,
+                ),
             )
+            latest_review = review_history(db, item=correspondence)[-1]
             mark_correspondence_sent(
                 db,
                 claim=claim,
@@ -330,6 +345,9 @@ def main() -> None:
                     confirm_sent=True,
                     channel="email",
                     external_reference="SYNTHETIC-DEMO-DISPATCH",
+                    expected_state_fingerprint=correspondence.state_fingerprint,
+                    expected_state_version=correspondence.state_version,
+                    expected_review_hash=latest_review.review_hash,
                 ),
             )
             db.commit()

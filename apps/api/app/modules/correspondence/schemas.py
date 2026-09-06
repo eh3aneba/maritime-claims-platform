@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -33,7 +34,12 @@ class CorrespondenceCreate(BaseModel):
         return self
 
 
-class CorrespondenceUpdate(BaseModel):
+class CorrespondenceExpectedState(BaseModel):
+    expected_state_fingerprint: str = Field(min_length=64, max_length=64)
+    expected_state_version: int = Field(ge=1)
+
+
+class CorrespondenceUpdate(CorrespondenceExpectedState):
     kind: CorrespondenceKind | None = None
     sensitivity: CorrespondenceSensitivity | None = None
     sender_label: str | None = Field(default=None, max_length=180)
@@ -42,15 +48,38 @@ class CorrespondenceUpdate(BaseModel):
     body: str | None = Field(default=None, min_length=3, max_length=50000)
 
 
-class CorrespondenceReview(BaseModel):
+class CorrespondenceTransition(CorrespondenceExpectedState):
+    pass
+
+
+class CorrespondenceReview(CorrespondenceExpectedState):
     note: str = Field(min_length=3, max_length=2000)
+    confirm_re_review: bool = False
 
 
-class CorrespondenceMarkSent(BaseModel):
+class CorrespondenceMarkSent(CorrespondenceExpectedState):
     confirm_sent: bool
     channel: CorrespondenceChannel
     external_reference: str | None = Field(default=None, max_length=240)
     sent_at: datetime | None = None
+    expected_review_hash: str = Field(min_length=64, max_length=64)
+
+
+class CorrespondenceReviewDecisionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    correspondence_id: UUID
+    reviewed_by_id: UUID | None
+    correspondence_state_fingerprint: str
+    state_version: int
+    review_number: int
+    action: Literal["approve", "reject"]
+    note: str
+    content_hash: str | None
+    previous_review_hash: str | None
+    review_hash: str
+    reviewed_at: datetime
 
 
 class CorrespondenceResponse(BaseModel):
@@ -75,6 +104,12 @@ class CorrespondenceResponse(BaseModel):
     review_note: str | None
     external_reference: str | None
     content_hash: str | None
+    state_fingerprint: str
+    state_version: int
+    sent_review_hash: str | None
+    review_state: Literal["none", "current", "stale", "legacy_unbound"]
+    latest_review: CorrespondenceReviewDecisionResponse | None
+    review_history: list[CorrespondenceReviewDecisionResponse]
     occurred_at: datetime | None
     reviewed_at: datetime | None
     sent_at: datetime | None

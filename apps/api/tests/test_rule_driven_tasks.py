@@ -50,19 +50,41 @@ def _chief_engineer_docx() -> bytes:
     return output.getvalue()
 
 
+def _expected(item: dict) -> dict:
+    return {
+        "expected_state_fingerprint": item["state_fingerprint"],
+        "expected_state_version": item["state_version"],
+    }
+
+
 def _approve_and_mark_sent(claim_id: str, batch_id: str) -> dict:
     items = client.get(f"/api/v1/claims/{claim_id}/correspondence").json()["items"]
     item = next(row for row in items if row["request_batch_id"] == batch_id)
-    submitted = client.post(f"/api/v1/claims/{claim_id}/correspondence/{item['id']}/submit")
+    submitted = client.post(
+        f"/api/v1/claims/{claim_id}/correspondence/{item['id']}/submit",
+        json=_expected(item),
+    )
     assert submitted.status_code == 200, submitted.text
+    submitted_item = submitted.json()
     approved = client.post(
         f"/api/v1/claims/{claim_id}/correspondence/{item['id']}/approve",
-        json={"note": "Reviewed against the claim file and approved for dispatch."},
+        json={
+            "note": "Reviewed against the claim file and approved for dispatch.",
+            "confirm_re_review": False,
+            **_expected(submitted_item),
+        },
     )
     assert approved.status_code == 200, approved.text
+    approved_item = approved.json()
     sent = client.post(
         f"/api/v1/claims/{claim_id}/correspondence/{item['id']}/mark-sent",
-        json={"confirm_sent": True, "channel": "email", "external_reference": "OUT-2026-001"},
+        json={
+            "confirm_sent": True,
+            "channel": "email",
+            "external_reference": "OUT-2026-001",
+            "expected_review_hash": approved_item["latest_review"]["review_hash"],
+            **_expected(approved_item),
+        },
     )
     assert sent.status_code == 200, sent.text
     return sent.json()
