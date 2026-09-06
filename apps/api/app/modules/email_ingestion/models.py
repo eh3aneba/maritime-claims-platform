@@ -113,6 +113,8 @@ class EmailProviderAdapter(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     provider_kind: Mapped[str] = mapped_column(String(40))
     display_name: Mapped[str] = mapped_column(String(100))
     credential_reference: Mapped[str] = mapped_column(String(240))
+    credential_reference_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    credential_reference_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     allowed_folder: Mapped[str] = mapped_column(String(240))
     permission_manifest: Mapped[list] = mapped_column(JSON, default=list)
     status: Mapped[str] = mapped_column(String(30), default="active", server_default="active")
@@ -122,6 +124,22 @@ class EmailProviderAdapter(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     last_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     checkpoint_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    @property
+    def credential_backend(self) -> str:
+        return self.credential_reference.partition("://")[0] or "invalid"
+
+    @property
+    def credential_reference_configured(self) -> bool:
+        return bool(self.credential_reference)
+
+    @property
+    def credential_resolver_available(self) -> bool:
+        return self.credential_backend == "env"
+
+    @property
+    def checkpoint_present(self) -> bool:
+        return bool(self.checkpoint_hash)
 
 
 class EmailAdapterRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -149,6 +167,10 @@ class EmailAdapterRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     failure_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    @property
+    def checkpoint_present(self) -> bool:
+        return bool(self.checkpoint_hash)
 
 
 class EmailRetentionRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
