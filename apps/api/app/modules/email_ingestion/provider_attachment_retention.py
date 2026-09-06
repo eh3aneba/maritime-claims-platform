@@ -31,6 +31,8 @@ def _purge_expired_provider_attachment_state(db: Session, user: User) -> None:
     )
     for manifest in manifests:
         purge_provider_attachment_for_retention(manifest)
+        manifest.evidence_admission_failure_code = None
+        manifest.evidence_admission_attempted_at = None
         manifest.filename = "[expired]"
         manifest.mime_type = "application/octet-stream"
         manifest.file_size_bytes = 0

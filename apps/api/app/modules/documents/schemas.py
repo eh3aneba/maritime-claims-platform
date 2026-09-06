@@ -24,6 +24,7 @@ class DocumentResponse(BaseModel):
     file_hash: str
     document_family_id: UUID
     supersedes_document_id: UUID | None
+    source_email_attachment_manifest_id: UUID | None
     version_number: int
     is_current: bool
     replacement_reason: str | None

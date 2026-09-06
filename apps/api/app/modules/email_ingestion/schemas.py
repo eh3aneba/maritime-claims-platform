@@ -6,6 +6,8 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
 from app.modules.correspondence.models import CorrespondenceSensitivity
+from app.modules.documents.models import ConfidentialityLevel
+from app.modules.documents.schemas import DocumentResponse
 from app.modules.email_ingestion.models import EmailConnectionStatus, EmailMessageStatus
 
 
@@ -77,6 +79,18 @@ class EmailAttachmentAcquisitionResponse(BaseModel):
     acquired_at: datetime | None
     malware_scanned_at: datetime | None
     acquisition_failure_code: str | None
+    replayed: bool
+
+
+class EmailAttachmentEvidenceAdmissionRequest(BaseModel):
+    confirm_admission: bool = False
+    admission_note: str = Field(min_length=20, max_length=1000)
+    document_type: str | None = Field(default=None, max_length=100)
+    confidentiality_level: ConfidentialityLevel = ConfidentialityLevel.CONFIDENTIAL
+
+
+class EmailAttachmentEvidenceAdmissionResponse(BaseModel):
+    document: DocumentResponse
     replayed: bool
 
 

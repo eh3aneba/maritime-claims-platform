@@ -14,6 +14,9 @@ from app.modules.email_ingestion.provider_attachment_retention import (
     expire_due_with_provider_attachment_purge,
     run_retention_with_provider_attachment_purge,
 )
+from app.modules.email_ingestion.provider_evidence_admission import (
+    admit_provider_attachment_to_evidence,
+)
 from app.modules.email_ingestion.provider_operations import (
     create_governed_adapter,
     execute_governed_provider_adapter,
@@ -24,8 +27,9 @@ from app.modules.email_ingestion.provider_operations import (
 from app.modules.email_ingestion.provider_source import ingest_legacy_webhook, ingest_provider_webhook
 from app.modules.email_ingestion.schemas import (
     EmailAdapterCreate, EmailAdapterOperations, EmailAdapterResponse, EmailAdapterRunCreate,
-    EmailAdapterRunResponse, EmailAttachmentAcquisitionResponse, EmailConnectionCreate,
-    EmailConnectionResponse, EmailConnectionTransition, EmailInboxResponse,
+    EmailAdapterRunResponse, EmailAttachmentAcquisitionResponse,
+    EmailAttachmentEvidenceAdmissionRequest, EmailAttachmentEvidenceAdmissionResponse,
+    EmailConnectionCreate, EmailConnectionResponse, EmailConnectionTransition, EmailInboxResponse,
     EmailProviderExecutionRequest, EmailProviderExecutionResponse, EmailReview,
     ExpiryResponse, IngestedEmailResponse, NormalizedEmailInput, RetentionRunCreate,
     RetentionRunResponse,
@@ -96,8 +100,6 @@ def acquire_message_attachment(
         message_id=message_id,
         manifest_id=manifest_id,
     )
-    # Serialize acquisition against concurrent acquisition/retention in PostgreSQL.
-    # SQLite ignores row-level FOR UPDATE semantics, which is sufficient for test/dev.
     db.refresh(message, with_for_update=True)
     db.refresh(manifest, with_for_update=True)
     return acquire_provider_attachment_with_integrity(
@@ -105,6 +107,37 @@ def acquire_message_attachment(
         message=message,
         manifest=manifest,
         user=manager,
+    )
+
+
+@router.post(
+    "/messages/{message_id}/attachments/{manifest_id}/admit-evidence",
+    response_model=EmailAttachmentEvidenceAdmissionResponse,
+)
+def admit_message_attachment_to_evidence(
+    message_id: UUID,
+    manifest_id: UUID,
+    payload: EmailAttachmentEvidenceAdmissionRequest,
+    manager: Manager,
+    db: Annotated[Session, Depends(get_db)],
+):
+    message, manifest = get_attachment_for_tenant(
+        db,
+        organization_id=manager.organization_id,
+        message_id=message_id,
+        manifest_id=manifest_id,
+    )
+    db.refresh(message, with_for_update=True)
+    db.refresh(manifest, with_for_update=True)
+    return admit_provider_attachment_to_evidence(
+        db,
+        message=message,
+        manifest=manifest,
+        user=manager,
+        confirm_admission=payload.confirm_admission,
+        admission_note=payload.admission_note,
+        document_type=payload.document_type,
+        confidentiality_level=payload.confidentiality_level,
     )
 
 

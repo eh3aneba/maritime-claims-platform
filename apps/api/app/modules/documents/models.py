@@ -9,6 +9,10 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 from app.db.mixins import SoftDeleteMixin, TimestampMixin, UUIDPrimaryKeyMixin
 from app.db.types import enum_values
+# Document carries an optional FK into email-ingestion staging. Register that
+# target table even in processes that import Document models directly instead
+# of loading the full app.db.metadata registry (for example demo/perf seeds).
+from app.modules.email_ingestion import models as _email_ingestion_models  # noqa: F401
 
 if TYPE_CHECKING:
     from app.modules.claims.models import Claim
@@ -58,6 +62,11 @@ class Document(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
         Index("ix_documents_org_processing", "organization_id", "processing_status"),
         Index("ix_documents_org_family", "organization_id", "claim_id", "document_family_id"),
         Index(
+            "uq_documents_source_email_attachment_manifest",
+            "source_email_attachment_manifest_id",
+            unique=True,
+        ),
+        Index(
             "uq_documents_active_family",
             "organization_id",
             "claim_id",
@@ -83,6 +92,10 @@ class Document(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     superseded_by_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
+    source_email_attachment_manifest_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("email_attachment_manifests.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
 
     document_family_id: Mapped[UUID] = mapped_column(nullable=False, default=uuid4)
     filename: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -95,6 +108,7 @@ class Document(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     version_number: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
     is_current: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
     replacement_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_admission_note: Mapped[str | None] = mapped_column(Text, nullable=True)
     superseded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     processing_status: Mapped[DocumentProcessingStatus] = mapped_column(
         Enum(DocumentProcessingStatus, name="document_processing_status", native_enum=True, values_callable=enum_values),
