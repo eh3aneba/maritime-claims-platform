@@ -161,7 +161,11 @@ class EmailAdapterResponse(BaseModel):
     connection_id: UUID
     provider_kind: str
     display_name: str
-    credential_reference: str
+    credential_backend: str
+    credential_reference_configured: bool
+    credential_resolver_available: bool
+    credential_reference_version: int
+    credential_reference_changed_at: datetime | None
     allowed_folder: str
     permission_manifest: list[str]
     status: str
@@ -169,9 +173,25 @@ class EmailAdapterResponse(BaseModel):
     retention_schedule_enabled: bool
     next_sync_at: datetime | None
     last_sync_at: datetime | None
-    checkpoint_hash: str | None
+    checkpoint_present: bool
     revoked_at: datetime | None
     created_at: datetime
+
+
+class CredentialReferenceRotationRequest(BaseModel):
+    confirm_rotation: bool = False
+    credential_reference: str = Field(min_length=3, max_length=240, pattern=r"^(env|vault|secret-manager)://")
+    reason: str = Field(min_length=20, max_length=1000)
+
+
+class CredentialReferenceRotationResponse(BaseModel):
+    adapter_id: UUID
+    credential_backend: str
+    credential_reference_version: int
+    credential_reference_changed_at: datetime
+    credential_resolver_available: bool
+    checkpoint_preserved: bool
+    next_sync_at: datetime | None
 
 
 class EmailAdapterRunCreate(BaseModel):
@@ -192,7 +212,7 @@ class EmailAdapterRunResponse(BaseModel):
     status: str
     messages_seen: int
     messages_ingested: int
-    checkpoint_hash: str | None
+    checkpoint_present: bool
     checkpoint_handoff_status: str = "not_required"
     checkpoint_acknowledged_at: datetime | None = None
     checkpoint_abandoned_at: datetime | None = None
