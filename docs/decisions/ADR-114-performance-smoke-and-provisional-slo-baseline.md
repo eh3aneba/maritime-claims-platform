@@ -30,6 +30,8 @@ The JSON artifact records only:
 
 It does not record request or response bodies, credentials, bearer tokens, cookies, claim identifiers, external references, claim text, evidence content, correspondence, legal analysis or insurance analysis.
 
+The CI workflow applies the same boundary outside the JSON artifact: database/application/demo credentials are generated per run and masked rather than committed or echoed as fixed values; successful preflight output redacts the seeded user and claim identity; failure artifacts are limited to bounded container state (`docker compose ps`) rather than raw application/container logs that could become a second claims-data path.
+
 ### 2. CI budgets are regression tripwires, not production SLO evidence
 The initial GitHub-hosted-runner budgets are intentionally broad:
 
