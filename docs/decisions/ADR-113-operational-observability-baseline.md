@@ -27,7 +27,7 @@ The request completion event contains only:
 
 The middleware must not log request bodies, authorization/cookie headers, correspondence text, evidence content, document payloads, claim facts or legal/insurance analysis.
 
-Unhandled request exceptions emit a failure event with the same bounded metadata and traceback through the server logger; they do not add request content to the event payload.
+Unhandled request exceptions emit only the same bounded failure metadata. Exception messages and tracebacks are deliberately excluded from this operational request logger because they can embed claim, evidence, credential or dependency details. Any future diagnostic exception sink must be separately designed, access-controlled and privacy-reviewed.
 
 ### 2. Liveness and readiness have different meanings
 `/api/v1/health/live` is a cheap process liveness check. It must not make external dependency calls.
