@@ -96,6 +96,10 @@ def acquire_message_attachment(
         message_id=message_id,
         manifest_id=manifest_id,
     )
+    # Serialize acquisition against concurrent acquisition/retention in PostgreSQL.
+    # SQLite ignores row-level FOR UPDATE semantics, which is sufficient for test/dev.
+    db.refresh(message, with_for_update=True)
+    db.refresh(manifest, with_for_update=True)
     return acquire_provider_attachment(
         db,
         message=message,
