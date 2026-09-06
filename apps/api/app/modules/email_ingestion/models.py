@@ -123,6 +123,9 @@ class EmailProviderAdapter(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     next_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     last_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     checkpoint_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    live_execution_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    live_execution_enabled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    live_execution_enabled_by_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     @property

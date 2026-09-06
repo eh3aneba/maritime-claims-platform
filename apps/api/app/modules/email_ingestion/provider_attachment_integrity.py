@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from fastapi import HTTPException
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.modules.audit.service import write_audit_log
 from app.modules.documents.service import _storage
-from app.modules.email_ingestion.models import EmailAttachmentManifest, IngestedEmailMessage
+from app.modules.email_ingestion.models import EmailAttachmentManifest, EmailProviderAdapter, IngestedEmailMessage
 from app.modules.email_ingestion.provider_attachment_acquisition import acquire_provider_attachment
+from app.modules.email_ingestion.provider_live_activation import require_live_provider_activation
 from app.modules.users.models import User
 
 _TERMINAL_QUARANTINE_STATES = {
@@ -48,6 +50,25 @@ def acquire_provider_attachment_with_integrity(
             )
             db.commit()
             raise HTTPException(409, "Provider attachment quarantine state requires reconciliation") from exc
+        # Existing clean/infected/error quarantine state is a local replay and
+        # must not require current live-provider authority.
+        return acquire_provider_attachment(
+            db,
+            message=message,
+            manifest=manifest,
+            user=user,
+        )
+
+    if message.adapter_id is not None:
+        adapter = db.scalar(
+            select(EmailProviderAdapter).where(
+                EmailProviderAdapter.id == message.adapter_id,
+                EmailProviderAdapter.organization_id == user.organization_id,
+            )
+        )
+        if adapter is not None:
+            require_live_provider_activation(adapter)
+
     return acquire_provider_attachment(
         db,
         message=message,

@@ -17,7 +17,6 @@ from app.modules.email_ingestion.provider_attachment_retention import (
 from app.modules.email_ingestion.provider_checkpoint_handoff import (
     abandon_checkpoint_handoff,
     acknowledge_checkpoint_handoff,
-    execute_provider_adapter_with_checkpoint_handoff,
     reset_gmail_checkpoint_with_handoff_guard,
 )
 from app.modules.email_ingestion.provider_credential_lifecycle import (
@@ -27,6 +26,11 @@ from app.modules.email_ingestion.provider_credential_lifecycle import (
 from app.modules.email_ingestion.provider_evidence_admission import (
     admit_provider_attachment_to_evidence,
 )
+from app.modules.email_ingestion.provider_live_activation import (
+    activate_live_provider,
+    invalidate_connection_live_provider,
+)
+from app.modules.email_ingestion.provider_live_execution import execute_activated_provider_adapter
 from app.modules.email_ingestion.provider_operations import (
     create_governed_adapter,
     record_governed_adapter_run,
@@ -43,7 +47,8 @@ from app.modules.email_ingestion.schemas import (
     EmailConnectionCreate, EmailConnectionResponse, EmailConnectionTransition, EmailInboxResponse,
     EmailProviderExecutionRequest, EmailProviderExecutionResponse, EmailReview,
     ExpiryResponse, GmailCheckpointResetRequest, GmailCheckpointResetResponse,
-    IngestedEmailResponse, NormalizedEmailInput, RetentionRunCreate, RetentionRunResponse,
+    IngestedEmailResponse, LiveProviderActivationRequest, LiveProviderActivationResponse,
+    NormalizedEmailInput, RetentionRunCreate, RetentionRunResponse,
 )
 from app.modules.email_ingestion.service import (
     create_connection, get_adapter, get_connection, get_message,
@@ -70,7 +75,13 @@ def connection_create(payload: EmailConnectionCreate, manager: Manager, db: Anno
 
 @router.post("/connections/{connection_id}/transition", response_model=EmailConnectionResponse)
 def connection_transition(connection_id: UUID, payload: EmailConnectionTransition, manager: Manager, db: Annotated[Session, Depends(get_db)]):
-    return transition_connection(db, get_connection(db, manager.organization_id, connection_id), manager, payload.action, payload.note)
+    item = get_connection(db, manager.organization_id, connection_id)
+    invalidate_connection_live_provider(
+        db,
+        organization_id=manager.organization_id,
+        connection_id=item.id,
+    )
+    return transition_connection(db, item, manager, payload.action, payload.note)
 
 
 @router.post("/webhooks/{connection_id}", response_model=IngestedEmailResponse, status_code=201)
@@ -203,6 +214,24 @@ def adapter_credential_reference_rotation(
     )
 
 
+@router.post(
+    "/adapters/{adapter_id}/live-activation",
+    response_model=LiveProviderActivationResponse,
+)
+def adapter_live_activation(
+    adapter_id: UUID,
+    payload: LiveProviderActivationRequest,
+    manager: Manager,
+    db: Annotated[Session, Depends(get_db)],
+):
+    return activate_live_provider(
+        db,
+        adapter=get_adapter(db, manager.organization_id, adapter_id),
+        user=manager,
+        payload=payload,
+    )
+
+
 @router.post("/adapters/{adapter_id}/runs", response_model=EmailAdapterRunResponse, status_code=201)
 def adapter_run(adapter_id: UUID, payload: EmailAdapterRunCreate, manager: Manager,
                 db: Annotated[Session, Depends(get_db)]):
@@ -217,7 +246,7 @@ def adapter_run(adapter_id: UUID, payload: EmailAdapterRunCreate, manager: Manag
 @router.post("/adapters/{adapter_id}/execute", response_model=EmailProviderExecutionResponse)
 def adapter_execute(adapter_id: UUID, payload: EmailProviderExecutionRequest, manager: Manager,
                     db: Annotated[Session, Depends(get_db)]):
-    return execute_provider_adapter_with_checkpoint_handoff(
+    return execute_activated_provider_adapter(
         db,
         get_adapter(db, manager.organization_id, adapter_id),
         manager,
