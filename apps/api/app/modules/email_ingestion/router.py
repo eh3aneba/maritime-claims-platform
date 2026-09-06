@@ -6,7 +6,13 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.modules.auth.dependencies import CurrentUser, require_roles
-from app.modules.email_ingestion.provider_execution import execute_provider_adapter
+from app.modules.email_ingestion.provider_operations import (
+    create_governed_adapter,
+    execute_governed_provider_adapter,
+    list_provider_reconciliation,
+    record_governed_adapter_run,
+    transition_governed_adapter,
+)
 from app.modules.email_ingestion.provider_source import ingest_legacy_webhook, ingest_provider_webhook
 from app.modules.email_ingestion.schemas import (
     EmailAdapterCreate, EmailAdapterOperations, EmailAdapterResponse, EmailAdapterRunCreate,
@@ -16,9 +22,9 @@ from app.modules.email_ingestion.schemas import (
     NormalizedEmailInput, RetentionRunCreate, RetentionRunResponse,
 )
 from app.modules.email_ingestion.service import (
-    create_adapter, create_connection, expire_due, get_adapter, get_connection, get_message,
-    list_adapter_operations, list_inbox, message_response, record_adapter_run,
-    review_email, run_retention, transition_adapter, transition_connection,
+    create_connection, expire_due, get_adapter, get_connection, get_message,
+    list_adapter_operations, list_inbox, message_response,
+    review_email, run_retention, transition_connection,
 )
 from app.modules.users.models import User, UserRole
 
@@ -76,28 +82,43 @@ def adapter_operations(current_user: CurrentUser, db: Annotated[Session, Depends
     return EmailAdapterOperations(adapters=adapters, runs=runs, retention_runs=retention_runs)
 
 
+@router.get("/adapter-reconciliation")
+def adapter_reconciliation(manager: Manager, db: Annotated[Session, Depends(get_db)]):
+    return list_provider_reconciliation(db, manager)
+
+
 @router.post("/adapters", response_model=EmailAdapterResponse, status_code=201)
 def adapter_create(payload: EmailAdapterCreate, manager: Manager, db: Annotated[Session, Depends(get_db)]):
-    return create_adapter(db, manager, payload)
+    return create_governed_adapter(db, manager, payload)
 
 
 @router.post("/adapters/{adapter_id}/transition", response_model=EmailAdapterResponse)
 def adapter_transition(adapter_id: UUID, payload: EmailConnectionTransition, manager: Manager,
                        db: Annotated[Session, Depends(get_db)]):
-    return transition_adapter(db, get_adapter(db, manager.organization_id, adapter_id), manager,
-                              payload.action, payload.note)
+    return transition_governed_adapter(
+        db,
+        get_adapter(db, manager.organization_id, adapter_id),
+        manager,
+        payload.action,
+        payload.note,
+    )
 
 
 @router.post("/adapters/{adapter_id}/runs", response_model=EmailAdapterRunResponse, status_code=201)
 def adapter_run(adapter_id: UUID, payload: EmailAdapterRunCreate, manager: Manager,
                 db: Annotated[Session, Depends(get_db)]):
-    return record_adapter_run(db, get_adapter(db, manager.organization_id, adapter_id), manager, payload)
+    return record_governed_adapter_run(
+        db,
+        get_adapter(db, manager.organization_id, adapter_id),
+        manager,
+        payload,
+    )
 
 
 @router.post("/adapters/{adapter_id}/execute", response_model=EmailProviderExecutionResponse)
 def adapter_execute(adapter_id: UUID, payload: EmailProviderExecutionRequest, manager: Manager,
                     db: Annotated[Session, Depends(get_db)]):
-    return execute_provider_adapter(
+    return execute_governed_provider_adapter(
         db,
         get_adapter(db, manager.organization_id, adapter_id),
         manager,

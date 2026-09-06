@@ -8,7 +8,7 @@ def setup_function() -> None:
     reset_database()
 
 
-def test_adapter_is_least_privilege_bounded_and_idempotent() -> None:
+def test_adapter_is_least_privilege_and_pull_runs_require_governed_execution() -> None:
     _, connection, _ = _connection()
     denied = client.post("/api/v1/email-ingestion/adapters", json={
         "connection_id": connection["id"], "provider_kind": "microsoft_graph",
@@ -28,24 +28,26 @@ def test_adapter_is_least_privilege_bounded_and_idempotent() -> None:
     assert adapter["credential_reference"].startswith("vault://")
     assert "token" not in adapter
 
+    # Phase 15.3 makes Graph/Gmail execution state authoritative only through
+    # the governed /execute path. The historical manual run-reporting endpoint
+    # must not manufacture a provider fetch or checkpoint, even idempotently.
     payload = {"idempotency_key": "graph-run-0001", "trigger": "scheduled",
                "messages_seen": 2, "messages_ingested": 2, "provider_checkpoint": "opaque-cursor-77"}
     first = client.post(f"/api/v1/email-ingestion/adapters/{adapter['id']}/runs", json=payload)
     second = client.post(f"/api/v1/email-ingestion/adapters/{adapter['id']}/runs", json=payload)
-    assert first.status_code == 201 and second.status_code == 201
-    assert first.json()["id"] == second.json()["id"]
-    assert first.json()["checkpoint_hash"] != "opaque-cursor-77"
+    assert first.status_code == 409 and second.status_code == 409
+
     too_large = client.post(f"/api/v1/email-ingestion/adapters/{adapter['id']}/runs", json={
         **payload, "idempotency_key": "graph-run-0002", "messages_seen": 26, "messages_ingested": 26,
     })
-    assert too_large.status_code == 422
+    assert too_large.status_code == 409
 
     retention = client.post("/api/v1/email-ingestion/retention-runs", json={"idempotency_key": "aaaaaaaa"})
     retention_again = client.post("/api/v1/email-ingestion/retention-runs", json={"idempotency_key": "aaaaaaaa"})
     assert retention.status_code == 201 and retention.json()["id"] == retention_again.json()["id"]
     with TestingSessionLocal() as db:
         assert db.query(EmailProviderAdapter).count() == 1
-        assert db.query(EmailAdapterRun).count() == 1
+        assert db.query(EmailAdapterRun).count() == 0
         assert db.query(EmailRetentionRun).count() == 1
 
 
