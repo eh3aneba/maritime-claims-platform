@@ -170,6 +170,18 @@ class EmailAdapterRunResponse(BaseModel):
     finished_at: datetime | None
 
 
+class EmailProviderExecutionRequest(BaseModel):
+    idempotency_key: str = Field(min_length=8, max_length=120)
+    trigger: Literal["manual", "scheduled"] = "manual"
+    provider_checkpoint: str | None = Field(default=None, max_length=4000)
+
+
+class EmailProviderExecutionResponse(BaseModel):
+    run: EmailAdapterRunResponse
+    next_checkpoint: str | None = Field(default=None, max_length=4000)
+    replayed: bool
+
+
 class RetentionRunCreate(BaseModel):
     idempotency_key: str = Field(min_length=8, max_length=120)
 
