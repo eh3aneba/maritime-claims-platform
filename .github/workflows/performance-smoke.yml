@@ -36,7 +36,13 @@ jobs:
       - name: Prepare isolated performance environment
         run: |
           umask 077
-          cat > .env.performance <<'EOF'
+          PERF_DB_PASSWORD="$(python -c 'import secrets; print(secrets.token_urlsafe(24))')"
+          PERF_SECRET_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(48))')"
+          PERF_DEMO_PASSWORD="$(python -c 'import secrets; print(secrets.token_urlsafe(24))')"
+          echo "::add-mask::$PERF_DB_PASSWORD"
+          echo "::add-mask::$PERF_SECRET_KEY"
+          echo "::add-mask::$PERF_DEMO_PASSWORD"
+          cat > .env.performance <<EOF
           APP_ENV=test
           APP_NAME="Maritime Claims & Risk Intelligence Platform"
           API_V1_PREFIX=/api/v1
@@ -44,9 +50,9 @@ jobs:
           CORS_ALLOWED_ORIGINS=http://127.0.0.1:3000
           POSTGRES_DB=mcri_performance
           POSTGRES_USER=mcri_performance
-          POSTGRES_PASSWORD=mcri_performance_password
-          DATABASE_URL=postgresql+psycopg://mcri_performance:mcri_performance_password@db:5432/mcri_performance
-          SECRET_KEY=ci-performance-only-not-a-deployment-secret-2026
+          POSTGRES_PASSWORD=$PERF_DB_PASSWORD
+          DATABASE_URL=postgresql+psycopg://mcri_performance:$PERF_DB_PASSWORD@db:5432/mcri_performance
+          SECRET_KEY=$PERF_SECRET_KEY
           STORAGE_BACKEND=local
           LOCAL_STORAGE_PATH=/data/documents
           PROCESSING_MAX_ATTEMPTS=1
@@ -57,11 +63,16 @@ jobs:
           MCRI_DEMO_ORG_NAME="CI Performance Marine Insurer"
           MCRI_DEMO_ORG_SLUG=pilot
           MCRI_DEMO_EMAIL=manager@demo.mcri.app
-          MCRI_DEMO_PASSWORD=ci-performance-password-2026
+          MCRI_DEMO_PASSWORD=$PERF_DEMO_PASSWORD
           EOF
 
       - name: Start and validate design-partner stack
-        run: bash scripts/design_partner_preflight.sh .env.performance
+        run: |
+          set -o pipefail
+          bash scripts/design_partner_preflight.sh .env.performance 2>&1 \
+            | sed -E \
+                -e 's/^User:.*/User: [redacted]/' \
+                -e 's/^Claim:.*/Claim: [synthetic-seed-verified]/'
 
       - name: Run bounded operational performance smoke
         run: |
@@ -79,12 +90,11 @@ jobs:
           export MCRI_PERF_CLAIM_LIST_P95_MS=2500
           python scripts/operational_performance_smoke.py
 
-      - name: Capture container diagnostics
+      - name: Capture bounded container diagnostics
         if: failure()
         run: |
           mkdir -p artifacts
           docker compose --env-file .env.performance ps -a > artifacts/performance-docker-compose-ps.txt || true
-          docker compose --env-file .env.performance logs --no-color > artifacts/performance-docker-compose.log || true
 
       - name: Upload performance artifacts
         if: always()
