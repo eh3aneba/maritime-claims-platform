@@ -221,7 +221,8 @@ def test_xlsx_export_adds_governed_correspondence_sheet_and_control_notice() -> 
 def test_pdf_export_appends_governed_correspondence_reporting_context() -> None:
     rendered = PdfReader(BytesIO(render_pdf(_render_snapshot())))
     text = "\n".join(page.extract_text() or "" for page in rendered.pages)
-    assert "GOVERNED CORRESPONDENCE HISTORY" in text
-    assert "MT ORION governed external status" in text
-    assert "excluded by default" in text.lower()
-    assert "does not waive" in text.lower()
+    normalized = " ".join(text.split())
+    assert "GOVERNED CORRESPONDENCE HISTORY" in normalized
+    assert "MT ORION governed external status" in normalized
+    assert "excluded by default" in normalized.lower()
+    assert "does not waive" in normalized.lower()
