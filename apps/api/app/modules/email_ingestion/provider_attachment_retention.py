@@ -25,11 +25,7 @@ def _purge_expired_provider_attachment_state(db: Session, user: User) -> None:
                 EmailAttachmentManifest.organization_id == user.organization_id,
                 IngestedEmailMessage.organization_id == user.organization_id,
                 IngestedEmailMessage.status == EmailMessageStatus.EXPIRED,
-                (
-                    EmailAttachmentManifest.provider_attachment_id.is_not(None)
-                    | EmailAttachmentManifest.quarantine_key.is_not(None)
-                    | EmailAttachmentManifest.acquired_file_hash.is_not(None)
-                ),
+                IngestedEmailMessage.adapter_id.is_not(None),
             )
         )
     )
