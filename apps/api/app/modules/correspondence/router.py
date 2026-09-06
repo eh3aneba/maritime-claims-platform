@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.modules.auth.dependencies import CurrentUser, require_roles
 from app.modules.claims.security import get_claim_for_tenant
+from app.modules.correspondence.revision_service import reopen_correspondence_for_revision
 from app.modules.correspondence.schemas import (
     CorrespondenceCreate,
     CorrespondenceListResponse,
@@ -74,6 +75,20 @@ def correspondence_submit(
     claim = _claim(db, claim_id, current_user.organization_id)
     item = get_correspondence(db, claim=claim, correspondence_id=correspondence_id)
     item = submit_correspondence(db, item=item, user=current_user, payload=payload)
+    return CorrespondenceResponse.model_validate(correspondence_response(db, item=item))
+
+
+@router.post("/{correspondence_id}/revise", response_model=CorrespondenceResponse)
+def correspondence_revise(
+    claim_id: UUID,
+    correspondence_id: UUID,
+    payload: CorrespondenceTransition,
+    current_user: CurrentUser,
+    db: Annotated[Session, Depends(get_db)],
+) -> CorrespondenceResponse:
+    claim = _claim(db, claim_id, current_user.organization_id)
+    item = get_correspondence(db, claim=claim, correspondence_id=correspondence_id)
+    item = reopen_correspondence_for_revision(db, item=item, user=current_user, payload=payload)
     return CorrespondenceResponse.model_validate(correspondence_response(db, item=item))
 
 

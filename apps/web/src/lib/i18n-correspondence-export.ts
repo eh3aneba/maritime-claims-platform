@@ -11,6 +11,16 @@ export function correspondenceT(locale: Locale, en: string, fa: string): string 
 }
 
 export function correspondenceStatusLabel(locale: Locale, value: string): string {
+  const en: Record<string, string> = {
+    draft: "Draft",
+    rejected: "Rejected",
+    under_review: "Under review",
+    approved: "Approved",
+    sent_externally: "External dispatch recorded",
+    received_external: "Received externally",
+    filed_internal: "Filed internally",
+    cancelled: "Cancelled",
+  };
   const fa: Record<string, string> = {
     draft: "پیش‌نویس",
     rejected: "ردشده",
@@ -21,8 +31,30 @@ export function correspondenceStatusLabel(locale: Locale, value: string): string
     filed_internal: "ثبت داخلی",
     cancelled: "لغوشده",
   };
-  if (locale === "fa" && fa[value]) return fa[value];
-  return value.replaceAll("_", " ");
+  const dictionary = locale === "fa" ? fa : en;
+  return dictionary[value] ?? value.replaceAll("_", " ");
+}
+
+export function correspondenceReviewStateLabel(locale: Locale, value: string): string {
+  const en: Record<string, string> = {
+    none: "Not reviewed yet",
+    current: "Review matches current state",
+    stale: "Historical review — current state needs review",
+    legacy_unbound: "Legacy review — exact context not bound",
+  };
+  const fa: Record<string, string> = {
+    none: "هنوز بازبینی نشده",
+    current: "بازبینی با وضعیت فعلی منطبق است",
+    stale: "بازبینی تاریخی است — وضعیت فعلی نیاز به بازبینی دارد",
+    legacy_unbound: "بازبینی قدیمی است — زمینه دقیق به آن متصل نشده",
+  };
+  const dictionary = locale === "fa" ? fa : en;
+  return dictionary[value] ?? value.replaceAll("_", " ");
+}
+
+export function correspondenceReviewActionLabel(locale: Locale, value: "approve" | "reject"): string {
+  if (locale === "fa") return value === "approve" ? "تأیید" : "رد";
+  return value === "approve" ? "Approved" : "Rejected";
 }
 
 export function correspondenceDirectionLabel(locale: Locale, value: CorrespondenceDirection): string {

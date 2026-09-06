@@ -12,6 +12,7 @@ export interface CorrespondenceReviewDecision {
   correspondence_id: string;
   reviewed_by_id: string | null;
   correspondence_state_fingerprint: string;
+  request_context_fingerprint: string | null;
   state_version: number;
   review_number: number;
   action: "approve" | "reject";
@@ -58,6 +59,13 @@ async function correspondenceFetch<T>(path: string, init: RequestInit = {}): Pro
   return response.json() as Promise<T>;
 }
 
+function expectedState(item: GovernedClaimCorrespondence) {
+  return {
+    expected_state_fingerprint: item.state_fingerprint,
+    expected_state_version: item.state_version,
+  };
+}
+
 export function listClaimCorrespondence(claimId: string) {
   return correspondenceFetch<GovernedCorrespondenceListResponse>(`/claims/${claimId}/correspondence`);
 }
@@ -93,21 +101,21 @@ export function updateClaimCorrespondence(
 ) {
   return correspondenceFetch<GovernedClaimCorrespondence>(`/claims/${claimId}/correspondence/${item.id}`, {
     method: "PATCH",
-    body: JSON.stringify({
-      ...payload,
-      expected_state_fingerprint: item.state_fingerprint,
-      expected_state_version: item.state_version,
-    }),
+    body: JSON.stringify({ ...payload, ...expectedState(item) }),
   });
 }
 
 export function submitClaimCorrespondence(claimId: string, item: GovernedClaimCorrespondence) {
   return correspondenceFetch<GovernedClaimCorrespondence>(`/claims/${claimId}/correspondence/${item.id}/submit`, {
     method: "POST",
-    body: JSON.stringify({
-      expected_state_fingerprint: item.state_fingerprint,
-      expected_state_version: item.state_version,
-    }),
+    body: JSON.stringify(expectedState(item)),
+  });
+}
+
+export function reviseClaimCorrespondence(claimId: string, item: GovernedClaimCorrespondence) {
+  return correspondenceFetch<GovernedClaimCorrespondence>(`/claims/${claimId}/correspondence/${item.id}/revise`, {
+    method: "POST",
+    body: JSON.stringify(expectedState(item)),
   });
 }
 
@@ -121,8 +129,7 @@ export function reviewClaimCorrespondence(
     method: "POST",
     body: JSON.stringify({
       note,
-      expected_state_fingerprint: item.state_fingerprint,
-      expected_state_version: item.state_version,
+      ...expectedState(item),
       confirm_re_review: item.review_history.length > 0,
     }),
   });
@@ -144,8 +151,7 @@ export function markClaimCorrespondenceSent(
     method: "POST",
     body: JSON.stringify({
       ...payload,
-      expected_state_fingerprint: item.state_fingerprint,
-      expected_state_version: item.state_version,
+      ...expectedState(item),
       expected_review_hash: item.latest_review.review_hash,
     }),
   });
