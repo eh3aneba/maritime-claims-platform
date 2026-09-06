@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID, uuid4
 
-from fastapi import HTTPException, status
+from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -148,10 +148,11 @@ def admit_provider_attachment_to_evidence(
         select(Document).where(
             Document.organization_id == user.organization_id,
             Document.source_email_attachment_manifest_id == manifest.id,
-            Document.deleted_at.is_(None),
         )
     )
     if existing is not None:
+        if existing.deleted_at is not None:
+            raise HTTPException(409, "This provider attachment was already admitted to a deleted Evidence record")
         return _document_response(existing, replayed=True)
 
     if not confirm_admission:
@@ -222,7 +223,6 @@ def admit_provider_attachment_to_evidence(
             Document.organization_id == user.organization_id,
             Document.claim_id == claim.id,
             Document.file_hash == actual_hash,
-            Document.deleted_at.is_(None),
         )
     )
     if duplicate is not None:
