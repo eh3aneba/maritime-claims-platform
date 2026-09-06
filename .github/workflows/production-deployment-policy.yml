@@ -1,0 +1,68 @@
+name: Production Deployment Policy
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-deployment-policy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate-production-policy:
+    name: Production environment policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Validate a synthetic safe production configuration
+        env:
+          PYTHONPATH: apps/api
+        run: |
+          python - <<'PY'
+          from app.core.deployment_policy import validate_production_deployment
+
+          errors = validate_production_deployment(
+              secret_key="phase14-policy-material-7fd2a9b64d31c45e8a63e799",
+              public_api_base_url="https://api.production-check.mcri.app/api/v1",
+          )
+          if errors:
+              raise SystemExit("Production deployment policy rejected the synthetic safe configuration: " + "; ".join(errors))
+          print("Production deployment policy CI attestation passed.")
+          PY
+
+      - name: Verify fail-closed unsafe configuration examples
+        env:
+          PYTHONPATH: apps/api
+        run: |
+          python - <<'PY'
+          from app.core.deployment_policy import validate_production_deployment
+
+          cases = (
+              ("replace-with-a-long-random-secret", "https://api.mcri.app/api/v1"),
+              ("phase14-policy-material-7fd2a9b64d31c45e8a63e799", "http://api.mcri.app/api/v1"),
+              ("phase14-policy-material-7fd2a9b64d31c45e8a63e799", "https://localhost:8000/api/v1"),
+          )
+          for secret, public_api_base_url in cases:
+              if not validate_production_deployment(
+                  secret_key=secret,
+                  public_api_base_url=public_api_base_url,
+              ):
+                  raise SystemExit("Production deployment policy accepted an unsafe synthetic configuration")
+          print("Fail-closed production deployment policy examples passed.")
+          PY
