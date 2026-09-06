@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import base64
 import json
-import os
-import re
 from datetime import UTC, datetime, timedelta
 from email.utils import getaddresses, parsedate_to_datetime
 from hashlib import sha256
@@ -26,6 +24,10 @@ from app.modules.email_ingestion.models import (
     EmailProviderAdapter,
     IngestedEmailMessage,
 )
+from app.modules.email_ingestion.provider_credentials import (
+    CredentialReferenceError,
+    resolve_credential_reference,
+)
 from app.modules.email_ingestion.provider_source import _stage_email
 from app.modules.email_ingestion.schemas import (
     AttachmentManifestInput,
@@ -35,7 +37,6 @@ from app.modules.email_ingestion.schemas import (
 from app.modules.users.models import User
 
 _ALLOWED_PROVIDER_HOSTS = {"graph.microsoft.com", "gmail.googleapis.com"}
-_ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,127}$")
 _GRAPH_ROOT = "https://graph.microsoft.com"
 _GMAIL_ROOT = "https://gmail.googleapis.com"
 _MAX_PROVIDER_RESPONSE_BYTES = 2_000_000
@@ -52,17 +53,10 @@ def _hash_checkpoint(value: str | None) -> str | None:
 
 
 def _resolve_credential(reference: str) -> str:
-    if reference.startswith("env://"):
-        name = reference.removeprefix("env://")
-        if not _ENV_NAME.fullmatch(name):
-            raise ProviderExecutionFailure("credential_reference_invalid")
-        value = os.getenv(name)
-        if not value:
-            raise ProviderExecutionFailure("credential_reference_unresolved")
-        return value
-    if reference.startswith("vault://") or reference.startswith("secret-manager://"):
-        raise ProviderExecutionFailure("credential_resolver_unavailable")
-    raise ProviderExecutionFailure("credential_reference_invalid")
+    try:
+        return resolve_credential_reference(reference)
+    except CredentialReferenceError as exc:
+        raise ProviderExecutionFailure(exc.code) from exc
 
 
 def _http_json(url: str, bearer_token: str, *, headers: dict[str, str] | None = None) -> dict[str, Any]:

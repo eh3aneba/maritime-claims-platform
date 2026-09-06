@@ -24,6 +24,10 @@ from app.modules.email_ingestion.models import (
     EmailAdapterRun, EmailAttachmentManifest, EmailConnectionStatus, EmailIngestionConnection,
     EmailMessageStatus, EmailProviderAdapter, EmailRetentionRun, IngestedEmailMessage,
 )
+from app.modules.email_ingestion.provider_credentials import (
+    CredentialReferenceError,
+    inspect_credential_reference,
+)
 from app.modules.email_ingestion.schemas import (
     EmailAdapterCreate, EmailAdapterRunCreate, EmailConnectionCreate, EmailReview,
     NormalizedEmailInput,
@@ -259,13 +263,21 @@ def create_adapter(db: Session, user: User, payload: EmailAdapterCreate) -> Emai
     permissions = set(payload.permission_manifest)
     if not permissions or not permissions.issubset(ADAPTER_PERMISSIONS):
         raise HTTPException(422, "Only selected-folder read and attachment-metadata permissions are allowed")
+    try:
+        credential_metadata = inspect_credential_reference(payload.credential_reference)
+    except CredentialReferenceError as exc:
+        raise HTTPException(422, "Credential reference is invalid") from exc
+    now = datetime.now(UTC)
     item = EmailProviderAdapter(
         organization_id=user.organization_id, connection_id=connection.id, created_by_id=user.id,
         provider_kind=payload.provider_kind, display_name=payload.display_name.strip(),
-        credential_reference=payload.credential_reference, allowed_folder=payload.allowed_folder.strip(),
+        credential_reference=payload.credential_reference,
+        credential_reference_version=1,
+        credential_reference_changed_at=now,
+        allowed_folder=payload.allowed_folder.strip(),
         permission_manifest=sorted(permissions), status="active", batch_limit=payload.batch_limit,
         retention_schedule_enabled=payload.retention_schedule_enabled,
-        next_sync_at=datetime.now(UTC),
+        next_sync_at=now,
     )
     db.add(item)
     try:
@@ -276,8 +288,13 @@ def create_adapter(db: Session, user: User, payload: EmailAdapterCreate) -> Emai
     _audit(db, organization_id=item.organization_id, user_id=user.id, action="CREATE_EMAIL_PROVIDER_ADAPTER",
            entity_type="email_provider_adapter", entity_id=item.id,
            values={"provider_kind": item.provider_kind, "allowed_folder": item.allowed_folder,
-                   "permission_manifest": item.permission_manifest, "credential_reference": item.credential_reference},
-           details="Credential reference only; no OAuth access or refresh token stored.")
+                   "permission_manifest": item.permission_manifest,
+                   "credential_backend": credential_metadata.backend,
+                   "credential_reference_configured": True,
+                   "credential_reference_version": 1,
+                   "credential_resolver_available": credential_metadata.resolver_available},
+           details=("External credential locator retained only in adapter persistence. "
+                    "Credential locator/value and checkpoint metadata are excluded from audit."))
     db.commit(); db.refresh(item)
     return item
 

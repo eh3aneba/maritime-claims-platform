@@ -71,6 +71,8 @@ def test_provider_webhook_has_no_pull_schedule_or_checkpoint_authority() -> None
     )
     assert reported_failure.status_code == 201, reported_failure.text
     assert reported_failure.json()["failure_summary"] == "provider_webhook_reported_failure"
+    assert "checkpoint_hash" not in reported_failure.json()
+    assert reported_failure.json()["checkpoint_present"] is False
 
     with TestingSessionLocal() as db:
         item = db.get(EmailProviderAdapter, UUID(adapter["id"]))
@@ -86,6 +88,10 @@ def test_pull_lifecycle_controls_due_schedule() -> None:
     assert current["operational_state"] == "due"
     assert current["operator_driven_execution"] is True
     assert current["checkpoint_handoff_required"] is False
+    assert current["credential_backend"] == "env"
+    assert current["credential_reference_configured"] is True
+    assert current["credential_reference_version"] == 1
+    assert current["credential_resolver_available"] is True
 
     suspended = client.post(
         f"/api/v1/email-ingestion/adapters/{adapter['id']}/transition",
@@ -122,6 +128,7 @@ def test_failed_pull_uses_bounded_backoff_and_surfaces_reconciliation(monkeypatc
         )
         assert response.status_code == 200, response.text
         assert response.json()["run"]["status"] == "failed"
+        assert "checkpoint_hash" not in response.json()["run"]
         finished_at = response.json()["run"]["finished_at"]
         with TestingSessionLocal() as db:
             item = db.get(EmailProviderAdapter, UUID(adapter["id"]))
@@ -137,9 +144,11 @@ def test_failed_pull_uses_bounded_backoff_and_surfaces_reconciliation(monkeypatc
     assert item["operational_state"] == "reconciliation_required"
     assert item["consecutive_failures"] == 4
     assert item["last_run_status"] == "failed"
+    assert item["credential_backend"] == "env"
+    assert item["credential_resolver_available"] is True
     serialized = str(payload)
     assert "runtime-only-secret" not in serialized
-    assert "credential_reference" not in serialized
+    assert "env://MCRI_PROVIDER_TEST_TOKEN" not in serialized
     assert "checkpoint_hash" not in serialized
 
 

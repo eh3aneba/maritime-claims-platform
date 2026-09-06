@@ -18,8 +18,11 @@ from app.modules.email_ingestion.provider_checkpoint_handoff import (
     abandon_checkpoint_handoff,
     acknowledge_checkpoint_handoff,
     execute_provider_adapter_with_checkpoint_handoff,
-    list_provider_reconciliation_with_handoff,
     reset_gmail_checkpoint_with_handoff_guard,
+)
+from app.modules.email_ingestion.provider_credential_lifecycle import (
+    list_provider_reconciliation_with_credentials,
+    rotate_provider_credential_reference,
 )
 from app.modules.email_ingestion.provider_evidence_admission import (
     admit_provider_attachment_to_evidence,
@@ -33,6 +36,7 @@ from app.modules.email_ingestion.provider_source import ingest_legacy_webhook, i
 from app.modules.email_ingestion.schemas import (
     CheckpointHandoffAbandonRequest, CheckpointHandoffAbandonResponse,
     CheckpointHandoffAckRequest, CheckpointHandoffAckResponse,
+    CredentialReferenceRotationRequest, CredentialReferenceRotationResponse,
     EmailAdapterCreate, EmailAdapterOperations, EmailAdapterResponse, EmailAdapterRunCreate,
     EmailAdapterRunResponse, EmailAttachmentAcquisitionResponse,
     EmailAttachmentEvidenceAdmissionRequest, EmailAttachmentEvidenceAdmissionResponse,
@@ -161,7 +165,7 @@ def adapter_operations(current_user: CurrentUser, db: Annotated[Session, Depends
 
 @router.get("/adapter-reconciliation")
 def adapter_reconciliation(manager: Manager, db: Annotated[Session, Depends(get_db)]):
-    return list_provider_reconciliation_with_handoff(db, manager)
+    return list_provider_reconciliation_with_credentials(db, manager)
 
 
 @router.post("/adapters", response_model=EmailAdapterResponse, status_code=201)
@@ -178,6 +182,24 @@ def adapter_transition(adapter_id: UUID, payload: EmailConnectionTransition, man
         manager,
         payload.action,
         payload.note,
+    )
+
+
+@router.post(
+    "/adapters/{adapter_id}/credential-reference-rotation",
+    response_model=CredentialReferenceRotationResponse,
+)
+def adapter_credential_reference_rotation(
+    adapter_id: UUID,
+    payload: CredentialReferenceRotationRequest,
+    manager: Manager,
+    db: Annotated[Session, Depends(get_db)],
+):
+    return rotate_provider_credential_reference(
+        db,
+        adapter=get_adapter(db, manager.organization_id, adapter_id),
+        user=manager,
+        payload=payload,
     )
 
 
