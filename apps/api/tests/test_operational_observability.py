@@ -4,9 +4,11 @@ import json
 import logging
 import re
 
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 import app.modules.health.router as health_router
+from app.core.observability import request_observability_middleware
 from app.main import app
 
 
@@ -53,6 +55,37 @@ def test_generates_request_id_when_inbound_value_is_missing_or_unsafe() -> None:
     assert unsafe.status_code == 200
     assert re.fullmatch(r"[0-9a-f]{32}", generated.headers["X-Request-ID"])
     assert re.fullmatch(r"[0-9a-f]{32}", unsafe.headers["X-Request-ID"])
+
+
+def test_failure_log_remains_metadata_only_without_exception_text_or_traceback(caplog) -> None:
+    failing_app = FastAPI()
+    failing_app.middleware("http")(request_observability_middleware)
+
+    @failing_app.get("/boom")
+    def boom() -> None:
+        raise RuntimeError("sensitive-claim-content-must-not-be-logged")
+
+    failing_client = TestClient(failing_app, raise_server_exceptions=False)
+    with caplog.at_level(logging.ERROR, logger="mcri.request"):
+        response = failing_client.get("/boom", headers={"X-Request-ID": "failure-test-123"})
+
+    assert response.status_code == 500
+    matching_records = [
+        record
+        for record in caplog.records
+        if record.name == "mcri.request" and "failure-test-123" in record.getMessage()
+    ]
+    assert matching_records
+    record = matching_records[-1]
+    assert record.exc_info is None
+    assert "sensitive-claim-content-must-not-be-logged" not in record.getMessage()
+
+    event = json.loads(record.getMessage())
+    assert event["event"] == "http_request_failed"
+    assert event["request_id"] == "failure-test-123"
+    assert event["method"] == "GET"
+    assert event["path"] == "/boom"
+    assert event["status_code"] == 500
 
 
 def test_liveness_and_compatibility_health_are_process_only() -> None:
