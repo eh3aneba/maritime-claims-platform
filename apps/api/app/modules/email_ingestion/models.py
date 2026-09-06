@@ -93,8 +93,10 @@ class EmailAttachmentManifest(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     acquired_file_size_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     malware_scan_status: Mapped[str | None] = mapped_column(String(40), nullable=True)
     acquisition_failure_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    evidence_admission_failure_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
     acquired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     malware_scanned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    evidence_admission_attempted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     admission_status: Mapped[str] = mapped_column(String(60), default="blocked_pending_quarantine", server_default="blocked_pending_quarantine")
 
 
