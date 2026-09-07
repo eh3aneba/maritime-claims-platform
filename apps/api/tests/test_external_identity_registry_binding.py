@@ -278,9 +278,10 @@ def test_revocation_preserves_history_and_allows_new_subject_binding() -> None:
         },
     )
     assert first.status_code == 201
+    first_id = first.json()["id"]
 
     revoked = client.post(
-        f"/api/v1/auth/external-bindings/{first.json()['id']}/revoke",
+        f"/api/v1/auth/external-bindings/{first_id}/revoke",
         headers=headers,
     )
     assert revoked.status_code == 200
@@ -295,6 +296,7 @@ def test_revocation_preserves_history_and_allows_new_subject_binding() -> None:
         },
     )
     assert second.status_code == 201
+    second_id = second.json()["id"]
 
     history = client.get(
         f"/api/v1/auth/identity-providers/{provider['id']}/bindings",
@@ -303,8 +305,9 @@ def test_revocation_preserves_history_and_allows_new_subject_binding() -> None:
     assert history.status_code == 200
     rows = history.json()
     assert len(rows) == 2
-    assert rows[0]["revoked_at"] is not None
-    assert rows[1]["revoked_at"] is None
+    by_id = {row["id"]: row for row in rows}
+    assert by_id[first_id]["revoked_at"] is not None
+    assert by_id[second_id]["revoked_at"] is None
 
 
 def test_non_admin_cannot_manage_enterprise_identity_registry() -> None:
