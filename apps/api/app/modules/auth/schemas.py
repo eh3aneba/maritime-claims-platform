@@ -76,6 +76,8 @@ class ExternalIdentityBindingRead(BaseModel):
 
 
 class OidcTrustProfileCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     audience: str = Field(min_length=1, max_length=500)
     jwks_uri: str = Field(min_length=8, max_length=1000)
     allowed_algorithms: list[Literal["RS256", "ES256"]] = Field(
