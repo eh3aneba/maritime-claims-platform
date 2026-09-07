@@ -20,9 +20,11 @@ The transaction stores only SHA-256 fingerprints of the generated AuthnRequest I
 
 Transactions expire after ten minutes and are consumed exactly once only after signed identity verification and existing-binding resolution succeed. Provider disablement invalidates in-flight authority; later profile rotation does not rewrite an already-started transaction's pinned source.
 
-### AuthnRequest boundary
+### AuthnRequest and browser binding boundary
 
 Only HTTP-Redirect AuthnRequests are generated, and only from the exact pinned profile. The request pins the IdP SSO destination, SP entity ID, ACS URL and HTTP-POST response binding.
+
+The ACS accepts the standard SAML HTTP-POST form fields `SAMLResponse` and `RelayState`. It does not require a non-standard JSON relay from browser code. Successful authentication places the application access token only in the existing HttpOnly authentication cookie; the bearer token is not returned in the SAML browser response body.
 
 The SP does not sign AuthnRequests in this tranche because SP private-key custody is not yet governed. No private signing or decryption key is introduced by Phase 17.1-H.
 
@@ -63,9 +65,11 @@ After verification and binding resolution, the transaction is locked and consume
 
 A unique database constraint prevents more than one session from being linked to the same SAML transaction.
 
-### Data minimization
+### Data minimization and failure auditing
 
 The application does not persist or audit raw SAML Responses, Assertions, NameID values, AuthnRequest IDs or RelayState values. Audit events contain bounded profile/provider/session provenance and fixed failure categories only.
+
+A failed callback is written to a transaction-scoped audit trail only after RelayState possession has been validated against the stored fingerprint. Supplying a guessed transaction UUID without the RelayState secret cannot create transaction-specific audit noise.
 
 ## Consequences
 
