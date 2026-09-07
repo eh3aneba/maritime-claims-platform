@@ -8,6 +8,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
 from app.db.mixins import TimestampMixin, UUIDPrimaryKeyMixin
 from app.db.types import enum_values
+from app.modules.claim_intelligence import models as _claim_intelligence_models  # noqa: F401
 
 
 class TaskType(str, enum.Enum):
