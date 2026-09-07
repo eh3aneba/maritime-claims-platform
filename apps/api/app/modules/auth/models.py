@@ -39,6 +39,10 @@ class AuthSession(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "oidc_authorization_transaction_id",
             name="uq_auth_sessions_oidc_authorization_transaction",
         ),
+        UniqueConstraint(
+            "saml_authn_transaction_id",
+            name="uq_auth_sessions_saml_authn_transaction",
+        ),
     )
 
     organization_id: Mapped[UUID] = mapped_column(
@@ -61,6 +65,11 @@ class AuthSession(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     oidc_authorization_transaction_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("oidc_authorization_transactions.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
+    )
+    saml_authn_transaction_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("saml_authn_transactions.id", ondelete="RESTRICT"),
         nullable=True,
         index=True,
     )
