@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from datetime import UTC, datetime
+from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -137,6 +138,7 @@ def adopt_investigation_plan(
         raise ValueError("The governed playbook registry changed; refresh the preview before adopting a plan")
     if str(payload.classification_id) != str(source_ref["id"]) or payload.classification_hash != source_ref["classification_hash"]:
         raise ValueError("The claim-domain classification changed; refresh the preview before adopting a plan")
+    source_classification_id = UUID(str(source_ref["id"]))
 
     tracks = _canonical_subset(
         payload.investigation_tracks,
@@ -152,7 +154,7 @@ def adopt_investigation_plan(
         {
             "organization_id": locked_claim.organization_id,
             "claim_id": locked_claim.id,
-            "classification_id": source_ref["id"],
+            "classification_id": source_classification_id,
             "classification_hash": source_ref["classification_hash"],
             "registry_version": preview["registry_version"],
             "registry_hash": preview["registry_hash"],
@@ -179,7 +181,7 @@ def adopt_investigation_plan(
         "organization_id": locked_claim.organization_id,
         "claim_id": locked_claim.id,
         "plan_number": plan_number,
-        "classification_id": source_ref["id"],
+        "classification_id": source_classification_id,
         "catalog_version": source_ref["catalog_version"],
         "classification_number": source_ref["classification_number"],
         "classification_hash": source_ref["classification_hash"],
