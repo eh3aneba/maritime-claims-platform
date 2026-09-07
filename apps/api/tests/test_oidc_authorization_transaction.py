@@ -120,6 +120,28 @@ def _create_profile(
     return response.json()
 
 
+def _create_runtime_profile(
+    headers: dict[str, str],
+    provider_id: str,
+    *,
+    issuer: str = "https://issuer.alpha.example.test",
+    suffix: str = "v1",
+) -> dict[str, object]:
+    response = client.post(
+        f"/api/v1/auth/identity-providers/{provider_id}/oidc-runtime-profiles",
+        headers=headers,
+        json={
+            "authorization_endpoint": f"{issuer}/oauth2/{suffix}/authorize",
+            "token_endpoint": f"{issuer}/oauth2/{suffix}/token",
+            "redirect_uri": "https://mcri.example.test/api/v1/auth/oidc/callback",
+            "scopes": ["openid", "profile", "email"],
+            "client_auth_method": "none",
+        },
+    )
+    assert response.status_code == 201
+    return response.json()
+
+
 def _start(*, organization_slug: str, provider_key: str = "corp-oidc"):
     return client.post(
         "/api/v1/auth/oidc/transactions",
@@ -140,6 +162,7 @@ def test_start_binds_exact_profile_and_persists_no_raw_secrets_or_authority_side
     headers = _headers(admin_a_id)
     provider = _create_provider(headers)
     profile = _create_profile(headers, str(provider["id"]))
+    runtime = _create_runtime_profile(headers, str(provider["id"]))
 
     with TestingSessionLocal() as db:
         sessions_before = db.query(AuthSession).count()
@@ -153,6 +176,14 @@ def test_start_binds_exact_profile_and_persists_no_raw_secrets_or_authority_side
     assert payload["trust_profile_id"] == profile["id"]
     assert payload["trust_profile_number"] == 1
     assert payload["trust_profile_hash"] == profile["profile_hash"]
+    assert payload["runtime_profile_id"] == runtime["id"]
+    assert payload["runtime_profile_number"] == 1
+    assert payload["runtime_profile_hash"] == runtime["runtime_profile_hash"]
+    assert payload["authorization_endpoint"] == runtime["authorization_endpoint"]
+    assert payload["token_endpoint"] == runtime["token_endpoint"]
+    assert payload["redirect_uri"] == runtime["redirect_uri"]
+    assert payload["scopes"] == runtime["scopes"]
+    assert payload["client_auth_method"] == runtime["client_auth_method"]
     assert payload["code_challenge_method"] == "S256"
     assert len(payload["state"]) >= 43
     assert len(payload["nonce"]) >= 43
@@ -165,6 +196,9 @@ def test_start_binds_exact_profile_and_persists_no_raw_secrets_or_authority_side
         assert row.trust_profile_id == UUID(profile["id"])
         assert row.trust_profile_number == 1
         assert row.trust_profile_hash == profile["profile_hash"]
+        assert row.runtime_profile_id == UUID(runtime["id"])
+        assert row.runtime_profile_number == 1
+        assert row.runtime_profile_hash == runtime["runtime_profile_hash"]
         assert row.state_hash == sha256(payload["state"].encode("utf-8")).hexdigest()
         assert row.nonce_hash == sha256(payload["nonce"].encode("utf-8")).hexdigest()
         assert row.pkce_code_challenge == payload["code_challenge"]
@@ -235,12 +269,24 @@ def test_start_fails_closed_for_unknown_disabled_non_oidc_or_missing_profile() -
         provider_key="no-profile",
     ).status_code == 404
 
+    no_runtime = _create_provider(
+        headers,
+        provider_key="no-runtime",
+        issuer="https://no-runtime.example.test",
+    )
+    _create_profile(headers, str(no_runtime["id"]), audience="no-runtime-audience")
+    assert _start(
+        organization_slug="alpha-oidc-transaction",
+        provider_key="no-runtime",
+    ).status_code == 404
+
 
 def test_internal_consume_is_one_time_and_bound_to_state_nonce_and_pkce() -> None:
     _, admin_a_id, _, _ = _seed()
     headers = _headers(admin_a_id)
     provider = _create_provider(headers)
     _create_profile(headers, str(provider["id"]))
+    _create_runtime_profile(headers, str(provider["id"]))
     response = _start(organization_slug="alpha-oidc-transaction")
     assert response.status_code == 201
     payload = response.json()
@@ -284,6 +330,7 @@ def test_expired_cancelled_or_disabled_source_transaction_fails_closed() -> None
     headers = _headers(admin_a_id)
     provider = _create_provider(headers)
     _create_profile(headers, str(provider["id"]))
+    _create_runtime_profile(headers, str(provider["id"]))
 
     expired = _start(organization_slug="alpha-oidc-transaction").json()
     with TestingSessionLocal() as db:
@@ -342,13 +389,24 @@ def test_profile_rotation_preserves_existing_transaction_snapshot_and_tenant_bin
     beta_headers = _headers(admin_b_id)
 
     provider_a = _create_provider(alpha_headers)
-    profile_v1 = _create_profile(alpha_headers, str(provider_a["id"]), audience="audience-v1")
+    profile_v1 = _create_profile(
+        alpha_headers,
+        str(provider_a["id"]),
+        audience="audience-v1",
+    )
+    runtime_v1 = _create_runtime_profile(alpha_headers, str(provider_a["id"]))
 
+    beta_issuer = "https://issuer.beta.example.test"
     provider_b = _create_provider(
         beta_headers,
-        issuer="https://issuer.beta.example.test",
+        issuer=beta_issuer,
     )
     _create_profile(beta_headers, str(provider_b["id"]), audience="beta-audience")
+    _create_runtime_profile(
+        beta_headers,
+        str(provider_b["id"]),
+        issuer=beta_issuer,
+    )
 
     alpha_start = _start(organization_slug="alpha-oidc-transaction")
     beta_start = _start(organization_slug="beta-oidc-transaction")
@@ -357,6 +415,7 @@ def test_profile_rotation_preserves_existing_transaction_snapshot_and_tenant_bin
     alpha = alpha_start.json()
     beta = beta_start.json()
     assert alpha["trust_profile_id"] == profile_v1["id"]
+    assert alpha["runtime_profile_id"] == runtime_v1["id"]
     assert alpha["issuer_identifier"] != beta["issuer_identifier"]
 
     profile_v2 = _create_profile(
@@ -366,12 +425,19 @@ def test_profile_rotation_preserves_existing_transaction_snapshot_and_tenant_bin
     )
     assert profile_v2["profile_number"] == 2
 
+    # A newly initiated flow must not silently pair trust v2 with stale runtime v1.
+    blocked = _start(organization_slug="alpha-oidc-transaction")
+    assert blocked.status_code == 404
+
     with TestingSessionLocal() as db:
         row = db.get(OidcAuthorizationTransaction, UUID(alpha["transaction_id"]))
         assert row is not None
         assert row.trust_profile_id == UUID(profile_v1["id"])
         assert row.trust_profile_number == 1
         assert row.trust_profile_hash == profile_v1["profile_hash"]
+        assert row.runtime_profile_id == UUID(runtime_v1["id"])
+        assert row.runtime_profile_number == runtime_v1["runtime_profile_number"]
+        assert row.runtime_profile_hash == runtime_v1["runtime_profile_hash"]
 
         consumed = consume_oidc_authorization_transaction(
             db,
@@ -382,3 +448,18 @@ def test_profile_rotation_preserves_existing_transaction_snapshot_and_tenant_bin
         )
         assert consumed.consumed_at is not None
         db.commit()
+
+    runtime_v2 = _create_runtime_profile(
+        alpha_headers,
+        str(provider_a["id"]),
+        suffix="v2",
+    )
+    assert runtime_v2["trust_profile_id"] == profile_v2["id"]
+
+    alpha_v2_start = _start(organization_slug="alpha-oidc-transaction")
+    assert alpha_v2_start.status_code == 201
+    alpha_v2 = alpha_v2_start.json()
+    assert alpha_v2["trust_profile_id"] == profile_v2["id"]
+    assert alpha_v2["runtime_profile_id"] == runtime_v2["id"]
+    assert alpha_v2["trust_profile_id"] != alpha["trust_profile_id"]
+    assert alpha_v2["runtime_profile_id"] != alpha["runtime_profile_id"]
