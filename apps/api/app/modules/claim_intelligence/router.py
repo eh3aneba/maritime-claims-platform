@@ -14,6 +14,12 @@ from app.modules.claim_intelligence.domain_service import (
     get_domain_catalog,
     list_domain_classifications,
 )
+from app.modules.claim_intelligence.investigation_plan import (
+    adopt_investigation_plan,
+    get_current_investigation_plan,
+    investigation_plan_response,
+    list_investigation_plans,
+)
 from app.modules.claim_intelligence.models import (
     ClaimIntelligenceItem,
     ClaimIntelligenceItemDecision,
@@ -28,6 +34,8 @@ from app.modules.claim_intelligence.schemas import (
     ClaimIntelligenceDecisionResponse,
     ClaimIntelligenceDecisionWrite,
     ClaimIntelligenceSnapshotResponse,
+    ClaimInvestigationPlanResponse,
+    ClaimInvestigationPlanWrite,
 )
 from app.modules.claim_intelligence.service import (
     build_claim_intelligence,
@@ -101,6 +109,32 @@ def get_claim_domain_playbook_preview(
     return ClaimDomainPlaybookPreviewResponse.model_validate(domain_playbook_preview(db, claim=claim))
 
 
+@router.get("/investigation-plan", response_model=ClaimInvestigationPlanResponse | None)
+def get_claim_investigation_plan(
+    claim_id: UUID,
+    current_user: CurrentUser,
+    db: Annotated[Session, Depends(get_db)],
+) -> ClaimInvestigationPlanResponse | None:
+    claim = _claim_or_404(db, claim_id, current_user)
+    plan = get_current_investigation_plan(db, claim=claim)
+    if plan is None:
+        return None
+    return ClaimInvestigationPlanResponse.model_validate(investigation_plan_response(db, claim=claim, plan=plan))
+
+
+@router.get("/investigation-plans", response_model=list[ClaimInvestigationPlanResponse])
+def get_claim_investigation_plan_history(
+    claim_id: UUID,
+    current_user: CurrentUser,
+    db: Annotated[Session, Depends(get_db)],
+) -> list[ClaimInvestigationPlanResponse]:
+    claim = _claim_or_404(db, claim_id, current_user)
+    return [
+        ClaimInvestigationPlanResponse.model_validate(investigation_plan_response(db, claim=claim, plan=plan))
+        for plan in list_investigation_plans(db, claim=claim)
+    ]
+
+
 @router.post(
     "/domain-classification",
     response_model=ClaimDomainClassificationResponse,
@@ -119,6 +153,26 @@ def classify_claim_domain(
         db.rollback()
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
     return ClaimDomainClassificationResponse.model_validate(row)
+
+
+@router.post(
+    "/investigation-plan",
+    response_model=ClaimInvestigationPlanResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def adopt_claim_investigation_plan(
+    claim_id: UUID,
+    payload: ClaimInvestigationPlanWrite,
+    current_user: CurrentUser,
+    db: Annotated[Session, Depends(get_db)],
+) -> ClaimInvestigationPlanResponse:
+    claim = _claim_or_404(db, claim_id, current_user)
+    try:
+        plan = adopt_investigation_plan(db, claim=claim, user=current_user, payload=payload)
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    return ClaimInvestigationPlanResponse.model_validate(investigation_plan_response(db, claim=claim, plan=plan))
 
 
 @router.post("/build", response_model=ClaimIntelligenceSnapshotResponse, status_code=status.HTTP_201_CREATED)

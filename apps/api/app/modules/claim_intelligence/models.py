@@ -110,3 +110,41 @@ class ClaimDomainClassification(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     previous_classification_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     classification_hash: Mapped[str] = mapped_column(String(64))
+
+
+class ClaimInvestigationPlan(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "claim_investigation_plans"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "claim_id", "plan_number", name="uq_claim_investigation_plan_number"),
+        UniqueConstraint("organization_id", "claim_id", "adoption_key_hash", name="uq_claim_investigation_plan_adoption"),
+        UniqueConstraint("plan_hash", name="uq_claim_investigation_plan_hash"),
+        Index("ix_claim_investigation_plan_claim", "organization_id", "claim_id", "plan_number"),
+    )
+
+    organization_id: Mapped[UUID] = mapped_column(ForeignKey("organizations.id", ondelete="RESTRICT"), index=True)
+    claim_id: Mapped[UUID] = mapped_column(ForeignKey("claims.id", ondelete="CASCADE"), index=True)
+    plan_number: Mapped[int] = mapped_column(Integer)
+    classification_id: Mapped[UUID] = mapped_column(
+        ForeignKey("claim_domain_classifications.id", ondelete="RESTRICT"), index=True
+    )
+    catalog_version: Mapped[str] = mapped_column(String(32))
+    classification_number: Mapped[int] = mapped_column(Integer)
+    classification_hash: Mapped[str] = mapped_column(String(64))
+    registry_version: Mapped[str] = mapped_column(String(32))
+    registry_hash: Mapped[str] = mapped_column(String(64))
+    incident_code: Mapped[str] = mapped_column(String(64))
+    component_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    failure_mode: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    investigation_tracks: Mapped[list] = mapped_column(JSON)
+    evidence_prompts: Mapped[list] = mapped_column(JSON)
+    review_topics: Mapped[list] = mapped_column(JSON)
+    contextual_rule_ids: Mapped[list] = mapped_column(JSON)
+    adoption_note: Mapped[str] = mapped_column(Text)
+    adopted_by_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    supersedes_plan_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("claim_investigation_plans.id", ondelete="RESTRICT"), nullable=True
+    )
+    previous_plan_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    adoption_key_hash: Mapped[str] = mapped_column(String(64))
+    plan_hash: Mapped[str] = mapped_column(String(64))
+    adopted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
