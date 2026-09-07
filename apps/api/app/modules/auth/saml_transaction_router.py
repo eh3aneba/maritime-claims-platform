@@ -54,17 +54,17 @@ def start_saml_authn_transaction(
         )
         db.commit()
         db.refresh(transaction)
-    except ValueError as exc:
-        db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="SAML provider is unavailable",
-        ) from exc
     except SamlCallbackError as exc:
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="SAML provider runtime is not operational for this flow",
+        ) from exc
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="SAML provider is unavailable",
         ) from exc
     except IntegrityError as exc:
         db.rollback()
