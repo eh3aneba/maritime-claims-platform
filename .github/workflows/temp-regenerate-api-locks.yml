@@ -6,7 +6,7 @@ on:
       - main
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   regenerate-api-locks:
@@ -14,8 +14,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Check out repository
+      - name: Check out PR head branch
         uses: actions/checkout@v6
+        with:
+          ref: ${{ github.head_ref }}
 
       - name: Set up Python
         uses: actions/setup-python@v7
@@ -42,3 +44,16 @@ jobs:
             apps/api/requirements-dev.lock
           if-no-files-found: error
           retention-days: 1
+
+      - name: Commit regenerated locks and remove temporary workflow
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/temp-regenerate-api-locks.yml
+          git add apps/api/requirements.lock apps/api/requirements-dev.lock
+          git diff --cached --check
+          git commit -m "chore: regenerate API dependency locks"
+          git push origin HEAD:"$HEAD_REF"
