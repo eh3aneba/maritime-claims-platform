@@ -81,7 +81,6 @@ def main() -> None:
 
     def create_activation(payload: dict) -> dict:
         number = len(activation_history) + 1
-        selected: list[dict] = []
         catalog = [
             {"key": "track:0", "kind": "investigation_track", "text": current_plan["investigation_tracks"][0]},
             {"key": "evidence:0", "kind": "evidence_prompt", "text": current_plan["evidence_prompts"][0]},
@@ -201,7 +200,7 @@ def main() -> None:
 
         current_plan["source_current"] = False
         page.evaluate(
-            "window.dispatchEvent(new CustomEvent('claim-domain-classification-updated', {detail: {claimId: arguments[0]}}))",
+            "(claimId) => window.dispatchEvent(new CustomEvent('claim-domain-classification-updated', {detail: {claimId}}))",
             CLAIM_ID,
         )
         expect(panel.get_by_text("Current plan is stale.", exact=False)).to_be_visible()
@@ -211,7 +210,7 @@ def main() -> None:
 
         current_plan = _plan(2, incident="collision")
         page.evaluate(
-            "window.dispatchEvent(new CustomEvent('claim-investigation-plan-updated', {detail: {claimId: arguments[0]}}))",
+            "(claimId) => window.dispatchEvent(new CustomEvent('claim-investigation-plan-updated', {detail: {claimId}}))",
             CLAIM_ID,
         )
         expect(panel.get_by_text("Activate from Plan v2", exact=True)).to_be_visible()
