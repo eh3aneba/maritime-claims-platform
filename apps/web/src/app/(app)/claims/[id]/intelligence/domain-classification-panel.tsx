@@ -154,6 +154,7 @@ export default function DomainClassificationPanel({ claimId }: { claimId: string
       setMessage(
         `Classification v${saved.classification_number} saved. Claims Intelligence was not rebuilt automatically; use Build/Refresh Intelligence when you want the new context reflected in a snapshot.`,
       );
+      window.dispatchEvent(new CustomEvent("claim-domain-classification-updated", { detail: { claimId } }));
     } catch (e) {
       setError(e instanceof ApiError ? e.detail : "Claim domain classification could not be saved.");
     } finally {
