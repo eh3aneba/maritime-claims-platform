@@ -23,7 +23,7 @@ from app.modules.ai_production_wide.models import AIProductionDecisionLog, AIPro
 from app.modules.ai_scale_up.models import AIScaleUpApproval, AIScaleUpAuthorization, AIScaleUpDocumentEligibility, AIScaleUpIncident, AIScaleUpMonitor, AIScaleUpRun  # noqa: F401
 from app.modules.ai_scale_up_outcomes.models import AIScaleUpOutcomeAssessment, AIScaleUpOutcomeObservation, AIScaleUpOutcomeReview  # noqa: F401
 from app.modules.audit.models import AuditLog  # noqa: F401
-from app.modules.auth.models import AuthSession  # noqa: F401
+from app.modules.auth.models import AuthSession, EnterpriseIdentityProvider, ExternalIdentityBinding  # noqa: F401
 from app.modules.assessments.models import InitialAssessment, AssessmentSection  # noqa: F401
 from app.modules.claim_intelligence.models import ClaimIntelligenceItem, ClaimIntelligenceItemDecision, ClaimIntelligenceSnapshot  # noqa: F401
 from app.modules.claim_packs.models import ClaimPackExport  # noqa: F401
