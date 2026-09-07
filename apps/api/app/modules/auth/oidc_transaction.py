@@ -9,6 +9,7 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.modules.audit.service import write_audit_log
 from app.modules.auth.models import (
     EnterpriseIdentityProvider,
     OidcAuthorizationTransaction,
@@ -191,6 +192,12 @@ def _validate_transaction_active(transaction: OidcAuthorizationTransaction) -> N
         raise ValueError("OIDC authorization transaction is expired")
 
 
+def _require_proof(value: str, *, label: str) -> str:
+    if not value:
+        raise ValueError(f"OIDC authorization transaction {label} is required")
+    return value
+
+
 def consume_oidc_authorization_transaction(
     db: Session,
     *,
@@ -200,6 +207,10 @@ def consume_oidc_authorization_transaction(
     code_verifier: str,
 ) -> OidcAuthorizationTransaction:
     """Internal one-time primitive for a later callback-verification tranche."""
+
+    state = _require_proof(state, label="state")
+    nonce = _require_proof(nonce, label="nonce")
+    code_verifier = _require_proof(code_verifier, label="PKCE verifier")
 
     transaction = _locked_transaction(db, transaction_id=transaction_id)
     if transaction is None:
@@ -221,6 +232,21 @@ def consume_oidc_authorization_transaction(
         raise ValueError("OIDC authorization transaction PKCE method is unsupported")
 
     transaction.consumed_at = _utc_now()
+    write_audit_log(
+        db,
+        organization_id=transaction.organization_id,
+        user_id=None,
+        action="OIDC_AUTHORIZATION_TRANSACTION_CONSUMED",
+        entity_type="oidc_authorization_transaction",
+        entity_id=transaction.id,
+        new_values={
+            "provider_id": str(transaction.provider_id),
+            "trust_profile_id": str(transaction.trust_profile_id),
+            "trust_profile_number": transaction.trust_profile_number,
+            "trust_profile_hash": transaction.trust_profile_hash,
+            "pkce_method": transaction.pkce_method,
+        },
+    )
     db.flush()
     return transaction
 
@@ -233,6 +259,7 @@ def cancel_oidc_authorization_transaction(
 ) -> OidcAuthorizationTransaction:
     """Internal cancellation primitive requiring possession of the raw state value."""
 
+    state = _require_proof(state, label="state")
     transaction = _locked_transaction(db, transaction_id=transaction_id)
     if transaction is None:
         raise ValueError("OIDC authorization transaction not found")
@@ -242,5 +269,20 @@ def cancel_oidc_authorization_transaction(
         raise ValueError("OIDC authorization transaction proof does not match")
 
     transaction.cancelled_at = _utc_now()
+    write_audit_log(
+        db,
+        organization_id=transaction.organization_id,
+        user_id=None,
+        action="OIDC_AUTHORIZATION_TRANSACTION_CANCELLED",
+        entity_type="oidc_authorization_transaction",
+        entity_id=transaction.id,
+        new_values={
+            "provider_id": str(transaction.provider_id),
+            "trust_profile_id": str(transaction.trust_profile_id),
+            "trust_profile_number": transaction.trust_profile_number,
+            "trust_profile_hash": transaction.trust_profile_hash,
+            "pkce_method": transaction.pkce_method,
+        },
+    )
     db.flush()
     return transaction
