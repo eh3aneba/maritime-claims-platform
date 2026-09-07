@@ -32,6 +32,13 @@ class OidcAuthorizationStartMaterial:
     code_challenge: str
 
 
+@dataclass(frozen=True)
+class OidcAuthorizationTransactionSource:
+    provider: EnterpriseIdentityProvider
+    trust_profile: OidcTrustProfile
+    runtime_profile: OidcRuntimeProfile
+
+
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -175,7 +182,7 @@ def _validate_transaction_source(
     db: Session,
     *,
     transaction: OidcAuthorizationTransaction,
-) -> None:
+) -> OidcAuthorizationTransactionSource:
     provider = db.get(EnterpriseIdentityProvider, transaction.provider_id)
     if (
         provider is None
@@ -224,6 +231,12 @@ def _validate_transaction_source(
     ):
         raise ValueError("OIDC authorization transaction runtime source does not match")
 
+    return OidcAuthorizationTransactionSource(
+        provider=provider,
+        trust_profile=trust_profile,
+        runtime_profile=runtime_profile,
+    )
+
 
 def _validate_transaction_active(transaction: OidcAuthorizationTransaction) -> None:
     if transaction.cancelled_at is not None:
@@ -240,26 +253,16 @@ def _require_proof(value: str, *, label: str) -> str:
     return value
 
 
-def consume_oidc_authorization_transaction(
-    db: Session,
+def _validate_proof(
+    transaction: OidcAuthorizationTransaction,
     *,
-    transaction_id: UUID,
     state: str,
     nonce: str,
     code_verifier: str,
-) -> OidcAuthorizationTransaction:
-    """Internal one-time primitive for a later callback-verification tranche."""
-
+) -> None:
     state = _require_proof(state, label="state")
     nonce = _require_proof(nonce, label="nonce")
     code_verifier = _require_proof(code_verifier, label="PKCE verifier")
-
-    transaction = _locked_transaction(db, transaction_id=transaction_id)
-    if transaction is None:
-        raise ValueError("OIDC authorization transaction not found")
-
-    _validate_transaction_active(transaction)
-    _validate_transaction_source(db, transaction=transaction)
 
     if not hmac.compare_digest(transaction.state_hash, _secret_hash(state)):
         raise ValueError("OIDC authorization transaction proof does not match")
@@ -272,6 +275,58 @@ def consume_oidc_authorization_transaction(
         raise ValueError("OIDC authorization transaction proof does not match")
     if transaction.pkce_method != PKCE_METHOD:
         raise ValueError("OIDC authorization transaction PKCE method is unsupported")
+
+
+def validate_oidc_authorization_transaction_proof(
+    db: Session,
+    *,
+    transaction_id: UUID,
+    state: str,
+    nonce: str,
+    code_verifier: str,
+) -> tuple[OidcAuthorizationTransaction, OidcAuthorizationTransactionSource]:
+    """Validate callback proof/source without consuming the transaction.
+
+    Provider HTTP and signed-token verification can fail transiently after this preflight;
+    final authority is therefore created only by the later locked consume operation.
+    """
+
+    transaction = db.get(OidcAuthorizationTransaction, transaction_id)
+    if transaction is None:
+        raise ValueError("OIDC authorization transaction not found")
+    _validate_transaction_active(transaction)
+    source = _validate_transaction_source(db, transaction=transaction)
+    _validate_proof(
+        transaction,
+        state=state,
+        nonce=nonce,
+        code_verifier=code_verifier,
+    )
+    return transaction, source
+
+
+def consume_oidc_authorization_transaction(
+    db: Session,
+    *,
+    transaction_id: UUID,
+    state: str,
+    nonce: str,
+    code_verifier: str,
+) -> OidcAuthorizationTransaction:
+    """One-time authority boundary after successful external identity verification."""
+
+    transaction = _locked_transaction(db, transaction_id=transaction_id)
+    if transaction is None:
+        raise ValueError("OIDC authorization transaction not found")
+
+    _validate_transaction_active(transaction)
+    _validate_transaction_source(db, transaction=transaction)
+    _validate_proof(
+        transaction,
+        state=state,
+        nonce=nonce,
+        code_verifier=code_verifier,
+    )
 
     transaction.consumed_at = _utc_now()
     write_audit_log(

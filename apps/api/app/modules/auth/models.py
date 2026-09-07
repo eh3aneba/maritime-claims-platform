@@ -30,6 +30,15 @@ class AuthSession(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "revoked_at",
             "expires_at",
         ),
+        Index(
+            "ix_auth_sessions_oidc_source",
+            "external_identity_provider_id",
+            "external_identity_binding_id",
+        ),
+        UniqueConstraint(
+            "oidc_authorization_transaction_id",
+            name="uq_auth_sessions_oidc_authorization_transaction",
+        ),
     )
 
     organization_id: Mapped[UUID] = mapped_column(
@@ -40,6 +49,21 @@ class AuthSession(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     identity_source: Mapped[str] = mapped_column(String(50), nullable=False)
     auth_method: Mapped[str] = mapped_column(String(50), nullable=False)
+    external_identity_provider_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("enterprise_identity_providers.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
+    )
+    external_identity_binding_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("external_identity_bindings.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
+    )
+    oidc_authorization_transaction_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("oidc_authorization_transactions.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
+    )
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     revoked_by_id: Mapped[UUID | None] = mapped_column(
