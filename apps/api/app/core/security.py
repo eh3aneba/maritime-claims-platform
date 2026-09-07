@@ -27,12 +27,23 @@ def verify_password(password: str, password_hash: str) -> bool:
         return False
 
 
-def create_access_token(*, user_id: UUID, organization_id: UUID, role: str) -> str:
+def create_access_token(
+    *,
+    user_id: UUID,
+    organization_id: UUID,
+    role: str,
+    session_id: UUID,
+    identity_source: str,
+    auth_method: str,
+) -> str:
     now = datetime.now(timezone.utc)
     payload: dict[str, Any] = {
         "sub": str(user_id),
         "org": str(organization_id),
         "role": role,
+        "sid": str(session_id),
+        "src": identity_source,
+        "amr": auth_method,
         "iat": now,
         "nbf": now,
         "exp": now + timedelta(minutes=settings.access_token_expire_minutes),
@@ -54,6 +65,7 @@ def decode_access_token(token: str) -> dict[str, Any]:
     except jwt.PyJWTError as exc:
         raise TokenError("Invalid or expired access token") from exc
 
-    if not payload.get("sub") or not payload.get("org"):
-        raise TokenError("Token is missing required identity claims")
+    required_claims = ("sub", "org", "sid", "src", "amr")
+    if any(not payload.get(claim) for claim in required_claims):
+        raise TokenError("Token is missing required identity or session claims")
     return payload

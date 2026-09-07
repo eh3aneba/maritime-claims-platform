@@ -1,9 +1,9 @@
 from datetime import date
 from uuid import UUID
 
-from sqlalchemy import select
-
 from app.core.security import create_access_token, hash_password
+from app.modules.auth.models import AuthSession
+from app.modules.auth.service import create_auth_session
 from app.modules.claims.models import Claim
 from app.modules.claims.security import get_claim_for_tenant
 from app.modules.organizations.models import Organization
@@ -48,6 +48,27 @@ def seed_identity_data() -> tuple[Organization, User, Organization, User]:
         db.refresh(org_b)
         db.refresh(handler_b)
         return org_a, admin_a, org_b, handler_b
+
+
+def _session_token(
+    user_id: UUID,
+    *,
+    token_organization_id: UUID | None = None,
+    token_role: str | None = None,
+) -> str:
+    with TestingSessionLocal() as db:
+        user = db.get(User, user_id)
+        assert user is not None
+        auth_session = create_auth_session(db, user=user)
+        db.commit()
+        return create_access_token(
+            user_id=user.id,
+            organization_id=token_organization_id or user.organization_id,
+            role=token_role or user.role.value,
+            session_id=auth_session.id,
+            identity_source=auth_session.identity_source,
+            auth_method=auth_session.auth_method,
+        )
 
 
 def test_login_and_me_use_organization_context() -> None:
@@ -109,10 +130,17 @@ def test_same_email_can_exist_in_different_organizations_but_login_is_unambiguou
 
 def test_admin_can_create_user_only_in_own_organization() -> None:
     org_a, _, _, _ = seed_identity_data()
-    assert client.post(
-        "/api/v1/auth/login",
-        json={"organization_slug": "alpha", "email": "alpha-admin@example.com", "password": TEST_PASSWORD},
-    ).status_code == 200
+    assert (
+        client.post(
+            "/api/v1/auth/login",
+            json={
+                "organization_slug": "alpha",
+                "email": "alpha-admin@example.com",
+                "password": TEST_PASSWORD,
+            },
+        ).status_code
+        == 200
+    )
 
     response = client.post(
         "/api/v1/users",
@@ -135,10 +163,17 @@ def test_admin_can_create_user_only_in_own_organization() -> None:
 
 def test_claim_handler_cannot_create_users() -> None:
     seed_identity_data()
-    assert client.post(
-        "/api/v1/auth/login",
-        json={"organization_slug": "beta", "email": "beta-handler@example.com", "password": TEST_PASSWORD},
-    ).status_code == 200
+    assert (
+        client.post(
+            "/api/v1/auth/login",
+            json={
+                "organization_slug": "beta",
+                "email": "beta-handler@example.com",
+                "password": TEST_PASSWORD,
+            },
+        ).status_code
+        == 200
+    )
 
     response = client.post(
         "/api/v1/users",
@@ -154,10 +189,9 @@ def test_claim_handler_cannot_create_users() -> None:
 
 def test_database_membership_overrides_tampered_token_org_context() -> None:
     _, admin_a, org_b, _ = seed_identity_data()
-    tampered_context_token = create_access_token(
-        user_id=admin_a.id,
-        organization_id=org_b.id,
-        role=admin_a.role.value,
+    tampered_context_token = _session_token(
+        admin_a.id,
+        token_organization_id=org_b.id,
     )
     response = client.get(
         "/api/v1/auth/me",
@@ -169,7 +203,11 @@ def test_database_membership_overrides_tampered_token_org_context() -> None:
 def test_cross_tenant_claim_lookup_returns_nothing() -> None:
     org_a, _, org_b, _ = seed_identity_data()
     with TestingSessionLocal() as db:
-        vessel_b = Vessel(organization_id=org_b.id, name="MT BETA", imo_number="1234567")
+        vessel_b = Vessel(
+            organization_id=org_b.id,
+            name="MT BETA",
+            imo_number="1234567",
+        )
         db.add(vessel_b)
         db.flush()
         claim_b = Claim(
@@ -186,27 +224,56 @@ def test_cross_tenant_claim_lookup_returns_nothing() -> None:
         db.commit()
         db.refresh(claim_b)
 
-        assert get_claim_for_tenant(db, claim_id=claim_b.id, organization_id=org_b.id) is not None
-        assert get_claim_for_tenant(db, claim_id=claim_b.id, organization_id=org_a.id) is None
+        assert (
+            get_claim_for_tenant(
+                db,
+                claim_id=claim_b.id,
+                organization_id=org_b.id,
+            )
+            is not None
+        )
+        assert (
+            get_claim_for_tenant(
+                db,
+                claim_id=claim_b.id,
+                organization_id=org_a.id,
+            )
+            is None
+        )
 
 
-def test_logout_clears_cookie() -> None:
+def test_logout_clears_cookie_and_revokes_server_session() -> None:
     seed_identity_data()
-    assert client.post(
+    login = client.post(
         "/api/v1/auth/login",
-        json={"organization_slug": "alpha", "email": "alpha-admin@example.com", "password": TEST_PASSWORD},
-    ).status_code == 200
+        json={
+            "organization_slug": "alpha",
+            "email": "alpha-admin@example.com",
+            "password": TEST_PASSWORD,
+        },
+    )
+    assert login.status_code == 200
+
+    session_response = client.get("/api/v1/auth/session")
+    assert session_response.status_code == 200
+    session_id = UUID(session_response.json()["id"])
+
     assert client.get("/api/v1/auth/me").status_code == 200
     assert client.post("/api/v1/auth/logout").status_code == 204
     assert client.get("/api/v1/auth/me").status_code == 401
 
+    with TestingSessionLocal() as db:
+        auth_session = db.get(AuthSession, session_id)
+        assert auth_session is not None
+        assert auth_session.revoked_at is not None
+        assert auth_session.revocation_reason == "logout"
+
 
 def test_database_role_overrides_role_claim_in_token() -> None:
-    _, _, org_b, handler_b = seed_identity_data()
-    token_with_forged_admin_role = create_access_token(
-        user_id=handler_b.id,
-        organization_id=org_b.id,
-        role=UserRole.ADMIN.value,
+    _, _, _, handler_b = seed_identity_data()
+    token_with_forged_admin_role = _session_token(
+        handler_b.id,
+        token_role=UserRole.ADMIN.value,
     )
     response = client.post(
         "/api/v1/users",
@@ -223,11 +290,15 @@ def test_database_role_overrides_role_claim_in_token() -> None:
 
 def test_inactive_organization_invalidates_existing_token() -> None:
     org_a, admin_a, _, _ = seed_identity_data()
-    token = create_access_token(user_id=admin_a.id, organization_id=org_a.id, role=admin_a.role.value)
+    token = _session_token(admin_a.id)
     with TestingSessionLocal() as db:
         stored_org = db.get(Organization, org_a.id)
+        assert stored_org is not None
         stored_org.status = "inactive"
         db.commit()
 
-    response = client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"})
+    response = client.get(
+        "/api/v1/auth/me",
+        headers={"Authorization": f"Bearer {token}"},
+    )
     assert response.status_code == 401
