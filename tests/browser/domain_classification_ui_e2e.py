@@ -1,4 +1,4 @@
-"""Browser regression for Phase 16.1-C governed claim-domain classification UX."""
+"""Browser regression for governed claim-domain classification and read-only playbook UX."""
 from __future__ import annotations
 
 import json
@@ -67,6 +67,78 @@ def main() -> None:
             "classification_hash": hash_char * 64,
             "created_at": datetime.now(UTC).isoformat(),
         }
+
+    def playbook_preview(row: dict | None) -> dict:
+        base = {
+            "registry_version": "16.2-A.1",
+            "registry_hash": "9" * 64,
+            "classification_required": row is None,
+            "non_authoritative": True,
+            "read_only_preview": True,
+            "automatic_rule_execution": False,
+            "automatic_requirement_activation": False,
+            "automatic_task_creation": False,
+            "automatic_claim_decision": False,
+            "authority_boundary": (
+                "This playbook is a read-only investigation preview derived from the latest human-confirmed claim-domain "
+                "classification. It does not execute rules, activate evidence requirements, create tasks or determine "
+                "coverage, causation, fault, liability, recoverability, reserve, settlement, payment or closure."
+            ),
+            "source_ref": None,
+            "classification_context": None,
+            "playbook": None,
+        }
+        if row is None:
+            return base
+
+        machinery = row["incident_code"] == "machinery_failure"
+        incident_title = "Machinery Failure" if machinery else "Collision"
+        component_title = "Turbocharger" if row.get("component_code") == "turbocharger" else None
+        base.update(
+            {
+                "classification_required": False,
+                "source_ref": {
+                    "kind": "claim_domain_classification",
+                    "id": row["id"],
+                    "catalog_version": row["catalog_version"],
+                    "classification_number": row["classification_number"],
+                    "classification_hash": row["classification_hash"],
+                },
+                "classification_context": {
+                    "incident_code": row["incident_code"],
+                    "incident_title": incident_title,
+                    "component_code": row.get("component_code"),
+                    "component_title": component_title,
+                    "failure_mode": row.get("failure_mode"),
+                },
+                "playbook": {
+                    "incident_code": row["incident_code"],
+                    "title": f"{incident_title} Investigation Preview",
+                    "objective": (
+                        "Organize a bounded technical and adjusting investigation without deciding causation, coverage or recoverability."
+                        if machinery
+                        else "Organize navigation, damage and recovery evidence without determining fault, liability or apportionment."
+                    ),
+                    "investigation_tracks": (
+                        ["Reconstruct the casualty chronology and operating condition.", "Review maintenance history and recent overhaul work."]
+                        if machinery
+                        else ["Reconstruct navigation, encounter geometry and collision chronology.", "Map vessel damage and emergency measures."]
+                    ),
+                    "evidence_prompts": (
+                        ["PMS history, running-hours records, overhaul reports and maker recommendations.", "Engine log and relevant alarm/event records."]
+                        if machinery
+                        else ["VDR/S-VDR, AIS, ECDIS/chart data and bridge log extracts.", "Damage photographs, survey reports and repair estimates."]
+                    ),
+                    "review_topics": (
+                        ["Technical failure mechanism and competing causation hypotheses."]
+                        if machinery
+                        else ["Navigation chronology and evidence preservation; no fault conclusion is implied."]
+                    ),
+                    "contextual_rule_ids": ["TECH-001", "AAA-D1"] if machinery else ["MARINE-EMERGENCY-001", "AAA-D1"],
+                },
+            }
+        )
+        return base
 
     def intelligence_snapshot(row: dict, version: int) -> dict:
         incident_title = "Machinery Failure" if row["incident_code"] == "machinery_failure" else "Collision"
@@ -149,6 +221,9 @@ def main() -> None:
             if url.endswith("/intelligence/domain-catalog") and method == "GET":
                 route.fulfill(status=200, content_type="application/json", body=json.dumps(catalog))
                 return
+            if url.endswith("/intelligence/domain-playbook-preview") and method == "GET":
+                route.fulfill(status=200, content_type="application/json", body=json.dumps(playbook_preview(current)))
+                return
             if url.endswith("/intelligence/domain-classifications") and method == "GET":
                 route.fulfill(status=200, content_type="application/json", body=json.dumps(history))
                 return
@@ -185,10 +260,14 @@ def main() -> None:
         page.route(f"**/api/v1/claims/{CLAIM_ID}/intelligence**", route_intelligence)
         page.goto(f"{BASE_URL}/claims/{CLAIM_ID}/intelligence", wait_until="networkidle")
         classification_panel = page.locator('section[aria-label="Claim domain classification"]')
+        playbook_panel = page.locator('section[aria-label="Domain investigation playbook"]')
 
         expect(page.get_by_role("heading", name="Source-linked claim intelligence")).to_be_visible()
         expect(page.get_by_role("heading", name="Claim domain classification")).to_be_visible()
+        expect(page.get_by_role("heading", name="Domain investigation playbook")).to_be_visible()
         expect(page.get_by_text("No claim-domain classification has been recorded", exact=False)).to_be_visible()
+        expect(playbook_panel.get_by_text("Human classification required.", exact=False)).to_be_visible()
+        expect(playbook_panel.get_by_text("Machinery Failure Investigation Preview", exact=True)).to_have_count(0)
         expect(page.get_by_text("No intelligence snapshot yet", exact=True)).to_be_visible()
 
         page.get_by_label("Claim incident domain").select_option("machinery_failure")
@@ -206,6 +285,15 @@ def main() -> None:
         expect(page.get_by_text("was not rebuilt automatically", exact=False)).to_be_visible()
         expect(page.get_by_text("No intelligence snapshot yet", exact=True)).to_be_visible()
         expect(classification_panel).to_contain_text(first_note)
+        expect(playbook_panel.get_by_text("Machinery Failure Investigation Preview", exact=True)).to_be_visible()
+        expect(playbook_panel.get_by_text("PMS history", exact=False)).to_be_visible()
+        expect(playbook_panel.get_by_text("TECH-001", exact=True)).to_be_visible()
+        expect(playbook_panel.get_by_text("References only", exact=False)).to_be_visible()
+        expect(playbook_panel).not_to_contain_text(first_note)
+        expect(playbook_panel.get_by_role("button")).to_have_count(0)
+        playbook_panel.get_by_text("Playbook source lineage", exact=True).click()
+        expect(playbook_panel).to_contain_text("Classification sequence: v1")
+        expect(playbook_panel).to_contain_text("a" * 64)
 
         page.get_by_role("button", name="Build intelligence").click()
         expect(page.get_by_text("Intelligence snapshot v1 is ready.", exact=True)).to_be_visible()
@@ -229,6 +317,10 @@ def main() -> None:
         expect(page.get_by_label("Claim incident domain")).to_have_value("collision")
         expect(classification_panel).to_contain_text(second_note)
         expect(page.get_by_text("Classification history · 2 versions", exact=True)).to_be_visible()
+        expect(playbook_panel.get_by_text("Collision Investigation Preview", exact=True)).to_be_visible()
+        expect(playbook_panel.get_by_text("VDR/S-VDR", exact=False)).to_be_visible()
+        expect(playbook_panel.get_by_text("MARINE-EMERGENCY-001", exact=True)).to_be_visible()
+        expect(playbook_panel).not_to_contain_text(second_note)
         expect(domain_section.get_by_text("Claim domain: Machinery Failure", exact=True)).to_be_visible()
         expect(domain_section.get_by_text("Claim domain: Collision", exact=True)).to_have_count(0)
 
@@ -241,7 +333,7 @@ def main() -> None:
 
         browser.close()
 
-    print("Claim domain classification UI browser E2E passed.")
+    print("Claim domain classification and playbook UI browser E2E passed.")
 
 
 if __name__ == "__main__":
