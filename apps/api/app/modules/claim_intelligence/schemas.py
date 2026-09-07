@@ -169,3 +169,58 @@ class ClaimDomainPlaybookPreviewResponse(BaseModel):
     source_ref: DomainPlaybookSourceRefResponse | None
     classification_context: DomainPlaybookClassificationContextResponse | None
     playbook: DomainPlaybookDefinitionResponse | None
+
+
+class ClaimInvestigationPlanWrite(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    registry_version: str = Field(min_length=3, max_length=32)
+    registry_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    classification_id: UUID
+    classification_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    investigation_tracks: list[str] = Field(default_factory=list, max_length=12)
+    evidence_prompts: list[str] = Field(default_factory=list, max_length=20)
+    review_topics: list[str] = Field(default_factory=list, max_length=12)
+    note: str = Field(min_length=20, max_length=2000)
+    confirm_adoption: bool = False
+
+    @model_validator(mode="after")
+    def validate_selection(self):
+        selections = self.investigation_tracks + self.evidence_prompts + self.review_topics
+        if not selections:
+            raise ValueError("At least one canonical playbook item must be selected")
+        for values in (self.investigation_tracks, self.evidence_prompts, self.review_topics):
+            if len(values) != len(set(values)):
+                raise ValueError("Investigation plan selections cannot contain duplicates")
+        return self
+
+
+class ClaimInvestigationPlanResponse(BaseModel):
+    id: UUID
+    claim_id: UUID
+    plan_number: int
+    classification_id: UUID
+    catalog_version: str
+    classification_number: int
+    classification_hash: str
+    registry_version: str
+    registry_hash: str
+    incident_code: str
+    component_code: str | None
+    failure_mode: str | None
+    investigation_tracks: list[str]
+    evidence_prompts: list[str]
+    review_topics: list[str]
+    contextual_rule_ids: list[str]
+    adoption_note: str
+    adopted_by_id: UUID | None
+    supersedes_plan_id: UUID | None
+    previous_plan_hash: str | None
+    adoption_key_hash: str
+    plan_hash: str
+    adopted_at: datetime
+    source_current: bool
+    non_authoritative: bool = True
+    automatic_rule_execution: bool = False
+    automatic_requirement_activation: bool = False
+    automatic_task_creation: bool = False
+    automatic_claim_decision: bool = False
