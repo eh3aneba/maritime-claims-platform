@@ -184,6 +184,7 @@ def main() -> None:
 
         page.route(f"**/api/v1/claims/{CLAIM_ID}/intelligence**", route_intelligence)
         page.goto(f"{BASE_URL}/claims/{CLAIM_ID}/intelligence", wait_until="networkidle")
+        classification_panel = page.locator('section[aria-label="Claim domain classification"]')
 
         expect(page.get_by_role("heading", name="Source-linked claim intelligence")).to_be_visible()
         expect(page.get_by_role("heading", name="Claim domain classification")).to_be_visible()
@@ -204,7 +205,7 @@ def main() -> None:
         expect(page.get_by_text("Classification v1 saved", exact=False)).to_be_visible()
         expect(page.get_by_text("was not rebuilt automatically", exact=False)).to_be_visible()
         expect(page.get_by_text("No intelligence snapshot yet", exact=True)).to_be_visible()
-        expect(page.get_by_text(first_note, exact=True).first).to_be_visible()
+        expect(classification_panel).to_contain_text(first_note)
 
         page.get_by_role("button", name="Build intelligence").click()
         expect(page.get_by_text("Intelligence snapshot v1 is ready.", exact=True)).to_be_visible()
@@ -225,7 +226,8 @@ def main() -> None:
 
         expect(page.get_by_text("Classification v2 saved", exact=False)).to_be_visible()
         expect(page.get_by_text("was not rebuilt automatically", exact=False)).to_be_visible()
-        expect(page.get_by_text("Collision", exact=True).first).to_be_visible()
+        expect(page.get_by_label("Claim incident domain")).to_have_value("collision")
+        expect(classification_panel).to_contain_text(second_note)
         expect(page.get_by_text("Classification history · 2 versions", exact=True)).to_be_visible()
         expect(domain_section.get_by_text("Claim domain: Machinery Failure", exact=True)).to_be_visible()
         expect(domain_section.get_by_text("Claim domain: Collision", exact=True)).to_have_count(0)
