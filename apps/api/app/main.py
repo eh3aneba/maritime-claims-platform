@@ -30,6 +30,7 @@ from app.modules.auth.oidc_runtime_router import router as oidc_runtime_router
 from app.modules.auth.oidc_transaction_router import router as oidc_transaction_router
 from app.modules.auth.oidc_trust_router import router as oidc_trust_router
 from app.modules.auth.router import router as auth_router
+from app.modules.auth.saml_trust_router import router as saml_trust_router
 from app.modules.assessments.router import router as assessments_router
 from app.modules.claim_intelligence.router import router as claim_intelligence_router
 from app.modules.claim_packs.router import router as claim_packs_router
@@ -115,6 +116,7 @@ app.include_router(oidc_trust_router, prefix=settings.api_v1_prefix)
 app.include_router(oidc_runtime_router, prefix=settings.api_v1_prefix)
 app.include_router(oidc_transaction_router, prefix=settings.api_v1_prefix)
 app.include_router(oidc_callback_router, prefix=settings.api_v1_prefix)
+app.include_router(saml_trust_router, prefix=settings.api_v1_prefix)
 app.include_router(claims_router, prefix=settings.api_v1_prefix)
 app.include_router(claim_packs_router, prefix=settings.api_v1_prefix)
 app.include_router(chronology_router, prefix=settings.api_v1_prefix)
