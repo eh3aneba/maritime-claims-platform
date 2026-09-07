@@ -189,3 +189,53 @@ class OidcTrustProfile(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         nullable=False,
         index=True,
     )
+
+
+class OidcAuthorizationTransaction(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Short-lived OIDC transaction with hashed state/nonce and pinned trust source."""
+
+    __tablename__ = "oidc_authorization_transactions"
+    __table_args__ = (
+        UniqueConstraint(
+            "state_hash",
+            name="uq_oidc_authorization_transactions_state_hash",
+        ),
+        Index(
+            "ix_oidc_authorization_transactions_org_provider_lifecycle",
+            "organization_id",
+            "provider_id",
+            "expires_at",
+            "consumed_at",
+            "cancelled_at",
+        ),
+    )
+
+    organization_id: Mapped[UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    provider_id: Mapped[UUID] = mapped_column(
+        ForeignKey("enterprise_identity_providers.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    trust_profile_id: Mapped[UUID] = mapped_column(
+        ForeignKey("oidc_trust_profiles.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    trust_profile_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    trust_profile_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    state_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    nonce_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    pkce_code_challenge: Mapped[str] = mapped_column(String(128), nullable=False)
+    pkce_method: Mapped[str] = mapped_column(
+        String(10),
+        nullable=False,
+        default="S256",
+        server_default="S256",
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

@@ -111,3 +111,35 @@ class OidcTrustProfileRead(BaseModel):
     previous_profile_hash: str | None
     created_by_id: UUID
     created_at: datetime
+
+
+class OidcAuthorizationTransactionCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    organization_slug: str = Field(
+        min_length=2,
+        max_length=100,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]*[A-Za-z0-9]$",
+    )
+    provider_key: str = Field(
+        min_length=3,
+        max_length=80,
+        pattern=r"^[a-z0-9][a-z0-9_-]*[a-z0-9]$",
+    )
+
+
+class OidcAuthorizationTransactionStartResponse(BaseModel):
+    transaction_id: UUID
+    provider_key: str
+    provider_display_name: str
+    issuer_identifier: str
+    audience: str
+    trust_profile_id: UUID
+    trust_profile_number: int
+    trust_profile_hash: str
+    state: str
+    nonce: str
+    code_verifier: str
+    code_challenge: str
+    code_challenge_method: Literal["S256"] = "S256"
+    expires_at: datetime
