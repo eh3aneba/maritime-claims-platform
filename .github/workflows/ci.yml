@@ -286,6 +286,7 @@ jobs:
           python tests/browser/ai_operations_e2e.py
           python tests/browser/governance_webhooks_e2e.py
           python tests/browser/claim_workbench_e2e.py
+          python tests/browser/domain_classification_ui_e2e.py
           python tests/browser/localization_e2e.py
           python tests/browser/chronology_localization_e2e.py
           python tests/browser/chronology_conflict_maturity_e2e.py
