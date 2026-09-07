@@ -25,6 +25,7 @@ type Dashboard = { claim_id: string; snapshot: Snapshot | null; disclaimer: stri
 
 const sections = [
   ["incident_summary", "Executive claim snapshot"],
+  ["domain_context", "Governed claim domain context"],
   ["chronology", "Chronology"],
   ["machinery_context", "Machinery context"],
   ["evidence_available", "Evidence available"],
