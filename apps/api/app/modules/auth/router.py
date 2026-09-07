@@ -124,7 +124,11 @@ def me(current_user: CurrentUser) -> UserRead:
     return UserRead.model_validate(current_user)
 
 
-@router.get("/session", response_model=AuthSessionRead)
+@router.get(
+    "/session",
+    response_model=AuthSessionRead,
+    response_model_exclude_none=True,
+)
 def current_session(current_context: CurrentAuthContext) -> AuthSessionRead:
     return AuthSessionRead.model_validate(current_context.session)
 
