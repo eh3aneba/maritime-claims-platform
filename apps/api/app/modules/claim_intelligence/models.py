@@ -76,3 +76,37 @@ class ClaimIntelligenceItemDecision(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     previous_decision_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     decision_hash: Mapped[str] = mapped_column(String(64))
     decided_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class ClaimDomainClassification(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "claim_domain_classifications"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "claim_id",
+            "classification_number",
+            name="uq_claim_domain_classification_number",
+        ),
+        UniqueConstraint("classification_hash", name="uq_claim_domain_classification_hash"),
+        Index(
+            "ix_claim_domain_classification_claim",
+            "organization_id",
+            "claim_id",
+            "classification_number",
+        ),
+    )
+
+    organization_id: Mapped[UUID] = mapped_column(ForeignKey("organizations.id", ondelete="RESTRICT"), index=True)
+    claim_id: Mapped[UUID] = mapped_column(ForeignKey("claims.id", ondelete="CASCADE"), index=True)
+    catalog_version: Mapped[str] = mapped_column(String(32))
+    classification_number: Mapped[int] = mapped_column(Integer)
+    incident_code: Mapped[str] = mapped_column(String(64))
+    component_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    failure_mode: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    classification_note: Mapped[str] = mapped_column(Text)
+    classified_by_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    supersedes_classification_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("claim_domain_classifications.id", ondelete="RESTRICT"), nullable=True
+    )
+    previous_classification_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    classification_hash: Mapped[str] = mapped_column(String(64))

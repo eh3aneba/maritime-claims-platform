@@ -79,3 +79,51 @@ class ClaimIntelligenceDashboardResponse(BaseModel):
     claim_id: UUID
     snapshot: ClaimIntelligenceSnapshotResponse | None
     disclaimer: str
+
+
+class DomainCatalogComponentResponse(BaseModel):
+    code: str
+    title: str
+
+
+class DomainCatalogIncidentResponse(BaseModel):
+    code: str
+    title: str
+    description: str
+    component_codes: list[str]
+    contextual_rule_ids: list[str]
+
+
+class ClaimDomainCatalogResponse(BaseModel):
+    catalog_version: str
+    non_authoritative: bool
+    human_classification_required: bool
+    automatic_claim_decision: bool
+    incidents: list[DomainCatalogIncidentResponse]
+    machinery_components: list[DomainCatalogComponentResponse]
+
+
+class ClaimDomainClassificationWrite(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    incident_code: str = Field(min_length=3, max_length=64, pattern=r"^[a-z][a-z0-9_]*$")
+    component_code: str | None = Field(default=None, min_length=3, max_length=64, pattern=r"^[a-z][a-z0-9_]*$")
+    failure_mode: str | None = Field(default=None, min_length=3, max_length=160)
+    note: str = Field(min_length=20, max_length=2000)
+    confirm_classification: bool = False
+
+
+class ClaimDomainClassificationResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    claim_id: UUID
+    catalog_version: str
+    classification_number: int
+    incident_code: str
+    component_code: str | None
+    failure_mode: str | None
+    classification_note: str
+    classified_by_id: UUID | None
+    supersedes_classification_id: UUID | None
+    previous_classification_hash: str | None
+    classification_hash: str
+    created_at: datetime
