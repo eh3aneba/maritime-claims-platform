@@ -7,7 +7,7 @@ from app.modules.claim_intelligence.domain_catalog import DOMAIN_CATALOG_VERSION
 from app.modules.claim_intelligence.models import ClaimDomainClassification, ClaimIntelligenceSnapshot
 from app.modules.claims.facts import ClaimFact
 from app.modules.claims.models import Claim
-from app.modules.rules.models import RuleRun
+from app.modules.rules.models import RuleEvaluationRun
 from app.modules.tasks.models import ClaimTask
 from tests.db_harness import TestingSessionLocal, client, reset_database
 from tests.test_claims_api import create_orion_claim, login
@@ -178,7 +178,7 @@ def test_classification_has_zero_autonomous_claim_decision_side_effects() -> Non
         assert claim_after.claim_type == claim_type_before
         assert claim_after.status == status_before
         assert db.scalar(select(func.count()).select_from(ClaimIntelligenceSnapshot)) == 0
-        assert db.scalar(select(func.count()).select_from(RuleRun)) == 0
+        assert db.scalar(select(func.count()).select_from(RuleEvaluationRun)) == 0
         assert db.scalar(select(func.count()).select_from(ClaimFact)) == 0
         assert db.scalar(select(func.count()).select_from(ClaimTask)) == 0
         event = db.scalar(
