@@ -9,9 +9,7 @@ from app.core.security import create_access_token
 from app.db.session import get_db
 from app.modules.audit.service import write_audit_log
 from app.modules.auth.saml_callback import SamlCallbackError, complete_saml_callback
-from app.modules.auth.saml_models import SamlAuthnTransaction
-from app.modules.auth.saml_transaction import transaction_id_from_relay_state
-from app.modules.auth.schemas import LoginResponse
+from app.modules.auth.saml_transaction import validate_saml_relay_state_source
 from app.modules.users.schemas import UserRead
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
@@ -25,11 +23,11 @@ def _audit_failed_callback(
     failure_category: str,
 ) -> None:
     try:
-        transaction_id = transaction_id_from_relay_state(relay_state)
+        transaction, _ = validate_saml_relay_state_source(
+            db,
+            relay_state=relay_state,
+        )
     except ValueError:
-        return
-    transaction = db.get(SamlAuthnTransaction, transaction_id)
-    if transaction is None:
         return
     write_audit_log(
         db,
@@ -43,7 +41,7 @@ def _audit_failed_callback(
     db.commit()
 
 
-@router.post("/saml/callback", response_model=LoginResponse)
+@router.post("/saml/callback", response_model=UserRead)
 def complete_saml_authorization_callback(
     response: Response,
     db: Annotated[Session, Depends(get_db)],
@@ -55,7 +53,7 @@ def complete_saml_authorization_callback(
         str,
         Form(alias="SAMLResponse", min_length=1, max_length=1_500_000),
     ],
-) -> LoginResponse:
+) -> UserRead:
     try:
         result = complete_saml_callback(
             db,
@@ -105,7 +103,4 @@ def complete_saml_authorization_callback(
         max_age=settings.access_token_expire_minutes * 60,
         path="/",
     )
-    return LoginResponse(
-        access_token=token,
-        user=UserRead.model_validate(result.user),
-    )
+    return UserRead.model_validate(result.user)
