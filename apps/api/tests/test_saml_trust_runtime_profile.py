@@ -218,7 +218,12 @@ def test_saml_profile_fails_closed_for_protocol_tenant_and_unsafe_input() -> Non
     beta_headers = _headers(beta_admin_id)
     certificate = _certificate_pem()
 
-    disabled = _provider(alpha_headers, provider_key="disabled-saml", enable=False)
+    disabled = _provider(
+        alpha_headers,
+        provider_key="disabled-saml",
+        issuer="https://idp-disabled.saml.example.test/entity",
+        enable=False,
+    )
     response = client.post(
         f"/api/v1/auth/identity-providers/{disabled['id']}/saml-trust-runtime-profiles",
         headers=alpha_headers,
