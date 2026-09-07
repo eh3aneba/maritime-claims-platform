@@ -14,6 +14,12 @@ from app.modules.claim_intelligence.domain_service import (
     get_domain_catalog,
     list_domain_classifications,
 )
+from app.modules.claim_intelligence.investigation_activation import (
+    activate_investigation_plan,
+    get_current_investigation_activation,
+    investigation_activation_response,
+    list_investigation_activations,
+)
 from app.modules.claim_intelligence.investigation_plan import (
     adopt_investigation_plan,
     get_current_investigation_plan,
@@ -34,6 +40,8 @@ from app.modules.claim_intelligence.schemas import (
     ClaimIntelligenceDecisionResponse,
     ClaimIntelligenceDecisionWrite,
     ClaimIntelligenceSnapshotResponse,
+    ClaimInvestigationPlanActivationResponse,
+    ClaimInvestigationPlanActivationWrite,
     ClaimInvestigationPlanResponse,
     ClaimInvestigationPlanWrite,
 )
@@ -135,6 +143,36 @@ def get_claim_investigation_plan_history(
     ]
 
 
+@router.get("/investigation-plan-activation", response_model=ClaimInvestigationPlanActivationResponse | None)
+def get_claim_investigation_plan_activation(
+    claim_id: UUID,
+    current_user: CurrentUser,
+    db: Annotated[Session, Depends(get_db)],
+) -> ClaimInvestigationPlanActivationResponse | None:
+    claim = _claim_or_404(db, claim_id, current_user)
+    activation = get_current_investigation_activation(db, claim=claim)
+    if activation is None:
+        return None
+    return ClaimInvestigationPlanActivationResponse.model_validate(
+        investigation_activation_response(db, claim=claim, activation=activation)
+    )
+
+
+@router.get("/investigation-plan-activations", response_model=list[ClaimInvestigationPlanActivationResponse])
+def get_claim_investigation_plan_activation_history(
+    claim_id: UUID,
+    current_user: CurrentUser,
+    db: Annotated[Session, Depends(get_db)],
+) -> list[ClaimInvestigationPlanActivationResponse]:
+    claim = _claim_or_404(db, claim_id, current_user)
+    return [
+        ClaimInvestigationPlanActivationResponse.model_validate(
+            investigation_activation_response(db, claim=claim, activation=activation)
+        )
+        for activation in list_investigation_activations(db, claim=claim)
+    ]
+
+
 @router.post(
     "/domain-classification",
     response_model=ClaimDomainClassificationResponse,
@@ -173,6 +211,28 @@ def adopt_claim_investigation_plan(
         db.rollback()
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     return ClaimInvestigationPlanResponse.model_validate(investigation_plan_response(db, claim=claim, plan=plan))
+
+
+@router.post(
+    "/investigation-plan-activation",
+    response_model=ClaimInvestigationPlanActivationResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def activate_claim_investigation_plan(
+    claim_id: UUID,
+    payload: ClaimInvestigationPlanActivationWrite,
+    current_user: CurrentUser,
+    db: Annotated[Session, Depends(get_db)],
+) -> ClaimInvestigationPlanActivationResponse:
+    claim = _claim_or_404(db, claim_id, current_user)
+    try:
+        activation = activate_investigation_plan(db, claim=claim, user=current_user, payload=payload)
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    return ClaimInvestigationPlanActivationResponse.model_validate(
+        investigation_activation_response(db, claim=claim, activation=activation)
+    )
 
 
 @router.post("/build", response_model=ClaimIntelligenceSnapshotResponse, status_code=status.HTTP_201_CREATED)

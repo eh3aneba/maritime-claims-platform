@@ -1,7 +1,7 @@
-from datetime import datetime
+from datetime import date, datetime
 from uuid import UUID
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint
+from sqlalchemy import Date, DateTime, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -148,3 +148,33 @@ class ClaimInvestigationPlan(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     adoption_key_hash: Mapped[str] = mapped_column(String(64))
     plan_hash: Mapped[str] = mapped_column(String(64))
     adopted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class ClaimInvestigationPlanActivation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "claim_investigation_plan_activations"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id", "claim_id", "activation_number", name="uq_claim_investigation_activation_number"
+        ),
+        UniqueConstraint(
+            "organization_id", "claim_id", "activation_key_hash", name="uq_claim_investigation_activation_key"
+        ),
+        UniqueConstraint("activation_hash", name="uq_claim_investigation_activation_hash"),
+        Index("ix_claim_investigation_activation_claim", "organization_id", "claim_id", "activation_number"),
+    )
+
+    organization_id: Mapped[UUID] = mapped_column(ForeignKey("organizations.id", ondelete="RESTRICT"), index=True)
+    claim_id: Mapped[UUID] = mapped_column(ForeignKey("claims.id", ondelete="CASCADE"), index=True)
+    activation_number: Mapped[int] = mapped_column(Integer)
+    plan_id: Mapped[UUID] = mapped_column(ForeignKey("claim_investigation_plans.id", ondelete="RESTRICT"), index=True)
+    plan_number: Mapped[int] = mapped_column(Integer)
+    plan_hash: Mapped[str] = mapped_column(String(64))
+    selected_items: Mapped[list] = mapped_column(JSON)
+    activation_note: Mapped[str] = mapped_column(Text)
+    activated_by_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    assignee_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    previous_activation_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    activation_key_hash: Mapped[str] = mapped_column(String(64))
+    activation_hash: Mapped[str] = mapped_column(String(64))
+    activated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

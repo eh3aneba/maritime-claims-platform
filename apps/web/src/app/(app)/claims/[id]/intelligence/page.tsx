@@ -6,6 +6,7 @@ import DomainClassificationPanel from "./domain-classification-panel";
 import DomainPlaybookPreview from "./domain-playbook-preview";
 import EvidenceSearchBridge from "./evidence-search-bridge";
 import IntelligenceCore from "./intelligence-core";
+import InvestigationActivationPanel from "./investigation-activation-panel";
 import InvestigationPlanPanel from "./investigation-plan-panel";
 import SeverityReserveProxy from "./severity-reserve-proxy";
 
@@ -18,6 +19,7 @@ export default function ClaimIntelligencePage() {
       <DomainClassificationPanel claimId={id} />
       <DomainPlaybookPreview claimId={id} />
       <InvestigationPlanPanel claimId={id} />
+      <InvestigationActivationPanel claimId={id} />
       <EvidenceSearchBridge claimId={id} />
       <SeverityReserveProxy claimId={id} />
     </div>

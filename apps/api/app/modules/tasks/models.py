@@ -8,6 +8,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
 from app.db.mixins import TimestampMixin, UUIDPrimaryKeyMixin
 from app.db.types import enum_values
+from app.modules.claim_intelligence import models as _claim_intelligence_models  # noqa: F401
 
 
 class TaskType(str, enum.Enum):
@@ -40,12 +41,17 @@ class ClaimTask(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __table_args__ = (
         Index("ix_claim_tasks_org_claim_status", "organization_id", "claim_id", "status"),
         Index("ix_claim_tasks_assignee_due", "organization_id", "assignee_id", "due_date"),
+        Index("ix_claim_tasks_investigation_plan", "organization_id", "claim_id", "investigation_plan_id"),
+        UniqueConstraint("investigation_plan_id", "investigation_item_key", name="uq_claim_task_investigation_plan_item"),
     )
 
     organization_id: Mapped[UUID] = mapped_column(ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False, index=True)
     claim_id: Mapped[UUID] = mapped_column(ForeignKey("claims.id", ondelete="RESTRICT"), nullable=False, index=True)
     requirement_id: Mapped[UUID | None] = mapped_column(ForeignKey("claim_document_requirements.id", ondelete="SET NULL"), nullable=True, index=True)
     request_batch_id: Mapped[UUID | None] = mapped_column(ForeignKey("document_request_batches.id", ondelete="SET NULL"), nullable=True, index=True)
+    investigation_plan_id: Mapped[UUID | None] = mapped_column(ForeignKey("claim_investigation_plans.id", ondelete="RESTRICT"), nullable=True, index=True)
+    investigation_activation_id: Mapped[UUID | None] = mapped_column(ForeignKey("claim_investigation_plan_activations.id", ondelete="RESTRICT"), nullable=True, index=True)
+    investigation_item_key: Mapped[str | None] = mapped_column(String(80), nullable=True)
     assignee_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     completed_by_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 

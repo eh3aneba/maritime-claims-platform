@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 from uuid import UUID
 
@@ -223,4 +223,59 @@ class ClaimInvestigationPlanResponse(BaseModel):
     automatic_rule_execution: bool = False
     automatic_requirement_activation: bool = False
     automatic_task_creation: bool = False
+    automatic_claim_decision: bool = False
+
+
+class ClaimInvestigationPlanActivationWrite(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    plan_id: UUID
+    plan_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    item_keys: list[str] = Field(min_length=1, max_length=44)
+    assignee_id: UUID | None = None
+    due_date: date | None = None
+    note: str = Field(min_length=20, max_length=2000)
+    confirm_activation: bool = False
+
+    @model_validator(mode="after")
+    def validate_item_keys(self):
+        if len(self.item_keys) != len(set(self.item_keys)):
+            raise ValueError("Investigation activation selections cannot contain duplicates")
+        for key in self.item_keys:
+            if not (key.startswith("track:") or key.startswith("evidence:") or key.startswith("review:")):
+                raise ValueError("Investigation activation item keys are invalid")
+        return self
+
+
+class ClaimInvestigationActivationWorkItemResponse(BaseModel):
+    key: str
+    kind: str
+    text: str
+    task_id: UUID | None
+    task_title: str | None
+    task_status: str | None
+    task_type: str | None
+
+
+class ClaimInvestigationPlanActivationResponse(BaseModel):
+    id: UUID
+    claim_id: UUID
+    activation_number: int
+    plan_id: UUID
+    plan_number: int
+    plan_hash: str
+    selected_items: list[dict]
+    activation_note: str
+    activated_by_id: UUID | None
+    assignee_id: UUID | None
+    due_date: date | None
+    previous_activation_hash: str | None
+    activation_key_hash: str
+    activation_hash: str
+    activated_at: datetime
+    plan_current: bool
+    work_items: list[ClaimInvestigationActivationWorkItemResponse]
+    automatic_rule_execution: bool = False
+    automatic_requirement_activation: bool = False
+    automatic_document_request: bool = False
+    automatic_intelligence_build: bool = False
     automatic_claim_decision: bool = False
