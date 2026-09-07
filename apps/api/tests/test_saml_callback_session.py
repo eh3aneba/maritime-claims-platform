@@ -390,13 +390,12 @@ def test_valid_signed_saml_callback_issues_one_bound_session_and_db_role_wins() 
     response = _callback(start, saml_response)
     assert response.status_code == 200, response.text
     payload = response.json()
-    assert payload["user"]["id"] == str(handler_id)
-    assert payload["user"]["role"] == UserRole.CLAIMS_HANDLER.value
+    assert payload["id"] == str(handler_id)
+    assert payload["role"] == UserRole.CLAIMS_HANDLER.value
+    assert "access_token" not in payload
+    assert "mcri_access_token=" in response.headers.get("set-cookie", "")
 
-    session_response = client.get(
-        "/api/v1/auth/session",
-        headers={"Authorization": f"Bearer {payload['access_token']}"},
-    )
+    session_response = client.get("/api/v1/auth/session")
     assert session_response.status_code == 200
     session_payload = session_response.json()
     assert session_payload["identity_source"] == "saml"
