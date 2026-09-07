@@ -402,7 +402,7 @@ def test_valid_signed_saml_callback_issues_one_bound_session_and_db_role_wins() 
     assert session_payload["auth_method"] == "saml"
     assert session_payload["external_identity_provider_id"] == stack["provider"]["id"]
     assert session_payload["saml_authn_transaction_id"] == start["transaction_id"]
-    assert session_payload["oidc_authorization_transaction_id"] is None
+    assert "oidc_authorization_transaction_id" not in session_payload
 
     with TestingSessionLocal() as db:
         assert db.query(User).count() == users_before
