@@ -63,7 +63,7 @@ def _enable_admin_policy(headers: dict[str, str]) -> None:
 def test_mfa_policy_defaults_disabled_and_enforces_sensitive_admin_surface(monkeypatch) -> None:
     org_id, user_id = _seed_admin(
         slug="mfa-policy-primary",
-        email="admin@example.test",
+        email="admin@example.com",
     )
     headers, _ = _headers(user_id)
 
@@ -146,8 +146,8 @@ def test_mfa_policy_defaults_disabled_and_enforces_sensitive_admin_surface(monke
 
 
 def test_mfa_step_up_is_session_and_tenant_scoped_and_confirmed_factor_cannot_be_revoked_without_step_up(monkeypatch) -> None:
-    org_a, user_a = _seed_admin(slug="mfa-a", email="a@example.test")
-    org_b, user_b = _seed_admin(slug="mfa-b", email="b@example.test")
+    org_a, user_a = _seed_admin(slug="mfa-a", email="a@example.com")
+    org_b, user_b = _seed_admin(slug="mfa-b", email="b@example.com")
     headers_a, _ = _headers(user_a)
     headers_b, _ = _headers(user_b)
 
