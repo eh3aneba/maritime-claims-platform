@@ -73,7 +73,66 @@ class AuthSession(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         nullable=True,
         index=True,
     )
+    mfa_verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    mfa_method: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    mfa_factor_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("totp_mfa_factors.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
+    )
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_by_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    revocation_reason: Mapped[str | None] = mapped_column(String(200), nullable=True)
+
+
+class TotpMfaFactor(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Tenant/user-scoped encrypted TOTP possession factor."""
+
+    __tablename__ = "totp_mfa_factors"
+    __table_args__ = (
+        Index(
+            "uq_totp_mfa_factors_user_unrevoked",
+            "user_id",
+            unique=True,
+            postgresql_where=text("revoked_at IS NULL"),
+            sqlite_where=text("revoked_at IS NULL"),
+        ),
+        Index(
+            "ix_totp_mfa_factors_org_user_lifecycle",
+            "organization_id",
+            "user_id",
+            "confirmed_at",
+            "revoked_at",
+        ),
+    )
+
+    organization_id: Mapped[UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    issuer: Mapped[str] = mapped_column(String(160), nullable=False)
+    account_label: Mapped[str] = mapped_column(String(320), nullable=False)
+    algorithm: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="SHA1", server_default="SHA1"
+    )
+    digits: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=6, server_default="6"
+    )
+    period_seconds: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=30, server_default="30"
+    )
+    secret_ciphertext: Mapped[str] = mapped_column(String(512), nullable=False)
+    secret_nonce: Mapped[str] = mapped_column(String(64), nullable=False)
+    secret_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_accepted_time_step: Mapped[int | None] = mapped_column(Integer, nullable=True)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     revoked_by_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
