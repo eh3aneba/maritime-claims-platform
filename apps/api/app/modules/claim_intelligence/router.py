@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.modules.auth.dependencies import CurrentUser
+from app.modules.claim_intelligence.domain_playbook import domain_playbook_preview
 from app.modules.claim_intelligence.domain_service import (
     create_domain_classification,
     get_current_domain_classification,
@@ -22,6 +23,7 @@ from app.modules.claim_intelligence.schemas import (
     ClaimDomainCatalogResponse,
     ClaimDomainClassificationResponse,
     ClaimDomainClassificationWrite,
+    ClaimDomainPlaybookPreviewResponse,
     ClaimIntelligenceDashboardResponse,
     ClaimIntelligenceDecisionResponse,
     ClaimIntelligenceDecisionWrite,
@@ -87,6 +89,16 @@ def get_claim_domain_classification_history(
     claim = _claim_or_404(db, claim_id, current_user)
     rows = list_domain_classifications(db, claim=claim)
     return [ClaimDomainClassificationResponse.model_validate(row) for row in rows]
+
+
+@router.get("/domain-playbook-preview", response_model=ClaimDomainPlaybookPreviewResponse)
+def get_claim_domain_playbook_preview(
+    claim_id: UUID,
+    current_user: CurrentUser,
+    db: Annotated[Session, Depends(get_db)],
+) -> ClaimDomainPlaybookPreviewResponse:
+    claim = _claim_or_404(db, claim_id, current_user)
+    return ClaimDomainPlaybookPreviewResponse.model_validate(domain_playbook_preview(db, claim=claim))
 
 
 @router.post(
