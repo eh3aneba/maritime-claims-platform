@@ -127,3 +127,45 @@ class ClaimDomainClassificationResponse(BaseModel):
     previous_classification_hash: str | None
     classification_hash: str
     created_at: datetime
+
+
+class DomainPlaybookDefinitionResponse(BaseModel):
+    incident_code: str
+    title: str
+    objective: str
+    investigation_tracks: list[str]
+    evidence_prompts: list[str]
+    review_topics: list[str]
+    contextual_rule_ids: list[str]
+
+
+class DomainPlaybookSourceRefResponse(BaseModel):
+    kind: Literal["claim_domain_classification"]
+    id: UUID
+    catalog_version: str
+    classification_number: int
+    classification_hash: str
+
+
+class DomainPlaybookClassificationContextResponse(BaseModel):
+    incident_code: str
+    incident_title: str
+    component_code: str | None
+    component_title: str | None
+    failure_mode: str | None
+
+
+class ClaimDomainPlaybookPreviewResponse(BaseModel):
+    registry_version: str
+    registry_hash: str
+    classification_required: bool
+    non_authoritative: bool
+    read_only_preview: bool
+    automatic_rule_execution: bool
+    automatic_requirement_activation: bool
+    automatic_task_creation: bool
+    automatic_claim_decision: bool
+    authority_boundary: str
+    source_ref: DomainPlaybookSourceRefResponse | None
+    classification_context: DomainPlaybookClassificationContextResponse | None
+    playbook: DomainPlaybookDefinitionResponse | None
