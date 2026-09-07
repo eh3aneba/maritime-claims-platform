@@ -13,8 +13,10 @@ from app.modules.audit.service import write_audit_log
 from app.modules.auth.models import (
     EnterpriseIdentityProvider,
     OidcAuthorizationTransaction,
+    OidcRuntimeProfile,
     OidcTrustProfile,
 )
+from app.modules.auth.oidc_runtime import get_current_compatible_oidc_runtime_profile
 from app.modules.auth.oidc_trust import get_current_oidc_trust_profile
 from app.modules.organizations.models import Organization, OrganizationStatus
 
@@ -50,8 +52,6 @@ def _pkce_challenge(code_verifier: str) -> str:
 
 
 def _new_start_material() -> OidcAuthorizationStartMaterial:
-    # token_urlsafe(n) draws n random bytes before base64url encoding.
-    # 32 bytes gives state/nonce 256 bits of entropy; verifier uses 64 bytes.
     state = secrets.token_urlsafe(32)
     nonce = secrets.token_urlsafe(32)
     code_verifier = secrets.token_urlsafe(64)
@@ -63,7 +63,11 @@ def _new_start_material() -> OidcAuthorizationStartMaterial:
     )
 
 
-def _active_organization_by_slug(db: Session, *, organization_slug: str) -> Organization | None:
+def _active_organization_by_slug(
+    db: Session,
+    *,
+    organization_slug: str,
+) -> Organization | None:
     return db.scalar(
         select(Organization).where(
             func.lower(Organization.slug) == organization_slug.strip().lower(),
@@ -99,6 +103,7 @@ def create_oidc_authorization_transaction(
     OidcAuthorizationStartMaterial,
     EnterpriseIdentityProvider,
     OidcTrustProfile,
+    OidcRuntimeProfile,
 ]:
     organization = _active_organization_by_slug(
         db,
@@ -112,19 +117,24 @@ def create_oidc_authorization_transaction(
         organization_id=organization.id,
         provider_key=provider_key,
     )
-    if (
-        provider is None
-        or provider.protocol != "oidc"
-        or not provider.is_enabled
-    ):
+    if provider is None or provider.protocol != "oidc" or not provider.is_enabled:
         raise ValueError("OIDC provider is unavailable")
 
-    profile = get_current_oidc_trust_profile(
+    trust_profile = get_current_oidc_trust_profile(
         db,
         provider_id=provider.id,
         organization_id=organization.id,
     )
-    if profile is None:
+    if trust_profile is None:
+        raise ValueError("OIDC provider is unavailable")
+
+    runtime_profile = get_current_compatible_oidc_runtime_profile(
+        db,
+        organization_id=organization.id,
+        provider_id=provider.id,
+        trust_profile=trust_profile,
+    )
+    if runtime_profile is None:
         raise ValueError("OIDC provider is unavailable")
 
     material = _new_start_material()
@@ -132,9 +142,12 @@ def create_oidc_authorization_transaction(
     transaction = OidcAuthorizationTransaction(
         organization_id=organization.id,
         provider_id=provider.id,
-        trust_profile_id=profile.id,
-        trust_profile_number=profile.profile_number,
-        trust_profile_hash=profile.profile_hash,
+        trust_profile_id=trust_profile.id,
+        trust_profile_number=trust_profile.profile_number,
+        trust_profile_hash=trust_profile.profile_hash,
+        runtime_profile_id=runtime_profile.id,
+        runtime_profile_number=runtime_profile.runtime_profile_number,
+        runtime_profile_hash=runtime_profile.runtime_profile_hash,
         state_hash=_secret_hash(material.state),
         nonce_hash=_secret_hash(material.nonce),
         pkce_code_challenge=material.code_challenge,
@@ -143,7 +156,7 @@ def create_oidc_authorization_transaction(
     )
     db.add(transaction)
     db.flush()
-    return transaction, material, provider, profile
+    return transaction, material, provider, trust_profile, runtime_profile
 
 
 def _locked_transaction(
@@ -172,15 +185,44 @@ def _validate_transaction_source(
     ):
         raise ValueError("OIDC authorization transaction source is unavailable")
 
-    profile = db.get(OidcTrustProfile, transaction.trust_profile_id)
+    trust_profile = db.get(OidcTrustProfile, transaction.trust_profile_id)
     if (
-        profile is None
-        or profile.organization_id != transaction.organization_id
-        or profile.provider_id != transaction.provider_id
-        or profile.profile_number != transaction.trust_profile_number
-        or not hmac.compare_digest(profile.profile_hash, transaction.trust_profile_hash)
+        trust_profile is None
+        or trust_profile.organization_id != transaction.organization_id
+        or trust_profile.provider_id != transaction.provider_id
+        or trust_profile.profile_number != transaction.trust_profile_number
+        or not hmac.compare_digest(
+            trust_profile.profile_hash,
+            transaction.trust_profile_hash,
+        )
     ):
         raise ValueError("OIDC authorization transaction trust source does not match")
+
+    if (
+        transaction.runtime_profile_id is None
+        or transaction.runtime_profile_number is None
+        or transaction.runtime_profile_hash is None
+    ):
+        raise ValueError("OIDC authorization transaction runtime source is unavailable")
+
+    runtime_profile = db.get(OidcRuntimeProfile, transaction.runtime_profile_id)
+    if (
+        runtime_profile is None
+        or runtime_profile.organization_id != transaction.organization_id
+        or runtime_profile.provider_id != transaction.provider_id
+        or runtime_profile.trust_profile_id != transaction.trust_profile_id
+        or runtime_profile.trust_profile_number != transaction.trust_profile_number
+        or not hmac.compare_digest(
+            runtime_profile.trust_profile_hash,
+            transaction.trust_profile_hash,
+        )
+        or runtime_profile.runtime_profile_number != transaction.runtime_profile_number
+        or not hmac.compare_digest(
+            runtime_profile.runtime_profile_hash,
+            transaction.runtime_profile_hash,
+        )
+    ):
+        raise ValueError("OIDC authorization transaction runtime source does not match")
 
 
 def _validate_transaction_active(transaction: OidcAuthorizationTransaction) -> None:
@@ -219,14 +261,14 @@ def consume_oidc_authorization_transaction(
     _validate_transaction_active(transaction)
     _validate_transaction_source(db, transaction=transaction)
 
-    supplied_state_hash = _secret_hash(state)
-    supplied_nonce_hash = _secret_hash(nonce)
-    supplied_challenge = _pkce_challenge(code_verifier)
-    if not hmac.compare_digest(transaction.state_hash, supplied_state_hash):
+    if not hmac.compare_digest(transaction.state_hash, _secret_hash(state)):
         raise ValueError("OIDC authorization transaction proof does not match")
-    if not hmac.compare_digest(transaction.nonce_hash, supplied_nonce_hash):
+    if not hmac.compare_digest(transaction.nonce_hash, _secret_hash(nonce)):
         raise ValueError("OIDC authorization transaction proof does not match")
-    if not hmac.compare_digest(transaction.pkce_code_challenge, supplied_challenge):
+    if not hmac.compare_digest(
+        transaction.pkce_code_challenge,
+        _pkce_challenge(code_verifier),
+    ):
         raise ValueError("OIDC authorization transaction proof does not match")
     if transaction.pkce_method != PKCE_METHOD:
         raise ValueError("OIDC authorization transaction PKCE method is unsupported")
@@ -244,6 +286,9 @@ def consume_oidc_authorization_transaction(
             "trust_profile_id": str(transaction.trust_profile_id),
             "trust_profile_number": transaction.trust_profile_number,
             "trust_profile_hash": transaction.trust_profile_hash,
+            "runtime_profile_id": str(transaction.runtime_profile_id),
+            "runtime_profile_number": transaction.runtime_profile_number,
+            "runtime_profile_hash": transaction.runtime_profile_hash,
             "pkce_method": transaction.pkce_method,
         },
     )
@@ -281,6 +326,13 @@ def cancel_oidc_authorization_transaction(
             "trust_profile_id": str(transaction.trust_profile_id),
             "trust_profile_number": transaction.trust_profile_number,
             "trust_profile_hash": transaction.trust_profile_hash,
+            "runtime_profile_id": (
+                None
+                if transaction.runtime_profile_id is None
+                else str(transaction.runtime_profile_id)
+            ),
+            "runtime_profile_number": transaction.runtime_profile_number,
+            "runtime_profile_hash": transaction.runtime_profile_hash,
             "pkce_method": transaction.pkce_method,
         },
     )
