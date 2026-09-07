@@ -366,9 +366,9 @@ def _signed_response(
 def _callback(start: dict[str, object], saml_response: str):
     return client.post(
         "/api/v1/auth/saml/callback",
-        json={
-            "relay_state": start["relay_state"],
-            "saml_response": saml_response,
+        data={
+            "RelayState": start["relay_state"],
+            "SAMLResponse": saml_response,
         },
     )
 
