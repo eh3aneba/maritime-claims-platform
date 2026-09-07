@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 from app.modules.users.schemas import UserRead
 
@@ -73,3 +73,39 @@ class ExternalIdentityBindingRead(BaseModel):
     revoked_at: datetime | None
     revoked_by_id: UUID | None
     revocation_reason: str | None
+
+
+class OidcTrustProfileCreate(BaseModel):
+    audience: str = Field(min_length=1, max_length=500)
+    jwks_uri: str = Field(min_length=8, max_length=1000)
+    allowed_algorithms: list[Literal["RS256", "ES256"]] = Field(
+        min_length=1,
+        max_length=2,
+    )
+
+    @field_validator("allowed_algorithms")
+    @classmethod
+    def algorithms_must_be_unique(
+        cls,
+        value: list[Literal["RS256", "ES256"]],
+    ) -> list[Literal["RS256", "ES256"]]:
+        if len(value) != len(set(value)):
+            raise ValueError("OIDC signing algorithms must be unique")
+        return value
+
+
+class OidcTrustProfileRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    organization_id: UUID
+    provider_id: UUID
+    profile_number: int
+    issuer_identifier: str
+    audience: str
+    jwks_uri: str
+    allowed_algorithms: list[str]
+    profile_hash: str
+    previous_profile_hash: str | None
+    created_by_id: UUID
+    created_at: datetime
