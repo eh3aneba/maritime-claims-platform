@@ -1,7 +1,17 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, UniqueConstraint, text
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -132,3 +142,50 @@ class ExternalIdentityBinding(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         index=True,
     )
     revocation_reason: Mapped[str | None] = mapped_column(String(200), nullable=True)
+
+
+class OidcTrustProfile(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Immutable public verification policy pinned for one governed OIDC provider."""
+
+    __tablename__ = "oidc_trust_profiles"
+    __table_args__ = (
+        UniqueConstraint(
+            "provider_id",
+            "profile_number",
+            name="uq_oidc_trust_profiles_provider_number",
+        ),
+        UniqueConstraint(
+            "provider_id",
+            "profile_hash",
+            name="uq_oidc_trust_profiles_provider_hash",
+        ),
+        Index(
+            "ix_oidc_trust_profiles_org_provider_number",
+            "organization_id",
+            "provider_id",
+            "profile_number",
+        ),
+    )
+
+    organization_id: Mapped[UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    provider_id: Mapped[UUID] = mapped_column(
+        ForeignKey("enterprise_identity_providers.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    profile_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    issuer_identifier: Mapped[str] = mapped_column(String(500), nullable=False)
+    audience: Mapped[str] = mapped_column(String(500), nullable=False)
+    jwks_uri: Mapped[str] = mapped_column(String(1000), nullable=False)
+    allowed_algorithms: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    profile_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    previous_profile_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_by_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
