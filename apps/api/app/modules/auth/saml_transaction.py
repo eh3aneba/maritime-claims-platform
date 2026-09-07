@@ -195,24 +195,45 @@ def _validate_transaction_source(
     return SamlAuthnTransactionSource(provider=provider, profile=profile)
 
 
-def _validate_transaction_proof(
+def _validate_relay_state(
     transaction: SamlAuthnTransaction,
     *,
     relay_state: str,
-    request_id: str,
 ) -> None:
-    if not relay_state or not request_id:
-        raise ValueError("SAML authentication transaction proof is required")
-    if not hmac.compare_digest(
+    if not relay_state or not hmac.compare_digest(
         transaction.relay_state_hash,
         _secret_hash(relay_state),
     ):
         raise ValueError("SAML authentication transaction proof does not match")
-    if not hmac.compare_digest(
+
+
+def _validate_request_id(
+    transaction: SamlAuthnTransaction,
+    *,
+    request_id: str,
+) -> None:
+    if not request_id or not hmac.compare_digest(
         transaction.request_id_hash,
         _secret_hash(request_id),
     ):
         raise ValueError("SAML authentication transaction proof does not match")
+
+
+def validate_saml_relay_state_source(
+    db: Session,
+    *,
+    relay_state: str,
+) -> tuple[SamlAuthnTransaction, SamlAuthnTransactionSource]:
+    """Resolve the pinned verification source using only the one-time RelayState proof."""
+
+    transaction_id = transaction_id_from_relay_state(relay_state)
+    transaction = db.get(SamlAuthnTransaction, transaction_id)
+    if transaction is None:
+        raise ValueError("SAML authentication transaction not found")
+    _validate_transaction_active(transaction)
+    _validate_relay_state(transaction, relay_state=relay_state)
+    source = _validate_transaction_source(db, transaction=transaction)
+    return transaction, source
 
 
 def validate_saml_authn_transaction_proof(
@@ -221,17 +242,11 @@ def validate_saml_authn_transaction_proof(
     relay_state: str,
     request_id: str,
 ) -> tuple[SamlAuthnTransaction, SamlAuthnTransactionSource]:
-    transaction_id = transaction_id_from_relay_state(relay_state)
-    transaction = db.get(SamlAuthnTransaction, transaction_id)
-    if transaction is None:
-        raise ValueError("SAML authentication transaction not found")
-    _validate_transaction_active(transaction)
-    source = _validate_transaction_source(db, transaction=transaction)
-    _validate_transaction_proof(
-        transaction,
+    transaction, source = validate_saml_relay_state_source(
+        db,
         relay_state=relay_state,
-        request_id=request_id,
     )
+    _validate_request_id(transaction, request_id=request_id)
     return transaction, source
 
 
@@ -249,12 +264,9 @@ def consume_saml_authn_transaction(
         raise ValueError("SAML authentication transaction not found")
 
     _validate_transaction_active(transaction)
+    _validate_relay_state(transaction, relay_state=relay_state)
     _validate_transaction_source(db, transaction=transaction)
-    _validate_transaction_proof(
-        transaction,
-        relay_state=relay_state,
-        request_id=request_id,
-    )
+    _validate_request_id(transaction, request_id=request_id)
 
     transaction.consumed_at = _utc_now()
     write_audit_log(
@@ -285,11 +297,7 @@ def cancel_saml_authn_transaction(
     if transaction is None:
         raise ValueError("SAML authentication transaction not found")
     _validate_transaction_active(transaction)
-    if not hmac.compare_digest(
-        transaction.relay_state_hash,
-        _secret_hash(relay_state),
-    ):
-        raise ValueError("SAML authentication transaction proof does not match")
+    _validate_relay_state(transaction, relay_state=relay_state)
 
     transaction.cancelled_at = _utc_now()
     write_audit_log(
