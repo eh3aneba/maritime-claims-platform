@@ -30,6 +30,7 @@ class AuthSessionRead(BaseModel):
     external_identity_provider_id: UUID | None = None
     external_identity_binding_id: UUID | None = None
     oidc_authorization_transaction_id: UUID | None = None
+    saml_authn_transaction_id: UUID | None = None
     created_at: datetime
     expires_at: datetime
 
@@ -211,3 +212,42 @@ class OidcCallbackCompleteRequest(BaseModel):
     nonce: str = Field(min_length=32, max_length=512)
     code_verifier: str = Field(min_length=43, max_length=128)
     authorization_code: str = Field(min_length=1, max_length=4096)
+
+
+class SamlAuthnTransactionCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    organization_slug: str = Field(
+        min_length=2,
+        max_length=100,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]*[A-Za-z0-9]$",
+    )
+    provider_key: str = Field(
+        min_length=3,
+        max_length=80,
+        pattern=r"^[a-z0-9][a-z0-9_-]*[a-z0-9]$",
+    )
+
+
+class SamlAuthnTransactionStartResponse(BaseModel):
+    transaction_id: UUID
+    provider_key: str
+    provider_display_name: str
+    idp_entity_identifier: str
+    profile_id: UUID
+    profile_number: int
+    profile_hash: str
+    idp_sso_url: str
+    sp_entity_id: str
+    acs_url: str
+    authorization_url: str
+    request_id: str
+    relay_state: str
+    expires_at: datetime
+
+
+class SamlCallbackCompleteRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    relay_state: str = Field(min_length=50, max_length=80)
+    saml_response: str = Field(min_length=1, max_length=1_500_000)
