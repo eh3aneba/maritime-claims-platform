@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.modules.audit.service import write_audit_log
+from app.modules.auth.oidc_callback import build_oidc_authorization_url
 from app.modules.auth.oidc_transaction import create_oidc_authorization_transaction
 from app.modules.auth.schemas import (
     OidcAuthorizationTransactionCreate,
@@ -35,6 +36,11 @@ def start_oidc_authorization_transaction(
             db,
             organization_slug=payload.organization_slug,
             provider_key=payload.provider_key,
+        )
+        authorization_url = build_oidc_authorization_url(
+            trust_profile=trust_profile,
+            runtime_profile=runtime_profile,
+            material=material,
         )
         write_audit_log(
             db,
@@ -83,6 +89,7 @@ def start_oidc_authorization_transaction(
         runtime_profile_number=runtime_profile.runtime_profile_number,
         runtime_profile_hash=runtime_profile.runtime_profile_hash,
         authorization_endpoint=runtime_profile.authorization_endpoint,
+        authorization_url=authorization_url,
         token_endpoint=runtime_profile.token_endpoint,
         redirect_uri=runtime_profile.redirect_uri,
         scopes=list(runtime_profile.scopes),
