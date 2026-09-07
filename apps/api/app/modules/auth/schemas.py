@@ -113,6 +113,52 @@ class OidcTrustProfileRead(BaseModel):
     created_at: datetime
 
 
+class OidcRuntimeProfileCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    authorization_endpoint: str = Field(min_length=8, max_length=1000)
+    token_endpoint: str = Field(min_length=8, max_length=1000)
+    redirect_uri: str = Field(min_length=8, max_length=1000)
+    scopes: list[Literal["openid", "profile", "email"]] = Field(
+        min_length=1,
+        max_length=3,
+    )
+    client_auth_method: Literal["none", "client_secret_basic"]
+
+    @field_validator("scopes")
+    @classmethod
+    def scopes_must_be_unique_and_include_openid(
+        cls,
+        value: list[Literal["openid", "profile", "email"]],
+    ) -> list[Literal["openid", "profile", "email"]]:
+        if len(value) != len(set(value)):
+            raise ValueError("OIDC runtime scopes must be unique")
+        if "openid" not in value:
+            raise ValueError("OIDC runtime scopes must include openid")
+        return value
+
+
+class OidcRuntimeProfileRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    organization_id: UUID
+    provider_id: UUID
+    trust_profile_id: UUID
+    trust_profile_number: int
+    trust_profile_hash: str
+    runtime_profile_number: int
+    authorization_endpoint: str
+    token_endpoint: str
+    redirect_uri: str
+    scopes: list[str]
+    client_auth_method: str
+    runtime_profile_hash: str
+    previous_runtime_profile_hash: str | None
+    created_by_id: UUID
+    created_at: datetime
+
+
 class OidcAuthorizationTransactionCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -137,6 +183,14 @@ class OidcAuthorizationTransactionStartResponse(BaseModel):
     trust_profile_id: UUID
     trust_profile_number: int
     trust_profile_hash: str
+    runtime_profile_id: UUID
+    runtime_profile_number: int
+    runtime_profile_hash: str
+    authorization_endpoint: str
+    token_endpoint: str
+    redirect_uri: str
+    scopes: list[str]
+    client_auth_method: str
     state: str
     nonce: str
     code_verifier: str
