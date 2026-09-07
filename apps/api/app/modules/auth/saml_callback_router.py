@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, Form, HTTPException, Response, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -11,7 +11,7 @@ from app.modules.audit.service import write_audit_log
 from app.modules.auth.saml_callback import SamlCallbackError, complete_saml_callback
 from app.modules.auth.saml_models import SamlAuthnTransaction
 from app.modules.auth.saml_transaction import transaction_id_from_relay_state
-from app.modules.auth.schemas import LoginResponse, SamlCallbackCompleteRequest
+from app.modules.auth.schemas import LoginResponse
 from app.modules.users.schemas import UserRead
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
@@ -45,15 +45,22 @@ def _audit_failed_callback(
 
 @router.post("/saml/callback", response_model=LoginResponse)
 def complete_saml_authorization_callback(
-    payload: SamlCallbackCompleteRequest,
     response: Response,
     db: Annotated[Session, Depends(get_db)],
+    relay_state: Annotated[
+        str,
+        Form(alias="RelayState", min_length=50, max_length=80),
+    ],
+    saml_response: Annotated[
+        str,
+        Form(alias="SAMLResponse", min_length=1, max_length=1_500_000),
+    ],
 ) -> LoginResponse:
     try:
         result = complete_saml_callback(
             db,
-            relay_state=payload.relay_state,
-            saml_response=payload.saml_response,
+            relay_state=relay_state,
+            saml_response=saml_response,
         )
         db.commit()
         db.refresh(result.user)
@@ -62,7 +69,7 @@ def complete_saml_authorization_callback(
         db.rollback()
         _audit_failed_callback(
             db,
-            relay_state=payload.relay_state,
+            relay_state=relay_state,
             failure_category="identity_verification_failed",
         )
         raise HTTPException(
@@ -73,7 +80,7 @@ def complete_saml_authorization_callback(
         db.rollback()
         _audit_failed_callback(
             db,
-            relay_state=payload.relay_state,
+            relay_state=relay_state,
             failure_category="authority_conflict",
         )
         raise HTTPException(
