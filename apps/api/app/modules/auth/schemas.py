@@ -27,6 +27,9 @@ class AuthSessionRead(BaseModel):
     user_id: UUID
     identity_source: str
     auth_method: str
+    external_identity_provider_id: UUID | None = None
+    external_identity_binding_id: UUID | None = None
+    oidc_authorization_transaction_id: UUID | None = None
     created_at: datetime
     expires_at: datetime
 
@@ -187,6 +190,7 @@ class OidcAuthorizationTransactionStartResponse(BaseModel):
     runtime_profile_number: int
     runtime_profile_hash: str
     authorization_endpoint: str
+    authorization_url: str
     token_endpoint: str
     redirect_uri: str
     scopes: list[str]
@@ -197,3 +201,13 @@ class OidcAuthorizationTransactionStartResponse(BaseModel):
     code_challenge: str
     code_challenge_method: Literal["S256"] = "S256"
     expires_at: datetime
+
+
+class OidcCallbackCompleteRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    transaction_id: UUID
+    state: str = Field(min_length=32, max_length=512)
+    nonce: str = Field(min_length=32, max_length=512)
+    code_verifier: str = Field(min_length=43, max_length=128)
+    authorization_code: str = Field(min_length=1, max_length=4096)
