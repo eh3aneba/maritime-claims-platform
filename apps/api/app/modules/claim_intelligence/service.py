@@ -7,7 +7,12 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.modules.claim_intelligence import service_core as core
-from app.modules.claim_intelligence.models import ClaimIntelligenceItem, ClaimIntelligenceSnapshot
+from app.modules.claim_intelligence.domain_catalog import INCIDENT_DOMAINS, MACHINERY_COMPONENTS
+from app.modules.claim_intelligence.models import (
+    ClaimDomainClassification,
+    ClaimIntelligenceItem,
+    ClaimIntelligenceSnapshot,
+)
 from app.modules.recovery_timebar.models import RecoveryTimebarEvaluation
 from app.modules.recovery_timebar.service import (
     ENGINE_VERSION as RECOVERY_TIMEBAR_ENGINE_VERSION,
@@ -22,6 +27,10 @@ for _name in dir(core):
         globals()[_name] = getattr(core, _name)
 
 ENGINE_VERSION = "12C-CI.1"
+DOMAIN_CONTEXT_INTEGRATION_VERSION = "16.1-B.1"
+
+_INCIDENT_TITLE_BY_CODE = {str(row["code"]): str(row["title"]) for row in INCIDENT_DOMAINS}
+_COMPONENT_TITLE_BY_CODE = {str(row["code"]): str(row["title"]) for row in MACHINERY_COMPONENTS}
 
 
 def _structured_source_state(snapshot: Any, rows: list[RecoveryTimebarEvaluation]) -> dict:
@@ -107,12 +116,79 @@ def _latest_rows(db: Session, snapshot_id) -> list[RecoveryTimebarEvaluation]:
     )
 
 
-def _base_payload(db: Session, *, claim, user) -> tuple[str, list[dict], dict]:
-    """Build the Phase 12A deterministic payload without persisting a snapshot.
+def _current_domain_classification(db: Session, *, claim) -> ClaimDomainClassification | None:
+    return db.scalar(
+        select(ClaimDomainClassification)
+        .where(
+            ClaimDomainClassification.organization_id == claim.organization_id,
+            ClaimDomainClassification.claim_id == claim.id,
+        )
+        .order_by(ClaimDomainClassification.classification_number.desc())
+        .limit(1)
+    )
 
-    Phase 12C must not create an observable intermediate Claims Intelligence
-    snapshot. We therefore reuse the proven 12A prerequisite layers and private
-    payload builders, then persist exactly one combined immutable snapshot below.
+
+def _domain_context_state(row: ClaimDomainClassification | None) -> dict | None:
+    if row is None:
+        return None
+    return {
+        "id": str(row.id),
+        "catalog_version": row.catalog_version,
+        "classification_number": row.classification_number,
+        "incident_code": row.incident_code,
+        "component_code": row.component_code,
+        "failure_mode": row.failure_mode,
+        "classification_hash": row.classification_hash,
+    }
+
+
+def _domain_context_item(row: ClaimDomainClassification) -> dict:
+    incident_title = _INCIDENT_TITLE_BY_CODE.get(row.incident_code, row.incident_code.replace("_", " ").title())
+    component_title = (
+        _COMPONENT_TITLE_BY_CODE.get(row.component_code, row.component_code.replace("_", " ").title())
+        if row.component_code
+        else None
+    )
+    context_parts = [incident_title]
+    if component_title:
+        context_parts.append(component_title)
+    if row.failure_mode:
+        context_parts.append(row.failure_mode)
+
+    return core._item(
+        key=f"domain-classification-{row.id}",
+        category="domain_context",
+        title=f"Claim domain: {incident_title}",
+        description="Human-confirmed domain context: " + " — ".join(context_parts) + ".",
+        severity="info",
+        urgency=25,
+        evidence=100,
+        rationale=(
+            "Copied from the current human-confirmed ClaimDomainClassification lineage. This is bounded incident context only; "
+            "it does not determine causation, coverage, fault, liability, recoverability or any other substantive claim outcome."
+        ),
+        sources=[
+            core._source(
+                "claim_domain_classification",
+                row.id,
+                catalog_version=row.catalog_version,
+                classification_number=row.classification_number,
+                classification_hash=row.classification_hash,
+            )
+        ],
+        action_type=None,
+        suggested_action=None,
+        related_entity_type="claim_domain_classification",
+        related_entity_id=row.id,
+    )
+
+
+def _base_payload(db: Session, *, claim, user) -> tuple[str, list[dict], dict]:
+    """Build the deterministic base payload without persisting a snapshot.
+
+    The current human-confirmed claim-domain classification is consumed only
+    here, after an operator explicitly requests an Intelligence build. It is
+    source-linked context and is deliberately not passed into rule evaluation.
     """
     core.evaluate_claim_rules(db, claim=claim, user=user, trigger="claims_intelligence")
     core.build_chronology(db, claim=claim, user=user)
@@ -122,9 +198,20 @@ def _base_payload(db: Session, *, claim, user) -> tuple[str, list[dict], dict]:
         organization_id=claim.organization_id,
     )
     data = core._load_sources(db, claim)
-    state = core._source_state(claim, data, policy)
-    state_hash = core._hash(state)
+    core_state = core._source_state(claim, data, policy)
+    domain_classification = _current_domain_classification(db, claim=claim)
+    domain_state = _domain_context_state(domain_classification)
+    state_hash = core._hash(
+        {
+            "phase12a_source_state": core_state,
+            "claim_domain_context": domain_state,
+            "domain_context_integration_version": DOMAIN_CONTEXT_INTEGRATION_VERSION,
+        }
+    )
     item_payloads = core._build_items(claim, data, policy)
+    if domain_classification is not None:
+        item_payloads.append(_domain_context_item(domain_classification))
+        item_payloads.sort(key=lambda row: (-row["rank_score"], row["category"], row["item_key"]))
 
     counts: dict[str, int] = {}
     for row in item_payloads:
@@ -136,6 +223,10 @@ def _base_payload(db: Session, *, claim, user) -> tuple[str, list[dict], dict]:
         "external_provider_scope_expanded": False,
         "ruleset_version": core.RULESET_VERSION,
         "chronology_build_version": core.CHRONOLOGY_BUILD_VERSION,
+        "domain_context_integration_version": DOMAIN_CONTEXT_INTEGRATION_VERSION,
+        "domain_classification_present": domain_classification is not None,
+        "domain_context_count": counts.get("domain_context", 0),
+        "domain_classification_drives_rules": False,
         "item_count": len(item_payloads),
         "category_counts": counts,
         "missing_evidence_count": counts.get("missing_evidence", 0),
@@ -172,6 +263,7 @@ def build_claim_intelligence(db: Session, *, claim, user) -> ClaimIntelligenceSn
             "phase12a_source_state_hash": base_state_hash,
             "recovery_timebar": structured_state,
             "integration_version": ENGINE_VERSION,
+            "domain_context_integration_version": DOMAIN_CONTEXT_INTEGRATION_VERSION,
         }
     )
     existing = db.scalar(
@@ -198,6 +290,7 @@ def build_claim_intelligence(db: Session, *, claim, user) -> ClaimIntelligenceSn
             ),
             "item_count": len(item_payloads),
             "category_counts": counts,
+            "domain_context_count": counts.get("domain_context", 0),
             "missing_evidence_count": counts.get("missing_evidence", 0),
             "open_conflict_count": counts.get("conflict", 0),
             "hypothesis_count": counts.get("hypothesis", 0),
@@ -211,6 +304,7 @@ def build_claim_intelligence(db: Session, *, claim, user) -> ClaimIntelligenceSn
     snapshot_hash = core._hash(
         {
             "engine": ENGINE_VERSION,
+            "domain_context_integration_version": DOMAIN_CONTEXT_INTEGRATION_VERSION,
             "source_state_hash": combined_source_state_hash,
             "summary": summary,
             "item_hashes": [row["item_hash"] for row in item_payloads],
@@ -229,7 +323,8 @@ def build_claim_intelligence(db: Session, *, claim, user) -> ClaimIntelligenceSn
         generated_by_id=user.id,
         snapshot_version=current_max + 1,
         # Keep the established Claims Intelligence contract version at 12A.1;
-        # the structured 12C layer is independently versioned in summary/hash.
+        # the structured 12C and 16.1-B context layers are independently
+        # versioned in summary/source hashes.
         engine_version=core.ENGINE_VERSION,
         source_state_hash=combined_source_state_hash,
         snapshot_hash=snapshot_hash,
@@ -265,7 +360,8 @@ def build_claim_intelligence(db: Session, *, claim, user) -> ClaimIntelligenceSn
         },
         details=(
             "Built one immutable Claims Intelligence snapshot with structured, non-authoritative Phase 12C recovery/time-bar "
-            "evaluations. Recovery/time-bar proxy items are read-only and preserve human-controlled task/diary conversion."
+            "evaluations and optional human-confirmed Phase 16.1-B domain context. Domain classification does not drive rules "
+            "or substantive claim decisions."
         ),
     )
     db.commit()
