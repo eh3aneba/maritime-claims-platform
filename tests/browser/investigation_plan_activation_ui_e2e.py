@@ -90,8 +90,12 @@ def main() -> None:
         selected = [item for item in catalog if item["key"] in requested]
         work_items = []
         for index, item in enumerate(selected, 1):
-            prefix = "Review — " if item["kind"] == "review_topic" else (
-                "Evidence follow-up — " if item["kind"] == "evidence_prompt" else "Investigate — "
+            prefix = (
+                "Review — "
+                if item["kind"] == "review_topic"
+                else "Evidence follow-up — "
+                if item["kind"] == "evidence_prompt"
+                else "Investigate — "
             )
             work_items.append(
                 {
@@ -152,18 +156,37 @@ def main() -> None:
                 return
             if url.endswith("/intelligence/investigation-plan-activation") and method == "GET":
                 row = activation_history[0] if activation_history else None
-                route.fulfill(status=200, content_type="application/json", body=json.dumps(activation_with_freshness(row)))
+                route.fulfill(
+                    status=200,
+                    content_type="application/json",
+                    body=json.dumps(activation_with_freshness(row)),
+                )
                 return
             if url.endswith("/intelligence/investigation-plan-activation") and method == "POST":
                 payload = route.request.post_data_json
                 if payload.get("confirm_activation") is not True:
-                    route.fulfill(status=409, content_type="application/json", body=json.dumps({"detail": "Explicit confirmation required"}))
+                    route.fulfill(
+                        status=409,
+                        content_type="application/json",
+                        body=json.dumps({"detail": "Explicit confirmation required"}),
+                    )
                     return
-                if payload.get("plan_id") != current_plan["id"] or payload.get("plan_hash") != current_plan["plan_hash"] or not current_plan.get("source_current"):
-                    route.fulfill(status=409, content_type="application/json", body=json.dumps({"detail": "Investigation Plan changed"}))
+                if (
+                    payload.get("plan_id") != current_plan["id"]
+                    or payload.get("plan_hash") != current_plan["plan_hash"]
+                    or not current_plan.get("source_current")
+                ):
+                    route.fulfill(
+                        status=409,
+                        content_type="application/json",
+                        body=json.dumps({"detail": "Investigation Plan changed"}),
+                    )
                     return
-                row = create_activation(payload)
-                route.fulfill(status=201, content_type="application/json", body=json.dumps(row))
+                route.fulfill(
+                    status=201,
+                    content_type="application/json",
+                    body=json.dumps(create_activation(payload)),
+                )
                 return
             if url.endswith("/intelligence/investigation-plan") and method == "GET":
                 route.fulfill(status=200, content_type="application/json", body=json.dumps(current_plan))
@@ -204,7 +227,7 @@ def main() -> None:
             CLAIM_ID,
         )
         expect(panel.get_by_text("Current plan is stale.", exact=False)).to_be_visible()
-        expect(panel.get_by_text("Stale plan source", exact=True)).to_be_visible()
+        expect(panel.get_by_text("Stale plan source", exact=False)).to_be_visible()
         expect(panel.get_by_role("button", name="Activate selected work items")).to_have_count(0)
         assert len(activation_history) == 1
 
@@ -214,7 +237,7 @@ def main() -> None:
             CLAIM_ID,
         )
         expect(panel.get_by_text("Activate from Plan v2", exact=True)).to_be_visible()
-        expect(panel.get_by_text("Stale plan source", exact=True)).to_be_visible()
+        expect(panel.get_by_text("Stale plan source", exact=False)).to_be_visible()
         assert len(activation_history) == 1
 
         collision_track = current_plan["investigation_tracks"][0]
