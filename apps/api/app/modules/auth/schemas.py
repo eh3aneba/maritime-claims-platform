@@ -31,8 +31,46 @@ class AuthSessionRead(BaseModel):
     external_identity_binding_id: UUID | None = None
     oidc_authorization_transaction_id: UUID | None = None
     saml_authn_transaction_id: UUID | None = None
+    mfa_verified_at: datetime | None = None
+    mfa_method: str | None = None
+    mfa_factor_id: UUID | None = None
     created_at: datetime
     expires_at: datetime
+
+
+class TotpEnrollmentStartResponse(BaseModel):
+    factor_id: UUID
+    secret: str
+    otpauth_uri: str
+    algorithm: Literal["SHA1"] = "SHA1"
+    digits: int = 6
+    period_seconds: int = 30
+
+
+class TotpCodeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    code: str = Field(min_length=6, max_length=6, pattern=r"^[0-9]{6}$")
+
+
+class TotpFactorRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    organization_id: UUID
+    user_id: UUID
+    issuer: str
+    account_label: str
+    algorithm: str
+    digits: int
+    period_seconds: int
+    secret_fingerprint: str
+    confirmed_at: datetime | None
+    revoked_at: datetime | None
+    revoked_by_id: UUID | None
+    revocation_reason: str | None
+    created_at: datetime
+    updated_at: datetime
 
 
 class EnterpriseIdentityProviderCreate(BaseModel):
