@@ -11,6 +11,7 @@ from app.modules.claim_intelligence.domain_playbook import (
 )
 from app.modules.claim_intelligence.models import ClaimIntelligenceSnapshot
 from app.modules.claims.facts import ClaimFact
+from app.modules.rules.marine_engine import MARINE_RULES
 from app.modules.rules.models import ClaimDocumentRequirement, ClaimIssue, RuleEvaluationRun
 from app.modules.tasks.models import ClaimTask
 from tests.db_harness import TestingSessionLocal, client, reset_database
@@ -48,6 +49,7 @@ def _authority_counts() -> dict[str, int]:
 def test_playbook_registry_is_complete_unique_and_deterministic() -> None:
     catalog_codes = {str(item["code"]) for item in INCIDENT_DOMAINS}
     playbook_codes = [str(item["incident_code"]) for item in DOMAIN_PLAYBOOKS]
+    marine_rule_ids = {rule.rule_id for rule in MARINE_RULES}
 
     assert set(playbook_codes) == catalog_codes
     assert len(playbook_codes) == len(set(playbook_codes)) == 8
@@ -66,6 +68,7 @@ def test_playbook_registry_is_complete_unique_and_deterministic() -> None:
         assert playbook["investigation_tracks"]
         assert playbook["evidence_prompts"]
         assert playbook["review_topics"]
+        assert set(playbook["contextual_rule_ids"]).issubset(marine_rule_ids)
 
 
 def test_unclassified_claim_returns_bounded_preview_with_zero_side_effects() -> None:
