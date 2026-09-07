@@ -7,6 +7,8 @@ from datetime import UTC, datetime
 
 from playwright.sync_api import expect, sync_playwright
 
+from investigation_plan_activation_ui_e2e import main as investigation_activation_main
+
 BASE_URL = os.getenv("MCRI_WEB_URL", "http://127.0.0.1:3000").rstrip("/")
 ORG = os.getenv("MCRI_DEMO_ORG_SLUG", "pilot")
 EMAIL = os.getenv("MCRI_DEMO_EMAIL", "manager@demo.mcri.app")
@@ -300,6 +302,7 @@ def main() -> None:
         browser.close()
 
     print("Governed investigation plan UI browser E2E passed.")
+    investigation_activation_main()
 
 
 if __name__ == "__main__":
