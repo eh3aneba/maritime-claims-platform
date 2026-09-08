@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, JSON, String, UniqueConstraint, text
+from sqlalchemy import BigInteger, DateTime, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -92,3 +92,48 @@ class WebAuthnRegistrationTransaction(UUIDPrimaryKeyMixin, TimestampMixin, Base)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class WebAuthnCredential(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Verified WebAuthn credential custody without raw credential identifiers."""
+
+    __tablename__ = "webauthn_credentials"
+    __table_args__ = (
+        UniqueConstraint("credential_id_hash", name="uq_webauthn_credentials_credential_hash"),
+        UniqueConstraint(
+            "registration_transaction_id",
+            name="uq_webauthn_credentials_registration_transaction",
+        ),
+        Index(
+            "ix_webauthn_credentials_org_user_lifecycle",
+            "organization_id",
+            "user_id",
+            "revoked_at",
+        ),
+    )
+
+    organization_id: Mapped[UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    profile_id: Mapped[UUID] = mapped_column(
+        ForeignKey("webauthn_relying_party_profiles.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    profile_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    profile_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    registration_transaction_id: Mapped[UUID] = mapped_column(
+        ForeignKey("webauthn_registration_transactions.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    credential_id_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    public_key_pem: Mapped[str] = mapped_column(Text, nullable=False)
+    algorithm: Mapped[int] = mapped_column(Integer, nullable=False)
+    sign_count: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    aaguid: Mapped[str] = mapped_column(String(32), nullable=False)
+    attestation_format: Mapped[str] = mapped_column(String(20), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

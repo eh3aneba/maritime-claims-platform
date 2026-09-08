@@ -13,10 +13,18 @@ from app.modules.auth.webauthn_registration import (
     begin_webauthn_registration,
     cancel_webauthn_registration,
 )
+from app.modules.auth.webauthn_registration_finish import (
+    WebAuthnVerificationError,
+    finish_webauthn_registration,
+    list_current_webauthn_credentials,
+    revoke_webauthn_credential,
+)
 from app.modules.auth.webauthn_schemas import (
     WebAuthnAuthenticatorSelection,
     WebAuthnCredentialParameter,
+    WebAuthnCredentialRead,
     WebAuthnRegistrationBeginResponse,
+    WebAuthnRegistrationFinishRequest,
     WebAuthnRegistrationRp,
     WebAuthnRegistrationTransactionRead,
     WebAuthnRegistrationUser,
@@ -95,6 +103,109 @@ def begin_current_webauthn_registration(
         authenticator_selection=WebAuthnAuthenticatorSelection(),
         attestation="none",
     )
+
+
+@router.post(
+    "/{transaction_id}/finish",
+    response_model=WebAuthnCredentialRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def finish_current_webauthn_registration(
+    transaction_id: UUID,
+    payload: WebAuthnRegistrationFinishRequest,
+    db: Annotated[Session, Depends(get_db)],
+    current_context: CurrentAuthContext,
+) -> WebAuthnCredentialRead:
+    enforce_mfa_policy_for_context(db, context=current_context)
+    try:
+        credential = finish_webauthn_registration(
+            db,
+            transaction_id=transaction_id,
+            user=current_context.user,
+            auth_session=current_context.session,
+            credential_id=payload.credential_id,
+            client_data_json=payload.client_data_json,
+            attestation_object=payload.attestation_object,
+        )
+        write_audit_log(
+            db,
+            organization_id=current_context.user.organization_id,
+            user_id=current_context.user.id,
+            action="WEBAUTHN_CREDENTIAL_REGISTERED",
+            entity_type="webauthn_credential",
+            entity_id=credential.id,
+            new_values={
+                "auth_session_id": str(current_context.session.id),
+                "registration_transaction_id": str(credential.registration_transaction_id),
+                "profile_id": str(credential.profile_id),
+                "profile_number": credential.profile_number,
+                "profile_hash": credential.profile_hash,
+                "algorithm": credential.algorithm,
+                "attestation_format": credential.attestation_format,
+            },
+        )
+        db.commit()
+        db.refresh(credential)
+    except WebAuthnVerificationError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="WebAuthn credential conflicts with existing custody",
+        ) from exc
+    return WebAuthnCredentialRead.model_validate(credential)
+
+
+@router.get("/credentials", response_model=list[WebAuthnCredentialRead])
+def list_current_user_webauthn_credentials(
+    db: Annotated[Session, Depends(get_db)],
+    current_context: CurrentAuthContext,
+) -> list[WebAuthnCredentialRead]:
+    enforce_mfa_policy_for_context(db, context=current_context)
+    return [
+        WebAuthnCredentialRead.model_validate(item)
+        for item in list_current_webauthn_credentials(db, user=current_context.user)
+    ]
+
+
+@router.post("/credentials/{credential_id}/revoke", response_model=WebAuthnCredentialRead)
+def revoke_current_user_webauthn_credential(
+    credential_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    current_context: CurrentAuthContext,
+) -> WebAuthnCredentialRead:
+    enforce_mfa_policy_for_context(db, context=current_context)
+    try:
+        credential = revoke_webauthn_credential(
+            db,
+            credential_id=credential_id,
+            user=current_context.user,
+            auth_session=current_context.session,
+        )
+        write_audit_log(
+            db,
+            organization_id=current_context.user.organization_id,
+            user_id=current_context.user.id,
+            action="WEBAUTHN_CREDENTIAL_REVOKED",
+            entity_type="webauthn_credential",
+            entity_id=credential.id,
+            new_values={
+                "auth_session_id": str(current_context.session.id),
+                "profile_id": str(credential.profile_id),
+                "profile_number": credential.profile_number,
+            },
+        )
+        db.commit()
+        db.refresh(credential)
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    return WebAuthnCredentialRead.model_validate(credential)
 
 
 @router.post(
