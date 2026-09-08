@@ -20,6 +20,8 @@ from app.modules.auth.saml_models import (  # noqa: F401
 from app.modules.auth.scim_models import (  # noqa: F401
     ScimProvisioningProfile,
     ScimProvisioningToken,
+    ScimUserBinding,
+    ScimUserProvisioningGrant,
 )
 from app.modules.auth.webauthn_reset_models import WebAuthnCredentialResetRequest  # noqa: F401
 from app.modules.auth.webauthn_models import (  # noqa: F401
