@@ -8,6 +8,9 @@ from app.core.config import get_settings
 from app.core.security import create_access_token
 from app.db.session import get_db
 from app.modules.audit.service import write_audit_log
+from app.modules.auth.saml_assurance_evidence import (
+    apply_saml_mfa_assurance_after_verified_callback,
+)
 from app.modules.auth.saml_callback import SamlCallbackError, complete_saml_callback
 from app.modules.auth.saml_transaction import validate_saml_relay_state_source
 from app.modules.users.schemas import UserRead
@@ -59,6 +62,13 @@ def complete_saml_authorization_callback(
             db,
             relay_state=relay_state,
             saml_response=saml_response,
+        )
+        apply_saml_mfa_assurance_after_verified_callback(
+            db,
+            transaction=result.transaction,
+            auth_session=result.auth_session,
+            saml_response=saml_response,
+            user_id=result.user.id,
         )
         db.commit()
         db.refresh(result.user)
