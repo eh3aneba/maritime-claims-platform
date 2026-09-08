@@ -19,6 +19,11 @@ from app.modules.auth.webauthn_registration_finish import (
     list_current_webauthn_credentials,
     revoke_webauthn_credential,
 )
+from app.modules.auth.webauthn_reset import (
+    claim_webauthn_reenrollment_grant,
+    consume_webauthn_reenrollment_grant,
+    get_reenrollment_grant_for_registration,
+)
 from app.modules.auth.webauthn_schemas import (
     WebAuthnAuthenticatorSelection,
     WebAuthnCredentialParameter,
@@ -33,6 +38,56 @@ from app.modules.auth.webauthn_schemas import (
 router = APIRouter(prefix="/auth/webauthn/registration", tags=["authentication", "mfa", "webauthn"])
 
 
+def _is_enrollment_required_error(exc: HTTPException) -> bool:
+    return bool(
+        exc.status_code == status.HTTP_403_FORBIDDEN
+        and isinstance(exc.detail, dict)
+        and exc.detail.get("code") == "mfa_enrollment_required"
+    )
+
+
+def _policy_or_new_reenrollment_grant(
+    db: Session,
+    *,
+    current_context: CurrentAuthContext,
+):
+    try:
+        enforce_mfa_policy_for_context(db, context=current_context)
+        return None
+    except HTTPException as exc:
+        if not _is_enrollment_required_error(exc):
+            raise
+        grant = claim_webauthn_reenrollment_grant(
+            db,
+            user=current_context.user,
+            auth_session=current_context.session,
+        )
+        if grant is None:
+            raise
+        return grant
+
+
+def _policy_or_existing_reenrollment_grant(
+    db: Session,
+    *,
+    transaction_id: UUID,
+    current_context: CurrentAuthContext,
+):
+    try:
+        grant = get_reenrollment_grant_for_registration(
+            db,
+            transaction_id=transaction_id,
+            user=current_context.user,
+            auth_session=current_context.session,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    if grant is not None:
+        return grant
+    enforce_mfa_policy_for_context(db, context=current_context)
+    return None
+
+
 @router.post(
     "/begin",
     response_model=WebAuthnRegistrationBeginResponse,
@@ -42,12 +97,13 @@ def begin_current_webauthn_registration(
     db: Annotated[Session, Depends(get_db)],
     current_context: CurrentAuthContext,
 ) -> WebAuthnRegistrationBeginResponse:
-    enforce_mfa_policy_for_context(db, context=current_context)
+    grant = _policy_or_new_reenrollment_grant(db, current_context=current_context)
     try:
         transaction, material, profile, superseded_id = begin_webauthn_registration(
             db,
             user=current_context.user,
             auth_session=current_context.session,
+            reenrollment_reset_request_id=grant.id if grant is not None else None,
         )
         if superseded_id is not None:
             write_audit_log(
@@ -71,8 +127,24 @@ def begin_current_webauthn_registration(
                 "profile_id": str(profile.id),
                 "profile_number": profile.profile_number,
                 "profile_hash": profile.profile_hash,
+                "reenrollment_reset_request_id": (
+                    str(grant.id) if grant is not None else None
+                ),
             },
         )
+        if grant is not None:
+            write_audit_log(
+                db,
+                organization_id=current_context.user.organization_id,
+                user_id=current_context.user.id,
+                action="WEBAUTHN_REENROLLMENT_GRANT_CLAIMED",
+                entity_type="webauthn_credential_reset_request",
+                entity_id=grant.id,
+                new_values={
+                    "auth_session_id": str(current_context.session.id),
+                    "registration_transaction_id": str(transaction.id),
+                },
+            )
         db.commit()
         db.refresh(transaction)
     except ValueError as exc:
@@ -116,7 +188,11 @@ def finish_current_webauthn_registration(
     db: Annotated[Session, Depends(get_db)],
     current_context: CurrentAuthContext,
 ) -> WebAuthnCredentialRead:
-    enforce_mfa_policy_for_context(db, context=current_context)
+    grant = _policy_or_existing_reenrollment_grant(
+        db,
+        transaction_id=transaction_id,
+        current_context=current_context,
+    )
     try:
         credential = finish_webauthn_registration(
             db,
@@ -127,6 +203,8 @@ def finish_current_webauthn_registration(
             client_data_json=payload.client_data_json,
             attestation_object=payload.attestation_object,
         )
+        if grant is not None:
+            consume_webauthn_reenrollment_grant(reset=grant, credential=credential)
         write_audit_log(
             db,
             organization_id=current_context.user.organization_id,
@@ -142,8 +220,25 @@ def finish_current_webauthn_registration(
                 "profile_hash": credential.profile_hash,
                 "algorithm": credential.algorithm,
                 "attestation_format": credential.attestation_format,
+                "reenrollment_reset_request_id": (
+                    str(grant.id) if grant is not None else None
+                ),
             },
         )
+        if grant is not None:
+            write_audit_log(
+                db,
+                organization_id=current_context.user.organization_id,
+                user_id=current_context.user.id,
+                action="WEBAUTHN_REENROLLMENT_GRANT_CONSUMED",
+                entity_type="webauthn_credential_reset_request",
+                entity_id=grant.id,
+                new_values={
+                    "auth_session_id": str(current_context.session.id),
+                    "registration_transaction_id": str(credential.registration_transaction_id),
+                    "replacement_credential_id": str(credential.id),
+                },
+            )
         db.commit()
         db.refresh(credential)
     except WebAuthnVerificationError as exc:
@@ -217,7 +312,11 @@ def cancel_current_webauthn_registration(
     db: Annotated[Session, Depends(get_db)],
     current_context: CurrentAuthContext,
 ) -> WebAuthnRegistrationTransactionRead:
-    enforce_mfa_policy_for_context(db, context=current_context)
+    _policy_or_existing_reenrollment_grant(
+        db,
+        transaction_id=transaction_id,
+        current_context=current_context,
+    )
     try:
         transaction = cancel_webauthn_registration(
             db,
@@ -237,6 +336,11 @@ def cancel_current_webauthn_registration(
                 "profile_id": str(transaction.profile_id),
                 "profile_number": transaction.profile_number,
                 "profile_hash": transaction.profile_hash,
+                "reenrollment_reset_request_id": (
+                    str(transaction.reenrollment_reset_request_id)
+                    if transaction.reenrollment_reset_request_id is not None
+                    else None
+                ),
             },
         )
         db.commit()
