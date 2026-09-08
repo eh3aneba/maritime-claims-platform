@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.modules.audit.service import write_audit_log
 from app.modules.auth.models import EnterpriseIdentityProvider
+from app.modules.auth.saml_assurance import pin_saml_mfa_assurance_for_transaction
 from app.modules.auth.saml_models import SamlAuthnTransaction, SamlTrustRuntimeProfile
 from app.modules.auth.saml_trust import get_current_saml_trust_runtime_profile
 from app.modules.organizations.models import Organization, OrganizationStatus
@@ -132,6 +133,11 @@ def create_saml_authn_transaction(
     )
     db.add(transaction)
     db.flush()
+    pin_saml_mfa_assurance_for_transaction(
+        db,
+        transaction=transaction,
+        saml_profile=profile,
+    )
     return transaction, material, provider, profile
 
 
