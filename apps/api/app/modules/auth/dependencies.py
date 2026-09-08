@@ -5,6 +5,7 @@ from uuid import UUID
 
 from fastapi import Cookie, Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -14,6 +15,8 @@ from app.modules.auth.mfa import get_current_totp_factor
 from app.modules.auth.mfa_policy import get_mfa_policy, mfa_required_for_role
 from app.modules.auth.models import AuthSession
 from app.modules.auth.service import get_valid_auth_session
+from app.modules.auth.webauthn_authentication import session_has_verified_webauthn_mfa
+from app.modules.auth.webauthn_models import WebAuthnCredential
 from app.modules.organizations.models import Organization, OrganizationStatus
 from app.modules.users.models import User, UserRole
 
@@ -133,6 +136,21 @@ def _is_mfa_sensitive_auth_path(path: str) -> bool:
     )
 
 
+def _has_active_webauthn_credential(db: Session, *, user: User) -> bool:
+    return (
+        db.scalar(
+            select(WebAuthnCredential.id)
+            .where(
+                WebAuthnCredential.organization_id == user.organization_id,
+                WebAuthnCredential.user_id == user.id,
+                WebAuthnCredential.revoked_at.is_(None),
+            )
+            .limit(1)
+        )
+        is not None
+    )
+
+
 def enforce_mfa_policy_for_context(
     db: Session,
     *,
@@ -150,7 +168,11 @@ def enforce_mfa_policy_for_context(
         organization_id=context.user.organization_id,
         user_id=context.user.id,
     )
-    if factor is None or factor.confirmed_at is None or factor.revoked_at is not None:
+    totp_available = bool(
+        factor is not None and factor.confirmed_at is not None and factor.revoked_at is None
+    )
+    webauthn_available = _has_active_webauthn_credential(db, user=context.user)
+    if not totp_available and not webauthn_available:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
@@ -159,18 +181,29 @@ def enforce_mfa_policy_for_context(
             },
         )
 
-    if (
-        context.session.mfa_verified_at is None
-        or context.session.mfa_method not in {"totp", "recovery_code"}
-        or context.session.mfa_factor_id != factor.id
+    if session_has_verified_webauthn_mfa(
+        db,
+        user=context.user,
+        auth_session=context.session,
     ):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={
-                "code": "mfa_verification_required",
-                "message": "MFA verification is required for the current authentication session",
-            },
-        )
+        return
+
+    if (
+        totp_available
+        and factor is not None
+        and context.session.mfa_verified_at is not None
+        and context.session.mfa_method in {"totp", "recovery_code"}
+        and context.session.mfa_factor_id == factor.id
+    ):
+        return
+
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail={
+            "code": "mfa_verification_required",
+            "message": "MFA verification is required for the current authentication session",
+        },
+    )
 
 
 def require_roles(*allowed_roles: UserRole) -> Callable[..., User]:

@@ -106,6 +106,7 @@ def test_webauthn_profile_and_registration_challenge_are_governed_and_hash_only(
     assert payload["rp"] == {"id": "claims.example.com", "name": "MCRI Claims"}
     assert payload["user"]["name"] == "handler-webauthn-primary@example.com"
     assert payload["authenticator_selection"]["user_verification"] == "required"
+    assert payload["authenticator_selection"]["resident_key"] == "required"
     assert payload["attestation"] == "none"
     assert {item["alg"] for item in payload["pub_key_cred_params"]} == {-7, -257}
 

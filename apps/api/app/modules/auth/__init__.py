@@ -10,6 +10,7 @@ from app.modules.auth.saml_models import (  # noqa: F401
     SamlTrustRuntimeProfile,
 )
 from app.modules.auth.webauthn_models import (  # noqa: F401
+    WebAuthnAuthenticationTransaction,
     WebAuthnCredential,
     WebAuthnRegistrationTransaction,
     WebAuthnRelyingPartyProfile,
