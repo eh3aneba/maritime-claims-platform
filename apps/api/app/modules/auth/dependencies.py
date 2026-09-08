@@ -159,7 +159,7 @@ def enforce_mfa_policy_for_context(
 
     if (
         context.session.mfa_verified_at is None
-        or context.session.mfa_method != "totp"
+        or context.session.mfa_method not in {"totp", "recovery_code"}
         or context.session.mfa_factor_id != factor.id
     ):
         raise HTTPException(
