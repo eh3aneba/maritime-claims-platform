@@ -117,17 +117,13 @@ def upgrade() -> None:
             unique=False,
         )
 
+    # Deliberately no FK here. Reset -> credential -> registration already forms a durable
+    # relational lineage; a reverse FK would introduce a circular metadata dependency.
+    # Application services resolve this UUID against the tenant/user/session-bound reset row
+    # before permitting any reenrollment bypass.
     op.add_column(
         "webauthn_registration_transactions",
         sa.Column("reenrollment_reset_request_id", sa.Uuid(), nullable=True),
-    )
-    op.create_foreign_key(
-        "fk_webauthn_registration_transactions_reenrollment_reset_request",
-        "webauthn_registration_transactions",
-        "webauthn_credential_reset_requests",
-        ["reenrollment_reset_request_id"],
-        ["id"],
-        ondelete="SET NULL",
     )
     op.create_index(
         "ix_webauthn_registration_transactions_reenrollment_reset_request_id",
@@ -141,11 +137,6 @@ def downgrade() -> None:
     op.drop_index(
         "ix_webauthn_registration_transactions_reenrollment_reset_request_id",
         table_name="webauthn_registration_transactions",
-    )
-    op.drop_constraint(
-        "fk_webauthn_registration_transactions_reenrollment_reset_request",
-        "webauthn_registration_transactions",
-        type_="foreignkey",
     )
     op.drop_column("webauthn_registration_transactions", "reenrollment_reset_request_id")
 
