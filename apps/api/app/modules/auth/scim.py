@@ -766,8 +766,8 @@ def deactivate_scim_managed_user(
     revoked_sessions = 0
     if managed.user.is_active:
         managed.user.is_active = False
+        managed.binding.deactivated_at = now
         revoked_sessions = _revoke_active_user_sessions(db, user=managed.user, now=now)
-    managed.binding.deactivated_at = managed.binding.deactivated_at or now
     managed.binding.last_synced_at = now
     db.flush()
     return managed, revoked_sessions
