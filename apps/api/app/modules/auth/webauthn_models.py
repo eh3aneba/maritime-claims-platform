@@ -94,6 +94,54 @@ class WebAuthnRegistrationTransaction(UUIDPrimaryKeyMixin, TimestampMixin, Base)
     cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class WebAuthnAuthenticationTransaction(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Short-lived one-time WebAuthn assertion challenge custody."""
+
+    __tablename__ = "webauthn_authentication_transactions"
+    __table_args__ = (
+        UniqueConstraint(
+            "challenge_hash",
+            name="uq_webauthn_authentication_transactions_challenge_hash",
+        ),
+        Index(
+            "uq_webauthn_authentication_transactions_session_open",
+            "auth_session_id",
+            unique=True,
+            postgresql_where=text("consumed_at IS NULL AND cancelled_at IS NULL"),
+            sqlite_where=text("consumed_at IS NULL AND cancelled_at IS NULL"),
+        ),
+        Index(
+            "ix_webauthn_authentication_transactions_org_user_lifecycle",
+            "organization_id",
+            "user_id",
+            "expires_at",
+            "consumed_at",
+            "cancelled_at",
+        ),
+    )
+
+    organization_id: Mapped[UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    auth_session_id: Mapped[UUID] = mapped_column(
+        ForeignKey("auth_sessions.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    profile_id: Mapped[UUID] = mapped_column(
+        ForeignKey("webauthn_relying_party_profiles.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    profile_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    profile_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    challenge_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class WebAuthnCredential(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     """Verified WebAuthn credential custody without raw credential identifiers."""
 
