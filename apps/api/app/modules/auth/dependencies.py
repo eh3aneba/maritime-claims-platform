@@ -3,13 +3,15 @@ from dataclasses import dataclass
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import Cookie, Depends, HTTPException, status
+from fastapi import Cookie, Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.security import TokenError, decode_access_token
 from app.db.session import get_db
+from app.modules.auth.mfa import get_current_totp_factor
+from app.modules.auth.mfa_policy import get_mfa_policy, mfa_required_for_role
 from app.modules.auth.models import AuthSession
 from app.modules.auth.service import get_valid_auth_session
 from app.modules.organizations.models import Organization, OrganizationStatus
@@ -117,14 +119,73 @@ def get_current_user(context: CurrentAuthContext) -> User:
 CurrentUser = Annotated[User, Depends(get_current_user)]
 
 
-def require_roles(*allowed_roles: UserRole) -> Callable[[CurrentUser], User]:
-    def dependency(current_user: CurrentUser) -> User:
+def _is_mfa_sensitive_auth_path(path: str) -> bool:
+    api_prefix = settings.api_v1_prefix.rstrip("/")
+    auth_prefix = f"{api_prefix}/auth"
+    normalized = path.rstrip("/")
+    return (
+        normalized == f"{auth_prefix}/mfa-policy"
+        or normalized.startswith(f"{auth_prefix}/identity-providers")
+        or normalized.startswith(f"{auth_prefix}/external-bindings")
+        or normalized.startswith(f"{auth_prefix}/sessions/")
+    )
+
+
+def enforce_mfa_policy_for_context(
+    db: Session,
+    *,
+    context: AuthContext,
+) -> None:
+    policy = get_mfa_policy(
+        db,
+        organization_id=context.user.organization_id,
+    )
+    if not mfa_required_for_role(policy, role=context.user.role):
+        return
+
+    factor = get_current_totp_factor(
+        db,
+        organization_id=context.user.organization_id,
+        user_id=context.user.id,
+    )
+    if factor is None or factor.confirmed_at is None or factor.revoked_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "mfa_enrollment_required",
+                "message": "An active confirmed MFA factor is required for this action",
+            },
+        )
+
+    if (
+        context.session.mfa_verified_at is None
+        or context.session.mfa_method != "totp"
+        or context.session.mfa_factor_id != factor.id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "mfa_verification_required",
+                "message": "MFA verification is required for the current authentication session",
+            },
+        )
+
+
+def require_roles(*allowed_roles: UserRole) -> Callable[..., User]:
+    def dependency(
+        context: CurrentAuthContext,
+        request: Request,
+        db: Annotated[Session, Depends(get_db)],
+    ) -> User:
+        current_user = context.user
         # Database User.role remains authoritative; token or IdP role claims are ignored here.
         if current_user.role not in allowed_roles:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Insufficient permissions",
             )
+        if _is_mfa_sensitive_auth_path(request.url.path):
+            enforce_mfa_policy_for_context(db, context=context)
         return current_user
 
     return dependency

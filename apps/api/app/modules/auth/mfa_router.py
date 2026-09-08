@@ -6,7 +6,10 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.modules.audit.service import write_audit_log
-from app.modules.auth.dependencies import CurrentAuthContext
+from app.modules.auth.dependencies import (
+    CurrentAuthContext,
+    enforce_mfa_policy_for_context,
+)
 from app.modules.auth.mfa import (
     confirm_totp_enrollment,
     get_current_totp_factor,
@@ -211,6 +214,12 @@ def revoke_factor(
         factor_id=factor_id,
         current_context=current_context,
     )
+    # Once possession is confirmed, an enforced tenant MFA policy must not be
+    # bypassable by revoking the factor from an unverified session. Pending
+    # enrollments remain revocable so a user can restart bootstrap safely.
+    if factor.confirmed_at is not None:
+        enforce_mfa_policy_for_context(db, context=current_context)
+
     changed = revoke_totp_factor(
         factor=factor,
         revoked_by_id=current_context.user.id,
