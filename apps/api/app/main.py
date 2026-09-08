@@ -35,6 +35,7 @@ from app.modules.auth.oidc_runtime_router import router as oidc_runtime_router
 from app.modules.auth.oidc_transaction_router import router as oidc_transaction_router
 from app.modules.auth.oidc_trust_router import router as oidc_trust_router
 from app.modules.auth.router import router as auth_router
+from app.modules.auth.saml_assurance_router import router as saml_assurance_router
 from app.modules.auth.saml_callback_router import router as saml_callback_router
 from app.modules.auth.saml_transaction_router import router as saml_transaction_router
 from app.modules.auth.saml_trust_router import router as saml_trust_router
@@ -137,6 +138,7 @@ app.include_router(oidc_assurance_router, prefix=settings.api_v1_prefix)
 app.include_router(oidc_transaction_router, prefix=settings.api_v1_prefix)
 app.include_router(oidc_callback_router, prefix=settings.api_v1_prefix)
 app.include_router(saml_trust_router, prefix=settings.api_v1_prefix)
+app.include_router(saml_assurance_router, prefix=settings.api_v1_prefix)
 app.include_router(saml_transaction_router, prefix=settings.api_v1_prefix)
 app.include_router(saml_callback_router, prefix=settings.api_v1_prefix)
 app.include_router(claims_router, prefix=settings.api_v1_prefix)
