@@ -207,6 +207,10 @@ def issue_scim_provisioning_token(
         old_token.revoked_at = now
         old_token.revoked_by_id = created_by_id
         old_token.revocation_reason = "rotated"
+    # Materialize revocations before inserting the replacement so the partial
+    # unique index never observes two active credentials for one profile.
+    if previous_tokens:
+        db.flush()
 
     plaintext = SCIM_TOKEN_PREFIX + secrets.token_urlsafe(SCIM_TOKEN_RANDOM_BYTES)
     digest = _token_digest(plaintext)
