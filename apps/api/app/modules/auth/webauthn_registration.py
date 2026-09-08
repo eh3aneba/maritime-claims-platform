@@ -94,6 +94,7 @@ def begin_webauthn_registration(
     *,
     user: User,
     auth_session: AuthSession,
+    reenrollment_reset_request_id: UUID | None = None,
 ) -> tuple[
     WebAuthnRegistrationTransaction,
     WebAuthnRegistrationMaterial,
@@ -124,6 +125,7 @@ def begin_webauthn_registration(
         profile_id=profile.id,
         profile_number=profile.profile_number,
         profile_hash=profile.profile_hash,
+        reenrollment_reset_request_id=reenrollment_reset_request_id,
         challenge_hash=_challenge_hash(challenge),
         expires_at=now + timedelta(minutes=WEBAUTHN_REGISTRATION_TTL_MINUTES),
     )
