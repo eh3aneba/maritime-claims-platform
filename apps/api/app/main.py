@@ -29,6 +29,7 @@ from app.modules.auth.mfa_policy_router import router as mfa_policy_router
 from app.modules.auth.mfa_recovery_router import router as mfa_recovery_router
 from app.modules.auth.mfa_reset_router import router as mfa_reset_router
 from app.modules.auth.mfa_router import router as mfa_router
+from app.modules.auth.oidc_assurance_router import router as oidc_assurance_router
 from app.modules.auth.oidc_callback_router import router as oidc_callback_router
 from app.modules.auth.oidc_runtime_router import router as oidc_runtime_router
 from app.modules.auth.oidc_transaction_router import router as oidc_transaction_router
@@ -132,6 +133,7 @@ app.include_router(webauthn_authentication_router, prefix=settings.api_v1_prefix
 app.include_router(webauthn_reset_router, prefix=settings.api_v1_prefix)
 app.include_router(oidc_trust_router, prefix=settings.api_v1_prefix)
 app.include_router(oidc_runtime_router, prefix=settings.api_v1_prefix)
+app.include_router(oidc_assurance_router, prefix=settings.api_v1_prefix)
 app.include_router(oidc_transaction_router, prefix=settings.api_v1_prefix)
 app.include_router(oidc_callback_router, prefix=settings.api_v1_prefix)
 app.include_router(saml_trust_router, prefix=settings.api_v1_prefix)

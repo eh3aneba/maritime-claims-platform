@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.modules.audit.service import write_audit_log
+from app.modules.auth.oidc_assurance import pin_oidc_mfa_assurance_for_transaction
 from app.modules.auth.oidc_callback import build_oidc_authorization_url
 from app.modules.auth.oidc_transaction import create_oidc_authorization_transaction
 from app.modules.auth.schemas import (
@@ -37,6 +38,11 @@ def start_oidc_authorization_transaction(
             organization_slug=payload.organization_slug,
             provider_key=payload.provider_key,
         )
+        assurance_binding = pin_oidc_mfa_assurance_for_transaction(
+            db,
+            transaction=transaction,
+            trust_profile=trust_profile,
+        )
         authorization_url = build_oidc_authorization_url(
             trust_profile=trust_profile,
             runtime_profile=runtime_profile,
@@ -57,6 +63,13 @@ def start_oidc_authorization_transaction(
                 "runtime_profile_id": str(runtime_profile.id),
                 "runtime_profile_number": runtime_profile.runtime_profile_number,
                 "runtime_profile_hash": runtime_profile.runtime_profile_hash,
+                "mfa_assurance_profile_id": (
+                    None
+                    if assurance_binding.assurance_profile_id is None
+                    else str(assurance_binding.assurance_profile_id)
+                ),
+                "mfa_assurance_profile_number": assurance_binding.assurance_profile_number,
+                "mfa_assurance_profile_hash": assurance_binding.assurance_profile_hash,
                 "pkce_method": transaction.pkce_method,
                 "expires_at": transaction.expires_at.isoformat(),
             },

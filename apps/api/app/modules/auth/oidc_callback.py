@@ -20,6 +20,11 @@ from app.modules.auth.models import (
     OidcRuntimeProfile,
     OidcTrustProfile,
 )
+from app.modules.auth.oidc_assurance import (
+    OIDC_EXTERNAL_MFA_METHOD,
+    evaluate_pinned_oidc_mfa_assurance,
+    record_oidc_mfa_assurance_verification,
+)
 from app.modules.auth.oidc_transaction import (
     OidcAuthorizationStartMaterial,
     consume_oidc_authorization_transaction,
@@ -370,6 +375,11 @@ def complete_oidc_callback(
         provider=provider,
         external_subject=identity.subject,
     )
+    assurance_binding, assurance_result = evaluate_pinned_oidc_mfa_assurance(
+        db,
+        transaction=transaction,
+        claims=identity.claims,
+    )
 
     consumed = consume_oidc_authorization_transaction(
         db,
@@ -387,6 +397,31 @@ def complete_oidc_callback(
     auth_session.external_identity_provider_id = provider.id
     auth_session.external_identity_binding_id = binding.id
     auth_session.oidc_authorization_transaction_id = consumed.id
+
+    assurance_verified = False
+    assurance_profile_id = None
+    assurance_profile_number = None
+    assurance_profile_hash = None
+    evidence_type = None
+    evidence_hash = None
+    if assurance_result.verified:
+        if assurance_binding is None:
+            raise OidcCallbackError("OIDC MFA assurance source is unavailable")
+        verified_at = record_oidc_mfa_assurance_verification(
+            db,
+            binding=assurance_binding,
+            result=assurance_result,
+        )
+        auth_session.mfa_verified_at = verified_at
+        auth_session.mfa_method = OIDC_EXTERNAL_MFA_METHOD
+        auth_session.mfa_factor_id = None
+        assurance_verified = True
+        assurance_profile_id = assurance_binding.assurance_profile_id
+        assurance_profile_number = assurance_binding.assurance_profile_number
+        assurance_profile_hash = assurance_binding.assurance_profile_hash
+        evidence_type = assurance_binding.evidence_type
+        evidence_hash = assurance_binding.evidence_hash
+
     user.last_login_at = _utc_now()
     db.flush()
 
@@ -409,6 +444,15 @@ def complete_oidc_callback(
             "runtime_profile_id": str(consumed.runtime_profile_id),
             "runtime_profile_number": consumed.runtime_profile_number,
             "runtime_profile_hash": consumed.runtime_profile_hash,
+            "mfa_assurance_verified": assurance_verified,
+            "mfa_method": auth_session.mfa_method,
+            "mfa_assurance_profile_id": (
+                None if assurance_profile_id is None else str(assurance_profile_id)
+            ),
+            "mfa_assurance_profile_number": assurance_profile_number,
+            "mfa_assurance_profile_hash": assurance_profile_hash,
+            "mfa_evidence_type": evidence_type,
+            "mfa_evidence_hash": evidence_hash,
         },
     )
     db.flush()
