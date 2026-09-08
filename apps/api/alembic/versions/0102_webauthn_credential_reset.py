@@ -12,6 +12,26 @@ down_revision = "0101_webauthn_authentication"
 branch_labels = None
 depends_on = None
 
+_INDEXES = (
+    ("ix_wacr_org", "organization_id"),
+    ("ix_wacr_user", "user_id"),
+    ("ix_wacr_credential", "credential_id"),
+    ("ix_wacr_requester", "requested_by_id"),
+    ("ix_wacr_request_session", "requested_auth_session_id"),
+    ("ix_wacr_status", "status"),
+    ("ix_wacr_approver", "approved_by_id"),
+    ("ix_wacr_approve_session", "approved_auth_session_id"),
+    ("ix_wacr_rejector", "rejected_by_id"),
+    ("ix_wacr_reject_session", "rejected_auth_session_id"),
+    ("ix_wacr_canceller", "cancelled_by_id"),
+    ("ix_wacr_cancel_session", "cancelled_auth_session_id"),
+    ("ix_wacr_executor", "executed_by_id"),
+    ("ix_wacr_execute_session", "executed_auth_session_id"),
+    ("ix_wacr_reenroll_expiry", "reenrollment_expires_at"),
+    ("ix_wacr_reenroll_session", "reenrollment_auth_session_id"),
+    ("ix_wacr_replacement", "reenrollment_credential_id"),
+)
+
 
 def upgrade() -> None:
     op.create_table(
@@ -72,7 +92,7 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(
-        "uq_webauthn_credential_reset_requests_credential_open",
+        "uq_wacr_credential_open",
         "webauthn_credential_reset_requests",
         ["credential_id"],
         unique=True,
@@ -80,38 +100,20 @@ def upgrade() -> None:
         sqlite_where=sa.text("status IN ('pending', 'approved')"),
     )
     op.create_index(
-        "ix_webauthn_credential_reset_requests_org_lifecycle",
+        "ix_wacr_org_lifecycle",
         "webauthn_credential_reset_requests",
         ["organization_id", "user_id", "status", "created_at"],
         unique=False,
     )
     op.create_index(
-        "ix_webauthn_credential_reset_requests_reenrollment",
+        "ix_wacr_reenrollment",
         "webauthn_credential_reset_requests",
         ["organization_id", "user_id", "reenrollment_expires_at", "reenrollment_consumed_at"],
         unique=False,
     )
-    for column in (
-        "organization_id",
-        "user_id",
-        "credential_id",
-        "requested_by_id",
-        "requested_auth_session_id",
-        "status",
-        "approved_by_id",
-        "approved_auth_session_id",
-        "rejected_by_id",
-        "rejected_auth_session_id",
-        "cancelled_by_id",
-        "cancelled_auth_session_id",
-        "executed_by_id",
-        "executed_auth_session_id",
-        "reenrollment_expires_at",
-        "reenrollment_auth_session_id",
-        "reenrollment_credential_id",
-    ):
+    for index_name, column in _INDEXES:
         op.create_index(
-            f"ix_webauthn_credential_reset_requests_{column}",
+            index_name,
             "webauthn_credential_reset_requests",
             [column],
             unique=False,
@@ -126,7 +128,7 @@ def upgrade() -> None:
         sa.Column("reenrollment_reset_request_id", sa.Uuid(), nullable=True),
     )
     op.create_index(
-        "ix_webauthn_registration_transactions_reenrollment_reset_request_id",
+        "ix_wart_reenrollment_reset",
         "webauthn_registration_transactions",
         ["reenrollment_reset_request_id"],
         unique=False,
@@ -135,46 +137,14 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_index(
-        "ix_webauthn_registration_transactions_reenrollment_reset_request_id",
+        "ix_wart_reenrollment_reset",
         table_name="webauthn_registration_transactions",
     )
     op.drop_column("webauthn_registration_transactions", "reenrollment_reset_request_id")
 
-    for column in reversed(
-        (
-            "organization_id",
-            "user_id",
-            "credential_id",
-            "requested_by_id",
-            "requested_auth_session_id",
-            "status",
-            "approved_by_id",
-            "approved_auth_session_id",
-            "rejected_by_id",
-            "rejected_auth_session_id",
-            "cancelled_by_id",
-            "cancelled_auth_session_id",
-            "executed_by_id",
-            "executed_auth_session_id",
-            "reenrollment_expires_at",
-            "reenrollment_auth_session_id",
-            "reenrollment_credential_id",
-        )
-    ):
-        op.drop_index(
-            f"ix_webauthn_credential_reset_requests_{column}",
-            table_name="webauthn_credential_reset_requests",
-        )
-    op.drop_index(
-        "ix_webauthn_credential_reset_requests_reenrollment",
-        table_name="webauthn_credential_reset_requests",
-    )
-    op.drop_index(
-        "ix_webauthn_credential_reset_requests_org_lifecycle",
-        table_name="webauthn_credential_reset_requests",
-    )
-    op.drop_index(
-        "uq_webauthn_credential_reset_requests_credential_open",
-        table_name="webauthn_credential_reset_requests",
-    )
+    for index_name, _column in reversed(_INDEXES):
+        op.drop_index(index_name, table_name="webauthn_credential_reset_requests")
+    op.drop_index("ix_wacr_reenrollment", table_name="webauthn_credential_reset_requests")
+    op.drop_index("ix_wacr_org_lifecycle", table_name="webauthn_credential_reset_requests")
+    op.drop_index("uq_wacr_credential_open", table_name="webauthn_credential_reset_requests")
     op.drop_table("webauthn_credential_reset_requests")
