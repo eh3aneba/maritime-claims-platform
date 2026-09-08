@@ -22,6 +22,7 @@ def upgrade() -> None:
         sa.Column("profile_id", sa.Uuid(), nullable=False),
         sa.Column("profile_number", sa.Integer(), nullable=False),
         sa.Column("profile_hash", sa.String(length=64), nullable=False),
+        sa.Column("credential_id", sa.Uuid(), nullable=True),
         sa.Column("challenge_hash", sa.String(length=64), nullable=False),
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("consumed_at", sa.DateTime(timezone=True), nullable=True),
@@ -47,13 +48,24 @@ def upgrade() -> None:
             ["webauthn_relying_party_profiles.id"],
             ondelete="RESTRICT",
         ),
+        sa.ForeignKeyConstraint(
+            ["credential_id"],
+            ["webauthn_credentials.id"],
+            ondelete="RESTRICT",
+        ),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint(
             "challenge_hash",
             name="uq_webauthn_authentication_transactions_challenge_hash",
         ),
     )
-    for column in ("organization_id", "user_id", "auth_session_id", "profile_id"):
+    for column in (
+        "organization_id",
+        "user_id",
+        "auth_session_id",
+        "profile_id",
+        "credential_id",
+    ):
         op.create_index(
             f"ix_webauthn_authentication_transactions_{column}",
             "webauthn_authentication_transactions",
@@ -75,35 +87,8 @@ def upgrade() -> None:
         unique=False,
     )
 
-    op.add_column(
-        "auth_sessions",
-        sa.Column("mfa_webauthn_credential_id", sa.Uuid(), nullable=True),
-    )
-    op.create_foreign_key(
-        "fk_auth_sessions_mfa_webauthn_credential",
-        "auth_sessions",
-        "webauthn_credentials",
-        ["mfa_webauthn_credential_id"],
-        ["id"],
-        ondelete="RESTRICT",
-    )
-    op.create_index(
-        "ix_auth_sessions_mfa_webauthn_credential_id",
-        "auth_sessions",
-        ["mfa_webauthn_credential_id"],
-        unique=False,
-    )
-
 
 def downgrade() -> None:
-    op.drop_index("ix_auth_sessions_mfa_webauthn_credential_id", table_name="auth_sessions")
-    op.drop_constraint(
-        "fk_auth_sessions_mfa_webauthn_credential",
-        "auth_sessions",
-        type_="foreignkey",
-    )
-    op.drop_column("auth_sessions", "mfa_webauthn_credential_id")
-
     op.drop_index(
         "ix_webauthn_authentication_transactions_org_user_lifecycle",
         table_name="webauthn_authentication_transactions",
@@ -112,7 +97,9 @@ def downgrade() -> None:
         "uq_webauthn_authentication_transactions_session_open",
         table_name="webauthn_authentication_transactions",
     )
-    for column in reversed(("organization_id", "user_id", "auth_session_id", "profile_id")):
+    for column in reversed(
+        ("organization_id", "user_id", "auth_session_id", "profile_id", "credential_id")
+    ):
         op.drop_index(
             f"ix_webauthn_authentication_transactions_{column}",
             table_name="webauthn_authentication_transactions",
