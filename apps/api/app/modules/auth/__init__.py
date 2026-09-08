@@ -9,6 +9,7 @@ from app.modules.auth.saml_models import (  # noqa: F401
     SamlAuthnTransaction,
     SamlTrustRuntimeProfile,
 )
+from app.modules.auth.webauthn_reset_models import WebAuthnCredentialResetRequest  # noqa: F401
 from app.modules.auth.webauthn_models import (  # noqa: F401
     WebAuthnAuthenticationTransaction,
     WebAuthnCredential,
