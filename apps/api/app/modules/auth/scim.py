@@ -737,6 +737,8 @@ def replace_scim_managed_user(
         managed.binding.deactivated_at = now
         revoked_sessions = _revoke_active_user_sessions(db, user=managed.user, now=now)
     elif not managed.user.is_active and active:
+        if managed.binding.deactivated_at is None:
+            raise PermissionError("A locally suspended User cannot be reactivated through SCIM")
         managed.user.is_active = True
         managed.binding.deactivated_at = None
     managed.binding.last_synced_at = now
