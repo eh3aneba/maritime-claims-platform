@@ -274,7 +274,7 @@ def finish_webauthn_authentication(
         or credential.user_id != user.id
         or credential.revoked_at is not None
     ):
-        raise ValueError("Active WebAuthn credential not found")
+        raise WebAuthnVerificationError("WebAuthn credential is invalid or unavailable")
 
     client_data_raw = _verify_client_data(
         encoded=client_data_json,
