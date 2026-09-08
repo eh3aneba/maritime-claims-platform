@@ -4,6 +4,7 @@
 # application/Alembic metadata remains complete without widening auth.models itself.
 from app.modules.auth.mfa_policy_models import MfaPolicy  # noqa: F401
 from app.modules.auth.mfa_recovery_models import MfaRecoveryCode  # noqa: F401
+from app.modules.auth.mfa_reset_models import MfaFactorResetRequest  # noqa: F401
 from app.modules.auth.saml_models import (  # noqa: F401
     SamlAuthnTransaction,
     SamlTrustRuntimeProfile,
