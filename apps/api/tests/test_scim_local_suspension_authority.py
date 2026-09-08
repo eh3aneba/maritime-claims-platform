@@ -49,7 +49,21 @@ def _admin_headers(admin_id: UUID) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-def test_scim_cannot_override_local_user_suspension() -> None:
+def _reactivate(token_headers: dict[str, str], user_id: UUID):
+    return client.put(
+        f"/api/v1/scim/v2/Users/{user_id}",
+        headers=token_headers,
+        json={
+            "schemas": [SCIM_USER_SCHEMA],
+            "userName": "managed-local-suspension@example.com",
+            "displayName": "Managed Local Suspension",
+            "active": True,
+            "externalId": "local-authority-1",
+        },
+    )
+
+
+def test_scim_cannot_override_local_user_suspension_even_via_delete() -> None:
     org_id, admin_id = _seed_admin()
     headers = _admin_headers(admin_id)
 
@@ -106,18 +120,25 @@ def test_scim_cannot_override_local_user_suspension() -> None:
         user.is_active = False
         db.commit()
 
-    attempted_reactivation = client.put(
+    direct_reactivation = _reactivate(scim_headers, user_id)
+    assert direct_reactivation.status_code == 403
+
+    scim_delete = client.delete(
         f"/api/v1/scim/v2/Users/{user_id}",
         headers=scim_headers,
-        json={
-            "schemas": [SCIM_USER_SCHEMA],
-            "userName": "managed-local-suspension@example.com",
-            "displayName": "Managed Local Suspension",
-            "active": True,
-            "externalId": "local-authority-1",
-        },
     )
-    assert attempted_reactivation.status_code == 403
+    assert scim_delete.status_code == 204
+
+    with TestingSessionLocal() as db:
+        user = db.get(User, user_id)
+        binding = db.query(ScimUserBinding).filter(ScimUserBinding.user_id == user_id).one()
+        assert user is not None
+        assert user.is_active is False
+        assert user.role == UserRole.CLAIMS_HANDLER
+        assert binding.deactivated_at is None
+
+    reactivation_after_delete = _reactivate(scim_headers, user_id)
+    assert reactivation_after_delete.status_code == 403
 
     with TestingSessionLocal() as db:
         user = db.get(User, user_id)
