@@ -88,6 +88,11 @@ class WebAuthnRegistrationTransaction(UUIDPrimaryKeyMixin, TimestampMixin, Base)
     )
     profile_number: Mapped[int] = mapped_column(Integer, nullable=False)
     profile_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    reenrollment_reset_request_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("webauthn_credential_reset_requests.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     challenge_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
