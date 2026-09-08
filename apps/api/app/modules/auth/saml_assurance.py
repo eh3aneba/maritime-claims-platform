@@ -1,6 +1,7 @@
 import hmac
 import json
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from hashlib import sha256
 from uuid import UUID
 
@@ -8,7 +9,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.modules.auth.models import AuthSession, EnterpriseIdentityProvider
-from app.modules.auth.saml_assurance_models import SamlMfaAssuranceProfile
+from app.modules.auth.saml_assurance_models import (
+    SamlMfaAssuranceBinding,
+    SamlMfaAssuranceProfile,
+)
 from app.modules.auth.saml_models import SamlAuthnTransaction, SamlTrustRuntimeProfile
 from app.modules.auth.saml_trust import get_current_saml_trust_runtime_profile
 from app.modules.users.models import User
@@ -23,6 +27,10 @@ MAX_AUTHN_CONTEXT_LENGTH = 512
 class SamlMfaAssuranceResult:
     verified: bool
     evidence_hash: str | None = None
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 def _canonical_json(payload: dict[str, object]) -> str:
@@ -75,10 +83,7 @@ def list_saml_mfa_assurance_profiles(
                 SamlMfaAssuranceProfile.organization_id == organization_id,
                 SamlMfaAssuranceProfile.provider_id == provider_id,
             )
-            .order_by(
-                SamlMfaAssuranceProfile.profile_number,
-                SamlMfaAssuranceProfile.id,
-            )
+            .order_by(SamlMfaAssuranceProfile.profile_number, SamlMfaAssuranceProfile.id)
         )
     )
 
@@ -95,10 +100,7 @@ def get_current_saml_mfa_assurance_profile(
             SamlMfaAssuranceProfile.organization_id == organization_id,
             SamlMfaAssuranceProfile.provider_id == provider_id,
         )
-        .order_by(
-            SamlMfaAssuranceProfile.profile_number.desc(),
-            SamlMfaAssuranceProfile.id.desc(),
-        )
+        .order_by(SamlMfaAssuranceProfile.profile_number.desc(), SamlMfaAssuranceProfile.id.desc())
         .limit(1)
     )
 
@@ -119,10 +121,7 @@ def get_current_compatible_saml_mfa_assurance_profile(
             SamlMfaAssuranceProfile.saml_profile_number == saml_profile.profile_number,
             SamlMfaAssuranceProfile.saml_profile_hash == saml_profile.profile_hash,
         )
-        .order_by(
-            SamlMfaAssuranceProfile.profile_number.desc(),
-            SamlMfaAssuranceProfile.id.desc(),
-        )
+        .order_by(SamlMfaAssuranceProfile.profile_number.desc(), SamlMfaAssuranceProfile.id.desc())
         .limit(1)
     )
 
@@ -198,6 +197,91 @@ def create_saml_mfa_assurance_profile(
     return profile
 
 
+def pin_saml_mfa_assurance_for_transaction(
+    db: Session,
+    *,
+    transaction: SamlAuthnTransaction,
+    saml_profile: SamlTrustRuntimeProfile,
+) -> SamlMfaAssuranceBinding:
+    existing = db.scalar(
+        select(SamlMfaAssuranceBinding).where(
+            SamlMfaAssuranceBinding.transaction_id == transaction.id
+        )
+    )
+    if existing is not None:
+        return existing
+
+    profile = get_current_compatible_saml_mfa_assurance_profile(
+        db,
+        organization_id=transaction.organization_id,
+        provider_id=transaction.provider_id,
+        saml_profile=saml_profile,
+    )
+    binding = SamlMfaAssuranceBinding(
+        organization_id=transaction.organization_id,
+        provider_id=transaction.provider_id,
+        transaction_id=transaction.id,
+        saml_profile_id=transaction.profile_id,
+        saml_profile_number=transaction.profile_number,
+        saml_profile_hash=transaction.profile_hash,
+        assurance_profile_id=None if profile is None else profile.id,
+        assurance_profile_number=None if profile is None else profile.profile_number,
+        assurance_profile_hash=None if profile is None else profile.profile_hash,
+    )
+    db.add(binding)
+    db.flush()
+    return binding
+
+
+def _resolve_pinned_profile(
+    db: Session,
+    *,
+    transaction: SamlAuthnTransaction,
+) -> tuple[SamlMfaAssuranceBinding | None, SamlMfaAssuranceProfile | None]:
+    binding = db.scalar(
+        select(SamlMfaAssuranceBinding).where(
+            SamlMfaAssuranceBinding.transaction_id == transaction.id
+        )
+    )
+    if binding is None:
+        return None, None
+    if (
+        binding.organization_id != transaction.organization_id
+        or binding.provider_id != transaction.provider_id
+        or binding.saml_profile_id != transaction.profile_id
+        or binding.saml_profile_number != transaction.profile_number
+        or not hmac.compare_digest(binding.saml_profile_hash, transaction.profile_hash)
+    ):
+        raise ValueError("SAML MFA assurance transaction source does not match")
+
+    if (
+        binding.assurance_profile_id is None
+        and binding.assurance_profile_number is None
+        and binding.assurance_profile_hash is None
+    ):
+        return binding, None
+    if (
+        binding.assurance_profile_id is None
+        or binding.assurance_profile_number is None
+        or binding.assurance_profile_hash is None
+    ):
+        raise ValueError("SAML MFA assurance profile pin is incomplete")
+
+    profile = db.get(SamlMfaAssuranceProfile, binding.assurance_profile_id)
+    if (
+        profile is None
+        or profile.organization_id != transaction.organization_id
+        or profile.provider_id != transaction.provider_id
+        or profile.saml_profile_id != transaction.profile_id
+        or profile.saml_profile_number != transaction.profile_number
+        or not hmac.compare_digest(profile.saml_profile_hash, transaction.profile_hash)
+        or profile.profile_number != binding.assurance_profile_number
+        or not hmac.compare_digest(profile.profile_hash, binding.assurance_profile_hash)
+    ):
+        raise ValueError("SAML MFA assurance profile source does not match")
+    return binding, profile
+
+
 def evaluate_saml_mfa_assurance(
     *,
     profile: SamlMfaAssuranceProfile | None,
@@ -210,10 +294,35 @@ def evaluate_saml_mfa_assurance(
         return SamlMfaAssuranceResult(verified=False)
     if normalized not in set(profile.accepted_authn_context_values or []):
         return SamlMfaAssuranceResult(verified=False)
-    return SamlMfaAssuranceResult(
-        verified=True,
-        evidence_hash=_evidence_hash(normalized),
-    )
+    return SamlMfaAssuranceResult(verified=True, evidence_hash=_evidence_hash(normalized))
+
+
+def evaluate_pinned_saml_mfa_assurance(
+    db: Session,
+    *,
+    transaction: SamlAuthnTransaction,
+    authn_context: str | None,
+) -> tuple[SamlMfaAssuranceBinding | None, SamlMfaAssuranceResult]:
+    binding, profile = _resolve_pinned_profile(db, transaction=transaction)
+    return binding, evaluate_saml_mfa_assurance(profile=profile, authn_context=authn_context)
+
+
+def record_saml_mfa_assurance_verification(
+    db: Session,
+    *,
+    binding: SamlMfaAssuranceBinding,
+    result: SamlMfaAssuranceResult,
+) -> datetime:
+    if not result.verified or not result.evidence_hash or binding.assurance_profile_id is None:
+        raise ValueError("SAML MFA assurance verification result is incomplete")
+    if binding.verified_at is not None:
+        raise ValueError("SAML MFA assurance verification is already recorded")
+    verified_at = _utc_now()
+    binding.verified_at = verified_at
+    binding.evidence_type = SAML_MFA_EVIDENCE_TYPE
+    binding.evidence_hash = result.evidence_hash
+    db.flush()
+    return verified_at
 
 
 def session_has_verified_saml_mfa(
@@ -241,26 +350,20 @@ def session_has_verified_saml_mfa(
         or transaction.organization_id != user.organization_id
         or transaction.provider_id != auth_session.external_identity_provider_id
         or transaction.consumed_at is None
-        or transaction.mfa_assurance_verified_at is None
-        or transaction.mfa_assurance_evidence_type != SAML_MFA_EVIDENCE_TYPE
-        or not transaction.mfa_assurance_evidence_hash
-        or transaction.assurance_profile_id is None
-        or transaction.assurance_profile_number is None
-        or transaction.assurance_profile_hash is None
     ):
         return False
 
-    profile = db.get(SamlMfaAssuranceProfile, transaction.assurance_profile_id)
+    try:
+        binding, profile = _resolve_pinned_profile(db, transaction=transaction)
+    except ValueError:
+        return False
     if (
-        profile is None
+        binding is None
+        or profile is None
         or not profile.enabled
-        or profile.organization_id != transaction.organization_id
-        or profile.provider_id != transaction.provider_id
-        or profile.saml_profile_id != transaction.profile_id
-        or profile.saml_profile_number != transaction.profile_number
-        or not hmac.compare_digest(profile.saml_profile_hash, transaction.profile_hash)
-        or profile.profile_number != transaction.assurance_profile_number
-        or not hmac.compare_digest(profile.profile_hash, transaction.assurance_profile_hash)
+        or binding.verified_at is None
+        or binding.evidence_type != SAML_MFA_EVIDENCE_TYPE
+        or not binding.evidence_hash
     ):
         return False
     return True
