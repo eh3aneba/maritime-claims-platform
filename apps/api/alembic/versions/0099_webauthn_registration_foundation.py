@@ -1,13 +1,13 @@
 """add WebAuthn RP profile and registration challenge custody
 
-Revision ID: 0099_webauthn_registration_foundation
+Revision ID: 0099_webauthn_reg_foundation
 Revises: 0098_mfa_factor_reset_lifecycle
 """
 
 from alembic import op
 import sqlalchemy as sa
 
-revision = "0099_webauthn_registration_foundation"
+revision = "0099_webauthn_reg_foundation"
 down_revision = "0098_mfa_factor_reset_lifecycle"
 branch_labels = None
 depends_on = None
