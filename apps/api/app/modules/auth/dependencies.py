@@ -135,6 +135,7 @@ def _is_mfa_sensitive_auth_path(path: str) -> bool:
         or normalized.startswith(f"{auth_prefix}/identity-providers")
         or normalized.startswith(f"{auth_prefix}/external-bindings")
         or normalized.startswith(f"{auth_prefix}/sessions/")
+        or normalized.startswith(f"{auth_prefix}/scim-provisioning")
     )
 
 
