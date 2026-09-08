@@ -39,6 +39,8 @@ from app.modules.auth.saml_assurance_router import router as saml_assurance_rout
 from app.modules.auth.saml_callback_router import router as saml_callback_router
 from app.modules.auth.saml_transaction_router import router as saml_transaction_router
 from app.modules.auth.saml_trust_router import router as saml_trust_router
+from app.modules.auth.scim_router import admin_router as scim_admin_router
+from app.modules.auth.scim_router import service_router as scim_service_router
 from app.modules.auth.webauthn_authentication_router import router as webauthn_authentication_router
 from app.modules.auth.webauthn_profile_router import router as webauthn_profile_router
 from app.modules.auth.webauthn_registration_router import router as webauthn_registration_router
@@ -141,6 +143,8 @@ app.include_router(saml_trust_router, prefix=settings.api_v1_prefix)
 app.include_router(saml_assurance_router, prefix=settings.api_v1_prefix)
 app.include_router(saml_transaction_router, prefix=settings.api_v1_prefix)
 app.include_router(saml_callback_router, prefix=settings.api_v1_prefix)
+app.include_router(scim_admin_router, prefix=settings.api_v1_prefix)
+app.include_router(scim_service_router, prefix=settings.api_v1_prefix)
 app.include_router(claims_router, prefix=settings.api_v1_prefix)
 app.include_router(claim_packs_router, prefix=settings.api_v1_prefix)
 app.include_router(chronology_router, prefix=settings.api_v1_prefix)
