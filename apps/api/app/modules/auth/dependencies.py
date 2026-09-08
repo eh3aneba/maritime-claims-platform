@@ -125,6 +125,7 @@ def _is_mfa_sensitive_auth_path(path: str) -> bool:
     normalized = path.rstrip("/")
     return (
         normalized == f"{auth_prefix}/mfa-policy"
+        or normalized.startswith(f"{auth_prefix}/mfa-resets")
         or normalized.startswith(f"{auth_prefix}/identity-providers")
         or normalized.startswith(f"{auth_prefix}/external-bindings")
         or normalized.startswith(f"{auth_prefix}/sessions/")
