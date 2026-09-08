@@ -1,6 +1,7 @@
 import hmac
 import json
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from hashlib import sha256
 from typing import Any
 from uuid import UUID
@@ -14,7 +15,10 @@ from app.modules.auth.models import (
     OidcAuthorizationTransaction,
     OidcTrustProfile,
 )
-from app.modules.auth.oidc_assurance_models import OidcMfaAssuranceProfile
+from app.modules.auth.oidc_assurance_models import (
+    OidcMfaAssuranceBinding,
+    OidcMfaAssuranceProfile,
+)
 from app.modules.auth.oidc_trust import get_current_oidc_trust_profile
 from app.modules.users.models import User
 
@@ -30,6 +34,10 @@ class OidcMfaAssuranceResult:
     verified: bool
     evidence_type: str | None = None
     evidence_hash: str | None = None
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 def _canonical_json(payload: dict[str, object]) -> str:
@@ -93,10 +101,7 @@ def list_oidc_mfa_assurance_profiles(
                 OidcMfaAssuranceProfile.organization_id == organization_id,
                 OidcMfaAssuranceProfile.provider_id == provider_id,
             )
-            .order_by(
-                OidcMfaAssuranceProfile.profile_number,
-                OidcMfaAssuranceProfile.id,
-            )
+            .order_by(OidcMfaAssuranceProfile.profile_number, OidcMfaAssuranceProfile.id)
         )
     )
 
@@ -113,10 +118,7 @@ def get_current_oidc_mfa_assurance_profile(
             OidcMfaAssuranceProfile.organization_id == organization_id,
             OidcMfaAssuranceProfile.provider_id == provider_id,
         )
-        .order_by(
-            OidcMfaAssuranceProfile.profile_number.desc(),
-            OidcMfaAssuranceProfile.id.desc(),
-        )
+        .order_by(OidcMfaAssuranceProfile.profile_number.desc(), OidcMfaAssuranceProfile.id.desc())
         .limit(1)
     )
 
@@ -137,10 +139,7 @@ def get_current_compatible_oidc_mfa_assurance_profile(
             OidcMfaAssuranceProfile.trust_profile_number == trust_profile.profile_number,
             OidcMfaAssuranceProfile.trust_profile_hash == trust_profile.profile_hash,
         )
-        .order_by(
-            OidcMfaAssuranceProfile.profile_number.desc(),
-            OidcMfaAssuranceProfile.id.desc(),
-        )
+        .order_by(OidcMfaAssuranceProfile.profile_number.desc(), OidcMfaAssuranceProfile.id.desc())
         .limit(1)
     )
 
@@ -220,6 +219,91 @@ def create_oidc_mfa_assurance_profile(
     return profile
 
 
+def pin_oidc_mfa_assurance_for_transaction(
+    db: Session,
+    *,
+    transaction: OidcAuthorizationTransaction,
+    trust_profile: OidcTrustProfile,
+) -> OidcMfaAssuranceBinding:
+    existing = db.scalar(
+        select(OidcMfaAssuranceBinding).where(
+            OidcMfaAssuranceBinding.transaction_id == transaction.id
+        )
+    )
+    if existing is not None:
+        return existing
+
+    profile = get_current_compatible_oidc_mfa_assurance_profile(
+        db,
+        organization_id=transaction.organization_id,
+        provider_id=transaction.provider_id,
+        trust_profile=trust_profile,
+    )
+    binding = OidcMfaAssuranceBinding(
+        organization_id=transaction.organization_id,
+        provider_id=transaction.provider_id,
+        transaction_id=transaction.id,
+        trust_profile_id=transaction.trust_profile_id,
+        trust_profile_number=transaction.trust_profile_number,
+        trust_profile_hash=transaction.trust_profile_hash,
+        assurance_profile_id=None if profile is None else profile.id,
+        assurance_profile_number=None if profile is None else profile.profile_number,
+        assurance_profile_hash=None if profile is None else profile.profile_hash,
+    )
+    db.add(binding)
+    db.flush()
+    return binding
+
+
+def _resolve_pinned_profile(
+    db: Session,
+    *,
+    transaction: OidcAuthorizationTransaction,
+) -> tuple[OidcMfaAssuranceBinding | None, OidcMfaAssuranceProfile | None]:
+    binding = db.scalar(
+        select(OidcMfaAssuranceBinding).where(
+            OidcMfaAssuranceBinding.transaction_id == transaction.id
+        )
+    )
+    if binding is None:
+        return None, None
+    if (
+        binding.organization_id != transaction.organization_id
+        or binding.provider_id != transaction.provider_id
+        or binding.trust_profile_id != transaction.trust_profile_id
+        or binding.trust_profile_number != transaction.trust_profile_number
+        or not hmac.compare_digest(binding.trust_profile_hash, transaction.trust_profile_hash)
+    ):
+        raise ValueError("OIDC MFA assurance transaction source does not match")
+
+    if (
+        binding.assurance_profile_id is None
+        and binding.assurance_profile_number is None
+        and binding.assurance_profile_hash is None
+    ):
+        return binding, None
+    if (
+        binding.assurance_profile_id is None
+        or binding.assurance_profile_number is None
+        or binding.assurance_profile_hash is None
+    ):
+        raise ValueError("OIDC MFA assurance profile pin is incomplete")
+
+    profile = db.get(OidcMfaAssuranceProfile, binding.assurance_profile_id)
+    if (
+        profile is None
+        or profile.organization_id != transaction.organization_id
+        or profile.provider_id != transaction.provider_id
+        or profile.trust_profile_id != transaction.trust_profile_id
+        or profile.trust_profile_number != transaction.trust_profile_number
+        or not hmac.compare_digest(profile.trust_profile_hash, transaction.trust_profile_hash)
+        or profile.profile_number != binding.assurance_profile_number
+        or not hmac.compare_digest(profile.profile_hash, binding.assurance_profile_hash)
+    ):
+        raise ValueError("OIDC MFA assurance profile source does not match")
+    return binding, profile
+
+
 def evaluate_oidc_mfa_assurance(
     *,
     profile: OidcMfaAssuranceProfile | None,
@@ -265,8 +349,40 @@ def evaluate_oidc_mfa_assurance(
                 evidence_type="acr",
                 evidence_hash=_evidence_hash(evidence_type="acr", value=normalized_acr),
             )
-
     return OidcMfaAssuranceResult(verified=False)
+
+
+def evaluate_pinned_oidc_mfa_assurance(
+    db: Session,
+    *,
+    transaction: OidcAuthorizationTransaction,
+    claims: dict[str, Any],
+) -> tuple[OidcMfaAssuranceBinding | None, OidcMfaAssuranceResult]:
+    binding, profile = _resolve_pinned_profile(db, transaction=transaction)
+    return binding, evaluate_oidc_mfa_assurance(profile=profile, claims=claims)
+
+
+def record_oidc_mfa_assurance_verification(
+    db: Session,
+    *,
+    binding: OidcMfaAssuranceBinding,
+    result: OidcMfaAssuranceResult,
+) -> datetime:
+    if (
+        not result.verified
+        or result.evidence_type not in OIDC_MFA_EVIDENCE_TYPES
+        or not result.evidence_hash
+        or binding.assurance_profile_id is None
+    ):
+        raise ValueError("OIDC MFA assurance verification result is incomplete")
+    if binding.verified_at is not None:
+        raise ValueError("OIDC MFA assurance verification is already recorded")
+    verified_at = _utc_now()
+    binding.verified_at = verified_at
+    binding.evidence_type = result.evidence_type
+    binding.evidence_hash = result.evidence_hash
+    db.flush()
+    return verified_at
 
 
 def session_has_verified_oidc_mfa(
@@ -288,35 +404,26 @@ def session_has_verified_oidc_mfa(
     ):
         return False
 
-    transaction = db.get(
-        OidcAuthorizationTransaction,
-        auth_session.oidc_authorization_transaction_id,
-    )
+    transaction = db.get(OidcAuthorizationTransaction, auth_session.oidc_authorization_transaction_id)
     if (
         transaction is None
         or transaction.organization_id != user.organization_id
         or transaction.provider_id != auth_session.external_identity_provider_id
         or transaction.consumed_at is None
-        or transaction.mfa_assurance_verified_at is None
-        or transaction.mfa_assurance_evidence_type not in OIDC_MFA_EVIDENCE_TYPES
-        or not transaction.mfa_assurance_evidence_hash
-        or transaction.assurance_profile_id is None
-        or transaction.assurance_profile_number is None
-        or transaction.assurance_profile_hash is None
     ):
         return False
 
-    profile = db.get(OidcMfaAssuranceProfile, transaction.assurance_profile_id)
+    try:
+        binding, profile = _resolve_pinned_profile(db, transaction=transaction)
+    except ValueError:
+        return False
     if (
-        profile is None
+        binding is None
+        or profile is None
         or not profile.enabled
-        or profile.organization_id != transaction.organization_id
-        or profile.provider_id != transaction.provider_id
-        or profile.trust_profile_id != transaction.trust_profile_id
-        or profile.trust_profile_number != transaction.trust_profile_number
-        or not hmac.compare_digest(profile.trust_profile_hash, transaction.trust_profile_hash)
-        or profile.profile_number != transaction.assurance_profile_number
-        or not hmac.compare_digest(profile.profile_hash, transaction.assurance_profile_hash)
+        or binding.verified_at is None
+        or binding.evidence_type not in OIDC_MFA_EVIDENCE_TYPES
+        or not binding.evidence_hash
     ):
         return False
     return True
