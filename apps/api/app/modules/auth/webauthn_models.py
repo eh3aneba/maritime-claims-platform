@@ -70,6 +70,7 @@ class WebAuthnRegistrationTransaction(UUIDPrimaryKeyMixin, TimestampMixin, Base)
             "consumed_at",
             "cancelled_at",
         ),
+        Index("ix_wart_reenrollment_reset", "reenrollment_reset_request_id"),
     )
 
     organization_id: Mapped[UUID] = mapped_column(
@@ -88,6 +89,10 @@ class WebAuthnRegistrationTransaction(UUIDPrimaryKeyMixin, TimestampMixin, Base)
     )
     profile_number: Mapped[int] = mapped_column(Integer, nullable=False)
     profile_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    # Deliberately not a database FK: reset -> credential -> registration already forms the
+    # authoritative lineage, while a reverse FK would create a circular metadata dependency.
+    # Service-layer validation resolves this UUID fail-closed before any grant is honored.
+    reenrollment_reset_request_id: Mapped[UUID | None] = mapped_column(nullable=True)
     challenge_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

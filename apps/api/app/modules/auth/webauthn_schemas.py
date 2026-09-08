@@ -83,6 +83,7 @@ class WebAuthnRegistrationTransactionRead(BaseModel):
     profile_id: UUID
     profile_number: int
     profile_hash: str
+    reenrollment_reset_request_id: UUID | None = None
     expires_at: datetime
     consumed_at: datetime | None
     cancelled_at: datetime | None

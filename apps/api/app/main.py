@@ -40,6 +40,7 @@ from app.modules.auth.saml_trust_router import router as saml_trust_router
 from app.modules.auth.webauthn_authentication_router import router as webauthn_authentication_router
 from app.modules.auth.webauthn_profile_router import router as webauthn_profile_router
 from app.modules.auth.webauthn_registration_router import router as webauthn_registration_router
+from app.modules.auth.webauthn_reset_router import router as webauthn_reset_router
 from app.modules.assessments.router import router as assessments_router
 from app.modules.claim_intelligence.router import router as claim_intelligence_router
 from app.modules.claim_packs.router import router as claim_packs_router
@@ -128,6 +129,7 @@ app.include_router(mfa_policy_router, prefix=settings.api_v1_prefix)
 app.include_router(webauthn_profile_router, prefix=settings.api_v1_prefix)
 app.include_router(webauthn_registration_router, prefix=settings.api_v1_prefix)
 app.include_router(webauthn_authentication_router, prefix=settings.api_v1_prefix)
+app.include_router(webauthn_reset_router, prefix=settings.api_v1_prefix)
 app.include_router(oidc_trust_router, prefix=settings.api_v1_prefix)
 app.include_router(oidc_runtime_router, prefix=settings.api_v1_prefix)
 app.include_router(oidc_transaction_router, prefix=settings.api_v1_prefix)
