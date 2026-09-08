@@ -136,6 +136,11 @@ class WebAuthnAuthenticationTransaction(UUIDPrimaryKeyMixin, TimestampMixin, Bas
     )
     profile_number: Mapped[int] = mapped_column(Integer, nullable=False)
     profile_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    credential_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("webauthn_credentials.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
+    )
     challenge_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
