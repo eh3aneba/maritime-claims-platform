@@ -15,6 +15,7 @@ from app.modules.auth.mfa import get_current_totp_factor
 from app.modules.auth.mfa_policy import get_mfa_policy, mfa_required_for_role
 from app.modules.auth.models import AuthSession
 from app.modules.auth.oidc_assurance import session_has_verified_oidc_mfa
+from app.modules.auth.saml_assurance import session_has_verified_saml_mfa
 from app.modules.auth.service import get_valid_auth_session
 from app.modules.auth.webauthn_authentication import session_has_verified_webauthn_mfa
 from app.modules.auth.webauthn_models import WebAuthnCredential
@@ -169,6 +170,11 @@ def enforce_mfa_policy_for_context(
         user=context.user,
         auth_session=context.session,
     )
+    saml_external_verified = session_has_verified_saml_mfa(
+        db,
+        user=context.user,
+        auth_session=context.session,
+    )
 
     factor = get_current_totp_factor(
         db,
@@ -179,7 +185,12 @@ def enforce_mfa_policy_for_context(
         factor is not None and factor.confirmed_at is not None and factor.revoked_at is None
     )
     webauthn_available = _has_active_webauthn_credential(db, user=context.user)
-    if not totp_available and not webauthn_available and not oidc_external_verified:
+    if (
+        not totp_available
+        and not webauthn_available
+        and not oidc_external_verified
+        and not saml_external_verified
+    ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
@@ -188,7 +199,7 @@ def enforce_mfa_policy_for_context(
             },
         )
 
-    if oidc_external_verified:
+    if oidc_external_verified or saml_external_verified:
         return
 
     if session_has_verified_webauthn_mfa(

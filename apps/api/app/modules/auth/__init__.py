@@ -9,6 +9,10 @@ from app.modules.auth.oidc_assurance_models import (  # noqa: F401
     OidcMfaAssuranceBinding,
     OidcMfaAssuranceProfile,
 )
+from app.modules.auth.saml_assurance_models import (  # noqa: F401
+    SamlMfaAssuranceBinding,
+    SamlMfaAssuranceProfile,
+)
 from app.modules.auth.saml_models import (  # noqa: F401
     SamlAuthnTransaction,
     SamlTrustRuntimeProfile,
