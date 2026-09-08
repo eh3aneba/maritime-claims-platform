@@ -294,12 +294,12 @@ def test_absence_disabled_nonmatch_and_ambiguous_context_never_elevate_valid_log
 
 
 def test_saml_external_satisfies_mfa_policy_only_while_exact_provenance_validates() -> None:
-    _, admin_id, handler_id = _seed()
+    _, admin_id, _ = _seed()
     headers = _headers(admin_id)
     private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     stack = _create_provider_stack(headers, private_key)
     provider_id = str(stack["provider"]["id"])
-    _bind(provider_id, handler_id)
+    _bind(provider_id, admin_id)
     assert _profile(
         headers,
         provider_id,
@@ -307,11 +307,11 @@ def test_saml_external_satisfies_mfa_policy_only_while_exact_provenance_validate
         values=[ASSURANCE_VALUE],
     ).status_code == 201
 
-    # Require MFA for the bound claims-handler role after configuration is complete.
+    # Enable tenant MFA only after the local admin has completed assurance configuration.
     policy = client.put(
         "/api/v1/auth/mfa-policy",
         headers=headers,
-        json={"is_enabled": True, "required_roles": [UserRole.CLAIMS_HANDLER.value]},
+        json={"is_enabled": True, "required_roles": [UserRole.ADMIN.value]},
     )
     assert policy.status_code == 200, policy.text
 
@@ -323,16 +323,15 @@ def test_saml_external_satisfies_mfa_policy_only_while_exact_provenance_validate
     )
     response = _callback(start, signed)
     assert response.status_code == 200, response.text
+    assert response.json()["id"] == str(admin_id)
+    assert response.json()["role"] == UserRole.ADMIN.value
 
+    # The exact callback-issued SAML session satisfies the MFA-sensitive Admin endpoint.
     sensitive = client.get(
         f"/api/v1/auth/identity-providers/{provider_id}/saml-mfa-assurance-profile"
     )
-    assert sensitive.status_code == 403
-    # Claims-handler role remains authoritative and cannot use an Admin-only endpoint even with MFA.
-    assert sensitive.json()["detail"] == "Insufficient permissions"
+    assert sensitive.status_code == 200, sensitive.text
 
-    # Prove MFA policy acceptance on an allowed sensitive action by checking the session endpoint path.
-    # The exact session is externally assured; provenance tampering must remove that assurance.
     with TestingSessionLocal() as db:
         binding = (
             db.query(SamlMfaAssuranceBinding)
@@ -352,12 +351,17 @@ def test_saml_external_satisfies_mfa_policy_only_while_exact_provenance_validate
         assert str(start["request_id"]) not in serialized
         assert "saml-subject-123" not in serialized
 
+        # Corrupt only the persisted provenance pin; session flags themselves remain unchanged.
         binding.assurance_profile_hash = "0" * 64
         db.commit()
 
-    # The cookie still names the same callback-issued session, but provenance no longer validates.
-    # A direct policy check is exercised through an Admin role in the separate profile-endpoint test;
-    # here we assert the stored session itself remains bounded and cannot self-heal authority.
     session = _session_for(start)
     assert session.mfa_method == "saml_external"
     assert session.mfa_verified_at is not None
+
+    # Same cookie/session is now rejected because exact transaction/profile provenance fails closed.
+    blocked = client.get(
+        f"/api/v1/auth/identity-providers/{provider_id}/saml-mfa-assurance-profile"
+    )
+    assert blocked.status_code == 403
+    assert blocked.json()["detail"]["code"] == "mfa_enrollment_required"
