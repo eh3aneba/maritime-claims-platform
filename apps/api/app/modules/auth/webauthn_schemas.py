@@ -65,6 +65,14 @@ class WebAuthnRegistrationBeginResponse(BaseModel):
     attestation: Literal["none"] = "none"
 
 
+class WebAuthnRegistrationFinishRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    credential_id: str = Field(min_length=16, max_length=1400)
+    client_data_json: str = Field(min_length=16, max_length=24000)
+    attestation_object: str = Field(min_length=16, max_length=90000)
+
+
 class WebAuthnRegistrationTransactionRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -78,3 +86,21 @@ class WebAuthnRegistrationTransactionRead(BaseModel):
     expires_at: datetime
     consumed_at: datetime | None
     cancelled_at: datetime | None
+
+
+class WebAuthnCredentialRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    organization_id: UUID
+    user_id: UUID
+    profile_id: UUID
+    profile_number: int
+    profile_hash: str
+    registration_transaction_id: UUID
+    algorithm: int
+    sign_count: int
+    aaguid: str
+    attestation_format: str
+    created_at: datetime
+    revoked_at: datetime | None
