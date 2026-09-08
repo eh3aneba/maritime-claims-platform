@@ -26,6 +26,7 @@ from app.modules.ai_production_wide.router import router as ai_production_wide_r
 from app.modules.ai_scale_up.router import router as ai_scale_up_router
 from app.modules.ai_scale_up_outcomes.router import router as ai_scale_up_outcomes_router
 from app.modules.auth.mfa_policy_router import router as mfa_policy_router
+from app.modules.auth.mfa_recovery_router import router as mfa_recovery_router
 from app.modules.auth.mfa_router import router as mfa_router
 from app.modules.auth.oidc_callback_router import router as oidc_callback_router
 from app.modules.auth.oidc_runtime_router import router as oidc_runtime_router
@@ -117,6 +118,7 @@ app.include_router(intelligence_router, prefix=settings.api_v1_prefix)
 app.include_router(intake_router, prefix=settings.api_v1_prefix)
 app.include_router(auth_router, prefix=settings.api_v1_prefix)
 app.include_router(mfa_router, prefix=settings.api_v1_prefix)
+app.include_router(mfa_recovery_router, prefix=settings.api_v1_prefix)
 app.include_router(mfa_policy_router, prefix=settings.api_v1_prefix)
 app.include_router(oidc_trust_router, prefix=settings.api_v1_prefix)
 app.include_router(oidc_runtime_router, prefix=settings.api_v1_prefix)
