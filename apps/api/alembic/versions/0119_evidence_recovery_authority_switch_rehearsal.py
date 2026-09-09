@@ -173,7 +173,7 @@ def upgrade() -> None:
         ),
         sa.CheckConstraint(
             "authoritative_storage_changed = false",
-            name="ck_evidence_recovery_authority_switch_receipt_no_authority_change",
+            name="ck_recovery_auth_switch_receipt_no_authority_change",
         ),
         sa.ForeignKeyConstraint(["organization_id"], ["organizations.id"], ondelete="RESTRICT"),
         sa.ForeignKeyConstraint(["claim_id"], ["claims.id"], ondelete="RESTRICT"),
