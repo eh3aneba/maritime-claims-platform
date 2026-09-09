@@ -9,12 +9,7 @@ from app.db.mixins import TimestampMixin, UUIDPrimaryKeyMixin
 
 
 class TenantRetentionPolicy(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-    """Immutable tenant-scoped retention policy version.
-
-    Policy rows are append-only at the application layer. The latest version is
-    authoritative; a latest version with ``enabled=False`` disables disposal
-    eligibility without mutating prior policy history.
-    """
+    """Immutable tenant-scoped retention policy version."""
 
     __tablename__ = "tenant_retention_policies"
     __table_args__ = (
@@ -61,11 +56,7 @@ class TenantRetentionPolicy(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 
 class ClaimLegalHold(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-    """Append-only preservation instruction for one claim.
-
-    Original hold fields are never changed through the application API. Release
-    fields are filled once; released rows remain available for audit history.
-    """
+    """Append-only preservation instruction for one claim."""
 
     __tablename__ = "claim_legal_holds"
     __table_args__ = (
@@ -98,3 +89,60 @@ class ClaimLegalHold(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
     )
     release_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class LegalHoldProposal(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Non-self-authorizing preservation proposal from an automated signal.
+
+    Source identity and payload are represented by hashes/fingerprints rather
+    than raw transport payloads. A proposal can move once from pending to either
+    activated or rejected. Activation links the exact formal ClaimLegalHold.
+    """
+
+    __tablename__ = "legal_hold_proposals"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "claim_id",
+            "source_kind",
+            "source_ref_fingerprint",
+            name="uq_legal_hold_proposal_signal_identity",
+        ),
+        CheckConstraint(
+            "status IN ('pending', 'activated', 'rejected')",
+            name="ck_legal_hold_proposal_status",
+        ),
+        CheckConstraint(
+            "(status = 'pending' AND hold_id IS NULL AND decided_at IS NULL AND decided_by_id IS NULL AND decision_reason IS NULL) OR "
+            "(status = 'activated' AND hold_id IS NOT NULL AND decided_at IS NOT NULL AND decided_by_id IS NOT NULL AND decision_reason IS NOT NULL) OR "
+            "(status = 'rejected' AND hold_id IS NULL AND decided_at IS NOT NULL AND decided_by_id IS NOT NULL AND decision_reason IS NOT NULL)",
+            name="ck_legal_hold_proposal_lifecycle",
+        ),
+        Index(
+            "ix_legal_hold_proposals_org_claim_status",
+            "organization_id",
+            "claim_id",
+            "status",
+        ),
+    )
+
+    organization_id: Mapped[UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    claim_id: Mapped[UUID] = mapped_column(
+        ForeignKey("claims.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    source_kind: Mapped[str] = mapped_column(String(40), nullable=False)
+    recommended_hold_source: Mapped[str] = mapped_column(String(40), nullable=False)
+    source_ref_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending", server_default="pending")
+    hold_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("claim_legal_holds.id", ondelete="RESTRICT"), nullable=True, index=True
+    )
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    decided_by_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=True, index=True
+    )
+    decision_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
