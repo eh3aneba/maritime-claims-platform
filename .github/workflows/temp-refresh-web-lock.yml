@@ -1,0 +1,41 @@
+name: Temporary web lock refresh
+
+on:
+  push:
+    branches:
+      - agent/enterprise-retention-17-2-b-legal-hold-proposals
+
+permissions:
+  contents: write
+
+jobs:
+  refresh-lock:
+    runs-on: ubuntu-latest
+    if: github.actor != 'github-actions[bot]'
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v6
+        with:
+          ref: agent/enterprise-retention-17-2-b-legal-hold-proposals
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Regenerate web lockfile
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund --prefix apps/web
+
+      - name: Commit lockfile only
+        run: |
+          if git diff --quiet -- apps/web/package-lock.json; then
+            echo "Lockfile already current"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/web/package-lock.json
+          git commit -m "chore(web): refresh lock for Next.js security update"
+          git push origin HEAD:agent/enterprise-retention-17-2-b-legal-hold-proposals
