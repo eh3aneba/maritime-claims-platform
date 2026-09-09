@@ -14,7 +14,7 @@ from app.modules.ai_governance.models import AIDocumentEligibilityAttestation, A
 from app.modules.ai_high_coverage.models import AIHighCoverageApproval, AIHighCoverageAuthorization, AIHighCoverageDocumentEligibility, AIHighCoverageIncident, AIHighCoverageMonitor, AIHighCoverageRun  # noqa: F401
 from app.modules.ai_high_coverage_outcomes.models import AIHighCoverageOutcomeAssessment, AIHighCoverageOutcomeObservation, AIHighCoverageOutcomeReview  # noqa: F401
 from app.modules.ai_limited_production.models import AILimitedProductionApproval, AILimitedProductionAuthorization, AILimitedProductionDocumentEligibility, AILimitedProductionIncident, AILimitedProductionMonitor, AILimitedProductionRun  # noqa: F401
-from app.modules.ai_limited_production_outcomes.models import AIHighCoverageOutcomeAssessment, AIHighCoverageOutcomeObservation, AIHighCoverageOutcomeReview  # noqa: F401
+from app.modules.ai_limited_production_outcomes.models import AILimitedProductionOutcomeAssessment, AILimitedProductionOutcomeObservation, AILimitedProductionOutcomeReview  # noqa: F401
 from app.modules.ai_near_universal_outcomes.models import AINearUniversalOutcomeAssessment, AINearUniversalOutcomeBusinessEvidence, AINearUniversalOutcomeObservation, AINearUniversalOutcomeReview  # noqa: F401
 from app.modules.ai_near_universal_production.models import AINearUniversalApproval, AINearUniversalAuthorization, AINearUniversalDocumentEligibility, AINearUniversalIncident, AINearUniversalMonitor, AINearUniversalRun  # noqa: F401
 from app.modules.ai_pilot_outcomes.models import AIPilotOutcomeAssessment, AIPilotOutcomeReview, AIPilotWorkflowObservation  # noqa: F401
