@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.modules.claims.models import Claim, ClaimStatus
-from app.modules.claims.retention_models import ClaimLegalHold, TenantRetentionPolicy
+from app.modules.claims.retention_models import ClaimLegalHold, LegalHoldProposal, TenantRetentionPolicy
 from app.modules.documents.models import Document
 
 FINAL_RETENTION_STATUSES = {
@@ -31,6 +31,7 @@ class DisposalEligibility:
     eligible: bool
     blocking_reasons: list[str]
     active_hold_ids: list[UUID]
+    pending_proposal_ids: list[UUID]
     retention_anchor_at: datetime
     claim_retention_expires_at: datetime | None
     evidence_retention_expires_at: datetime | None
@@ -285,6 +286,25 @@ def _active_holds(
     )
 
 
+def _pending_proposals(
+    db: Session,
+    *,
+    organization_id: UUID,
+    claim_id: UUID,
+) -> list[LegalHoldProposal]:
+    return list(
+        db.scalars(
+            select(LegalHoldProposal)
+            .where(
+                LegalHoldProposal.organization_id == organization_id,
+                LegalHoldProposal.claim_id == claim_id,
+                LegalHoldProposal.status == "pending",
+            )
+            .order_by(LegalHoldProposal.created_at.asc(), LegalHoldProposal.id.asc())
+        ).all()
+    )
+
+
 def preview_disposal_eligibility(
     db: Session,
     *,
@@ -314,6 +334,14 @@ def preview_disposal_eligibility(
     )
     if active_holds:
         blockers.append("active_legal_hold")
+
+    pending_proposals = _pending_proposals(
+        db,
+        organization_id=organization_id,
+        claim_id=claim_id,
+    )
+    if pending_proposals:
+        blockers.append("pending_legal_hold_proposal")
 
     claim_expires_at: datetime | None = None
     evidence_expires_at: datetime | None = None
@@ -351,6 +379,7 @@ def preview_disposal_eligibility(
         eligible=not blockers,
         blocking_reasons=blockers,
         active_hold_ids=[hold.id for hold in active_holds],
+        pending_proposal_ids=[proposal.id for proposal in pending_proposals],
         retention_anchor_at=retention_anchor_at,
         claim_retention_expires_at=claim_expires_at,
         evidence_retention_expires_at=evidence_expires_at,
