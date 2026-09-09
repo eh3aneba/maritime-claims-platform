@@ -35,6 +35,7 @@ from app.modules.documents.models import Document, QuarantinedUpload  # noqa: F4
 from app.modules.documents.recovery_promotion_models import EvidenceRecoveryPromotionAttestation  # noqa: F401
 from app.modules.documents.recovery_replication_models import EvidenceRecoveryReplica, EvidenceRecoveryVerification  # noqa: F401
 from app.modules.documents.recovery_restore_models import EvidenceRecoveryRestoreRehearsal, EvidenceRecoveryRestoreVerification  # noqa: F401
+from app.modules.documents.recovery_shadow_models import EvidenceRecoveryShadowPromotion, EvidenceRecoveryShadowVerification  # noqa: F401
 from app.modules.email_ingestion.models import EmailAdapterRun, EmailAttachmentManifest, EmailIngestionConnection, EmailProviderAdapter, EmailRetentionRun, IngestedEmailMessage  # noqa: F401
 from app.modules.evidence_search.models import ClaimEvidenceSearchRun, ClaimEvidenceSearchUnit  # noqa: F401
 from app.modules.evidence_search.qa_synthesis_models import ClaimQaSynthesisRun  # noqa: F401
