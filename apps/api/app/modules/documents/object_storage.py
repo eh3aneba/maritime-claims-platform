@@ -34,6 +34,10 @@ class ObjectStorageNotFound(ObjectStorageError):
     pass
 
 
+class ObjectStoragePreconditionFailed(ObjectStorageError):
+    pass
+
+
 @dataclass(frozen=True)
 class S3ObjectStoreConfig:
     endpoint_url: str
@@ -160,8 +164,9 @@ def _hmac_sha256(key: bytes, value: str) -> bytes:
 class S3CompatibleEvidenceStore:
     """Small, bounded S3-compatible foundation client.
 
-    Phase 17.3-A intentionally exposes PUT/GET/HEAD only. There is no DELETE,
-    COPY, lifecycle, migration, or active-document cutover method here.
+    Phase 17.3-B keeps the client non-destructive: PUT/conditional PUT/GET/HEAD
+    only. There is no DELETE, COPY, lifecycle, migration, or active-document
+    cutover method here.
     """
 
     def __init__(self, config: S3ObjectStoreConfig) -> None:
@@ -217,9 +222,12 @@ class S3CompatibleEvidenceStore:
         if extra_headers:
             for name, value in extra_headers.items():
                 normalized_name = name.strip().lower()
-                if not normalized_name.startswith("x-amz-"):
+                if not (
+                    normalized_name.startswith("x-amz-")
+                    or normalized_name == "if-none-match"
+                ):
                     raise ObjectStorageConfigurationError(
-                        "Only bounded x-amz-* extra headers may be signed"
+                        "Only bounded S3 integrity/conditional headers may be signed"
                     )
                 headers[normalized_name] = " ".join(value.strip().split())
 
@@ -304,6 +312,10 @@ class S3CompatibleEvidenceStore:
             except HTTPError as exc:
                 if exc.code == 404:
                     raise ObjectStorageNotFound("S3-compatible object was not found") from exc
+                if exc.code == 412:
+                    raise ObjectStoragePreconditionFailed(
+                        "S3-compatible object already exists"
+                    ) from exc
                 last_error = exc
                 if exc.code not in retryable_statuses or attempt >= self._config.max_attempts:
                     raise ObjectStorageError(
@@ -337,6 +349,42 @@ class S3CompatibleEvidenceStore:
             storage_key=storage_key,
             payload=payload,
             extra_headers={"x-amz-meta-mcri-sha256": digest},
+        )
+        etag = headers.get("ETag") or headers.get("Etag") or headers.get("etag")
+        return StoredObject(
+            storage_key=storage_key,
+            file_size_bytes=len(payload),
+            file_hash=digest,
+            etag=None if etag is None else etag.strip('"'),
+        )
+
+    def put_bytes_if_absent(
+        self,
+        payload: bytes,
+        *,
+        storage_key: str,
+        expected_sha256: str | None = None,
+    ) -> StoredObject:
+        """Create an object only if the key does not already exist.
+
+        S3-compatible implementations return HTTP 412 when If-None-Match: *
+        fails. The caller must verify an already-existing object; this method
+        never overwrites it.
+        """
+        _validate_storage_key(storage_key)
+        digest = _sha256_hex(payload)
+        if expected_sha256 is not None and digest != expected_sha256.lower():
+            raise ObjectStorageIntegrityError(
+                "Payload hash does not match the expected evidence hash"
+            )
+        _body, headers = self._request(
+            method="PUT",
+            storage_key=storage_key,
+            payload=payload,
+            extra_headers={
+                "x-amz-meta-mcri-sha256": digest,
+                "if-none-match": "*",
+            },
         )
         etag = headers.get("ETag") or headers.get("Etag") or headers.get("etag")
         return StoredObject(
