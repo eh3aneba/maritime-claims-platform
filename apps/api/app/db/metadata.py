@@ -32,6 +32,7 @@ from app.modules.claims.facts import ClaimFact  # noqa: F401
 from app.modules.chronology.models import ChronologyEvent, EventEvidence, EvidenceConflict  # noqa: F401
 from app.modules.correspondence.models import ClaimCorrespondence  # noqa: F401
 from app.modules.documents.models import Document, QuarantinedUpload  # noqa: F401
+from app.modules.documents.recovery_promotion_models import EvidenceRecoveryPromotionAttestation  # noqa: F401
 from app.modules.documents.recovery_replication_models import EvidenceRecoveryReplica, EvidenceRecoveryVerification  # noqa: F401
 from app.modules.documents.recovery_restore_models import EvidenceRecoveryRestoreRehearsal, EvidenceRecoveryRestoreVerification  # noqa: F401
 from app.modules.email_ingestion.models import EmailAdapterRun, EmailAttachmentManifest, EmailIngestionConnection, EmailProviderAdapter, EmailRetentionRun, IngestedEmailMessage  # noqa: F401
