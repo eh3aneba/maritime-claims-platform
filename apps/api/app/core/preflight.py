@@ -113,7 +113,11 @@ def run_preflight(*, require_db: bool = True) -> tuple[list[str], list[str]]:
     else:
         _fail(errors, f"Unsupported STORAGE_BACKEND: {storage_backend or '<empty>'}")
 
-    if settings.s3_foundation_enabled:
+    # Some existing deployment-policy tests intentionally use lightweight settings
+    # stubs. Missing foundation-only configuration must preserve the historical
+    # default (disabled), while real Settings objects still validate strictly when
+    # S3_FOUNDATION_ENABLED is explicitly true.
+    if getattr(settings, "s3_foundation_enabled", False):
         try:
             s3_store = _build_s3_foundation_store(
                 settings,
