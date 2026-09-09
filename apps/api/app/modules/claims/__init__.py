@@ -5,3 +5,4 @@ from app.modules.claims.retention_models import (  # noqa: F401
     LegalHoldProposal,
     TenantRetentionPolicy,
 )
+from app.modules.claims.retention_signal_models import PreservationSignalProfile  # noqa: F401
