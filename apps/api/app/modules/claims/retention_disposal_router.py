@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.modules.audit.service import write_audit_log
+from app.modules.claims.retention_disposal_dry_run_router import router as dry_run_router
 from app.modules.claims.retention_disposal_manifest_router import router as manifest_router
 from app.modules.claims.retention_disposal_schemas import (
     DisposalAuthorizationDecision,
@@ -26,6 +27,7 @@ from app.modules.claims.retention_service import RetentionNotFoundError
 
 router = APIRouter(prefix="/claims", tags=["retention"])
 router.include_router(manifest_router)
+router.include_router(dry_run_router)
 
 
 def _read(authorization) -> DisposalAuthorizationRead:
