@@ -14,6 +14,7 @@ from app.modules.claims.reserve_lineage import (
     record_authoritative_reserve,
     reserve_history_response,
 )
+from app.modules.claims.retention_router import router as retention_router
 from app.modules.claims.schemas import (
     ClaimAssign,
     ClaimCreate,
@@ -43,6 +44,7 @@ from app.modules.rules.service import evaluate_claim_rules
 from app.modules.users.models import User, UserRole
 
 router = APIRouter(prefix="/claims", tags=["claims"])
+router.include_router(retention_router)
 
 
 def _read(claim) -> ClaimRead:
