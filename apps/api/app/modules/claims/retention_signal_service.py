@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.modules.claims.legal_hold_proposals import ingest_legal_hold_proposal
 from app.modules.claims.retention_models import LegalHoldProposal
+from app.modules.claims.retention_service import RetentionNotFoundError
 from app.modules.claims.retention_signal_models import PreservationSignalProfile
 from app.modules.claims.retention_signal_schemas import PreservationSignalPayload
 from app.modules.users.models import User
@@ -229,5 +230,10 @@ def ingest_signed_preservation_signal(
             recommended_hold_source=payload.recommended_hold_source,
             reason=payload.reason,
         )
+    except RetentionNotFoundError:
+        # Preserve the tenant-scoped not-found contract. RetentionNotFoundError
+        # inherits ValueError, so it must be handled before generic proposal
+        # validation conflicts to avoid leaking a cross-tenant claim as 409.
+        raise
     except ValueError as exc:
         raise PreservationSignalConflictError(str(exc)) from exc
