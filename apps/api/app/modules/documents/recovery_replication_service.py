@@ -17,6 +17,7 @@ from app.modules.documents.object_storage import (
     ObjectStorageError,
     ObjectStorageIntegrityError,
     ObjectStorageNotFound,
+    ObjectStoragePreconditionFailed,
     S3CompatibleEvidenceStore,
     S3ObjectStoreConfig,
 )
@@ -229,37 +230,25 @@ def _ensure_remote_replica(
     store: S3CompatibleEvidenceStore,
     snapshot: LocalEvidenceSnapshot,
 ):
-    # The locked Document row serializes application replication attempts. Existing
-    # remote data is never knowingly overwritten: a present object must match first.
+    # Atomic conditional creation closes the HEAD->PUT race. If any writer has
+    # already claimed the deterministic key, we never overwrite it; instead the
+    # existing object must independently pass the exact HEAD+GET integrity checks.
     try:
-        metadata = store.head_object(storage_key=snapshot.recovery_storage_key)
-    except ObjectStorageNotFound:
-        try:
-            store.put_bytes(
-                snapshot.payload,
-                storage_key=snapshot.recovery_storage_key,
-                expected_sha256=snapshot.file_hash,
-            )
-        except ObjectStorageError as exc:
-            raise RecoveryReplicationUnavailable(
-                "Recovery storage upload is unavailable"
-            ) from exc
+        store.put_bytes_if_absent(
+            snapshot.payload,
+            storage_key=snapshot.recovery_storage_key,
+            expected_sha256=snapshot.file_hash,
+        )
+    except ObjectStoragePreconditionFailed:
+        pass
     except ObjectStorageIntegrityError as exc:
         raise RecoveryReplicationConflict(
-            "Existing recovery object has invalid integrity metadata"
+            "Recovery upload payload failed integrity verification"
         ) from exc
     except ObjectStorageError as exc:
         raise RecoveryReplicationUnavailable(
-            "Recovery storage lookup is unavailable"
+            "Recovery storage upload is unavailable"
         ) from exc
-    else:
-        if (
-            metadata.file_hash != snapshot.file_hash
-            or metadata.file_size_bytes != snapshot.file_size_bytes
-        ):
-            raise RecoveryReplicationConflict(
-                "Existing recovery object conflicts with authoritative evidence"
-            )
 
     return _verify_remote(
         store,
