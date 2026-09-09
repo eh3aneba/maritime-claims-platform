@@ -14,7 +14,7 @@ from app.modules.ai_governance.models import AIDocumentEligibilityAttestation, A
 from app.modules.ai_high_coverage.models import AIHighCoverageApproval, AIHighCoverageAuthorization, AIHighCoverageDocumentEligibility, AIHighCoverageIncident, AIHighCoverageMonitor, AIHighCoverageRun  # noqa: F401
 from app.modules.ai_high_coverage_outcomes.models import AIHighCoverageOutcomeAssessment, AIHighCoverageOutcomeObservation, AIHighCoverageOutcomeReview  # noqa: F401
 from app.modules.ai_limited_production.models import AILimitedProductionApproval, AILimitedProductionAuthorization, AILimitedProductionDocumentEligibility, AILimitedProductionIncident, AILimitedProductionMonitor, AILimitedProductionRun  # noqa: F401
-from app.modules.ai_limited_production_outcomes.models import AILimitedProductionOutcomeAssessment, AILimitedProductionOutcomeObservation, AILimitedProductionOutcomeReview  # noqa: F401
+from app.modules.ai_limited_production_outcomes.models import AIHighCoverageOutcomeAssessment, AIHighCoverageOutcomeObservation, AIHighCoverageOutcomeReview  # noqa: F401
 from app.modules.ai_near_universal_outcomes.models import AINearUniversalOutcomeAssessment, AINearUniversalOutcomeBusinessEvidence, AINearUniversalOutcomeObservation, AINearUniversalOutcomeReview  # noqa: F401
 from app.modules.ai_near_universal_production.models import AINearUniversalApproval, AINearUniversalAuthorization, AINearUniversalDocumentEligibility, AINearUniversalIncident, AINearUniversalMonitor, AINearUniversalRun  # noqa: F401
 from app.modules.ai_pilot_outcomes.models import AIPilotOutcomeAssessment, AIPilotOutcomeReview, AIPilotWorkflowObservation  # noqa: F401
@@ -32,6 +32,7 @@ from app.modules.claims.facts import ClaimFact  # noqa: F401
 from app.modules.chronology.models import ChronologyEvent, EventEvidence, EvidenceConflict  # noqa: F401
 from app.modules.correspondence.models import ClaimCorrespondence  # noqa: F401
 from app.modules.documents.models import Document, QuarantinedUpload  # noqa: F401
+from app.modules.documents.recovery_authority_switch_models import EvidenceRecoveryAuthoritySwitchReceipt, EvidenceRecoveryAuthoritySwitchRehearsal  # noqa: F401
 from app.modules.documents.recovery_promotion_models import EvidenceRecoveryPromotionAttestation  # noqa: F401
 from app.modules.documents.recovery_replication_models import EvidenceRecoveryReplica, EvidenceRecoveryVerification  # noqa: F401
 from app.modules.documents.recovery_restore_models import EvidenceRecoveryRestoreRehearsal, EvidenceRecoveryRestoreVerification  # noqa: F401
