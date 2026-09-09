@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -19,6 +20,20 @@ class Settings(BaseSettings):
     storage_backend: str = "local"
     local_storage_path: str = ".local-storage/documents"
     max_upload_mb: int = 25
+
+    # Phase 17.3-A: recovery-target foundation only. These settings do not
+    # activate S3 for document admission or migrate any existing evidence.
+    s3_foundation_enabled: bool = False
+    s3_endpoint_url: str = ""
+    s3_region: str = "us-east-1"
+    s3_bucket: str = ""
+    s3_access_key_id: str = ""
+    s3_secret_access_key: SecretStr = SecretStr("")
+    s3_session_token: SecretStr = SecretStr("")
+    s3_request_timeout_seconds: float = 10.0
+    s3_max_attempts: int = 3
+    s3_tls_verify: bool = True
+
     malware_scan_enabled: bool = False
     clamav_host: str = "localhost"
     clamav_port: int = 3310

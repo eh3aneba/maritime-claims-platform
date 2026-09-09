@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Protocol
 
 from fastapi import UploadFile
 
@@ -19,8 +20,26 @@ class StoredUpload:
     file_hash: str
 
 
+class DocumentAdmissionStorage(Protocol):
+    """Storage contract required by the current quarantine/admission workflow.
+
+    Phase 17.3-A keeps this contract local-only because `promote` and cleanup
+    semantics must be redesigned before an S3 backend can safely implement them.
+    """
+
+    async def save_upload(self, upload: UploadFile, storage_key: str) -> StoredUpload: ...
+
+    def save_bytes(self, payload: bytes, storage_key: str) -> StoredUpload: ...
+
+    def path_for(self, storage_key: str) -> Path: ...
+
+    def promote(self, quarantine_key: str, storage_key: str) -> None: ...
+
+    def delete_physical(self, storage_key: str) -> None: ...
+
+
 class LocalDocumentStorage:
-    """Local development storage behind a small S3-compatible-style interface boundary."""
+    """Local development storage behind the active admission interface boundary."""
 
     def __init__(self, root: str, *, max_upload_bytes: int) -> None:
         self.root = Path(root).expanduser().resolve()

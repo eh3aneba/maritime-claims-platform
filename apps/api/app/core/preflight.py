@@ -11,12 +11,35 @@ from app.core.config import get_settings
 from app.core.deployment_policy import DEFAULT_SECRET, validate_production_deployment
 from app.db.session import create_session
 from app.modules.documents.malware import MalwareScannerError, ping_clamd
+from app.modules.documents.object_storage import (
+    ObjectStorageError,
+    S3CompatibleEvidenceStore,
+    S3ObjectStoreConfig,
+)
 
 DEFAULT_DB_PASSWORD_FRAGMENT = "change-me-in-local-env"
 
 
 def _fail(errors: list[str], message: str) -> None:
     errors.append(message)
+
+
+def _build_s3_foundation_store(settings, *, require_https: bool) -> S3CompatibleEvidenceStore:
+    config = S3ObjectStoreConfig(
+        endpoint_url=settings.s3_endpoint_url,
+        region=settings.s3_region,
+        bucket=settings.s3_bucket,
+        access_key_id=settings.s3_access_key_id,
+        secret_access_key=settings.s3_secret_access_key.get_secret_value(),
+        session_token=settings.s3_session_token.get_secret_value(),
+        request_timeout_seconds=settings.s3_request_timeout_seconds,
+        max_attempts=settings.s3_max_attempts,
+        tls_verify=settings.s3_tls_verify,
+    )
+    config.validate(require_https=require_https)
+    if require_https and not config.tls_verify:
+        raise ObjectStorageError("S3 TLS verification must be enabled in staging/production")
+    return S3CompatibleEvidenceStore(config)
 
 
 def run_preflight(*, require_db: bool = True) -> tuple[list[str], list[str]]:
@@ -70,7 +93,8 @@ def run_preflight(*, require_db: bool = True) -> tuple[list[str], list[str]]:
     else:
         warnings.append("AI_PROVIDER is disabled; deterministic demo data can still be used")
 
-    if settings.storage_backend.lower() == "local":
+    storage_backend = settings.storage_backend.lower().strip()
+    if storage_backend == "local":
         storage = Path(settings.local_storage_path)
         try:
             storage.mkdir(parents=True, exist_ok=True)
@@ -81,6 +105,33 @@ def run_preflight(*, require_db: bool = True) -> tuple[list[str], list[str]]:
             _fail(errors, f"Local evidence storage is not writable: {exc}")
         if strict:
             warnings.append("Local evidence storage is acceptable for a private pilot but not the long-term HA target")
+    elif storage_backend == "s3":
+        _fail(
+            errors,
+            "STORAGE_BACKEND=s3 is foundation-only in Phase 17.3-A and cannot yet be selected for active evidence admission",
+        )
+    else:
+        _fail(errors, f"Unsupported STORAGE_BACKEND: {storage_backend or '<empty>'}")
+
+    # Some existing deployment-policy tests intentionally use lightweight settings
+    # stubs. Missing foundation-only configuration must preserve the historical
+    # default (disabled), while real Settings objects still validate strictly when
+    # S3_FOUNDATION_ENABLED is explicitly true.
+    if getattr(settings, "s3_foundation_enabled", False):
+        try:
+            s3_store = _build_s3_foundation_store(
+                settings,
+                require_https=env in {"staging", "production"},
+            )
+            health = s3_store.probe_bucket()
+            if health.status != "ok":
+                _fail(errors, "S3-compatible evidence storage foundation target is not ready")
+            else:
+                warnings.append(
+                    "S3-compatible evidence storage foundation target is reachable but is not active for document admission"
+                )
+        except ObjectStorageError as exc:
+            _fail(errors, f"S3-compatible evidence storage foundation check failed: {exc}")
 
     if settings.malware_scan_enabled:
         try:
