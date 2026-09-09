@@ -57,6 +57,7 @@ from app.modules.correspondence.router import router as correspondence_router
 from app.modules.documents.recovery_promotion_router import router as recovery_promotion_router
 from app.modules.documents.recovery_replication_router import router as recovery_replication_router
 from app.modules.documents.recovery_restore_router import router as recovery_restore_router
+from app.modules.documents.recovery_shadow_router import router as recovery_shadow_router
 from app.modules.documents.router import router as documents_router
 from app.modules.email_ingestion.router import router as email_ingestion_router
 from app.modules.evidence_search.router import router as evidence_search_router
@@ -160,6 +161,7 @@ app.include_router(documents_router, prefix=settings.api_v1_prefix)
 app.include_router(recovery_replication_router, prefix=settings.api_v1_prefix)
 app.include_router(recovery_restore_router, prefix=settings.api_v1_prefix)
 app.include_router(recovery_promotion_router, prefix=settings.api_v1_prefix)
+app.include_router(recovery_shadow_router, prefix=settings.api_v1_prefix)
 app.include_router(email_ingestion_router, prefix=settings.api_v1_prefix)
 app.include_router(evidence_search_router, prefix=settings.api_v1_prefix)
 app.include_router(external_portal_router, prefix=settings.api_v1_prefix)
