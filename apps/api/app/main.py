@@ -49,6 +49,7 @@ from app.modules.assessments.router import router as assessments_router
 from app.modules.claim_intelligence.router import router as claim_intelligence_router
 from app.modules.claim_packs.router import router as claim_packs_router
 from app.modules.claim_workbench.router import router as claim_workbench_router
+from app.modules.claims.retention_disposal_router import router as retention_disposal_router
 from app.modules.claims.retention_signal_router import router as retention_signal_router
 from app.modules.claims.router import router as claims_router
 from app.modules.chronology.router import router as chronology_router
@@ -147,6 +148,7 @@ app.include_router(saml_callback_router, prefix=settings.api_v1_prefix)
 app.include_router(scim_admin_router, prefix=settings.api_v1_prefix)
 app.include_router(scim_service_router, prefix=settings.api_v1_prefix)
 app.include_router(retention_signal_router, prefix=settings.api_v1_prefix)
+app.include_router(retention_disposal_router, prefix=settings.api_v1_prefix)
 app.include_router(claims_router, prefix=settings.api_v1_prefix)
 app.include_router(claim_packs_router, prefix=settings.api_v1_prefix)
 app.include_router(chronology_router, prefix=settings.api_v1_prefix)
