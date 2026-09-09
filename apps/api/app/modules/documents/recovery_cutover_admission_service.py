@@ -17,7 +17,7 @@ from app.modules.documents.recovery_authority_switch_service import (
     RecoveryAuthoritySwitchUnavailable,
     _get_rehearsal,
     _load_switch_snapshot,
-    _matches_snapshot,
+    _matches_snapshot as _matches_switch_snapshot,
 )
 from app.modules.documents.recovery_cutover_admission_models import (
     EvidenceRecoveryCutoverAdmission,
@@ -147,7 +147,7 @@ def _load_admission_snapshot(
             shadow_promotion_id=rehearsal.shadow_promotion_id,
             now=current_time,
         )
-        if not _matches_snapshot(rehearsal, switch_snapshot):
+        if not _matches_switch_snapshot(rehearsal, switch_snapshot):
             raise RecoveryCutoverAdmissionConflict("Authority-switch rehearsal lineage drifted")
 
         activation = _transition_receipt(db, rehearsal=rehearsal, phase="activated")
