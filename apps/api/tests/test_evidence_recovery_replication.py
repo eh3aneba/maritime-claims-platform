@@ -64,6 +64,10 @@ class _RecoveryS3Handler(BaseHTTPRequestHandler):
             self.send_response(400)
             self.end_headers()
             return
+        if self.headers.get("If-None-Match") == "*" and key in type(self).objects:
+            self.send_response(412)
+            self.end_headers()
+            return
         length = int(self.headers.get("Content-Length", "0"))
         payload = self.rfile.read(length)
         digest = self.headers.get("x-amz-meta-mcri-sha256")
