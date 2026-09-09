@@ -53,6 +53,30 @@ class LegalHoldRead(BaseModel):
     updated_at: datetime
 
 
+class LegalHoldProposalDecision(BaseModel):
+    reason: str = Field(min_length=3, max_length=4000)
+
+
+class LegalHoldProposalRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    organization_id: UUID
+    claim_id: UUID
+    source_kind: str
+    recommended_hold_source: str
+    source_ref_fingerprint: str
+    source_payload_hash: str
+    reason: str
+    status: str
+    hold_id: UUID | None
+    decided_at: datetime | None
+    decided_by_id: UUID | None
+    decision_reason: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
 class DisposalEligibilityRead(BaseModel):
     claim_id: UUID
     policy_id: UUID | None
@@ -60,6 +84,7 @@ class DisposalEligibilityRead(BaseModel):
     eligible: bool
     blocking_reasons: list[str]
     active_hold_ids: list[UUID]
+    pending_proposal_ids: list[UUID]
     retention_anchor_at: datetime
     claim_retention_expires_at: datetime | None
     evidence_retention_expires_at: datetime | None
