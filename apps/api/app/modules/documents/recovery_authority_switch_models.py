@@ -157,7 +157,7 @@ class EvidenceRecoveryAuthoritySwitchReceipt(UUIDPrimaryKeyMixin, TimestampMixin
         ),
         CheckConstraint(
             "authoritative_storage_changed = false",
-            name="ck_evidence_recovery_authority_switch_receipt_no_authority_change",
+            name="ck_recovery_auth_switch_receipt_no_authority_change",
         ),
         UniqueConstraint(
             "organization_id",
