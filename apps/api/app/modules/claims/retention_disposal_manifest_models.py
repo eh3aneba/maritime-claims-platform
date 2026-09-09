@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, CheckConstraint, DateTime, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -21,6 +21,11 @@ class DisposalExecutionManifest(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "disposal_authorization_id",
             name="uq_disposal_execution_manifest_authorization",
         ),
+        UniqueConstraint(
+            "organization_id",
+            "manifest_hash",
+            name="uq_disposal_execution_manifest_org_hash",
+        ),
         CheckConstraint(
             "status IN ('ready', 'blocked', 'invalidated', 'expired')",
             name="ck_disposal_execution_manifest_status",
@@ -30,6 +35,18 @@ class DisposalExecutionManifest(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "(status IN ('blocked', 'invalidated', 'expired') AND terminal_by_id IS NOT NULL "
             "AND terminal_at IS NOT NULL AND terminal_reason IS NOT NULL)",
             name="ck_disposal_execution_manifest_lifecycle",
+        ),
+        CheckConstraint(
+            "document_count >= 0",
+            name="ck_disposal_execution_manifest_document_count",
+        ),
+        CheckConstraint(
+            "total_file_size_bytes >= 0",
+            name="ck_disposal_execution_manifest_total_bytes",
+        ),
+        CheckConstraint(
+            "manifest_expires_at <= authorization_expires_at",
+            name="ck_disposal_execution_manifest_expiry_bound",
         ),
         Index(
             "ix_disposal_execution_manifests_org_claim_status",
@@ -71,7 +88,7 @@ class DisposalExecutionManifest(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     inventory_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     manifest_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     document_count: Mapped[int] = mapped_column(Integer, nullable=False)
-    total_file_size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    total_file_size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
     active_hold_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     pending_proposal_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
 
