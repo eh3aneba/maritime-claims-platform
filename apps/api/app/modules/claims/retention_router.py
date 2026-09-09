@@ -13,10 +13,18 @@ from app.modules.auth.dependencies import (
     enforce_mfa_policy_for_context,
     require_roles,
 )
+from app.modules.claims.legal_hold_proposals import (
+    activate_legal_hold_proposal,
+    get_legal_hold_proposal,
+    list_legal_hold_proposals,
+    reject_legal_hold_proposal,
+)
 from app.modules.claims.retention_models import ClaimLegalHold
 from app.modules.claims.retention_schemas import (
     DisposalEligibilityRead,
     LegalHoldCreate,
+    LegalHoldProposalDecision,
+    LegalHoldProposalRead,
     LegalHoldRead,
     LegalHoldRelease,
     RetentionPolicyCreate,
@@ -261,6 +269,155 @@ def release_legal_hold_endpoint(
         db.rollback()
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     return _hold_read(hold)
+
+
+@router.get(
+    "/{claim_id}/legal-hold-proposals",
+    response_model=list[LegalHoldProposalRead],
+)
+def list_legal_hold_proposals_endpoint(
+    claim_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: RetentionReader,
+) -> list[LegalHoldProposalRead]:
+    try:
+        proposals = list_legal_hold_proposals(
+            db,
+            organization_id=current_user.organization_id,
+            claim_id=claim_id,
+        )
+    except RetentionNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return [LegalHoldProposalRead.model_validate(proposal) for proposal in proposals]
+
+
+@router.get(
+    "/{claim_id}/legal-hold-proposals/{proposal_id}",
+    response_model=LegalHoldProposalRead,
+)
+def get_legal_hold_proposal_endpoint(
+    claim_id: UUID,
+    proposal_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: RetentionReader,
+) -> LegalHoldProposalRead:
+    try:
+        proposal = get_legal_hold_proposal(
+            db,
+            organization_id=current_user.organization_id,
+            claim_id=claim_id,
+            proposal_id=proposal_id,
+        )
+    except RetentionNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return LegalHoldProposalRead.model_validate(proposal)
+
+
+@router.post(
+    "/{claim_id}/legal-hold-proposals/{proposal_id}/activate",
+    response_model=LegalHoldProposalRead,
+)
+def activate_legal_hold_proposal_endpoint(
+    claim_id: UUID,
+    proposal_id: UUID,
+    payload: LegalHoldProposalDecision,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: RetentionAdminMfa,
+) -> LegalHoldProposalRead:
+    try:
+        proposal = get_legal_hold_proposal(
+            db,
+            organization_id=current_user.organization_id,
+            claim_id=claim_id,
+            proposal_id=proposal_id,
+            for_update=True,
+        )
+        hold, changed = activate_legal_hold_proposal(
+            db,
+            proposal=proposal,
+            activated_by_id=current_user.id,
+            decision_reason=payload.reason,
+        )
+        if changed:
+            write_audit_log(
+                db,
+                organization_id=current_user.organization_id,
+                user_id=current_user.id,
+                action="CLAIM_LEGAL_HOLD_PLACED",
+                entity_type="claim_legal_hold",
+                entity_id=hold.id,
+                new_values={
+                    "claim_id": str(hold.claim_id),
+                    "source": hold.source,
+                    "active": True,
+                    "proposal_id": str(proposal.id),
+                },
+            )
+            write_audit_log(
+                db,
+                organization_id=current_user.organization_id,
+                user_id=current_user.id,
+                action="LEGAL_HOLD_PROPOSAL_ACTIVATED",
+                entity_type="legal_hold_proposal",
+                entity_id=proposal.id,
+                old_values={"status": "pending"},
+                new_values={"status": "activated", "hold_id": str(hold.id)},
+            )
+            db.commit()
+            db.refresh(proposal)
+    except RetentionNotFoundError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    return LegalHoldProposalRead.model_validate(proposal)
+
+
+@router.post(
+    "/{claim_id}/legal-hold-proposals/{proposal_id}/reject",
+    response_model=LegalHoldProposalRead,
+)
+def reject_legal_hold_proposal_endpoint(
+    claim_id: UUID,
+    proposal_id: UUID,
+    payload: LegalHoldProposalDecision,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: RetentionAdminMfa,
+) -> LegalHoldProposalRead:
+    try:
+        proposal = get_legal_hold_proposal(
+            db,
+            organization_id=current_user.organization_id,
+            claim_id=claim_id,
+            proposal_id=proposal_id,
+            for_update=True,
+        )
+        changed = reject_legal_hold_proposal(
+            proposal,
+            rejected_by_id=current_user.id,
+            decision_reason=payload.reason,
+        )
+        if changed:
+            write_audit_log(
+                db,
+                organization_id=current_user.organization_id,
+                user_id=current_user.id,
+                action="LEGAL_HOLD_PROPOSAL_REJECTED",
+                entity_type="legal_hold_proposal",
+                entity_id=proposal.id,
+                old_values={"status": "pending"},
+                new_values={"status": "rejected"},
+            )
+            db.commit()
+            db.refresh(proposal)
+    except RetentionNotFoundError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    return LegalHoldProposalRead.model_validate(proposal)
 
 
 @router.get(
