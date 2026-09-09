@@ -20,7 +20,8 @@ from app.modules.claims.retention_disposal_manifest_service import (
 from app.modules.claims.retention_router import RetentionAdminMfa, RetentionReader
 from app.modules.claims.retention_service import RetentionNotFoundError
 
-router = APIRouter(prefix="/claims", tags=["retention"])
+# This router is mounted under the existing /claims retention-disposal router.
+router = APIRouter(tags=["retention"])
 
 
 def _read(manifest) -> DisposalExecutionManifestRead:
