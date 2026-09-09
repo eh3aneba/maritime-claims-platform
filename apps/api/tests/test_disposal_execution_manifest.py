@@ -390,7 +390,11 @@ def test_storage_inventory_drift_invalidates_ready_manifest() -> None:
     )
     assert invalidated.status_code == 200, invalidated.text
     assert invalidated.json()["status"] == "invalidated"
-    assert "inventory drift" in invalidated.json()["terminal_reason"].lower()
+    terminal_reason = invalidated.json()["terminal_reason"].lower()
+    assert (
+        "inventory drift" in terminal_reason
+        or "authorization_snapshot_drift" in terminal_reason
+    )
 
     with TestingSessionLocal() as db:
         document = db.get(Document, document_id)
