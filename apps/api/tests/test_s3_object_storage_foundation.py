@@ -13,6 +13,7 @@ from app.modules.documents.object_storage import (
     ObjectStorageConfigurationError,
     ObjectStorageError,
     ObjectStorageIntegrityError,
+    ObjectStoragePreconditionFailed,
     S3CompatibleEvidenceStore,
     S3ObjectStoreConfig,
     make_managed_evidence_object_key,
@@ -82,6 +83,10 @@ class _FakeS3Handler(BaseHTTPRequestHandler):
         key = self._key()
         if key is None:
             self.send_response(400)
+            self.end_headers()
+            return
+        if self.headers.get("If-None-Match") == "*" and key in type(self).objects:
+            self.send_response(412)
             self.end_headers()
             return
         length = int(self.headers.get("Content-Length", "0"))
@@ -201,6 +206,33 @@ def test_s3_put_get_head_round_trip_verifies_hash_and_signs_requests() -> None:
         assert not hasattr(store, "delete")
         assert not hasattr(store, "delete_object")
         assert not hasattr(store, "copy_object")
+
+
+def test_conditional_s3_put_never_overwrites_existing_object() -> None:
+    with _fake_s3() as endpoint:
+        store = S3CompatibleEvidenceStore(_config(endpoint))
+        key = "recovery/evidence/tenant/claim/document.pdf"
+        original = b"original recovery bytes"
+        replacement = b"replacement bytes must never overwrite"
+        original_hash = hashlib.sha256(original).hexdigest()
+
+        stored = store.put_bytes_if_absent(
+            original,
+            storage_key=key,
+            expected_sha256=original_hash,
+        )
+        assert stored.file_hash == original_hash
+        with pytest.raises(ObjectStoragePreconditionFailed):
+            store.put_bytes_if_absent(
+                replacement,
+                storage_key=key,
+                expected_sha256=hashlib.sha256(replacement).hexdigest(),
+            )
+        assert _FakeS3Handler.objects[key] == (original, original_hash)
+        conditional_headers = [
+            item for item in _FakeS3Handler.seen_headers if item.get("if-none-match") == "*"
+        ]
+        assert len(conditional_headers) == 2
 
 
 def test_s3_integrity_drift_fails_closed() -> None:
