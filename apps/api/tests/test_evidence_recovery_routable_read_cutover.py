@@ -166,7 +166,8 @@ def test_routable_read_cutover_downloads_local_then_verified_recovery_then_local
         local_bytes = local_path.read_bytes()
         remote_key = replicated.json()["replica"]["recovery_storage_key"]
         remote_before = _RecoveryRestoreS3Handler.objects[remote_key]
-        assert remote_before == local_bytes
+        remote_payload, _remote_digest = remote_before
+        assert remote_payload == local_bytes
 
         before = _download(claim_id, document_id, admin_headers)
         assert before.status_code == 200, before.text
@@ -220,7 +221,7 @@ def test_routable_read_cutover_downloads_local_then_verified_recovery_then_local
 
         during = _download(claim_id, document_id, admin_headers)
         assert during.status_code == 200, during.text
-        assert during.content == remote_before
+        assert during.content == remote_payload
         assert during.headers["X-MCRI-Evidence-Read-Source"] == "recovery-replica"
 
         manager_route = client.get(
@@ -293,14 +294,16 @@ def test_routable_read_cutover_downloads_local_then_verified_recovery_then_local
             assert activation_audit.new_values["authoritative_storage_changed"] is False
             assert activation_audit.new_values["destructive_action_performed"] is False
 
-            recovery_download_audit = (
+            download_audits = (
                 db.query(AuditLog)
-                .filter(
-                    AuditLog.action == "DOWNLOAD_DOCUMENT",
-                    AuditLog.new_values["read_source"].as_string()
-                    == "recovery-replica",
-                )
-                .one()
+                .filter(AuditLog.action == "DOWNLOAD_DOCUMENT")
+                .all()
+            )
+            recovery_download_audit = next(
+                item
+                for item in download_audits
+                if item.new_values
+                and item.new_values.get("read_source") == "recovery-replica"
             )
             assert recovery_download_audit.new_values["write_path_switched"] is False
             assert recovery_download_audit.new_values["authoritative_storage_changed"] is False
@@ -512,7 +515,12 @@ def test_remote_tamper_blocks_active_recovery_download_and_rollback_remains_avai
         assert activated.status_code == 200
 
         remote_key = replicated.json()["replica"]["recovery_storage_key"]
-        _RecoveryRestoreS3Handler.objects[remote_key] = b"tampered remote recovery evidence"
+        original_payload, original_digest = _RecoveryRestoreS3Handler.objects[remote_key]
+        tampered_payload = b"X" * len(original_payload)
+        _RecoveryRestoreS3Handler.objects[remote_key] = (
+            tampered_payload,
+            original_digest,
+        )
         blocked = _download(claim_id, document_id, admin_headers)
         assert blocked.status_code == 409
 
