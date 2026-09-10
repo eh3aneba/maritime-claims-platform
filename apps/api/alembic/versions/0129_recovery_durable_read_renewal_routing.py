@@ -116,8 +116,24 @@ def upgrade() -> None:
         sa.UniqueConstraint("authorization_id", name="uq_durable_read_renewal_lease_authorization"),
         sa.UniqueConstraint("organization_id", "lease_hash", name="uq_durable_read_renewal_lease_org_hash"),
     )
-    for column in ("organization_id", "claim_id", "document_id", "authorization_id", "authorization_approval_receipt_id", "health_qualification_id", "prior_durable_lease_id", "replica_id", "authorization_approved_by_id", "prior_durable_activated_by_id", "prepared_by_id", "activated_by_id", "rolled_back_by_id", "terminal_by_id"):
-        op.create_index(f"ix_evidence_recovery_durable_read_renewal_leases_{column}", "evidence_recovery_durable_read_renewal_leases", [column], unique=False)
+    lease_indexes = {
+        "organization_id": "ix_drr_renew_lease_org",
+        "claim_id": "ix_drr_renew_lease_claim",
+        "document_id": "ix_drr_renew_lease_doc",
+        "authorization_id": "ix_drr_renew_lease_auth",
+        "authorization_approval_receipt_id": "ix_drr_renew_lease_approval",
+        "health_qualification_id": "ix_drr_renew_lease_health",
+        "prior_durable_lease_id": "ix_drr_renew_lease_prior",
+        "replica_id": "ix_drr_renew_lease_replica",
+        "authorization_approved_by_id": "ix_drr_renew_lease_auth_approver",
+        "prior_durable_activated_by_id": "ix_drr_renew_lease_prior_activator",
+        "prepared_by_id": "ix_drr_renew_lease_preparer",
+        "activated_by_id": "ix_drr_renew_lease_activator",
+        "rolled_back_by_id": "ix_drr_renew_lease_rollback_actor",
+        "terminal_by_id": "ix_drr_renew_lease_terminal_actor",
+    }
+    for column, index_name in lease_indexes.items():
+        op.create_index(index_name, "evidence_recovery_durable_read_renewal_leases", [column], unique=False)
     op.create_index("ix_durable_read_renewal_lease_org_claim_status", "evidence_recovery_durable_read_renewal_leases", ["organization_id", "claim_id", "status"], unique=False)
     op.create_index("ix_durable_read_renewal_lease_org_doc_status", "evidence_recovery_durable_read_renewal_leases", ["organization_id", "document_id", "status"], unique=False)
 
@@ -162,8 +178,16 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("organization_id", "receipt_hash", name="uq_durable_read_renewal_receipt_org_hash"),
     )
-    for column in ("organization_id", "claim_id", "document_id", "renewal_lease_id", "authorization_id", "actor_id"):
-        op.create_index(f"ix_evidence_recovery_durable_read_renewal_receipts_{column}", "evidence_recovery_durable_read_renewal_receipts", [column], unique=False)
+    receipt_indexes = {
+        "organization_id": "ix_drr_renew_rcpt_org",
+        "claim_id": "ix_drr_renew_rcpt_claim",
+        "document_id": "ix_drr_renew_rcpt_doc",
+        "renewal_lease_id": "ix_drr_renew_rcpt_lease",
+        "authorization_id": "ix_drr_renew_rcpt_auth",
+        "actor_id": "ix_drr_renew_rcpt_actor",
+    }
+    for column, index_name in receipt_indexes.items():
+        op.create_index(index_name, "evidence_recovery_durable_read_renewal_receipts", [column], unique=False)
     op.create_index("ix_durable_read_renewal_receipt_time", "evidence_recovery_durable_read_renewal_receipts", ["renewal_lease_id", "transitioned_at"], unique=False)
 
     op.add_column("evidence_recovery_read_path_routes", sa.Column("active_durable_renewal_lease_id", sa.Uuid(), nullable=True))
@@ -175,7 +199,7 @@ def upgrade() -> None:
         ["id"],
         ondelete="RESTRICT",
     )
-    op.create_index("ix_evidence_recovery_read_path_routes_active_durable_renewal_lease_id", "evidence_recovery_read_path_routes", ["active_durable_renewal_lease_id"], unique=False)
+    op.create_index("ix_recovery_read_route_durable_renewal", "evidence_recovery_read_path_routes", ["active_durable_renewal_lease_id"], unique=False)
     op.drop_constraint("ck_recovery_read_route_binding", "evidence_recovery_read_path_routes", type_="check")
     op.create_check_constraint(
         "ck_recovery_read_route_binding",
@@ -196,7 +220,7 @@ def downgrade() -> None:
         "(route_class = 'recovery_replica' AND durable_authority_active = false AND active_lease_id IS NOT NULL AND active_durable_lease_id IS NULL AND active_replica_id IS NOT NULL AND read_path_switched = true) OR "
         "(route_class = 'recovery_replica' AND durable_authority_active = true AND active_lease_id IS NULL AND active_durable_lease_id IS NOT NULL AND active_replica_id IS NOT NULL AND read_path_switched = true))",
     )
-    op.drop_index("ix_evidence_recovery_read_path_routes_active_durable_renewal_lease_id", table_name="evidence_recovery_read_path_routes")
+    op.drop_index("ix_recovery_read_route_durable_renewal", table_name="evidence_recovery_read_path_routes")
     op.drop_constraint("fk_recovery_read_route_active_durable_renewal_lease", "evidence_recovery_read_path_routes", type_="foreignkey")
     op.drop_column("evidence_recovery_read_path_routes", "active_durable_renewal_lease_id")
     op.drop_table("evidence_recovery_durable_read_renewal_receipts")
