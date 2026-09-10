@@ -23,6 +23,7 @@ def _align_routable_read_cutover_document_storage(request):
         "test_evidence_recovery_durable_read_renewal_health_qualification.py",
         "test_evidence_recovery_durable_read_renewal_reauthorization.py",
         "test_evidence_recovery_durable_read_reauthorized_renewal_routing.py",
+        "test_evidence_recovery_durable_read_reauthorized_renewal_ttl.py",
     }:
         yield
         return
