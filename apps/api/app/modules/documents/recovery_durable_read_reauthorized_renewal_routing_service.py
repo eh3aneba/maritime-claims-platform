@@ -9,6 +9,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.modules.documents.models import Document
+from app.modules.documents.recovery_durable_read_renewal_health_models import (
+    EvidenceRecoveryDurableReadRenewalHealthQualification,
+    EvidenceRecoveryDurableReadRenewalHealthQualificationReceipt,
+)
 from app.modules.documents.recovery_durable_read_renewal_reauthorization_models import (
     EvidenceRecoveryDurableReadRenewalReauthorization,
     EvidenceRecoveryDurableReadRenewalReauthorizationReceipt,
@@ -34,15 +38,6 @@ from app.modules.documents.recovery_durable_read_reauthorized_renewal_routing_mo
     EvidenceRecoveryDurableReadReauthorizedRenewalLease,
     EvidenceRecoveryDurableReadReauthorizedRenewalReceipt,
 )
-from app.modules.documents.recovery_durable_read_routing_service import (
-    RecoveryDurableReadRoutingConflict,
-    RecoveryDurableReadRoutingNotFound,
-    RecoveryDurableReadRoutingUnavailable,
-    _get_route,
-    _load_document,
-    _load_replica,
-    _read_verified_candidate,
-)
 from app.modules.documents.recovery_promotion_service import _as_utc
 from app.modules.documents.recovery_replication_service import (
     RecoveryReplicationConflict,
@@ -56,6 +51,10 @@ from app.modules.documents.recovery_routable_read_cutover_service import (
     RecoveryRoutableReadCutoverConflict,
     RecoveryRoutableReadCutoverNotFound,
     RecoveryRoutableReadCutoverUnavailable,
+    _get_route,
+    _load_document,
+    _load_replica,
+    _read_verified_candidate,
 )
 
 DURABLE_READ_REAUTHORIZED_RENEWAL_ROUTE_WINDOW = timedelta(hours=24)
@@ -197,6 +196,58 @@ def _approval_receipt(
     return receipt
 
 
+def _qualified_q_receipt(
+    db: Session,
+    *,
+    qualification: EvidenceRecoveryDurableReadRenewalHealthQualification,
+) -> EvidenceRecoveryDurableReadRenewalHealthQualificationReceipt:
+    receipts = list(
+        db.scalars(
+            select(EvidenceRecoveryDurableReadRenewalHealthQualificationReceipt).where(
+                EvidenceRecoveryDurableReadRenewalHealthQualificationReceipt.organization_id
+                == qualification.organization_id,
+                EvidenceRecoveryDurableReadRenewalHealthQualificationReceipt.claim_id
+                == qualification.claim_id,
+                EvidenceRecoveryDurableReadRenewalHealthQualificationReceipt.document_id
+                == qualification.document_id,
+                EvidenceRecoveryDurableReadRenewalHealthQualificationReceipt.health_qualification_id
+                == qualification.id,
+                EvidenceRecoveryDurableReadRenewalHealthQualificationReceipt.phase == "qualified",
+            )
+        ).all()
+    )
+    if len(receipts) != 1:
+        raise RecoveryDurableReadReauthorizedRenewalRoutingConflict(
+            "Phase Q qualification must retain exactly one qualified receipt"
+        )
+    receipt = receipts[0]
+    if not all(
+        (
+            receipt.renewal_lease_id == qualification.renewal_lease_id,
+            receipt.health_state == qualification.health_state == "healthy",
+            receipt.operational_evidence_hash == qualification.operational_evidence_hash,
+            receipt.request_snapshot_hash == qualification.request_snapshot_hash,
+            receipt.health_qualification_hash == qualification.health_qualification_hash,
+            receipt.actor_id == qualification.qualified_by_id,
+            qualification.qualified_at is not None,
+            _as_utc(receipt.transitioned_at) == _as_utc(qualification.qualified_at),
+            receipt.routable_authority_created is False,
+            receipt.durable_read_route_created is False,
+            receipt.read_path_switched is False,
+            receipt.write_path_switched is False,
+            receipt.document_storage_key_mutated is False,
+            receipt.authoritative_storage_changed is False,
+            receipt.destructive_action_performed is False,
+            receipt.s3_delete_performed is False,
+            receipt.local_delete_performed is False,
+        )
+    ):
+        raise RecoveryDurableReadReauthorizedRenewalRoutingConflict(
+            "Phase Q qualified receipt lineage is inconsistent"
+        )
+    return receipt
+
+
 def _prior_renewal_matches_reauthorization(
     lease: EvidenceRecoveryDurableReadRenewalLease,
     authorization: EvidenceRecoveryDurableReadRenewalReauthorization,
@@ -212,16 +263,12 @@ def _prior_renewal_matches_reauthorization(
             lease.replica_hash == authorization.replica_hash,
             lease.source_file_hash == authorization.source_file_hash,
             lease.source_file_size_bytes == authorization.source_file_size_bytes,
-            lease.local_storage_key_fingerprint
-            == authorization.local_storage_key_fingerprint,
-            lease.recovery_bucket_fingerprint
-            == authorization.recovery_bucket_fingerprint,
+            lease.local_storage_key_fingerprint == authorization.local_storage_key_fingerprint,
+            lease.recovery_bucket_fingerprint == authorization.recovery_bucket_fingerprint,
             lease.candidate_storage_key_fingerprint
             == authorization.candidate_storage_key_fingerprint,
-            lease.source_authority_fingerprint
-            == authorization.source_authority_fingerprint,
-            lease.candidate_authority_fingerprint
-            == authorization.candidate_authority_fingerprint,
+            lease.source_authority_fingerprint == authorization.source_authority_fingerprint,
+            lease.candidate_authority_fingerprint == authorization.candidate_authority_fingerprint,
             lease.configuration_fingerprint == authorization.configuration_fingerprint,
             lease.routable_authority_created is False,
             lease.durable_read_route_created is False,
@@ -268,8 +315,7 @@ def _fresh_source_and_candidate_proof(
             == authorization.recovery_bucket_fingerprint,
             hashlib.sha256(replica.recovery_storage_key.encode("utf-8")).hexdigest()
             == authorization.candidate_storage_key_fingerprint,
-            hashlib.sha256(candidate_payload).hexdigest()
-            == authorization.source_file_hash,
+            hashlib.sha256(candidate_payload).hexdigest() == authorization.source_file_hash,
             len(candidate_payload) == authorization.source_file_size_bytes,
         )
     ):
@@ -279,9 +325,7 @@ def _fresh_source_and_candidate_proof(
     return _canonical_hash(
         {
             "reauthorization_id": str(authorization.id),
-            "phase_q_health_qualification_id": str(
-                authorization.phase_q_health_qualification_id
-            ),
+            "phase_q_health_qualification_id": str(authorization.phase_q_health_qualification_id),
             "prior_renewal_lease_id": str(authorization.renewal_lease_id),
             "replica_id": str(authorization.replica_id),
             "source_file_hash": authorization.source_file_hash,
@@ -348,7 +392,6 @@ def _load_preparation_snapshot(
             raise RecoveryDurableReadReauthorizedRenewalRoutingConflict(
                 "Phase R authorization crossed its non-routable safety boundary"
             )
-
         reauthorization_snapshot = _load_reauthorization_snapshot(
             db,
             organization_id=organization_id,
@@ -356,9 +399,7 @@ def _load_preparation_snapshot(
             document_id=document_id,
             phase_q_health_qualification_id=authorization.phase_q_health_qualification_id,
         )
-        if not _matches_reauthorization_snapshot(
-            authorization, reauthorization_snapshot
-        ):
+        if not _matches_reauthorization_snapshot(authorization, reauthorization_snapshot):
             raise RecoveryDurableReadReauthorizedRenewalRoutingConflict(
                 "Phase R authorization lineage drifted before routing preparation"
             )
@@ -384,19 +425,14 @@ def _load_preparation_snapshot(
         if not (
             _route_is_clean_local(route)
             and route.route_version == authorization.route_version_at_request
-            and route.source_authority_fingerprint
-            == authorization.source_authority_fingerprint
-            and route.candidate_authority_fingerprint
-            == authorization.candidate_authority_fingerprint
-            and route.configuration_fingerprint
-            == authorization.configuration_fingerprint
+            and route.source_authority_fingerprint == authorization.source_authority_fingerprint
+            and route.candidate_authority_fingerprint == authorization.candidate_authority_fingerprint
+            and route.configuration_fingerprint == authorization.configuration_fingerprint
         ):
             raise RecoveryDurableReadReauthorizedRenewalRoutingConflict(
                 "Single read-route control plane is not in the Phase R pinned local state"
             )
-        integrity_proof_hash = _fresh_source_and_candidate_proof(
-            db, authorization=authorization
-        )
+        integrity_proof_hash = _fresh_source_and_candidate_proof(db, authorization=authorization)
         lease_snapshot_hash = _canonical_hash(
             {
                 "organization_id": str(organization_id),
@@ -408,9 +444,7 @@ def _load_preparation_snapshot(
                 "reauthorization_integrity_proof_hash": authorization.integrity_proof_hash,
                 "reauthorization_approval_receipt_id": str(approval.id),
                 "reauthorization_approval_receipt_hash": approval.receipt_hash,
-                "phase_q_health_qualification_id": str(
-                    authorization.phase_q_health_qualification_id
-                ),
+                "phase_q_health_qualification_id": str(authorization.phase_q_health_qualification_id),
                 "phase_q_health_qualification_hash": authorization.phase_q_health_qualification_hash,
                 "operational_evidence_hash": authorization.operational_evidence_hash,
                 "prior_renewal_lease_id": str(authorization.renewal_lease_id),
@@ -484,15 +518,9 @@ def _load_preparation_snapshot(
         raise RecoveryDurableReadReauthorizedRenewalRoutingConflict(str(exc)) from exc
     except RecoveryDurableReadRenewalRoutingUnavailable as exc:
         raise RecoveryDurableReadReauthorizedRenewalRoutingUnavailable(str(exc)) from exc
-    except RecoveryDurableReadRoutingNotFound as exc:
-        raise RecoveryDurableReadReauthorizedRenewalRoutingNotFound(str(exc)) from exc
-    except RecoveryDurableReadRoutingConflict as exc:
-        raise RecoveryDurableReadReauthorizedRenewalRoutingConflict(str(exc)) from exc
-    except RecoveryDurableReadRoutingUnavailable as exc:
-        raise RecoveryDurableReadReauthorizedRenewalRoutingUnavailable(str(exc)) from exc
     except RecoveryRoutableReadCutoverNotFound as exc:
         raise RecoveryDurableReadReauthorizedRenewalRoutingNotFound(str(exc)) from exc
-    except (RecoveryRoutableReadCutoverConflict, RecoveryReplicationConflict) as exc:
+    except (RecoveryRoutableReadCutoverConflict, RecoveryReplicationConflict, FileNotFoundError) as exc:
         raise RecoveryDurableReadReauthorizedRenewalRoutingConflict(str(exc)) from exc
     except (RecoveryRoutableReadCutoverUnavailable, RecoveryReplicationUnavailable) as exc:
         raise RecoveryDurableReadReauthorizedRenewalRoutingUnavailable(str(exc)) from exc
@@ -505,37 +533,26 @@ def _matches_snapshot(
     return all(
         (
             lease.reauthorization_id == snapshot.reauthorization_id,
-            lease.reauthorization_approval_receipt_id
-            == snapshot.reauthorization_approval_receipt_id,
-            lease.phase_q_health_qualification_id
-            == snapshot.phase_q_health_qualification_id,
+            lease.reauthorization_approval_receipt_id == snapshot.reauthorization_approval_receipt_id,
+            lease.phase_q_health_qualification_id == snapshot.phase_q_health_qualification_id,
             lease.prior_renewal_lease_id == snapshot.prior_renewal_lease_id,
             lease.replica_id == snapshot.replica_id,
             lease.reauthorization_hash == snapshot.reauthorization_hash,
-            lease.reauthorization_request_snapshot_hash
-            == snapshot.reauthorization_request_snapshot_hash,
-            lease.reauthorization_integrity_proof_hash
-            == snapshot.reauthorization_integrity_proof_hash,
-            lease.reauthorization_approval_receipt_hash
-            == snapshot.reauthorization_approval_receipt_hash,
-            lease.phase_q_health_qualification_hash
-            == snapshot.phase_q_health_qualification_hash,
+            lease.reauthorization_request_snapshot_hash == snapshot.reauthorization_request_snapshot_hash,
+            lease.reauthorization_integrity_proof_hash == snapshot.reauthorization_integrity_proof_hash,
+            lease.reauthorization_approval_receipt_hash == snapshot.reauthorization_approval_receipt_hash,
+            lease.phase_q_health_qualification_hash == snapshot.phase_q_health_qualification_hash,
             lease.operational_evidence_hash == snapshot.operational_evidence_hash,
             lease.prior_renewal_lease_hash == snapshot.prior_renewal_lease_hash,
             lease.prior_lease_snapshot_hash == snapshot.prior_lease_snapshot_hash,
             lease.replica_hash == snapshot.replica_hash,
             lease.source_file_hash == snapshot.source_file_hash,
             lease.source_file_size_bytes == snapshot.source_file_size_bytes,
-            lease.local_storage_key_fingerprint
-            == snapshot.local_storage_key_fingerprint,
-            lease.recovery_bucket_fingerprint
-            == snapshot.recovery_bucket_fingerprint,
-            lease.candidate_storage_key_fingerprint
-            == snapshot.candidate_storage_key_fingerprint,
-            lease.source_authority_fingerprint
-            == snapshot.source_authority_fingerprint,
-            lease.candidate_authority_fingerprint
-            == snapshot.candidate_authority_fingerprint,
+            lease.local_storage_key_fingerprint == snapshot.local_storage_key_fingerprint,
+            lease.recovery_bucket_fingerprint == snapshot.recovery_bucket_fingerprint,
+            lease.candidate_storage_key_fingerprint == snapshot.candidate_storage_key_fingerprint,
+            lease.source_authority_fingerprint == snapshot.source_authority_fingerprint,
+            lease.candidate_authority_fingerprint == snapshot.candidate_authority_fingerprint,
             lease.configuration_fingerprint == snapshot.configuration_fingerprint,
             lease.verified_durable_read_count == snapshot.verified_durable_read_count,
             lease.integrity_failure_count == snapshot.integrity_failure_count,
@@ -543,11 +560,9 @@ def _matches_snapshot(
             lease.route_version_at_prepare == snapshot.route_version_at_prepare,
             lease.integrity_proof_hash == snapshot.integrity_proof_hash,
             lease.lease_snapshot_hash == snapshot.lease_snapshot_hash,
-            lease.reauthorization_approved_by_id
-            == snapshot.reauthorization_approved_by_id,
+            lease.reauthorization_approved_by_id == snapshot.reauthorization_approved_by_id,
             lease.phase_q_qualified_by_id == snapshot.phase_q_qualified_by_id,
-            lease.prior_renewal_activated_by_id
-            == snapshot.prior_renewal_activated_by_id,
+            lease.prior_renewal_activated_by_id == snapshot.prior_renewal_activated_by_id,
         )
     )
 
@@ -563,8 +578,7 @@ def _get_lease(
 ) -> EvidenceRecoveryDurableReadReauthorizedRenewalLease:
     stmt = select(EvidenceRecoveryDurableReadReauthorizedRenewalLease).where(
         EvidenceRecoveryDurableReadReauthorizedRenewalLease.id == lease_id,
-        EvidenceRecoveryDurableReadReauthorizedRenewalLease.organization_id
-        == organization_id,
+        EvidenceRecoveryDurableReadReauthorizedRenewalLease.organization_id == organization_id,
         EvidenceRecoveryDurableReadReauthorizedRenewalLease.claim_id == claim_id,
         EvidenceRecoveryDurableReadReauthorizedRenewalLease.document_id == document_id,
     )
@@ -591,10 +605,7 @@ def _new_receipt(
     transitioned_at: datetime,
 ) -> EvidenceRecoveryDurableReadReauthorizedRenewalReceipt:
     normalized_reason = reason.strip()
-    switched = (
-        to_route_class == "recovery_replica"
-        and route_authority_kind == "durable_reauthorized_renewal"
-    )
+    switched = to_route_class == "recovery_replica" and route_authority_kind == "durable_reauthorized_renewal"
     receipt_hash = _canonical_hash(
         {
             "reauthorized_renewal_lease_id": str(lease.id),
@@ -694,12 +705,7 @@ def prepare_recovery_durable_read_reauthorized_renewal_lease(
     prepared_by_id: UUID,
     reason: str,
     now: datetime | None = None,
-) -> tuple[
-    EvidenceRecoveryDurableReadReauthorizedRenewalLease,
-    EvidenceRecoveryReadPathRoute,
-    EvidenceRecoveryDurableReadReauthorizedRenewalReceipt | None,
-    str,
-]:
+) -> tuple[EvidenceRecoveryDurableReadReauthorizedRenewalLease, EvidenceRecoveryReadPathRoute, EvidenceRecoveryDurableReadReauthorizedRenewalReceipt | None, str]:
     normalized_reason = reason.strip()
     if len(normalized_reason) < 8:
         raise RecoveryDurableReadReauthorizedRenewalRoutingConflict(
@@ -717,13 +723,10 @@ def prepare_recovery_durable_read_reauthorized_renewal_lease(
     existing = db.scalar(
         select(EvidenceRecoveryDurableReadReauthorizedRenewalLease)
         .where(
-            EvidenceRecoveryDurableReadReauthorizedRenewalLease.organization_id
-            == organization_id,
+            EvidenceRecoveryDurableReadReauthorizedRenewalLease.organization_id == organization_id,
             EvidenceRecoveryDurableReadReauthorizedRenewalLease.claim_id == claim_id,
-            EvidenceRecoveryDurableReadReauthorizedRenewalLease.document_id
-            == document_id,
-            EvidenceRecoveryDurableReadReauthorizedRenewalLease.reauthorization_id
-            == reauthorization_id,
+            EvidenceRecoveryDurableReadReauthorizedRenewalLease.document_id == document_id,
+            EvidenceRecoveryDurableReadReauthorizedRenewalLease.reauthorization_id == reauthorization_id,
         )
         .with_for_update()
     )
@@ -736,31 +739,24 @@ def prepare_recovery_durable_read_reauthorized_renewal_lease(
     )
     assert route is not None
     if existing is not None:
-        if not (
-            existing.prepared_by_id == prepared_by_id
-            and existing.preparation_reason == normalized_reason
-        ):
+        if not (existing.prepared_by_id == prepared_by_id and existing.preparation_reason == normalized_reason):
             raise RecoveryDurableReadReauthorizedRenewalRoutingConflict(
                 "Reauthorized renewal lease exists with different preparation semantics"
             )
         if _matches_snapshot(existing, snapshot):
             if existing.status == "prepared" and _route_is_clean_local(route):
                 return existing, route, None, "unchanged"
-            if existing.status == "activated":
-                if not (
-                    route.route_class == "recovery_replica"
-                    and route.route_authority_kind
-                    == "durable_reauthorized_renewal"
-                    and route.active_lease_id is None
-                    and route.active_durable_lease_id is None
-                    and route.active_durable_renewal_lease_id is None
-                    and route.active_durable_reauthorized_renewal_lease_id
-                    == existing.id
-                    and route.active_replica_id == existing.replica_id
-                ):
-                    raise RecoveryDurableReadReauthorizedRenewalRoutingConflict(
-                        "Activated Phase S lease no longer matches the shared read route"
-                    )
+            if existing.status == "activated" and all(
+                (
+                    route.route_class == "recovery_replica",
+                    route.route_authority_kind == "durable_reauthorized_renewal",
+                    route.active_lease_id is None,
+                    route.active_durable_lease_id is None,
+                    route.active_durable_renewal_lease_id is None,
+                    route.active_durable_reauthorized_renewal_lease_id == existing.id,
+                    route.active_replica_id == existing.replica_id,
+                )
+            ):
                 return existing, route, None, "unchanged"
             if existing.status == "rolled_back" and _route_is_clean_local(route):
                 return existing, route, None, "unchanged"
@@ -786,7 +782,6 @@ def prepare_recovery_durable_read_reauthorized_renewal_lease(
         raise RecoveryDurableReadReauthorizedRenewalRoutingConflict(
             "Read route version drifted before Phase S lease creation"
         )
-
     lease_hash = _canonical_hash(
         {
             "organization_id": str(organization_id),
@@ -798,9 +793,7 @@ def prepare_recovery_durable_read_reauthorized_renewal_lease(
             "prepared_by_id": str(prepared_by_id),
             "prepared_at": _utc_iso(current_time),
             "activation_expires_at": _utc_iso(snapshot.authorization_expires_at),
-            "max_route_window_seconds": int(
-                DURABLE_READ_REAUTHORIZED_RENEWAL_ROUTE_WINDOW.total_seconds()
-            ),
+            "max_route_window_seconds": int(DURABLE_READ_REAUTHORIZED_RENEWAL_ROUTE_WINDOW.total_seconds()),
             "mode": "bounded_reversible_reauthorized_durable_read_renewal_lease",
             "write_path_switched": False,
             "document_storage_key_mutated": False,
@@ -888,12 +881,7 @@ def activate_recovery_durable_read_reauthorized_renewal_lease(
     activated_by_id: UUID,
     reason: str,
     now: datetime | None = None,
-) -> tuple[
-    EvidenceRecoveryDurableReadReauthorizedRenewalLease,
-    EvidenceRecoveryReadPathRoute,
-    EvidenceRecoveryDurableReadReauthorizedRenewalReceipt | None,
-    str,
-]:
+) -> tuple[EvidenceRecoveryDurableReadReauthorizedRenewalLease, EvidenceRecoveryReadPathRoute, EvidenceRecoveryDurableReadReauthorizedRenewalReceipt | None, str]:
     normalized_reason = reason.strip()
     if len(normalized_reason) < 8:
         raise RecoveryDurableReadReauthorizedRenewalRoutingConflict(
@@ -917,17 +905,19 @@ def activate_recovery_durable_read_reauthorized_renewal_lease(
     )
     assert route is not None
     if lease.status == "activated":
-        if not (
-            lease.activated_by_id == activated_by_id
-            and lease.activation_reason == normalized_reason
-            and route.route_class == "recovery_replica"
-            and route.route_authority_kind == "durable_reauthorized_renewal"
-            and route.active_lease_id is None
-            and route.active_durable_lease_id is None
-            and route.active_durable_renewal_lease_id is None
-            and route.active_durable_reauthorized_renewal_lease_id == lease.id
-            and route.active_replica_id == lease.replica_id
-            and route.read_path_switched is True
+        if not all(
+            (
+                lease.activated_by_id == activated_by_id,
+                lease.activation_reason == normalized_reason,
+                route.route_class == "recovery_replica",
+                route.route_authority_kind == "durable_reauthorized_renewal",
+                route.active_lease_id is None,
+                route.active_durable_lease_id is None,
+                route.active_durable_renewal_lease_id is None,
+                route.active_durable_reauthorized_renewal_lease_id == lease.id,
+                route.active_replica_id == lease.replica_id,
+                route.read_path_switched is True,
+            )
         ):
             raise RecoveryDurableReadReauthorizedRenewalRoutingConflict(
                 "Phase S activation replay does not match active authority"
@@ -975,10 +965,7 @@ def activate_recovery_durable_read_reauthorized_renewal_lease(
         )
     except RecoveryDurableReadReauthorizedRenewalRoutingUnavailable:
         raise
-    except (
-        RecoveryDurableReadReauthorizedRenewalRoutingConflict,
-        RecoveryDurableReadReauthorizedRenewalRoutingNotFound,
-    ) as exc:
+    except (RecoveryDurableReadReauthorizedRenewalRoutingConflict, RecoveryDurableReadReauthorizedRenewalRoutingNotFound) as exc:
         receipt = _terminalize_prepared(
             db,
             lease=lease,
@@ -1000,14 +987,11 @@ def activate_recovery_durable_read_reauthorized_renewal_lease(
             now=current_time,
         )
         return lease, route, receipt, "invalidated"
-
     lease.status = "activated"
     lease.activated_by_id = activated_by_id
     lease.activated_at = current_time
     lease.activation_reason = normalized_reason
-    lease.route_expires_at = (
-        current_time + DURABLE_READ_REAUTHORIZED_RENEWAL_ROUTE_WINDOW
-    )
+    lease.route_expires_at = current_time + DURABLE_READ_REAUTHORIZED_RENEWAL_ROUTE_WINDOW
     lease.routable_authority_created = True
     lease.durable_read_route_created = True
     lease.read_path_switched = True
@@ -1050,15 +1034,17 @@ def _restore_local_route(
     reason: str,
     now: datetime,
 ) -> EvidenceRecoveryDurableReadReauthorizedRenewalReceipt:
-    if not (
-        route.route_class == "recovery_replica"
-        and route.route_authority_kind == "durable_reauthorized_renewal"
-        and route.active_lease_id is None
-        and route.active_durable_lease_id is None
-        and route.active_durable_renewal_lease_id is None
-        and route.active_durable_reauthorized_renewal_lease_id == lease.id
-        and route.active_replica_id == lease.replica_id
-        and route.read_path_switched is True
+    if not all(
+        (
+            route.route_class == "recovery_replica",
+            route.route_authority_kind == "durable_reauthorized_renewal",
+            route.active_lease_id is None,
+            route.active_durable_lease_id is None,
+            route.active_durable_renewal_lease_id is None,
+            route.active_durable_reauthorized_renewal_lease_id == lease.id,
+            route.active_replica_id == lease.replica_id,
+            route.read_path_switched is True,
+        )
     ):
         raise RecoveryDurableReadReauthorizedRenewalRoutingConflict(
             "Active read route does not match the Phase S lease being restored"
@@ -1113,17 +1099,10 @@ def rollback_recovery_durable_read_reauthorized_renewal_lease(
     rolled_back_by_id: UUID,
     reason: str,
     now: datetime | None = None,
-) -> tuple[
-    EvidenceRecoveryDurableReadReauthorizedRenewalLease,
-    EvidenceRecoveryReadPathRoute,
-    EvidenceRecoveryDurableReadReauthorizedRenewalReceipt | None,
-    str,
-]:
+) -> tuple[EvidenceRecoveryDurableReadReauthorizedRenewalLease, EvidenceRecoveryReadPathRoute, EvidenceRecoveryDurableReadReauthorizedRenewalReceipt | None, str]:
     normalized_reason = reason.strip()
     if len(normalized_reason) < 8:
-        raise RecoveryDurableReadReauthorizedRenewalRoutingConflict(
-            "Phase S rollback reason is required"
-        )
+        raise RecoveryDurableReadReauthorizedRenewalRoutingConflict("Phase S rollback reason is required")
     current_time = _as_utc(now or _utc_now())
     lease = _get_lease(
         db,
@@ -1142,11 +1121,7 @@ def rollback_recovery_durable_read_reauthorized_renewal_lease(
     )
     assert route is not None
     if lease.status == "rolled_back":
-        if not (
-            lease.rolled_back_by_id == rolled_back_by_id
-            and lease.rollback_reason == normalized_reason
-            and _route_is_clean_local(route)
-        ):
+        if not (lease.rolled_back_by_id == rolled_back_by_id and lease.rollback_reason == normalized_reason and _route_is_clean_local(route)):
             raise RecoveryDurableReadReauthorizedRenewalRoutingConflict(
                 "Phase S rollback replay does not match the original rollback"
             )
@@ -1167,6 +1142,72 @@ def rollback_recovery_durable_read_reauthorized_renewal_lease(
     return lease, route, receipt, "rolled_back"
 
 
+def _active_q_lineage_matches(
+    db: Session,
+    *,
+    lease: EvidenceRecoveryDurableReadReauthorizedRenewalLease,
+    authorization: EvidenceRecoveryDurableReadRenewalReauthorization,
+) -> bool:
+    qualification = db.scalar(
+        select(EvidenceRecoveryDurableReadRenewalHealthQualification).where(
+            EvidenceRecoveryDurableReadRenewalHealthQualification.id == lease.phase_q_health_qualification_id,
+            EvidenceRecoveryDurableReadRenewalHealthQualification.organization_id == lease.organization_id,
+            EvidenceRecoveryDurableReadRenewalHealthQualification.claim_id == lease.claim_id,
+            EvidenceRecoveryDurableReadRenewalHealthQualification.document_id == lease.document_id,
+        )
+    )
+    if qualification is None:
+        return False
+    if not all(
+        (
+            qualification.status == "qualified",
+            qualification.health_state == "healthy",
+            qualification.qualified_by_id == lease.phase_q_qualified_by_id,
+            qualification.health_qualification_hash == lease.phase_q_health_qualification_hash,
+            qualification.operational_evidence_hash == lease.operational_evidence_hash,
+            qualification.renewal_lease_id == lease.prior_renewal_lease_id,
+            qualification.renewal_lease_hash == lease.prior_renewal_lease_hash,
+            qualification.lease_snapshot_hash == lease.prior_lease_snapshot_hash,
+            qualification.authorization_id == authorization.prior_renewal_authorization_id,
+            qualification.authorization_hash == authorization.prior_renewal_authorization_hash,
+            qualification.phase_n_health_qualification_id == authorization.phase_n_health_qualification_id,
+            qualification.phase_n_health_qualification_hash == authorization.phase_n_health_qualification_hash,
+            qualification.prior_durable_lease_id == authorization.prior_durable_lease_id,
+            qualification.prior_durable_lease_hash == authorization.prior_durable_lease_hash,
+            qualification.replica_id == lease.replica_id,
+            qualification.replica_hash == lease.replica_hash,
+            qualification.source_file_hash == lease.source_file_hash,
+            qualification.source_file_size_bytes == lease.source_file_size_bytes,
+            qualification.local_storage_key_fingerprint == lease.local_storage_key_fingerprint,
+            qualification.recovery_bucket_fingerprint == lease.recovery_bucket_fingerprint,
+            qualification.candidate_storage_key_fingerprint == lease.candidate_storage_key_fingerprint,
+            qualification.source_authority_fingerprint == lease.source_authority_fingerprint,
+            qualification.candidate_authority_fingerprint == lease.candidate_authority_fingerprint,
+            qualification.configuration_fingerprint == lease.configuration_fingerprint,
+            qualification.verified_durable_read_count == lease.verified_durable_read_count,
+            qualification.integrity_failure_count == 0,
+            qualification.storage_unavailable_count == 0,
+            qualification.routable_authority_created is False,
+            qualification.durable_read_route_created is False,
+            qualification.read_path_switched is False,
+            qualification.write_path_switched is False,
+            qualification.document_storage_key_mutated is False,
+            qualification.authoritative_storage_changed is False,
+            qualification.destructive_action_performed is False,
+            qualification.s3_delete_performed is False,
+            qualification.local_delete_performed is False,
+        )
+    ):
+        return False
+    q_receipt = _qualified_q_receipt(db, qualification=qualification)
+    return all(
+        (
+            q_receipt.id == authorization.phase_q_health_receipt_id,
+            q_receipt.receipt_hash == authorization.phase_q_health_receipt_hash,
+        )
+    )
+
+
 def _validate_active_reauthorized_renewal_read(
     db: Session,
     *,
@@ -1175,33 +1216,34 @@ def _validate_active_reauthorized_renewal_read(
     lease: EvidenceRecoveryDurableReadReauthorizedRenewalLease,
     now: datetime,
 ) -> bytes:
-    if not (
-        lease.status == "activated"
-        and lease.routable_authority_created is True
-        and lease.durable_read_route_created is True
-        and lease.read_path_switched is True
-        and lease.write_path_switched is False
-        and lease.document_storage_key_mutated is False
-        and lease.authoritative_storage_changed is False
-        and lease.destructive_action_performed is False
-        and lease.route_expires_at is not None
-        and route.route_class == "recovery_replica"
-        and route.route_authority_kind == "durable_reauthorized_renewal"
-        and route.active_lease_id is None
-        and route.active_durable_lease_id is None
-        and route.active_durable_renewal_lease_id is None
-        and route.active_durable_reauthorized_renewal_lease_id == lease.id
-        and route.active_replica_id == lease.replica_id
-        and route.route_version == lease.route_version_at_prepare + 1
-        and route.read_path_switched is True
-        and route.write_path_switched is False
-        and route.document_storage_key_mutated is False
-        and route.authoritative_storage_changed is False
-        and route.destructive_action_performed is False
-        and route.source_authority_fingerprint == lease.source_authority_fingerprint
-        and route.candidate_authority_fingerprint
-        == lease.candidate_authority_fingerprint
-        and route.configuration_fingerprint == lease.configuration_fingerprint
+    if not all(
+        (
+            lease.status == "activated",
+            lease.routable_authority_created is True,
+            lease.durable_read_route_created is True,
+            lease.read_path_switched is True,
+            lease.write_path_switched is False,
+            lease.document_storage_key_mutated is False,
+            lease.authoritative_storage_changed is False,
+            lease.destructive_action_performed is False,
+            lease.route_expires_at is not None,
+            route.route_class == "recovery_replica",
+            route.route_authority_kind == "durable_reauthorized_renewal",
+            route.active_lease_id is None,
+            route.active_durable_lease_id is None,
+            route.active_durable_renewal_lease_id is None,
+            route.active_durable_reauthorized_renewal_lease_id == lease.id,
+            route.active_replica_id == lease.replica_id,
+            route.route_version == lease.route_version_at_prepare + 1,
+            route.read_path_switched is True,
+            route.write_path_switched is False,
+            route.document_storage_key_mutated is False,
+            route.authoritative_storage_changed is False,
+            route.destructive_action_performed is False,
+            route.source_authority_fingerprint == lease.source_authority_fingerprint,
+            route.candidate_authority_fingerprint == lease.candidate_authority_fingerprint,
+            route.configuration_fingerprint == lease.configuration_fingerprint,
+        )
     ):
         raise RecoveryDurableReadReauthorizedRenewalRoutingConflict(
             "Active Phase S route is structurally inconsistent"
@@ -1223,37 +1265,25 @@ def _validate_active_reauthorized_renewal_read(
                 authorization.status == "approved",
                 authorization.approved_by_id == lease.reauthorization_approved_by_id,
                 authorization.authorization_hash == lease.reauthorization_hash,
-                authorization.request_snapshot_hash
-                == lease.reauthorization_request_snapshot_hash,
-                authorization.integrity_proof_hash
-                == lease.reauthorization_integrity_proof_hash,
-                authorization.phase_q_health_qualification_id
-                == lease.phase_q_health_qualification_id,
+                authorization.request_snapshot_hash == lease.reauthorization_request_snapshot_hash,
+                authorization.integrity_proof_hash == lease.reauthorization_integrity_proof_hash,
+                authorization.phase_q_health_qualification_id == lease.phase_q_health_qualification_id,
                 authorization.renewal_lease_id == lease.prior_renewal_lease_id,
                 authorization.replica_id == lease.replica_id,
-                authorization.phase_q_health_qualification_hash
-                == lease.phase_q_health_qualification_hash,
-                authorization.operational_evidence_hash
-                == lease.operational_evidence_hash,
+                authorization.phase_q_health_qualification_hash == lease.phase_q_health_qualification_hash,
+                authorization.operational_evidence_hash == lease.operational_evidence_hash,
                 authorization.renewal_lease_hash == lease.prior_renewal_lease_hash,
                 authorization.lease_snapshot_hash == lease.prior_lease_snapshot_hash,
                 authorization.replica_hash == lease.replica_hash,
                 authorization.source_file_hash == lease.source_file_hash,
                 authorization.source_file_size_bytes == lease.source_file_size_bytes,
-                authorization.local_storage_key_fingerprint
-                == lease.local_storage_key_fingerprint,
-                authorization.recovery_bucket_fingerprint
-                == lease.recovery_bucket_fingerprint,
-                authorization.candidate_storage_key_fingerprint
-                == lease.candidate_storage_key_fingerprint,
-                authorization.source_authority_fingerprint
-                == lease.source_authority_fingerprint,
-                authorization.candidate_authority_fingerprint
-                == lease.candidate_authority_fingerprint,
-                authorization.configuration_fingerprint
-                == lease.configuration_fingerprint,
-                authorization.verified_durable_read_count
-                == lease.verified_durable_read_count,
+                authorization.local_storage_key_fingerprint == lease.local_storage_key_fingerprint,
+                authorization.recovery_bucket_fingerprint == lease.recovery_bucket_fingerprint,
+                authorization.candidate_storage_key_fingerprint == lease.candidate_storage_key_fingerprint,
+                authorization.source_authority_fingerprint == lease.source_authority_fingerprint,
+                authorization.candidate_authority_fingerprint == lease.candidate_authority_fingerprint,
+                authorization.configuration_fingerprint == lease.configuration_fingerprint,
+                authorization.verified_durable_read_count == lease.verified_durable_read_count,
                 authorization.integrity_failure_count == 0,
                 authorization.storage_unavailable_count == 0,
                 authorization.health_state == "healthy",
@@ -1272,25 +1302,13 @@ def _validate_active_reauthorized_renewal_read(
                 "Phase R authorization lineage drifted after Phase S activation"
             )
         approval = _approval_receipt(db, authorization=authorization)
-        if (
-            approval.id != lease.reauthorization_approval_receipt_id
-            or approval.receipt_hash != lease.reauthorization_approval_receipt_hash
-        ):
+        if approval.id != lease.reauthorization_approval_receipt_id or approval.receipt_hash != lease.reauthorization_approval_receipt_hash:
             raise RecoveryDurableReadReauthorizedRenewalRoutingConflict(
                 "Phase R approval receipt drifted after Phase S activation"
             )
-        reauthorization_snapshot = _load_reauthorization_snapshot(
-            db,
-            organization_id=document.organization_id,
-            claim_id=document.claim_id,
-            document_id=document.id,
-            phase_q_health_qualification_id=lease.phase_q_health_qualification_id,
-        )
-        if not _matches_reauthorization_snapshot(
-            authorization, reauthorization_snapshot
-        ):
+        if not _active_q_lineage_matches(db, lease=lease, authorization=authorization):
             raise RecoveryDurableReadReauthorizedRenewalRoutingConflict(
-                "Phase R deep lineage drifted after Phase S activation"
+                "Phase Q/P governance lineage drifted after Phase S activation"
             )
         prior_renewal = _get_prior_renewal_lease(
             db,
@@ -1312,25 +1330,22 @@ def _validate_active_reauthorized_renewal_read(
         )
         local_snapshot = _snapshot_local(document)
         _assert_replica_matches_source(replica, local_snapshot)
-        if not (
-            local_snapshot.file_hash == lease.source_file_hash
-            and local_snapshot.file_size_bytes == lease.source_file_size_bytes
-            and local_snapshot.storage_key_fingerprint
-            == lease.local_storage_key_fingerprint
-            and replica.replica_hash == lease.replica_hash
-            and replica.recovery_bucket_fingerprint
-            == lease.recovery_bucket_fingerprint
-            and hashlib.sha256(replica.recovery_storage_key.encode("utf-8")).hexdigest()
-            == lease.candidate_storage_key_fingerprint
+        if not all(
+            (
+                local_snapshot.file_hash == lease.source_file_hash,
+                local_snapshot.file_size_bytes == lease.source_file_size_bytes,
+                local_snapshot.storage_key_fingerprint == lease.local_storage_key_fingerprint,
+                replica.replica_hash == lease.replica_hash,
+                replica.recovery_bucket_fingerprint == lease.recovery_bucket_fingerprint,
+                hashlib.sha256(replica.recovery_storage_key.encode("utf-8")).hexdigest()
+                == lease.candidate_storage_key_fingerprint,
+            )
         ):
             raise RecoveryDurableReadReauthorizedRenewalRoutingConflict(
                 "Local or recovery replica lineage drifted after Phase S activation"
             )
         candidate_payload = _read_verified_candidate(replica)
-        if (
-            hashlib.sha256(candidate_payload).hexdigest() != lease.source_file_hash
-            or len(candidate_payload) != lease.source_file_size_bytes
-        ):
+        if hashlib.sha256(candidate_payload).hexdigest() != lease.source_file_hash or len(candidate_payload) != lease.source_file_size_bytes:
             raise RecoveryDurableReadReauthorizedRenewalRoutingConflict(
                 "Phase S candidate bytes failed fresh integrity verification"
             )
@@ -1349,19 +1364,11 @@ def _validate_active_reauthorized_renewal_read(
         raise RecoveryDurableReadReauthorizedRenewalRoutingConflict(str(exc)) from exc
     except RecoveryDurableReadRenewalRoutingUnavailable as exc:
         raise RecoveryDurableReadReauthorizedRenewalRoutingUnavailable(str(exc)) from exc
-    except (RecoveryDurableReadRoutingNotFound, RecoveryRoutableReadCutoverNotFound) as exc:
+    except RecoveryRoutableReadCutoverNotFound as exc:
         raise RecoveryDurableReadReauthorizedRenewalRoutingNotFound(str(exc)) from exc
-    except (
-        RecoveryDurableReadRoutingConflict,
-        RecoveryRoutableReadCutoverConflict,
-        RecoveryReplicationConflict,
-    ) as exc:
+    except (RecoveryRoutableReadCutoverConflict, RecoveryReplicationConflict, FileNotFoundError) as exc:
         raise RecoveryDurableReadReauthorizedRenewalRoutingConflict(str(exc)) from exc
-    except (
-        RecoveryDurableReadRoutingUnavailable,
-        RecoveryRoutableReadCutoverUnavailable,
-        RecoveryReplicationUnavailable,
-    ) as exc:
+    except (RecoveryRoutableReadCutoverUnavailable, RecoveryReplicationUnavailable) as exc:
         raise RecoveryDurableReadReauthorizedRenewalRoutingUnavailable(str(exc)) from exc
 
 
@@ -1375,12 +1382,7 @@ def reconcile_recovery_durable_read_reauthorized_renewal_lease(
     reconciled_by_id: UUID,
     reason: str,
     now: datetime | None = None,
-) -> tuple[
-    EvidenceRecoveryDurableReadReauthorizedRenewalLease,
-    EvidenceRecoveryReadPathRoute,
-    EvidenceRecoveryDurableReadReauthorizedRenewalReceipt | None,
-    str,
-]:
+) -> tuple[EvidenceRecoveryDurableReadReauthorizedRenewalLease, EvidenceRecoveryReadPathRoute, EvidenceRecoveryDurableReadReauthorizedRenewalReceipt | None, str]:
     normalized_reason = reason.strip()
     if len(normalized_reason) < 8:
         raise RecoveryDurableReadReauthorizedRenewalRoutingConflict(
@@ -1512,14 +1514,10 @@ def list_recovery_durable_read_reauthorized_renewal_receipts(
         db.scalars(
             select(EvidenceRecoveryDurableReadReauthorizedRenewalReceipt)
             .where(
-                EvidenceRecoveryDurableReadReauthorizedRenewalReceipt.organization_id
-                == organization_id,
-                EvidenceRecoveryDurableReadReauthorizedRenewalReceipt.claim_id
-                == claim_id,
-                EvidenceRecoveryDurableReadReauthorizedRenewalReceipt.document_id
-                == document_id,
-                EvidenceRecoveryDurableReadReauthorizedRenewalReceipt.reauthorized_renewal_lease_id
-                == lease_id,
+                EvidenceRecoveryDurableReadReauthorizedRenewalReceipt.organization_id == organization_id,
+                EvidenceRecoveryDurableReadReauthorizedRenewalReceipt.claim_id == claim_id,
+                EvidenceRecoveryDurableReadReauthorizedRenewalReceipt.document_id == document_id,
+                EvidenceRecoveryDurableReadReauthorizedRenewalReceipt.reauthorized_renewal_lease_id == lease_id,
             )
             .order_by(
                 EvidenceRecoveryDurableReadReauthorizedRenewalReceipt.transitioned_at.asc(),
