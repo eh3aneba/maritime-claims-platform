@@ -13,7 +13,7 @@ branch_labels = None
 depends_on = None
 
 QUAL_TABLE = "evidence_recovery_durable_read_renewal_health_qualifications"
-RECEIPT_TABLE = "evidence_recovery_durable_read_renewal_health_qualification_receipts"
+RECEIPT_TABLE = "evidence_recovery_durable_read_renewal_health_receipts"
 
 
 def _safety_columns() -> list[sa.Column]:
