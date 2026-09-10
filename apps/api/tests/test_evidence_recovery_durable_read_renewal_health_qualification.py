@@ -193,7 +193,7 @@ def test_completed_phase_p_window_is_independently_qualified_without_new_authori
         assert cross_tenant.status_code == 404
 
 
-def test_phase_q_route_drift_invalidates_and_review_expiry_fails_closed(
+def test_phase_q_route_drift_invalidates_fail_closed(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -218,9 +218,13 @@ def test_phase_q_route_drift_invalidates_and_review_expiry_fails_closed(
         assert invalidated.json()["qualification"]["status"] == "invalidated"
         assert invalidated.json()["qualification"]["read_path_switched"] is False
 
-    reset_database()
+
+def test_phase_q_review_expiry_fails_closed(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
     with _fake_s3() as endpoint:
-        data = _completed_p(monkeypatch, tmp_path / "expiry", endpoint, slug="renewal-health-expiry")
+        data = _completed_p(monkeypatch, tmp_path, endpoint, slug="renewal-health-expiry")
         _, qualifier_headers = _independent_admin(data, slug="expiry")
         requested = _request_q(data)
         assert requested.status_code == 201, requested.text
