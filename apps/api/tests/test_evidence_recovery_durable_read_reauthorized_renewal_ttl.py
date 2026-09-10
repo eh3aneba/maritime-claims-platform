@@ -45,7 +45,10 @@ def test_phase_r_consumption_expiry_does_not_end_already_active_phase_s_route(
             assert reauthorization is not None and lease is not None
             assert lease.status == "activated"
             assert lease.route_expires_at is not None
-            assert lease.route_expires_at > datetime.now(UTC)
+            route_expires_at = lease.route_expires_at
+            if route_expires_at.tzinfo is None:
+                route_expires_at = route_expires_at.replace(tzinfo=UTC)
+            assert route_expires_at > datetime.now(UTC)
 
             reauthorization.authorization_expires_at = datetime.now(UTC) - timedelta(seconds=1)
             db.commit()
