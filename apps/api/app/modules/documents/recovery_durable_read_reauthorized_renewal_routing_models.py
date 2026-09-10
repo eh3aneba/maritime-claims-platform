@@ -26,6 +26,10 @@ class EvidenceRecoveryDurableReadReauthorizedRenewalLease(UUIDPrimaryKeyMixin, T
             name="ck_drr_reauth_renew_r_approver_split",
         ),
         CheckConstraint(
+            "phase_q_qualified_by_id <> activated_by_id OR activated_by_id IS NULL",
+            name="ck_drr_reauth_renew_q_split",
+        ),
+        CheckConstraint(
             "prior_renewal_activated_by_id <> activated_by_id OR activated_by_id IS NULL",
             name="ck_drr_reauth_renew_p_activator_split",
         ),
