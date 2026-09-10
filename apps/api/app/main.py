@@ -58,6 +58,7 @@ from app.modules.documents.recovery_authority_switch_router import router as rec
 from app.modules.documents.recovery_cutover_admission_router import router as recovery_cutover_admission_router
 from app.modules.documents.recovery_cutover_execution_router import router as recovery_cutover_execution_router
 from app.modules.documents.recovery_durable_read_promotion_router import router as recovery_durable_read_promotion_router
+from app.modules.documents.recovery_durable_read_routing_router import router as recovery_durable_read_routing_router
 from app.modules.documents.recovery_read_path_cutover_router import router as recovery_read_path_cutover_router
 from app.modules.documents.recovery_routable_read_cutover_router import router as recovery_routable_read_cutover_router
 from app.modules.documents.recovery_routable_read_qualification_router import router as recovery_routable_read_qualification_router
@@ -176,6 +177,7 @@ app.include_router(recovery_read_path_cutover_router, prefix=settings.api_v1_pre
 app.include_router(recovery_routable_read_cutover_router, prefix=settings.api_v1_prefix)
 app.include_router(recovery_routable_read_qualification_router, prefix=settings.api_v1_prefix)
 app.include_router(recovery_durable_read_promotion_router, prefix=settings.api_v1_prefix)
+app.include_router(recovery_durable_read_routing_router, prefix=settings.api_v1_prefix)
 app.include_router(email_ingestion_router, prefix=settings.api_v1_prefix)
 app.include_router(evidence_search_router, prefix=settings.api_v1_prefix)
 app.include_router(external_portal_router, prefix=settings.api_v1_prefix)

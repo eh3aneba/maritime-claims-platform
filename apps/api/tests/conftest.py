@@ -7,15 +7,18 @@ from app.modules.documents import service as document_service
 
 @pytest.fixture(autouse=True)
 def _align_routable_read_cutover_document_storage(request):
-    """Bind live-download storage to the same tmp_path used by the J recovery chain.
+    """Bind live-download storage to the tmp_path used by routable recovery tests.
 
-    Earlier recovery phases patch only the recovery-service settings because they
-    never exercise the ordinary document download path. Phase 17.3-J does. Keep
-    this override narrowly scoped to the new routable-cutover test module so the
+    Earlier recovery phases patch only recovery-service settings because they do
+    not exercise the ordinary document download path. Phases J and M do. Keep
+    this override narrowly scoped to those routable-read test modules so the
     production document service remains untouched and the rest of the suite keeps
     its normal storage configuration.
     """
-    if request.node.path.name != "test_evidence_recovery_routable_read_cutover.py":
+    if request.node.path.name not in {
+        "test_evidence_recovery_routable_read_cutover.py",
+        "test_evidence_recovery_durable_read_routing.py",
+    }:
         yield
         return
 

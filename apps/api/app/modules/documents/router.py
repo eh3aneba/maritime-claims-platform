@@ -21,10 +21,10 @@ from app.modules.documents.evidence_security import (
     queue_legacy_rescans,
     retry_quarantined_upload,
 )
-from app.modules.documents.recovery_routable_read_cutover_service import (
-    RecoveryRoutableReadCutoverConflict,
-    RecoveryRoutableReadCutoverNotFound,
-    RecoveryRoutableReadCutoverUnavailable,
+from app.modules.documents.recovery_durable_read_routing_service import (
+    RecoveryDurableReadRoutingConflict,
+    RecoveryDurableReadRoutingNotFound,
+    RecoveryDurableReadRoutingUnavailable,
     resolve_recovery_document_read,
 )
 from app.modules.documents.schemas import (
@@ -310,9 +310,9 @@ def download_claim_document(
             db,
             document=document,
         )
-    except (RecoveryRoutableReadCutoverConflict, RecoveryRoutableReadCutoverNotFound) as exc:
+    except (RecoveryDurableReadRoutingConflict, RecoveryDurableReadRoutingNotFound) as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
-    except RecoveryRoutableReadCutoverUnavailable as exc:
+    except RecoveryDurableReadRoutingUnavailable as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=str(exc),
@@ -342,7 +342,7 @@ def download_claim_document(
                     "attachment; filename*=UTF-8''"
                     f"{quote(document.original_filename, safe='')}"
                 ),
-                "X-MCRI-Evidence-Read-Source": "recovery-replica",
+                "X-MCRI-Evidence-Read-Source": read_source,
             },
         )
 
@@ -356,7 +356,7 @@ def download_claim_document(
         details=f"Downloaded {document.original_filename}",
         new_values={
             "read_source": read_source,
-            "read_path_switched": read_source == "recovery-replica",
+            "read_path_switched": recovery_payload is not None,
             "write_path_switched": False,
             "document_storage_key_mutated": False,
             "authoritative_storage_changed": False,
