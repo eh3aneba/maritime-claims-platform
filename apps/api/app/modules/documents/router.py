@@ -188,11 +188,6 @@ def rescan_legacy_claim_documents(
         limit=payload.limit,
     )
     return LegacyRescanResponse(
-        items=[],
-        total=0,
-        quarantined_items=[],
-        quarantined_total=0,
-    ) if False else LegacyRescanResponse(
         queued_count=len(jobs),
         skipped_count=skipped,
         jobs=[
