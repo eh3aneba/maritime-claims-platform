@@ -121,7 +121,7 @@ class EvidenceRecoveryDurableReadRenewalHealthQualification(UUIDPrimaryKeyMixin,
 class EvidenceRecoveryDurableReadRenewalHealthQualificationReceipt(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     """Append-only Phase Q governance receipt."""
 
-    __tablename__ = "evidence_recovery_durable_read_renewal_health_qualification_receipts"
+    __tablename__ = "evidence_recovery_durable_read_renewal_health_receipts"
     __table_args__ = (
         CheckConstraint("phase IN ('requested', 'qualified', 'degraded', 'rejected', 'expired', 'invalidated')", name="ck_drr_health_receipt_phase"),
         CheckConstraint("routable_authority_created = false", name="ck_drr_health_rec_no_route"),
