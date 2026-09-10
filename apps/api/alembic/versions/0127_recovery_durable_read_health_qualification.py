@@ -14,9 +14,34 @@ depends_on = None
 
 QUAL_TABLE = "evidence_recovery_durable_read_health_qualifications"
 RECEIPT_TABLE = "evidence_recovery_durable_read_health_qualification_receipts"
+M_LEASE_TABLE = "evidence_recovery_durable_read_promotion_leases"
+M_RECEIPT_TABLE = "evidence_recovery_durable_read_promotion_receipts"
+
+
+def _set_phase_m_timestamp_defaults(server_default) -> None:
+    for table in (M_LEASE_TABLE, M_RECEIPT_TABLE):
+        op.alter_column(
+            table,
+            "created_at",
+            existing_type=sa.DateTime(timezone=True),
+            existing_nullable=False,
+            server_default=server_default,
+        )
+        op.alter_column(
+            table,
+            "updated_at",
+            existing_type=sa.DateTime(timezone=True),
+            existing_nullable=False,
+            server_default=server_default,
+        )
 
 
 def upgrade() -> None:
+    # Phase M models use TimestampMixin, which treats these values as server-generated.
+    # Repair the 0126 DDL omission before Phase N consumes Phase M records in a
+    # migrated PostgreSQL deployment.
+    _set_phase_m_timestamp_defaults(sa.text("now()"))
+
     op.create_table(
         QUAL_TABLE,
         sa.Column("organization_id", sa.Uuid(), nullable=False),
@@ -80,8 +105,8 @@ def upgrade() -> None:
         sa.Column("s3_delete_performed", sa.Boolean(), server_default=sa.false(), nullable=False),
         sa.Column("local_delete_performed", sa.Boolean(), server_default=sa.false(), nullable=False),
         sa.Column("id", sa.Uuid(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.CheckConstraint("status IN ('pending_second_approval', 'qualified', 'degraded', 'rejected', 'invalidated')", name="ck_durable_read_health_status"),
         sa.CheckConstraint("health_state IN ('healthy', 'degraded', 'failed')", name="ck_durable_read_health_state"),
         sa.CheckConstraint("terminal_phase IN ('rolled_back', 'expired')", name="ck_durable_read_health_terminal_phase"),
@@ -162,8 +187,8 @@ def upgrade() -> None:
         sa.Column("s3_delete_performed", sa.Boolean(), server_default=sa.false(), nullable=False),
         sa.Column("local_delete_performed", sa.Boolean(), server_default=sa.false(), nullable=False),
         sa.Column("id", sa.Uuid(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.CheckConstraint("phase IN ('requested', 'qualified', 'degraded', 'rejected', 'invalidated')", name="ck_durable_read_health_receipt_phase"),
         sa.CheckConstraint("routable_authority_created = false", name="ck_durable_read_health_rec_no_route"),
         sa.CheckConstraint("durable_read_route_created = false", name="ck_durable_read_health_rec_no_durable"),
@@ -208,3 +233,5 @@ def downgrade() -> None:
     op.drop_index("ix_drh_org_doc", table_name=QUAL_TABLE)
     op.drop_index("ix_drh_org_claim", table_name=QUAL_TABLE)
     op.drop_table(QUAL_TABLE)
+
+    _set_phase_m_timestamp_defaults(None)
