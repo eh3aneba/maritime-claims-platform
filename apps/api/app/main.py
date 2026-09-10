@@ -59,6 +59,7 @@ from app.modules.documents.recovery_cutover_admission_router import router as re
 from app.modules.documents.recovery_cutover_execution_router import router as recovery_cutover_execution_router
 from app.modules.documents.recovery_durable_read_health_router import router as recovery_durable_read_health_router
 from app.modules.documents.recovery_durable_read_renewal_health_router import router as recovery_durable_read_renewal_health_router
+from app.modules.documents.recovery_durable_read_renewal_reauthorization_router import router as recovery_durable_read_renewal_reauthorization_router
 from app.modules.documents.recovery_durable_read_renewal_router import router as recovery_durable_read_renewal_router
 from app.modules.documents.recovery_durable_read_renewal_routing_router import router as recovery_durable_read_renewal_routing_router
 from app.modules.documents.recovery_durable_read_promotion_router import router as recovery_durable_read_promotion_router
@@ -186,6 +187,7 @@ app.include_router(recovery_durable_read_health_router, prefix=settings.api_v1_p
 app.include_router(recovery_durable_read_renewal_router, prefix=settings.api_v1_prefix)
 app.include_router(recovery_durable_read_renewal_routing_router, prefix=settings.api_v1_prefix)
 app.include_router(recovery_durable_read_renewal_health_router, prefix=settings.api_v1_prefix)
+app.include_router(recovery_durable_read_renewal_reauthorization_router, prefix=settings.api_v1_prefix)
 app.include_router(email_ingestion_router, prefix=settings.api_v1_prefix)
 app.include_router(evidence_search_router, prefix=settings.api_v1_prefix)
 app.include_router(external_portal_router, prefix=settings.api_v1_prefix)
