@@ -100,15 +100,16 @@ def upgrade() -> None:
         sa.UniqueConstraint("authorization_id", name="uq_recovery_durable_route_lease_authorization"),
         sa.UniqueConstraint("organization_id", "lease_hash", name="uq_recovery_durable_route_lease_org_hash"),
     )
-    op.create_index("ix_recovery_durable_route_lease_org_claim_status", LEASE_TABLE, ["organization_id", "claim_id", "status"], unique=False)
-    op.create_index("ix_recovery_durable_route_lease_org_doc_status", LEASE_TABLE, ["organization_id", "document_id", "status"], unique=False)
-    for column in (
-        "organization_id", "claim_id", "document_id", "authorization_id",
-        "authorization_approval_receipt_id", "qualification_id", "replica_id",
-        "authorization_approved_by_id", "prepared_by_id", "activated_by_id",
-        "rolled_back_by_id", "terminal_by_id",
-    ):
-        op.create_index(f"ix_{LEASE_TABLE}_{column}", LEASE_TABLE, [column], unique=False)
+    op.create_index("ix_drrl_org_claim_status", LEASE_TABLE, ["organization_id", "claim_id", "status"], unique=False)
+    op.create_index("ix_drrl_org_doc_status", LEASE_TABLE, ["organization_id", "document_id", "status"], unique=False)
+    op.create_index("ix_drrl_auth_receipt", LEASE_TABLE, ["authorization_approval_receipt_id"], unique=False)
+    op.create_index("ix_drrl_qualification", LEASE_TABLE, ["qualification_id"], unique=False)
+    op.create_index("ix_drrl_replica", LEASE_TABLE, ["replica_id"], unique=False)
+    op.create_index("ix_drrl_approver", LEASE_TABLE, ["authorization_approved_by_id"], unique=False)
+    op.create_index("ix_drrl_preparer", LEASE_TABLE, ["prepared_by_id"], unique=False)
+    op.create_index("ix_drrl_activator", LEASE_TABLE, ["activated_by_id"], unique=False)
+    op.create_index("ix_drrl_rollback_actor", LEASE_TABLE, ["rolled_back_by_id"], unique=False)
+    op.create_index("ix_drrl_terminal_actor", LEASE_TABLE, ["terminal_by_id"], unique=False)
 
     op.create_table(
         RECEIPT_TABLE,
@@ -159,9 +160,9 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("organization_id", "receipt_hash", name="uq_recovery_durable_route_receipt_org_hash"),
     )
-    op.create_index("ix_recovery_durable_route_receipt_time", RECEIPT_TABLE, ["durable_lease_id", "transitioned_at"], unique=False)
-    for column in ("organization_id", "claim_id", "document_id", "durable_lease_id", "authorization_id", "actor_id"):
-        op.create_index(f"ix_{RECEIPT_TABLE}_{column}", RECEIPT_TABLE, [column], unique=False)
+    op.create_index("ix_drrr_lease_time", RECEIPT_TABLE, ["durable_lease_id", "transitioned_at"], unique=False)
+    op.create_index("ix_drrr_authorization", RECEIPT_TABLE, ["authorization_id"], unique=False)
+    op.create_index("ix_drrr_actor", RECEIPT_TABLE, ["actor_id"], unique=False)
 
     op.drop_constraint("ck_recovery_read_route_binding", ROUTE_TABLE, type_="check")
     op.add_column(ROUTE_TABLE, sa.Column("durable_authority_active", sa.Boolean(), server_default=sa.false(), nullable=False))
@@ -196,6 +197,5 @@ def downgrade() -> None:
         "((route_class = 'local_source' AND active_lease_id IS NULL AND active_replica_id IS NULL AND read_path_switched = false) OR "
         "(route_class = 'recovery_replica' AND active_lease_id IS NOT NULL AND active_replica_id IS NOT NULL AND read_path_switched = true))",
     )
-
     op.drop_table(RECEIPT_TABLE)
     op.drop_table(LEASE_TABLE)
