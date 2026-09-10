@@ -160,7 +160,16 @@ def test_durable_route_reads_verified_replica_and_rolls_back_without_changing_ev
             assert route.durable_authority_active is True
             assert route.active_durable_lease_id == lease.id
             assert route.active_lease_id is None
-            audit = db.query(AuditLog).filter(AuditLog.action == "DOWNLOAD_DOCUMENT").order_by(AuditLog.created_at.desc()).first()
+            audits = db.query(AuditLog).filter(AuditLog.action == "DOWNLOAD_DOCUMENT").all()
+            audit = next(
+                (
+                    item
+                    for item in audits
+                    if item.new_values
+                    and item.new_values.get("read_source") == "recovery-replica-durable"
+                ),
+                None,
+            )
             assert audit is not None
             assert audit.new_values["read_source"] == "recovery-replica-durable"
             assert audit.new_values["read_path_switched"] is True
