@@ -8,6 +8,9 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.modules.audit.service import write_audit_log
 from app.modules.claims.retention_router import RetentionAdminMfa, RetentionReader
+from app.modules.documents.recovery_durable_read_promotion_approval_service import (
+    approve_durable_read_promotion_authorization,
+)
 from app.modules.documents.recovery_durable_read_promotion_schemas import (
     RecoveryDurableReadPromotionAuthorizationOperationRead,
     RecoveryDurableReadPromotionAuthorizationRead,
@@ -18,7 +21,6 @@ from app.modules.documents.recovery_durable_read_promotion_service import (
     RecoveryDurableReadPromotionAuthorizationConflict,
     RecoveryDurableReadPromotionAuthorizationNotFound,
     RecoveryDurableReadPromotionAuthorizationUnavailable,
-    approve_durable_read_promotion_authorization,
     get_durable_read_promotion_authorization,
     list_durable_read_promotion_authorization_receipts,
     reject_durable_read_promotion_authorization,
