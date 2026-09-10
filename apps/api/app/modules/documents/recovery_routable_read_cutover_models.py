@@ -100,8 +100,13 @@ class EvidenceRecoveryReadPathRoute(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             name="ck_recovery_read_route_class",
         ),
         CheckConstraint(
-            "((route_class = 'local_source' AND active_lease_id IS NULL AND active_replica_id IS NULL AND read_path_switched = false) OR "
-            "(route_class = 'recovery_replica' AND active_lease_id IS NOT NULL AND active_replica_id IS NOT NULL AND read_path_switched = true))",
+            "route_authority_kind IN ('local', 'temporary_cutover', 'durable_promotion')",
+            name="ck_recovery_read_route_authority_kind",
+        ),
+        CheckConstraint(
+            "((route_class = 'local_source' AND route_authority_kind = 'local' AND active_lease_id IS NULL AND active_durable_lease_id IS NULL AND active_replica_id IS NULL AND read_path_switched = false) OR "
+            "(route_class = 'recovery_replica' AND route_authority_kind = 'temporary_cutover' AND active_lease_id IS NOT NULL AND active_durable_lease_id IS NULL AND active_replica_id IS NOT NULL AND read_path_switched = true) OR "
+            "(route_class = 'recovery_replica' AND route_authority_kind = 'durable_promotion' AND active_lease_id IS NULL AND active_durable_lease_id IS NOT NULL AND active_replica_id IS NOT NULL AND read_path_switched = true))",
             name="ck_recovery_read_route_binding",
         ),
         CheckConstraint("route_version >= 1", name="ck_recovery_read_route_version"),
@@ -117,7 +122,9 @@ class EvidenceRecoveryReadPathRoute(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     claim_id: Mapped[UUID] = mapped_column(ForeignKey("claims.id", ondelete="RESTRICT"), nullable=False, index=True)
     document_id: Mapped[UUID] = mapped_column(ForeignKey("documents.id", ondelete="RESTRICT"), nullable=False, index=True)
     route_class: Mapped[str] = mapped_column(String(24), nullable=False, default="local_source", server_default="local_source")
+    route_authority_kind: Mapped[str] = mapped_column(String(24), nullable=False, default="local", server_default="local")
     active_lease_id: Mapped[UUID | None] = mapped_column(ForeignKey("evidence_recovery_read_path_cutover_leases.id", ondelete="RESTRICT"), nullable=True, index=True)
+    active_durable_lease_id: Mapped[UUID | None] = mapped_column(ForeignKey("evidence_recovery_durable_read_promotion_leases.id", ondelete="RESTRICT"), nullable=True, index=True)
     active_replica_id: Mapped[UUID | None] = mapped_column(ForeignKey("evidence_recovery_replicas.id", ondelete="RESTRICT"), nullable=True, index=True)
     source_authority_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
     candidate_authority_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
