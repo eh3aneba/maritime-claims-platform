@@ -228,9 +228,15 @@ def _operational_evidence(
     unavailable = 0
     expired_attempts = 0
     lease_id = str(lease.id)
+    # Audit timestamps may be persisted at coarser precision than application
+    # transition timestamps. Compare at second precision while retaining exact
+    # tenant/document/action and durable-lease lineage as the provenance boundary.
+    window_start_second = started_at.replace(microsecond=0)
+    window_end_second = ended_at.replace(microsecond=0)
     for event in events:
         event_at = _as_utc(event.created_at)
-        if event_at < started_at or event_at > ended_at:
+        event_second = event_at.replace(microsecond=0)
+        if event_second < window_start_second or event_second > window_end_second:
             continue
         values = event.new_values or {}
         if values.get("recovery_durable_lease_id") != lease_id:
