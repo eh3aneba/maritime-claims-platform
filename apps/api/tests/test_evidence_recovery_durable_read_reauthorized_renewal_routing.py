@@ -265,7 +265,10 @@ def test_phase_s_active_tamper_and_outage_fail_closed_without_local_fallback(mon
         lease_id, activator_headers = _activate_happy_s(data, slug="phase-s-read-failclosed")
         original_remote = _RecoveryRestoreS3Handler.objects[data["remote_key"]]
 
-        _RecoveryRestoreS3Handler.objects[data["remote_key"]] = b"tampered-phase-s-payload"
+        _RecoveryRestoreS3Handler.objects[data["remote_key"]] = (
+            b"tampered-phase-s-payload",
+            original_remote[1],
+        )
         tampered = client.get(
             f"/api/v1/claims/{data['claim_id']}/documents/{data['document_id']}/download",
             headers=data["manager_headers"],
