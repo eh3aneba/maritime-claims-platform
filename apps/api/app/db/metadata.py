@@ -36,6 +36,7 @@ from app.modules.documents.recovery_authority_switch_models import EvidenceRecov
 from app.modules.documents.recovery_cutover_admission_models import EvidenceRecoveryCutoverAdmission, EvidenceRecoveryCutoverAdmissionReceipt  # noqa: F401
 from app.modules.documents.recovery_cutover_execution_models import EvidenceRecoveryCutoverExecutionLease, EvidenceRecoveryCutoverExecutionReceipt  # noqa: F401
 from app.modules.documents.recovery_read_path_cutover_models import EvidenceRecoveryReadPathCutoverAuthorization, EvidenceRecoveryReadPathCutoverAuthorizationReceipt  # noqa: F401
+from app.modules.documents.recovery_routable_read_cutover_models import EvidenceRecoveryReadPathCutoverLease, EvidenceRecoveryReadPathCutoverReceipt, EvidenceRecoveryReadPathRoute  # noqa: F401
 from app.modules.documents.recovery_promotion_models import EvidenceRecoveryPromotionAttestation  # noqa: F401
 from app.modules.documents.recovery_replication_models import EvidenceRecoveryReplica, EvidenceRecoveryVerification  # noqa: F401
 from app.modules.documents.recovery_restore_models import EvidenceRecoveryRestoreRehearsal, EvidenceRecoveryRestoreVerification  # noqa: F401

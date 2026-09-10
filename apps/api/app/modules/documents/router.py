@@ -1,4 +1,5 @@
 from typing import Annotated
+from urllib.parse import quote
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile, status
@@ -19,6 +20,12 @@ from app.modules.documents.evidence_security import (
     purge_quarantined_upload,
     queue_legacy_rescans,
     retry_quarantined_upload,
+)
+from app.modules.documents.recovery_routable_read_cutover_service import (
+    RecoveryRoutableReadCutoverConflict,
+    RecoveryRoutableReadCutoverNotFound,
+    RecoveryRoutableReadCutoverUnavailable,
+    resolve_recovery_document_read,
 )
 from app.modules.documents.schemas import (
     DocumentListResponse,
@@ -275,7 +282,7 @@ def download_claim_document(
     document_id: UUID,
     current_user: CurrentUser,
     db: Annotated[Session, Depends(get_db)],
-) -> FileResponse:
+) -> Response:
     claim = get_claim_for_tenant(
         db, claim_id=claim_id, organization_id=current_user.organization_id
     )
@@ -297,13 +304,48 @@ def download_claim_document(
             status_code=status.HTTP_423_LOCKED,
             detail=f"Document download is blocked: {document.malware_scan_status.value}.",
         )
+
     try:
-        path = _storage().path_for(document.storage_key)
-    except FileNotFoundError as exc:
+        recovery_payload, read_source = resolve_recovery_document_read(
+            db,
+            document=document,
+        )
+    except (RecoveryRoutableReadCutoverConflict, RecoveryRoutableReadCutoverNotFound) as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except RecoveryRoutableReadCutoverUnavailable as exc:
         raise HTTPException(
-            status_code=status.HTTP_410_GONE,
-            detail="Document metadata exists but the stored file is unavailable.",
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
         ) from exc
+
+    response: Response
+    if recovery_payload is None:
+        try:
+            path = _storage().path_for(document.storage_key)
+        except FileNotFoundError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_410_GONE,
+                detail="Document metadata exists but the stored file is unavailable.",
+            ) from exc
+        response = FileResponse(
+            path=path,
+            media_type=document.mime_type,
+            filename=document.original_filename,
+            headers={"X-MCRI-Evidence-Read-Source": "local-source"},
+        )
+    else:
+        response = Response(
+            content=recovery_payload,
+            media_type=document.mime_type,
+            headers={
+                "Content-Disposition": (
+                    "attachment; filename*=UTF-8''"
+                    f"{quote(document.original_filename, safe='')}"
+                ),
+                "X-MCRI-Evidence-Read-Source": "recovery-replica",
+            },
+        )
+
     write_audit_log(
         db,
         organization_id=current_user.organization_id,
@@ -312,9 +354,17 @@ def download_claim_document(
         entity_type="document",
         entity_id=document.id,
         details=f"Downloaded {document.original_filename}",
+        new_values={
+            "read_source": read_source,
+            "read_path_switched": read_source == "recovery-replica",
+            "write_path_switched": False,
+            "document_storage_key_mutated": False,
+            "authoritative_storage_changed": False,
+            "destructive_action_performed": False,
+        },
     )
     db.commit()
-    return FileResponse(path=path, media_type=document.mime_type, filename=document.original_filename)
+    return response
 
 
 @router.delete("/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
