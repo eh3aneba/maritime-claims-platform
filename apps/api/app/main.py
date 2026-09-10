@@ -56,6 +56,7 @@ from app.modules.chronology.router import router as chronology_router
 from app.modules.correspondence.router import router as correspondence_router
 from app.modules.documents.recovery_authority_switch_router import router as recovery_authority_switch_router
 from app.modules.documents.recovery_cutover_admission_router import router as recovery_cutover_admission_router
+from app.modules.documents.recovery_cutover_execution_router import router as recovery_cutover_execution_router
 from app.modules.documents.recovery_promotion_router import router as recovery_promotion_router
 from app.modules.documents.recovery_replication_router import router as recovery_replication_router
 from app.modules.documents.recovery_restore_router import router as recovery_restore_router
@@ -166,6 +167,7 @@ app.include_router(recovery_promotion_router, prefix=settings.api_v1_prefix)
 app.include_router(recovery_shadow_router, prefix=settings.api_v1_prefix)
 app.include_router(recovery_authority_switch_router, prefix=settings.api_v1_prefix)
 app.include_router(recovery_cutover_admission_router, prefix=settings.api_v1_prefix)
+app.include_router(recovery_cutover_execution_router, prefix=settings.api_v1_prefix)
 app.include_router(email_ingestion_router, prefix=settings.api_v1_prefix)
 app.include_router(evidence_search_router, prefix=settings.api_v1_prefix)
 app.include_router(external_portal_router, prefix=settings.api_v1_prefix)
