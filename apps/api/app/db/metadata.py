@@ -35,6 +35,7 @@ from app.modules.documents.models import Document, QuarantinedUpload  # noqa: F4
 from app.modules.documents.recovery_authority_switch_models import EvidenceRecoveryAuthoritySwitchReceipt, EvidenceRecoveryAuthoritySwitchRehearsal  # noqa: F401
 from app.modules.documents.recovery_cutover_admission_models import EvidenceRecoveryCutoverAdmission, EvidenceRecoveryCutoverAdmissionReceipt  # noqa: F401
 from app.modules.documents.recovery_cutover_execution_models import EvidenceRecoveryCutoverExecutionLease, EvidenceRecoveryCutoverExecutionReceipt  # noqa: F401
+from app.modules.documents.recovery_durable_read_health_models import EvidenceRecoveryDurableReadHealthQualification, EvidenceRecoveryDurableReadHealthQualificationReceipt  # noqa: F401
 from app.modules.documents.recovery_durable_read_promotion_models import EvidenceRecoveryDurableReadPromotionAuthorization, EvidenceRecoveryDurableReadPromotionAuthorizationReceipt  # noqa: F401
 from app.modules.documents.recovery_durable_read_routing_models import EvidenceRecoveryDurableReadPromotionLease, EvidenceRecoveryDurableReadPromotionReceipt  # noqa: F401
 from app.modules.documents.recovery_read_path_cutover_models import EvidenceRecoveryReadPathCutoverAuthorization, EvidenceRecoveryReadPathCutoverAuthorizationReceipt  # noqa: F401

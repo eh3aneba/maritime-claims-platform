@@ -4,6 +4,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile, status
 from fastapi.responses import FileResponse
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -27,6 +28,7 @@ from app.modules.documents.recovery_durable_read_routing_service import (
     RecoveryDurableReadRoutingUnavailable,
     resolve_recovery_document_read,
 )
+from app.modules.documents.recovery_routable_read_cutover_models import EvidenceRecoveryReadPathRoute
 from app.modules.documents.schemas import (
     DocumentListResponse,
     DocumentResponse,
@@ -305,14 +307,75 @@ def download_claim_document(
             detail=f"Document download is blocked: {document.malware_scan_status.value}.",
         )
 
+    route = db.scalar(
+        select(EvidenceRecoveryReadPathRoute).where(
+            EvidenceRecoveryReadPathRoute.organization_id == current_user.organization_id,
+            EvidenceRecoveryReadPathRoute.claim_id == claim.id,
+            EvidenceRecoveryReadPathRoute.document_id == document.id,
+        )
+    )
+    durable_lease_id = (
+        route.active_durable_lease_id
+        if route is not None and route.route_authority_kind == "durable_promotion"
+        else None
+    )
+
     try:
         recovery_payload, read_source = resolve_recovery_document_read(
             db,
             document=document,
         )
     except (RecoveryDurableReadRoutingConflict, RecoveryDurableReadRoutingNotFound) as exc:
+        if durable_lease_id is not None:
+            failure_class = (
+                "route_expired"
+                if isinstance(exc, RecoveryDurableReadRoutingConflict)
+                and "expired" in str(exc).lower()
+                else "integrity_or_lineage"
+            )
+            write_audit_log(
+                db,
+                organization_id=current_user.organization_id,
+                user_id=current_user.id,
+                action="DOWNLOAD_DOCUMENT_RECOVERY_FAILED",
+                entity_type="document",
+                entity_id=document.id,
+                details="Durable recovery document read failed closed",
+                new_values={
+                    "read_source": "recovery-replica-durable",
+                    "recovery_durable_lease_id": str(durable_lease_id),
+                    "failure_class": failure_class,
+                    "read_path_switched": True,
+                    "write_path_switched": False,
+                    "document_storage_key_mutated": False,
+                    "authoritative_storage_changed": False,
+                    "destructive_action_performed": False,
+                },
+            )
+            db.commit()
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except RecoveryDurableReadRoutingUnavailable as exc:
+        if durable_lease_id is not None:
+            write_audit_log(
+                db,
+                organization_id=current_user.organization_id,
+                user_id=current_user.id,
+                action="DOWNLOAD_DOCUMENT_RECOVERY_FAILED",
+                entity_type="document",
+                entity_id=document.id,
+                details="Durable recovery document read was unavailable",
+                new_values={
+                    "read_source": "recovery-replica-durable",
+                    "recovery_durable_lease_id": str(durable_lease_id),
+                    "failure_class": "storage_unavailable",
+                    "read_path_switched": True,
+                    "write_path_switched": False,
+                    "document_storage_key_mutated": False,
+                    "authoritative_storage_changed": False,
+                    "destructive_action_performed": False,
+                },
+            )
+            db.commit()
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=str(exc),
@@ -356,6 +419,11 @@ def download_claim_document(
         details=f"Downloaded {document.original_filename}",
         new_values={
             "read_source": read_source,
+            "recovery_durable_lease_id": (
+                str(durable_lease_id)
+                if read_source == "recovery-replica-durable" and durable_lease_id is not None
+                else None
+            ),
             "read_path_switched": recovery_payload is not None,
             "write_path_switched": False,
             "document_storage_key_mutated": False,
