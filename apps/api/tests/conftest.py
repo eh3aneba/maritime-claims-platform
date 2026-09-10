@@ -10,7 +10,7 @@ def _align_routable_read_cutover_document_storage(request):
     """Bind live-download storage to the tmp_path used by routable recovery tests.
 
     Earlier recovery phases patch only recovery-service settings because they do
-    not exercise the ordinary document download path. Phases J, M, N, P, Q and R do.
+    not exercise the ordinary document download path. Phases J, M, N, P, Q, R and S do.
     Keep this override narrowly scoped to those routable-read test modules so the
     production document service remains untouched and the rest of the suite keeps
     its normal storage configuration.
@@ -22,6 +22,8 @@ def _align_routable_read_cutover_document_storage(request):
         "test_evidence_recovery_durable_read_renewal_routing.py",
         "test_evidence_recovery_durable_read_renewal_health_qualification.py",
         "test_evidence_recovery_durable_read_renewal_reauthorization.py",
+        "test_evidence_recovery_durable_read_reauthorized_renewal_routing.py",
+        "test_evidence_recovery_durable_read_reauthorized_renewal_ttl.py",
     }:
         yield
         return
