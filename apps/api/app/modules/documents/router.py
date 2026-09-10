@@ -22,6 +22,12 @@ from app.modules.documents.evidence_security import (
     queue_legacy_rescans,
     retry_quarantined_upload,
 )
+from app.modules.documents.recovery_durable_read_renewal_routing_service import (
+    RecoveryDurableReadRenewalRoutingConflict,
+    RecoveryDurableReadRenewalRoutingNotFound,
+    RecoveryDurableReadRenewalRoutingUnavailable,
+    resolve_recovery_document_read_renewal,
+)
 from app.modules.documents.recovery_durable_read_routing_service import (
     RecoveryDurableReadRoutingConflict,
     RecoveryDurableReadRoutingNotFound,
@@ -319,12 +325,81 @@ def download_claim_document(
         if route is not None and route.route_authority_kind == "durable_promotion"
         else None
     )
+    durable_renewal_lease_id = (
+        route.active_durable_renewal_lease_id
+        if route is not None and route.route_authority_kind == "durable_renewal"
+        else None
+    )
 
     try:
-        recovery_payload, read_source = resolve_recovery_document_read(
-            db,
-            document=document,
-        )
+        if durable_renewal_lease_id is not None:
+            recovery_payload, read_source = resolve_recovery_document_read_renewal(
+                db,
+                document=document,
+            )
+        else:
+            recovery_payload, read_source = resolve_recovery_document_read(
+                db,
+                document=document,
+            )
+    except (
+        RecoveryDurableReadRenewalRoutingConflict,
+        RecoveryDurableReadRenewalRoutingNotFound,
+    ) as exc:
+        if durable_renewal_lease_id is not None:
+            failure_class = (
+                "route_expired"
+                if isinstance(exc, RecoveryDurableReadRenewalRoutingConflict)
+                and "expired" in str(exc).lower()
+                else "integrity_or_lineage"
+            )
+            write_audit_log(
+                db,
+                organization_id=current_user.organization_id,
+                user_id=current_user.id,
+                action="DOWNLOAD_DOCUMENT_RECOVERY_FAILED",
+                entity_type="document",
+                entity_id=document.id,
+                details="Durable renewal recovery document read failed closed",
+                new_values={
+                    "read_source": "recovery-replica-durable-renewal",
+                    "recovery_durable_renewal_lease_id": str(durable_renewal_lease_id),
+                    "failure_class": failure_class,
+                    "read_path_switched": True,
+                    "write_path_switched": False,
+                    "document_storage_key_mutated": False,
+                    "authoritative_storage_changed": False,
+                    "destructive_action_performed": False,
+                },
+            )
+            db.commit()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except RecoveryDurableReadRenewalRoutingUnavailable as exc:
+        if durable_renewal_lease_id is not None:
+            write_audit_log(
+                db,
+                organization_id=current_user.organization_id,
+                user_id=current_user.id,
+                action="DOWNLOAD_DOCUMENT_RECOVERY_FAILED",
+                entity_type="document",
+                entity_id=document.id,
+                details="Durable renewal recovery document read was unavailable",
+                new_values={
+                    "read_source": "recovery-replica-durable-renewal",
+                    "recovery_durable_renewal_lease_id": str(durable_renewal_lease_id),
+                    "failure_class": "storage_unavailable",
+                    "read_path_switched": True,
+                    "write_path_switched": False,
+                    "document_storage_key_mutated": False,
+                    "authoritative_storage_changed": False,
+                    "destructive_action_performed": False,
+                },
+            )
+            db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        ) from exc
     except (RecoveryDurableReadRoutingConflict, RecoveryDurableReadRoutingNotFound) as exc:
         if durable_lease_id is not None:
             failure_class = (
@@ -422,6 +497,12 @@ def download_claim_document(
             "recovery_durable_lease_id": (
                 str(durable_lease_id)
                 if read_source == "recovery-replica-durable" and durable_lease_id is not None
+                else None
+            ),
+            "recovery_durable_renewal_lease_id": (
+                str(durable_renewal_lease_id)
+                if read_source == "recovery-replica-durable-renewal"
+                and durable_renewal_lease_id is not None
                 else None
             ),
             "read_path_switched": recovery_payload is not None,
