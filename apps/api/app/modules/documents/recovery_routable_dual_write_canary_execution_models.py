@@ -38,6 +38,26 @@ def _safety_constraints(prefix: str):
     )
 
 
+def _route_safety_constraints(prefix: str):
+    return (
+        CheckConstraint("local_authoritative = true", name=f"ck_{prefix}_local_auth"),
+        CheckConstraint("durable_write_authority_created = false", name=f"ck_{prefix}_no_durable"),
+        CheckConstraint("rehearsal_object_routable = false", name=f"ck_{prefix}_reh_nonroute"),
+        CheckConstraint("read_path_switched = false", name=f"ck_{prefix}_no_read"),
+        CheckConstraint(
+            "((write_mode = 'recovery_primary' AND write_path_switched = true) "
+            "OR (write_mode <> 'recovery_primary' AND write_path_switched = false))",
+            name=f"ck_{prefix}_write_switch",
+        ),
+        CheckConstraint("document_storage_key_mutated = false", name=f"ck_{prefix}_no_key"),
+        CheckConstraint("authoritative_storage_changed = false", name=f"ck_{prefix}_no_owner"),
+        CheckConstraint("destructive_action_performed = false", name=f"ck_{prefix}_no_dest"),
+        CheckConstraint("s3_copy_performed = false", name=f"ck_{prefix}_no_copy"),
+        CheckConstraint("s3_delete_performed = false", name=f"ck_{prefix}_no_s3del"),
+        CheckConstraint("local_delete_performed = false", name=f"ck_{prefix}_no_localdel"),
+    )
+
+
 class EvidenceRecoveryRoutableDualWriteCanaryLease(UUIDPrimaryKeyMixin, TimestampMixin, _SafetyMixin, Base):
     """One bounded Phase AB canary window; local remains authoritative throughout."""
 
@@ -109,14 +129,22 @@ class EvidenceRecoveryRoutableDualWriteCanaryLease(UUIDPrimaryKeyMixin, Timestam
 
 
 class EvidenceRecoveryRoutableDualWriteCanaryRoute(UUIDPrimaryKeyMixin, TimestampMixin, _SafetyMixin, Base):
-    """Dedicated write-routing control plane; independent from the existing read route."""
+    """Dedicated write-routing control plane shared by bounded recovery write experiments."""
 
     __tablename__ = "evidence_recovery_routable_dual_write_canary_routes"
     __table_args__ = (
-        CheckConstraint("write_mode IN ('local_only','local_plus_recovery_canary')", name="ck_dw_can_route_mode"),
+        CheckConstraint(
+            "write_mode IN ('local_only','local_plus_recovery_canary','recovery_primary')",
+            name="ck_dw_can_route_mode",
+        ),
         CheckConstraint("route_version >= 1", name="ck_dw_can_route_version"),
-        CheckConstraint("((write_mode = 'local_only' AND active_canary_lease_id IS NULL) OR (write_mode = 'local_plus_recovery_canary' AND active_canary_lease_id IS NOT NULL))", name="ck_dw_can_route_binding"),
-        *_safety_constraints("dw_can_route"),
+        CheckConstraint(
+            "((write_mode = 'local_only' AND active_canary_lease_id IS NULL AND active_write_ownership_transition_lease_id IS NULL) "
+            "OR (write_mode = 'local_plus_recovery_canary' AND active_canary_lease_id IS NOT NULL AND active_write_ownership_transition_lease_id IS NULL) "
+            "OR (write_mode = 'recovery_primary' AND active_canary_lease_id IS NULL AND active_write_ownership_transition_lease_id IS NOT NULL))",
+            name="ck_dw_can_route_binding",
+        ),
+        *_route_safety_constraints("dw_can_route"),
         UniqueConstraint("document_id", name="uq_dw_can_route_document"),
         Index("ix_dw_can_route_org_claim", "organization_id", "claim_id"),
     )
@@ -126,6 +154,10 @@ class EvidenceRecoveryRoutableDualWriteCanaryRoute(UUIDPrimaryKeyMixin, Timestam
     document_id: Mapped[UUID] = mapped_column(ForeignKey("documents.id", ondelete="RESTRICT"), nullable=False, index=True)
     write_mode: Mapped[str] = mapped_column(String(40), nullable=False, default="local_only", server_default="local_only")
     active_canary_lease_id: Mapped[UUID | None] = mapped_column(ForeignKey("evidence_recovery_routable_dual_write_canary_leases.id", ondelete="RESTRICT"), nullable=True, index=True)
+    active_write_ownership_transition_lease_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("evidence_recovery_write_ownership_transition_leases.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
     route_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
     changed_by_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True)
     changed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

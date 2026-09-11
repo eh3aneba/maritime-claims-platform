@@ -169,3 +169,11 @@ class EvidenceRecoveryWriteOwnershipTransitionAuthorizationReceipt(UUIDPrimaryKe
     actor_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True)
     reason: Mapped[str] = mapped_column(Text, nullable=False)
     transitioned_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+# Keep Phase AE models visible to app.db.metadata without coupling metadata.py to
+# the execution tranche directly. Phase AE models only depend on Base and string FKs.
+from app.modules.documents.recovery_write_ownership_transition_execution_models import (  # noqa: E402,F401
+    EvidenceRecoveryWriteOwnershipTransitionLease,
+    EvidenceRecoveryWriteOwnershipTransitionReceipt,
+)
