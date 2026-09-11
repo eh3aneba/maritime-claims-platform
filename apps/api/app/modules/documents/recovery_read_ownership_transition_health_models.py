@@ -11,7 +11,7 @@ from app.db.mixins import TimestampMixin, UUIDPrimaryKeyMixin
 class EvidenceRecoveryReadOwnershipTransitionHealthQualification(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     """Non-routable Phase W health evidence for one completed Phase V window."""
 
-    __tablename__ = "evidence_recovery_read_ownership_transition_health_qualifications"
+    __tablename__ = "evidence_recovery_read_owner_health_qualifications"
     __table_args__ = (
         CheckConstraint("status IN ('pending_second_approval','qualified','degraded','rejected','expired','invalidated')", name="ck_rr_owner_health_status"),
         CheckConstraint("health_state IN ('healthy','degraded','failed')", name="ck_rr_owner_health_state"),
@@ -113,7 +113,7 @@ class EvidenceRecoveryReadOwnershipTransitionHealthQualification(UUIDPrimaryKeyM
 
 
 class EvidenceRecoveryReadOwnershipTransitionHealthReceipt(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-    __tablename__ = "evidence_recovery_read_ownership_transition_health_receipts"
+    __tablename__ = "evidence_recovery_read_owner_health_receipts"
     __table_args__ = (
         CheckConstraint("phase IN ('requested','qualified','degraded','rejected','expired','invalidated')", name="ck_rr_owner_health_rec_phase"),
         CheckConstraint("routable_authority_created = false", name="ck_rr_owner_health_rec_route"),
@@ -133,7 +133,7 @@ class EvidenceRecoveryReadOwnershipTransitionHealthReceipt(UUIDPrimaryKeyMixin, 
     organization_id: Mapped[UUID] = mapped_column(ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False, index=True)
     claim_id: Mapped[UUID] = mapped_column(ForeignKey("claims.id", ondelete="RESTRICT"), nullable=False, index=True)
     document_id: Mapped[UUID] = mapped_column(ForeignKey("documents.id", ondelete="RESTRICT"), nullable=False, index=True)
-    health_qualification_id: Mapped[UUID] = mapped_column(ForeignKey("evidence_recovery_read_ownership_transition_health_qualifications.id", ondelete="RESTRICT"), nullable=False, index=True)
+    health_qualification_id: Mapped[UUID] = mapped_column(ForeignKey("evidence_recovery_read_owner_health_qualifications.id", ondelete="RESTRICT"), nullable=False, index=True)
     transition_lease_id: Mapped[UUID] = mapped_column(ForeignKey("evidence_recovery_read_ownership_transition_leases.id", ondelete="RESTRICT"), nullable=False, index=True)
     phase: Mapped[str] = mapped_column(String(20), nullable=False)
     health_state: Mapped[str] = mapped_column(String(20), nullable=False)
