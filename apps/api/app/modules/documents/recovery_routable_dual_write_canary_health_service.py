@@ -100,6 +100,10 @@ def _load_lease(
     )
     if lease is None:
         raise RecoveryRoutableDualWriteCanaryHealthNotFound("Phase AB canary lease not found")
+    if lease.status not in {"rolled_back", "expired"} or lease.terminal_at is None or lease.activated_at is None:
+        raise RecoveryRoutableDualWriteCanaryHealthConflict(
+            "Phase AC requires one completed Phase AB window with clean local-authority rollback"
+        )
     if not all(
         (
             lease.status in {"rolled_back", "expired"},
