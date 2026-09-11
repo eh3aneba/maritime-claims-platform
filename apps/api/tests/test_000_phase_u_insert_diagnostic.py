@@ -20,6 +20,10 @@ def setup_function() -> None:
     reset_database()
 
 
+def _emit(message: str) -> None:
+    os.write(2, (message + "\n").encode("utf-8", errors="replace"))
+
+
 def test_phase_u_insert_diagnostic(monkeypatch, tmp_path: Path) -> None:
     try:
         with _fake_s3() as endpoint:
@@ -60,7 +64,7 @@ def test_phase_u_insert_diagnostic(monkeypatch, tmp_path: Path) -> None:
                 )
                 db.commit()
     except BaseException as exc:
-        print(f"PHASE_U_DIAGNOSTIC_EXCEPTION={exc!r}", flush=True)
+        _emit(f"PHASE_U_DIAGNOSTIC_EXCEPTION={exc!r}")
         os._exit(86)
-    print("PHASE_U_DIAGNOSTIC_SEQUENCE_SUCCEEDED", flush=True)
+    _emit("PHASE_U_DIAGNOSTIC_SEQUENCE_SUCCEEDED")
     os._exit(87)
