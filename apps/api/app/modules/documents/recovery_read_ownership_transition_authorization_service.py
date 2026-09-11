@@ -185,7 +185,7 @@ def _load_snapshot(
             )
         ):
             raise RecoveryReadOwnershipTransitionAuthorizationConflict(
-                "Only healthy qualified Phase T evidence can request read-ownership transition authorization"
+                "Only qualified healthy Phase T evidence may authorize a stronger read-ownership transition"
             )
         if any(
             (
@@ -213,7 +213,7 @@ def _load_snapshot(
         )
         if not _matches_t_snapshot(qualification, t_snapshot):
             raise RecoveryReadOwnershipTransitionAuthorizationConflict(
-                "Phase T evidence drifted before read-ownership transition authorization"
+                "Phase T evidence drifted before read-ownership authorization"
             )
         receipt = _qualified_t_receipt(db, qualification=qualification)
         route = t_snapshot.route
@@ -232,8 +232,10 @@ def _load_snapshot(
                 route.authoritative_storage_changed is False,
                 route.destructive_action_performed is False,
                 route.route_version == qualification.route_version_at_request,
-                route.source_authority_fingerprint == qualification.source_authority_fingerprint,
-                route.candidate_authority_fingerprint == qualification.candidate_authority_fingerprint,
+                route.source_authority_fingerprint
+                == qualification.source_authority_fingerprint,
+                route.candidate_authority_fingerprint
+                == qualification.candidate_authority_fingerprint,
                 route.configuration_fingerprint == qualification.configuration_fingerprint,
             )
         ):
@@ -253,7 +255,7 @@ def _load_snapshot(
             )
         ):
             raise RecoveryReadOwnershipTransitionAuthorizationConflict(
-                "Phase T actor lineage is incomplete"
+                "Phase T upstream actor lineage is incomplete"
             )
 
         integrity_proof_hash = _canonical_hash(
@@ -275,6 +277,12 @@ def _load_snapshot(
                 "phase_q_health_qualification_hash": qualification.phase_q_health_qualification_hash,
                 "prior_renewal_lease_id": str(qualification.prior_renewal_lease_id),
                 "prior_renewal_lease_hash": qualification.prior_renewal_lease_hash,
+                "operational_evidence_hash": qualification.operational_evidence_hash,
+                "verified_durable_read_count": qualification.verified_durable_read_count,
+                "integrity_failure_count": qualification.integrity_failure_count,
+                "storage_unavailable_count": qualification.storage_unavailable_count,
+                "route_expired_attempt_count": qualification.route_expired_attempt_count,
+                "operational_event_count": qualification.operational_event_count,
                 "replica_id": str(qualification.replica_id),
                 "replica_hash": qualification.replica_hash,
                 "source_file_hash": qualification.source_file_hash,
@@ -282,26 +290,18 @@ def _load_snapshot(
                 "local_storage_key_fingerprint": qualification.local_storage_key_fingerprint,
                 "recovery_bucket_fingerprint": qualification.recovery_bucket_fingerprint,
                 "candidate_storage_key_fingerprint": qualification.candidate_storage_key_fingerprint,
-                "source_authority_fingerprint": qualification.source_authority_fingerprint,
-                "candidate_authority_fingerprint": qualification.candidate_authority_fingerprint,
-                "configuration_fingerprint": qualification.configuration_fingerprint,
-                "verified_durable_read_count": qualification.verified_durable_read_count,
-                "integrity_failure_count": qualification.integrity_failure_count,
-                "storage_unavailable_count": qualification.storage_unavailable_count,
-                "route_expired_attempt_count": qualification.route_expired_attempt_count,
-                "operational_event_count": qualification.operational_event_count,
                 "route_version": route.route_version,
                 "route_class": route.route_class,
                 "route_authority_kind": route.route_authority_kind,
+                "source_authority_fingerprint": qualification.source_authority_fingerprint,
+                "candidate_authority_fingerprint": qualification.candidate_authority_fingerprint,
+                "configuration_fingerprint": qualification.configuration_fingerprint,
                 "routable_authority_created": False,
                 "durable_read_route_created": False,
                 "read_path_switched": False,
                 "write_path_switched": False,
-                "document_storage_key_mutated": False,
                 "authoritative_storage_changed": False,
                 "destructive_action_performed": False,
-                "s3_delete_performed": False,
-                "local_delete_performed": False,
             }
         )
         request_snapshot_hash = _canonical_hash(
@@ -315,12 +315,11 @@ def _load_snapshot(
                 "operational_evidence_hash": qualification.operational_evidence_hash,
                 "integrity_proof_hash": integrity_proof_hash,
                 "route_version_at_request": route.route_version,
-                "mode": "phase_u_read_ownership_transition_authorization",
+                "mode": "phase_u_non_routable_read_ownership_transition_authorization",
                 "routable_authority_created": False,
                 "durable_read_route_created": False,
                 "read_path_switched": False,
                 "write_path_switched": False,
-                "document_storage_key_mutated": False,
                 "authoritative_storage_changed": False,
                 "destructive_action_performed": False,
             }
@@ -403,6 +402,7 @@ def _new_receipt(
         {
             "authorization_id": str(authorization.id),
             "phase_t_health_qualification_id": str(authorization.phase_t_health_qualification_id),
+            "reauthorized_renewal_lease_id": str(authorization.reauthorized_renewal_lease_id),
             "phase": phase,
             "health_state": authorization.health_state,
             "operational_evidence_hash": authorization.operational_evidence_hash,
@@ -497,7 +497,7 @@ def _get_authorization(
     authorization = db.scalar(stmt)
     if authorization is None:
         raise RecoveryReadOwnershipTransitionAuthorizationNotFound(
-            "Read-ownership transition authorization not found"
+            "Recovery read-ownership transition authorization not found"
         )
     return authorization
 
@@ -777,6 +777,16 @@ def reject_read_ownership_transition_authorization(
         raise RecoveryReadOwnershipTransitionAuthorizationConflict(
             "Only a pending Phase U authorization can be rejected"
         )
+    if current_time >= _as_utc(authorization.review_expires_at):
+        receipt = _terminalize(
+            db,
+            authorization=authorization,
+            phase="expired",
+            actor_id=rejected_by_id,
+            reason="Phase U second-approval window expired",
+            now=current_time,
+        )
+        return authorization, receipt, "expired"
     authorization.status = "rejected"
     authorization.rejected_by_id = rejected_by_id
     authorization.rejected_at = current_time
@@ -832,13 +842,15 @@ def list_read_ownership_transition_authorization_receipts(
                 EvidenceRecoveryReadOwnershipTransitionAuthorizationReceipt.organization_id
                 == organization_id,
                 EvidenceRecoveryReadOwnershipTransitionAuthorizationReceipt.claim_id == claim_id,
-                EvidenceRecoveryReadOwnershipTransitionAuthorizationReceipt.document_id == document_id,
+                EvidenceRecoveryReadOwnershipTransitionAuthorizationReceipt.document_id
+                == document_id,
                 EvidenceRecoveryReadOwnershipTransitionAuthorizationReceipt.authorization_id
                 == authorization_id,
             )
             .order_by(
                 EvidenceRecoveryReadOwnershipTransitionAuthorizationReceipt.transitioned_at.asc(),
                 EvidenceRecoveryReadOwnershipTransitionAuthorizationReceipt.created_at.asc(),
+                EvidenceRecoveryReadOwnershipTransitionAuthorizationReceipt.id.asc(),
             )
         ).all()
     )
