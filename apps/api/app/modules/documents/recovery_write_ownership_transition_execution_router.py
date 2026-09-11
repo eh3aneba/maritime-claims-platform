@@ -8,6 +8,9 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.modules.audit.service import write_audit_log
 from app.modules.claims.retention_router import RetentionAdminMfa, RetentionReader
+from app.modules.documents.recovery_write_ownership_transition_authorization_service import (
+    RecoveryWriteOwnershipTransitionAuthorizationNotFound,
+)
 from app.modules.documents.recovery_write_ownership_transition_execution_schemas import (
     RecoveryWriteOwnershipTransitionExecutionReason,
     RecoveryWriteOwnershipTransitionLeaseRead,
@@ -29,7 +32,13 @@ router = APIRouter(prefix="/claims", tags=["evidence-recovery-write-ownership-tr
 
 
 def _error(exc: Exception) -> HTTPException:
-    if isinstance(exc, RecoveryWriteOwnershipTransitionExecutionNotFound):
+    if isinstance(
+        exc,
+        (
+            RecoveryWriteOwnershipTransitionExecutionNotFound,
+            RecoveryWriteOwnershipTransitionAuthorizationNotFound,
+        ),
+    ):
         return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
     if isinstance(exc, RecoveryWriteOwnershipTransitionExecutionUnavailable):
         return HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc))
@@ -128,6 +137,7 @@ def activate_write_ownership_transition_endpoint(
         )
         _commit(db, lease, receipt)
     except (
+        RecoveryWriteOwnershipTransitionAuthorizationNotFound,
         RecoveryWriteOwnershipTransitionExecutionNotFound,
         RecoveryWriteOwnershipTransitionExecutionConflict,
         RecoveryWriteOwnershipTransitionExecutionUnavailable,
