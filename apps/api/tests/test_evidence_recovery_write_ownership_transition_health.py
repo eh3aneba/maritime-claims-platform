@@ -26,7 +26,6 @@ def setup_function() -> None:
 
 REQUEST_REASON = "Independently verify the completed Phase AE transition and exact local-only restoration."
 QUALIFY_REASON = "Confirm fresh local and recovery integrity plus exact post-transition route health."
-REJECT_REASON = "Reject the Phase AF health artifact because independent review is not satisfied."
 
 
 def _completed_ae(monkeypatch, tmp_path: Path, endpoint: str, *, slug: str):
@@ -219,11 +218,11 @@ def test_phase_af_fresh_route_drift_invalidates_pending_review(monkeypatch, tmp_
         assert qualified.json()["qualification"]["status"] == "invalidated"
 
 
-def test_phase_af_review_expiry_and_rejection_are_terminal(monkeypatch, tmp_path: Path) -> None:
+def test_phase_af_review_expiry_is_terminal_and_replay_is_idempotent(monkeypatch, tmp_path: Path) -> None:
     with _fake_s3() as endpoint:
         data = _completed_ae(monkeypatch, tmp_path, endpoint, slug="phase-af-terminal")
         requester_id, requester_headers = _independent_admin(data, slug="phase-af-terminal-requester")
-        reviewer_id, reviewer_headers = _independent_admin(data, slug="phase-af-terminal-reviewer")
+        reviewer_id, _ = _independent_admin(data, slug="phase-af-terminal-reviewer")
         requested = _request_af(data, headers=requester_headers)
         assert requested.status_code == 201, requested.text
         health_id = UUID(requested.json()["qualification"]["id"])
@@ -246,8 +245,10 @@ def test_phase_af_review_expiry_and_rejection_are_terminal(monkeypatch, tmp_path
             db.commit()
 
         requested_again = _request_af(data, headers=requester_headers)
-        assert requested_again.status_code == 409
-
+        assert requested_again.status_code == 201, requested_again.text
+        assert requested_again.json()["outcome"] == "unchanged"
+        assert requested_again.json()["qualification"]["status"] == "expired"
+        assert requested_again.json()["qualification"]["id"] == str(health_id)
         assert requester_id != reviewer_id
 
 
