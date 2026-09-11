@@ -163,7 +163,7 @@ jobs:
       - name: Scan API image
         id: scan-api
         continue-on-error: true
-        uses: anchore/scan-action@e1165082ffb1fe366ebaf02d8526e7c4989ea9d2 # v7
+        uses: anchore/scan-action@27805bf3b4e84b4a5c980df22ed233c00390a439 # v7.4.2
         with:
           image: maritime-claims-api:ci
           config: .grype.yaml
@@ -175,7 +175,7 @@ jobs:
       - name: Scan web image
         id: scan-web
         continue-on-error: true
-        uses: anchore/scan-action@e1165082ffb1fe366ebaf02d8526e7c4989ea9d2 # v7
+        uses: anchore/scan-action@27805bf3b4e84b4a5c980df22ed233c00390a439 # v7.4.2
         with:
           image: maritime-claims-web:ci
           config: .grype.yaml
