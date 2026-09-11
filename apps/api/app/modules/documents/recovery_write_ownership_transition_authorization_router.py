@@ -280,3 +280,12 @@ def list_write_ownership_transition_authorization_receipts_endpoint(
     except RecoveryWriteOwnershipTransitionAuthorizationNotFound as exc:
         raise _error(exc) from exc
     return [RecoveryWriteOwnershipTransitionAuthorizationReceiptRead.model_validate(item) for item in receipts]
+
+
+# Phase AE extends the same /claims surface. Extending routes avoids a second
+# /claims prefix while keeping the existing main.py registration unchanged.
+from app.modules.documents.recovery_write_ownership_transition_execution_router import (  # noqa: E402
+    router as recovery_write_ownership_transition_execution_router,
+)
+
+router.routes.extend(recovery_write_ownership_transition_execution_router.routes)
