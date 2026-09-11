@@ -46,7 +46,7 @@ def test_phase_y_executes_one_isolated_verified_rehearsal_and_keeps_local_author
     with _fake_s3() as endpoint:
         data = _approved_x(monkeypatch, tmp_path, endpoint, slug="phase-y-happy")
         with TestingSessionLocal() as db:
-            before = db.get(Document, UUID(data["document_id"]))
+            before = db.get(Document, data["document_id"])
             assert before is not None
             original_storage_key = before.storage_key
 
@@ -91,7 +91,7 @@ def test_phase_y_executes_one_isolated_verified_rehearsal_and_keeps_local_author
         with TestingSessionLocal() as db:
             stored = db.get(EvidenceRecoveryDualWriteRehearsalExecution, UUID(execution_id))
             phase_x = db.get(EvidenceRecoveryDualWriteRehearsalAuthorization, UUID(data["phase_x_authorization_id"]))
-            document = db.get(Document, UUID(data["document_id"]))
+            document = db.get(Document, data["document_id"])
             route = db.query(EvidenceRecoveryReadPathRoute).filter_by(document_id=data["document_id"]).one()
             assert stored is not None and stored.status == "executed"
             assert phase_x is not None and phase_x.rehearsal_executed is False
