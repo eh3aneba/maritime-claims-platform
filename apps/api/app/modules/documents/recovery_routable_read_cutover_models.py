@@ -81,11 +81,12 @@ class EvidenceRecoveryReadPathRoute(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __table_args__ = (
         CheckConstraint("route_class IN ('local_source', 'recovery_replica')", name="ck_recovery_read_route_class"),
         CheckConstraint(
-            "((route_class = 'local_source' AND durable_authority_active = false AND active_lease_id IS NULL AND active_durable_lease_id IS NULL AND active_durable_renewal_lease_id IS NULL AND active_durable_reauthorized_renewal_lease_id IS NULL AND active_replica_id IS NULL AND read_path_switched = false) OR "
-            "(route_class = 'recovery_replica' AND durable_authority_active = false AND active_lease_id IS NOT NULL AND active_durable_lease_id IS NULL AND active_durable_renewal_lease_id IS NULL AND active_durable_reauthorized_renewal_lease_id IS NULL AND active_replica_id IS NOT NULL AND read_path_switched = true) OR "
-            "(route_class = 'recovery_replica' AND durable_authority_active = true AND active_lease_id IS NULL AND active_durable_lease_id IS NOT NULL AND active_durable_renewal_lease_id IS NULL AND active_durable_reauthorized_renewal_lease_id IS NULL AND active_replica_id IS NOT NULL AND read_path_switched = true) OR "
-            "(route_class = 'recovery_replica' AND durable_authority_active = true AND active_lease_id IS NULL AND active_durable_lease_id IS NULL AND active_durable_renewal_lease_id IS NOT NULL AND active_durable_reauthorized_renewal_lease_id IS NULL AND active_replica_id IS NOT NULL AND read_path_switched = true) OR "
-            "(route_class = 'recovery_replica' AND durable_authority_active = true AND active_lease_id IS NULL AND active_durable_lease_id IS NULL AND active_durable_renewal_lease_id IS NULL AND active_durable_reauthorized_renewal_lease_id IS NOT NULL AND active_replica_id IS NOT NULL AND read_path_switched = true))",
+            "((route_class = 'local_source' AND durable_authority_active = false AND active_lease_id IS NULL AND active_durable_lease_id IS NULL AND active_durable_renewal_lease_id IS NULL AND active_durable_reauthorized_renewal_lease_id IS NULL AND active_read_ownership_transition_lease_id IS NULL AND active_replica_id IS NULL AND read_path_switched = false) OR "
+            "(route_class = 'recovery_replica' AND durable_authority_active = false AND active_lease_id IS NOT NULL AND active_durable_lease_id IS NULL AND active_durable_renewal_lease_id IS NULL AND active_durable_reauthorized_renewal_lease_id IS NULL AND active_read_ownership_transition_lease_id IS NULL AND active_replica_id IS NOT NULL AND read_path_switched = true) OR "
+            "(route_class = 'recovery_replica' AND durable_authority_active = true AND active_lease_id IS NULL AND active_durable_lease_id IS NOT NULL AND active_durable_renewal_lease_id IS NULL AND active_durable_reauthorized_renewal_lease_id IS NULL AND active_read_ownership_transition_lease_id IS NULL AND active_replica_id IS NOT NULL AND read_path_switched = true) OR "
+            "(route_class = 'recovery_replica' AND durable_authority_active = true AND active_lease_id IS NULL AND active_durable_lease_id IS NULL AND active_durable_renewal_lease_id IS NOT NULL AND active_durable_reauthorized_renewal_lease_id IS NULL AND active_read_ownership_transition_lease_id IS NULL AND active_replica_id IS NOT NULL AND read_path_switched = true) OR "
+            "(route_class = 'recovery_replica' AND durable_authority_active = true AND active_lease_id IS NULL AND active_durable_lease_id IS NULL AND active_durable_renewal_lease_id IS NULL AND active_durable_reauthorized_renewal_lease_id IS NOT NULL AND active_read_ownership_transition_lease_id IS NULL AND active_replica_id IS NOT NULL AND read_path_switched = true) OR "
+            "(route_class = 'recovery_replica' AND durable_authority_active = true AND active_lease_id IS NULL AND active_durable_lease_id IS NULL AND active_durable_renewal_lease_id IS NULL AND active_durable_reauthorized_renewal_lease_id IS NULL AND active_read_ownership_transition_lease_id IS NOT NULL AND active_replica_id IS NOT NULL AND read_path_switched = true))",
             name="ck_recovery_read_route_binding",
         ),
         CheckConstraint("route_version >= 1", name="ck_recovery_read_route_version"),
@@ -106,6 +107,7 @@ class EvidenceRecoveryReadPathRoute(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     active_durable_lease_id: Mapped[UUID | None] = mapped_column(ForeignKey("evidence_recovery_durable_read_promotion_leases.id", ondelete="RESTRICT"), nullable=True, index=True)
     active_durable_renewal_lease_id: Mapped[UUID | None] = mapped_column(ForeignKey("evidence_recovery_durable_read_renewal_leases.id", ondelete="RESTRICT"), nullable=True, index=True)
     active_durable_reauthorized_renewal_lease_id: Mapped[UUID | None] = mapped_column(ForeignKey("evidence_recovery_drr_reauthorized_renewal_leases.id", ondelete="RESTRICT"), nullable=True, index=True)
+    active_read_ownership_transition_lease_id: Mapped[UUID | None] = mapped_column(ForeignKey("evidence_recovery_read_ownership_transition_leases.id", ondelete="RESTRICT"), nullable=True, index=True)
     active_replica_id: Mapped[UUID | None] = mapped_column(ForeignKey("evidence_recovery_replicas.id", ondelete="RESTRICT"), nullable=True, index=True)
     source_authority_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
     candidate_authority_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -122,6 +124,8 @@ class EvidenceRecoveryReadPathRoute(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     @property
     def route_authority_kind(self) -> str:
         if self.durable_authority_active:
+            if self.active_read_ownership_transition_lease_id is not None:
+                return "read_ownership_transition"
             if self.active_durable_reauthorized_renewal_lease_id is not None:
                 return "durable_reauthorized_renewal"
             if self.active_durable_renewal_lease_id is not None:
@@ -133,9 +137,9 @@ class EvidenceRecoveryReadPathRoute(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     @route_authority_kind.setter
     def route_authority_kind(self, value: str) -> None:
-        if value not in {"local", "temporary_cutover", "durable_promotion", "durable_renewal", "durable_reauthorized_renewal"}:
+        if value not in {"local", "temporary_cutover", "durable_promotion", "durable_renewal", "durable_reauthorized_renewal", "read_ownership_transition"}:
             raise ValueError("Unsupported read route authority kind")
-        self.durable_authority_active = value in {"durable_promotion", "durable_renewal", "durable_reauthorized_renewal"}
+        self.durable_authority_active = value in {"durable_promotion", "durable_renewal", "durable_reauthorized_renewal", "read_ownership_transition"}
 
 
 class EvidenceRecoveryReadPathCutoverReceipt(UUIDPrimaryKeyMixin, TimestampMixin, Base):

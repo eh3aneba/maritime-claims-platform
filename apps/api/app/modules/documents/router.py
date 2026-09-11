@@ -40,6 +40,14 @@ from app.modules.documents.recovery_durable_read_routing_service import (
     RecoveryDurableReadRoutingUnavailable,
     resolve_recovery_document_read,
 )
+from app.modules.documents.recovery_read_ownership_transition_read_service import (
+    resolve_recovery_document_read_ownership_transition,
+)
+from app.modules.documents.recovery_read_ownership_transition_routing_service import (
+    RecoveryReadOwnershipTransitionRoutingConflict,
+    RecoveryReadOwnershipTransitionRoutingNotFound,
+    RecoveryReadOwnershipTransitionRoutingUnavailable,
+)
 from app.modules.documents.recovery_routable_read_cutover_models import EvidenceRecoveryReadPathRoute
 from app.modules.documents.schemas import (
     DocumentListResponse,
@@ -326,6 +334,11 @@ def download_claim_document(
             EvidenceRecoveryReadPathRoute.document_id == document.id,
         )
     )
+    read_ownership_transition_lease_id = (
+        route.active_read_ownership_transition_lease_id
+        if route is not None and route.route_authority_kind == "read_ownership_transition"
+        else None
+    )
     durable_lease_id = (
         route.active_durable_lease_id
         if route is not None and route.route_authority_kind == "durable_promotion"
@@ -344,7 +357,11 @@ def download_claim_document(
     )
 
     try:
-        if durable_reauthorized_renewal_lease_id is not None:
+        if read_ownership_transition_lease_id is not None:
+            recovery_payload, read_source = resolve_recovery_document_read_ownership_transition(
+                db, document=document
+            )
+        elif durable_reauthorized_renewal_lease_id is not None:
             recovery_payload, read_source = resolve_recovery_document_read_reauthorized_renewal(
                 db, document=document
             )
@@ -358,6 +375,64 @@ def download_claim_document(
                 db,
                 document=document,
             )
+    except (
+        RecoveryReadOwnershipTransitionRoutingConflict,
+        RecoveryReadOwnershipTransitionRoutingNotFound,
+    ) as exc:
+        if read_ownership_transition_lease_id is not None:
+            failure_class = (
+                "route_expired"
+                if isinstance(exc, RecoveryReadOwnershipTransitionRoutingConflict)
+                and "expired" in str(exc).lower()
+                else "integrity_or_lineage"
+            )
+            write_audit_log(
+                db,
+                organization_id=current_user.organization_id,
+                user_id=current_user.id,
+                action="DOWNLOAD_DOCUMENT_RECOVERY_FAILED",
+                entity_type="document",
+                entity_id=document.id,
+                details="Phase V read-ownership recovery document read failed closed",
+                new_values={
+                    "read_source": "recovery-replica-read-ownership-transition",
+                    "recovery_read_ownership_transition_lease_id": str(read_ownership_transition_lease_id),
+                    "failure_class": failure_class,
+                    "read_path_switched": True,
+                    "write_path_switched": False,
+                    "document_storage_key_mutated": False,
+                    "authoritative_storage_changed": False,
+                    "destructive_action_performed": False,
+                },
+            )
+            db.commit()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except RecoveryReadOwnershipTransitionRoutingUnavailable as exc:
+        if read_ownership_transition_lease_id is not None:
+            write_audit_log(
+                db,
+                organization_id=current_user.organization_id,
+                user_id=current_user.id,
+                action="DOWNLOAD_DOCUMENT_RECOVERY_FAILED",
+                entity_type="document",
+                entity_id=document.id,
+                details="Phase V read-ownership recovery document read was unavailable",
+                new_values={
+                    "read_source": "recovery-replica-read-ownership-transition",
+                    "recovery_read_ownership_transition_lease_id": str(read_ownership_transition_lease_id),
+                    "failure_class": "storage_unavailable",
+                    "read_path_switched": True,
+                    "write_path_switched": False,
+                    "document_storage_key_mutated": False,
+                    "authoritative_storage_changed": False,
+                    "destructive_action_performed": False,
+                },
+            )
+            db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        ) from exc
     except (
         RecoveryDurableReadReauthorizedRenewalRoutingConflict,
         RecoveryDurableReadReauthorizedRenewalRoutingNotFound,
@@ -572,6 +647,12 @@ def download_claim_document(
         details=f"Downloaded {document.original_filename}",
         new_values={
             "read_source": read_source,
+            "recovery_read_ownership_transition_lease_id": (
+                str(read_ownership_transition_lease_id)
+                if read_source == "recovery-replica-read-ownership-transition"
+                and read_ownership_transition_lease_id is not None
+                else None
+            ),
             "recovery_durable_lease_id": (
                 str(durable_lease_id)
                 if read_source == "recovery-replica-durable" and durable_lease_id is not None
