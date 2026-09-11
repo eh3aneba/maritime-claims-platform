@@ -20,7 +20,7 @@ from app.modules.ai_near_universal_production.models import AINearUniversalAppro
 from app.modules.ai_pilot_outcomes.models import AIPilotOutcomeAssessment, AIPilotOutcomeReview, AIPilotWorkflowObservation  # noqa: F401
 from app.modules.ai_private_pilot.models import AIPrivatePilotApproval, AIPrivatePilotAuthorization, AIPrivatePilotDocumentEligibility, AIPrivatePilotIncident, AIPrivatePilotRun  # noqa: F401
 from app.modules.ai_production_wide.models import AIProductionDecisionLog, AIProductionEligibilityDecision, AIProductionWideApproval, AIProductionWideAuthorization, AIProductionWideIncident, AIProductionWideMonitor  # noqa: F401
-from app.modules.ai_scale_up.models import AIScaleUpApproval, AIScaleUpAuthorization, AIScaleUpDocumentEligibility, AIScaleUpIncident, AIScaleUpMonitor, AIScaleUpRun  # noqa: F401
+from app.modules.ai_scale_up.models import AIScaleUpApproval, AIScaleUpAuthorization, AIScaleUpProductionDocumentEligibility, AIScaleUpIncident, AIScaleUpMonitor, AIScaleUpRun  # noqa: F401
 from app.modules.ai_scale_up_outcomes.models import AIScaleUpOutcomeAssessment, AIScaleUpOutcomeObservation, AIScaleUpOutcomeReview  # noqa: F401
 from app.modules.audit.models import AuditLog  # noqa: F401
 from app.modules.auth.models import AuthSession, EnterpriseIdentityProvider, ExternalIdentityBinding  # noqa: F401
@@ -45,6 +45,7 @@ from app.modules.documents.recovery_write_ownership_transition_authorization_mod
 from app.modules.documents.recovery_write_ownership_transition_execution_models import EvidenceRecoveryWriteOwnershipTransitionLease, EvidenceRecoveryWriteOwnershipTransitionReceipt  # noqa: F401
 from app.modules.documents.recovery_write_ownership_transition_health_models import EvidenceRecoveryWriteOwnershipTransitionHealthQualification, EvidenceRecoveryWriteOwnershipTransitionHealthReceipt  # noqa: F401
 from app.modules.documents.recovery_durable_write_ownership_authorization_models import EvidenceRecoveryDurableWriteOwnershipAuthorization, EvidenceRecoveryDurableWriteOwnershipAuthorizationReceipt  # noqa: F401
+from app.modules.documents.recovery_durable_write_ownership_execution_models import EvidenceRecoveryDurableWriteOwnershipLease, EvidenceRecoveryDurableWriteOwnershipReceipt, EvidenceRecoveryDurableWriteOwnershipRoute  # noqa: F401
 from app.modules.documents.recovery_durable_read_health_models import EvidenceRecoveryDurableReadHealthQualification, EvidenceRecoveryDurableReadHealthQualificationReceipt  # noqa: F401
 from app.modules.documents.recovery_durable_read_reauthorized_renewal_health_models import EvidenceRecoveryDurableReadReauthorizedRenewalHealthQualification, EvidenceRecoveryDurableReadReauthorizedRenewalHealthQualificationReceipt  # noqa: F401
 from app.modules.documents.recovery_durable_read_reauthorized_renewal_routing_models import EvidenceRecoveryDurableReadReauthorizedRenewalLease, EvidenceRecoveryDurableReadReauthorizedRenewalReceipt  # noqa: F401
