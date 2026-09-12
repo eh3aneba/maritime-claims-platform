@@ -55,6 +55,7 @@ from app.modules.claims.router import router as claims_router
 from app.modules.chronology.router import router as chronology_router
 from app.modules.correspondence.router import router as correspondence_router
 from app.modules.documents.recovery_authoritative_storage_ownership_authorization_router import router as recovery_authoritative_storage_ownership_authorization_router
+from app.modules.documents.recovery_authoritative_storage_ownership_execution_router import router as recovery_authoritative_storage_ownership_execution_router
 from app.modules.documents.recovery_authority_switch_router import router as recovery_authority_switch_router
 from app.modules.documents.recovery_cutover_admission_router import router as recovery_cutover_admission_router
 from app.modules.documents.recovery_cutover_execution_router import router as recovery_cutover_execution_router
@@ -224,6 +225,7 @@ app.include_router(recovery_durable_write_ownership_authorization_router, prefix
 app.include_router(recovery_durable_write_ownership_execution_router, prefix=settings.api_v1_prefix)
 app.include_router(recovery_durable_write_ownership_health_router, prefix=settings.api_v1_prefix)
 app.include_router(recovery_authoritative_storage_ownership_authorization_router, prefix=settings.api_v1_prefix)
+app.include_router(recovery_authoritative_storage_ownership_execution_router, prefix=settings.api_v1_prefix)
 app.include_router(email_ingestion_router, prefix=settings.api_v1_prefix)
 app.include_router(evidence_search_router, prefix=settings.api_v1_prefix)
 app.include_router(external_portal_router, prefix=settings.api_v1_prefix)
