@@ -87,7 +87,9 @@ class RecoveryAuthoritativeStorageOwnershipRouteRead(BaseModel):
     claim_id: UUID
     document_id: UUID
     authority_kind: str
+    authority_tenure: str
     active_authority_lease_id: UUID | None
+    durable_ratification_id: UUID | None
     route_version: int
     local_authoritative: bool
     recovery_authoritative: bool
