@@ -74,7 +74,7 @@ def test_phase_ak_activation_and_rollback_change_only_authority_control_plane(mo
         assert forbidden.status_code == 409
 
         with TestingSessionLocal() as db:
-            document = db.get(Document, UUID(data["document_id"]))
+            document = db.get(Document, data["document_id"])
             assert document is not None
             original_storage_key = document.storage_key
             ah_route = db.query(EvidenceRecoveryDurableWriteOwnershipRoute).filter_by(
@@ -121,7 +121,7 @@ def test_phase_ak_activation_and_rollback_change_only_authority_control_plane(mo
         assert changed.status_code == 409
 
         with TestingSessionLocal() as db:
-            document = db.get(Document, UUID(data["document_id"]))
+            document = db.get(Document, data["document_id"])
             assert document is not None and document.storage_key == original_storage_key
             ah_route = db.query(EvidenceRecoveryDurableWriteOwnershipRoute).filter_by(
                 document_id=data["document_id"]
@@ -187,7 +187,7 @@ def test_phase_ak_storage_outage_is_retryable_without_consuming_authorization(mo
                 authorization_id=UUID(data["phase_aj_authorization_id"])
             ).one_or_none() is None
             assert db.query(EvidenceRecoveryAuthoritativeStorageOwnershipRoute).filter_by(
-                document_id=UUID(data["document_id"])
+                document_id=data["document_id"]
             ).one_or_none() is None
 
         monkeypatch.setattr(phase_ak_service, "_fresh_ai", original)
@@ -207,7 +207,7 @@ def test_phase_ak_route_drift_reconciles_fail_closed_to_local_authority(monkeypa
 
         with TestingSessionLocal() as db:
             route = db.query(EvidenceRecoveryAuthoritativeStorageOwnershipRoute).filter_by(
-                document_id=UUID(data["document_id"])
+                document_id=data["document_id"]
             ).one()
             route.route_version += 1
             db.commit()
