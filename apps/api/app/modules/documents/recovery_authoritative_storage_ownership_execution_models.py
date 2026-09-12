@@ -2,7 +2,7 @@ from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import BigInteger, Boolean, CheckConstraint, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, false, true
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, validates
 
 from app.db.base import Base
 from app.db.mixins import TimestampMixin, UUIDPrimaryKeyMixin
@@ -52,7 +52,10 @@ class EvidenceRecoveryAuthoritativeStorageOwnershipLease(
 
     __tablename__ = "evidence_recovery_auth_storage_leases"
     __table_args__ = (
-        CheckConstraint("status IN ('active','rolled_back','expired','invalidated')", name="ck_aso_exec_lease_status"),
+        CheckConstraint(
+            "status IN ('active','ratified','rolled_back','expired','invalidated')",
+            name="ck_aso_exec_lease_status",
+        ),
         CheckConstraint("source_file_size_bytes >= 0", name="ck_aso_exec_lease_size"),
         CheckConstraint("observed_local_size_bytes = source_file_size_bytes", name="ck_aso_exec_lease_local_size"),
         CheckConstraint("observed_recovery_size_bytes = source_file_size_bytes", name="ck_aso_exec_lease_recovery_size"),
@@ -65,7 +68,8 @@ class EvidenceRecoveryAuthoritativeStorageOwnershipLease(
         ),
         CheckConstraint(
             "((status = 'active' AND ownership_transition_active = true AND local_authoritative = false AND recovery_authoritative = true AND authoritative_storage_changed = true) "
-            "OR (status <> 'active' AND ownership_transition_active = false AND local_authoritative = true AND recovery_authoritative = false AND authoritative_storage_changed = false))",
+            "OR (status = 'ratified' AND ownership_transition_active = false AND local_authoritative = false AND recovery_authoritative = true AND authoritative_storage_changed = true) "
+            "OR (status IN ('rolled_back','expired','invalidated') AND ownership_transition_active = false AND local_authoritative = true AND recovery_authoritative = false AND authoritative_storage_changed = false))",
             name="ck_aso_exec_lease_state",
         ),
         UniqueConstraint("authorization_id", name="uq_aso_exec_lease_auth"),
@@ -135,10 +139,15 @@ class EvidenceRecoveryAuthoritativeStorageOwnershipRoute(
     __tablename__ = "evidence_recovery_auth_storage_routes"
     __table_args__ = (
         CheckConstraint("authority_kind IN ('local_evidence','recovery_storage')", name="ck_aso_exec_route_kind"),
+        CheckConstraint(
+            "authority_tenure IN ('local','bounded_recovery','durable_recovery')",
+            name="ck_aso_exec_route_tenure",
+        ),
         CheckConstraint("route_version >= 1", name="ck_aso_exec_route_ver"),
         CheckConstraint(
-            "((authority_kind = 'local_evidence' AND active_authority_lease_id IS NULL AND local_authoritative = true AND recovery_authoritative = false AND authoritative_storage_changed = false) "
-            "OR (authority_kind = 'recovery_storage' AND active_authority_lease_id IS NOT NULL AND local_authoritative = false AND recovery_authoritative = true AND authoritative_storage_changed = true))",
+            "((authority_kind = 'local_evidence' AND authority_tenure = 'local' AND active_authority_lease_id IS NULL AND durable_ratification_id IS NULL AND local_authoritative = true AND recovery_authoritative = false AND authoritative_storage_changed = false) "
+            "OR (authority_kind = 'recovery_storage' AND authority_tenure = 'bounded_recovery' AND active_authority_lease_id IS NOT NULL AND durable_ratification_id IS NULL AND local_authoritative = false AND recovery_authoritative = true AND authoritative_storage_changed = true) "
+            "OR (authority_kind = 'recovery_storage' AND authority_tenure = 'durable_recovery' AND active_authority_lease_id IS NULL AND durable_ratification_id IS NOT NULL AND local_authoritative = false AND recovery_authoritative = true AND authoritative_storage_changed = true))",
             name="ck_aso_exec_route_state",
         ),
         UniqueConstraint("document_id", name="uq_aso_exec_route_document"),
@@ -150,13 +159,28 @@ class EvidenceRecoveryAuthoritativeStorageOwnershipRoute(
     claim_id: Mapped[UUID] = mapped_column(ForeignKey("claims.id", ondelete="RESTRICT"), nullable=False, index=True)
     document_id: Mapped[UUID] = mapped_column(ForeignKey("documents.id", ondelete="RESTRICT"), nullable=False, index=True)
     authority_kind: Mapped[str] = mapped_column(String(40), nullable=False, default="local_evidence", server_default="local_evidence")
+    authority_tenure: Mapped[str] = mapped_column(String(40), nullable=False, default="local", server_default="local")
     active_authority_lease_id: Mapped[UUID | None] = mapped_column(ForeignKey("evidence_recovery_auth_storage_leases.id", ondelete="RESTRICT"), nullable=True, index=True)
+    durable_ratification_id: Mapped[UUID | None] = mapped_column(ForeignKey("evidence_recovery_storage_ratifications.id", ondelete="RESTRICT"), nullable=True, index=True)
     route_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
     local_authoritative: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=true())
     recovery_authoritative: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
     authoritative_storage_changed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
     changed_by_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True)
     changed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    @validates("active_authority_lease_id")
+    def _track_bounded_tenure(self, _key: str, value: UUID | None):
+        self.authority_tenure = "bounded_recovery" if value is not None else "local"
+        return value
+
+    @validates("durable_ratification_id")
+    def _track_durable_tenure(self, _key: str, value: UUID | None):
+        if value is not None:
+            self.authority_tenure = "durable_recovery"
+        elif self.active_authority_lease_id is None:
+            self.authority_tenure = "local"
+        return value
 
 
 class EvidenceRecoveryAuthoritativeStorageOwnershipReceipt(
