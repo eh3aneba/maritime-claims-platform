@@ -32,6 +32,7 @@ from app.modules.claims.facts import ClaimFact  # noqa: F401
 from app.modules.chronology.models import ChronologyEvent, EventEvidence, EvidenceConflict  # noqa: F401
 from app.modules.correspondence.models import ClaimCorrespondence  # noqa: F401
 from app.modules.documents.models import Document, QuarantinedUpload  # noqa: F401
+from app.modules.documents.recovery_authoritative_storage_ownership_authorization_models import EvidenceRecoveryAuthoritativeStorageOwnershipAuthorization, EvidenceRecoveryAuthoritativeStorageOwnershipAuthorizationReceipt  # noqa: F401
 from app.modules.documents.recovery_authority_switch_models import EvidenceRecoveryAuthoritySwitchReceipt, EvidenceRecoveryAuthoritySwitchRehearsal  # noqa: F401
 from app.modules.documents.recovery_cutover_admission_models import EvidenceRecoveryCutoverAdmission, EvidenceRecoveryCutoverAdmissionReceipt  # noqa: F401
 from app.modules.documents.recovery_cutover_execution_models import EvidenceRecoveryCutoverExecutionLease, EvidenceRecoveryCutoverExecutionReceipt  # noqa: F401
