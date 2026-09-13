@@ -53,3 +53,30 @@ class PhysicalDisposalAdmissionRead(BaseModel):
     local_delete_performed: bool
     created_at: datetime
     updated_at: datetime
+
+
+class PhysicalDisposalAdmissionReceiptRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    organization_id: UUID
+    claim_id: UUID
+    authorization_id: UUID
+    sequence_number: int
+    event_type: str
+    status_after: str
+    actor_id: UUID
+    occurred_at: datetime
+    reason: str
+    authorization_hash: str
+    document_bindings_hash: str
+    separation_actor_set_hash: str
+    approval_hash: str | None
+    prior_receipt_hash: str | None
+    receipt_hash: str
+    destructive_action_performed: bool
+    storage_write_performed: bool
+    s3_delete_performed: bool
+    local_delete_performed: bool
+    created_at: datetime
+    updated_at: datetime
