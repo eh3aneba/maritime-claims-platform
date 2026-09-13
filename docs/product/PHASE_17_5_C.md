@@ -20,9 +20,11 @@ A different Admin + MFA actor must approve the request.
 - `GET /api/v1/external-document-sources/profiles/{profile_id}/connection-authorizations/{authorization_id}/receipts`
 
 ## Time and use boundary
-- second-approval review window: 10 minutes;
-- approved connection-bootstrap authority window: 10 minutes;
+- second-approval review window: exactly 10 minutes;
+- approved connection-bootstrap authority window: exactly 10 minutes;
 - execution limit recorded by this phase: exactly 1 future attempt.
+
+The service independently recomputes both fixed TTLs from the stored request/approval timestamps; changing a deadline and merely re-hashing the record does not make the drift valid.
 
 Expiry is fail-closed and emits an append-only terminal receipt. This phase does not itself consume the execution attempt; a future executor must enforce one-use consumption independently.
 
@@ -41,13 +43,15 @@ Lifecycle receipts are exactly:
 - `requested` while pending;
 - `requested → authorized` after approval;
 - `requested → rejected` after rejection;
-- `requested → expired` when the review window lapses; or
-- `requested → authorized → expired` when approved authority lapses unused.
+- `requested → expired` when the review window lapses or the bound profile becomes inactive before approval; or
+- `requested → authorized → expired` when approved authority lapses unused or the bound profile becomes inactive after approval.
 
-Reads recompute the complete lifecycle and fail closed on drift or tampering.
+Receipt validation cross-checks actor, timestamp, reason, lifecycle status, decision hash, live-authority fact and prior hash against the authorization record. Re-hashing a receipt with changed event facts therefore still fails closed.
+
+Any read/approval/replay revalidates the exact upstream profile and discovery lineage. If the governed source profile has been disabled, a pending or approved authorization is reconciled to `expired` and `live_connection_authorized` is cleared before it can be treated as usable.
 
 ## Safety boundary
-`live_connection_authorized=true` appears only during the approved, unexpired authorization window. It is a governance fact, not evidence that a connection exists.
+`live_connection_authorized=true` appears only during the approved, unexpired authorization window while the bound source remains active. It is a governance fact, not evidence that a connection exists.
 
 The following remain false throughout Phase 17.5-C:
 - credential storage;
@@ -68,13 +72,15 @@ No provider SDK, OAuth flow, client secret, private key, authorization code, acc
 - independent second approval;
 - self-approval rejection;
 - exact replay;
-- source-profile disable blocks approval;
+- source-profile disable terminalizes pending and already approved authority;
 - bounded expiry and live-authority removal;
 - tenant isolation;
-- receipt tamper rejection; and
+- direct receipt tamper rejection;
+- re-hashed receipt-fact drift rejection;
+- re-hashed TTL-policy drift rejection; and
 - zero Claim/Document/provider execution.
 
 ## Next boundary
-A separately reviewed Phase 17.5-D may implement one bounded provider-connection bootstrap executor that consumes one valid, unexpired Phase 17.5-C authorization. Credential custody, OAuth/token exchange, production provider clients and connection-health qualification remain out of scope here.
+A separately reviewed Phase 17.5-D may implement one bounded provider-connection bootstrap executor that consumes one valid, unexpired Phase 17.5-C authorization. That executor must revalidate the Phase 17.5-C artifact and its active upstream lineage immediately before any credential/provider action. Credential custody, OAuth/token exchange, production provider clients and connection-health qualification remain out of scope here.
 
 See ADR-207 and issue #406.
