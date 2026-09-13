@@ -28,6 +28,7 @@ class PhysicalDisposalAdmissionRead(BaseModel):
     inventory_hash: str
     document_bindings: list[dict[str, Any]]
     document_bindings_hash: str
+    separation_actor_set_hash: str
     document_count: int
     total_file_size_bytes: int
     requested_by_id: UUID
