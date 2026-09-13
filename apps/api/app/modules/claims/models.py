@@ -136,3 +136,10 @@ class ClaimReferenceSequence(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         nullable=False,
     )
     last_number: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+
+
+# app.db.metadata imports this module, so keep Phase 17.4-A tables in that discovery graph.
+from app.modules.claims.retention_physical_disposal_authorization_models import (  # noqa: E402,F401
+    PhysicalDisposalAdmissionAuthorization,
+    PhysicalDisposalAdmissionAuthorizationReceipt,
+)
