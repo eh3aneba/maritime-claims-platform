@@ -26,12 +26,14 @@ from app.modules.claims.retention_physical_disposal_authorization_models import 
 from app.modules.claims.retention_service import RetentionNotFoundError, get_claim_for_retention
 from app.modules.documents.recovery_durable_authoritative_storage_health_models import (
     EvidenceRecoveryDurableAuthoritativeStorageHealthQualification,
+    EvidenceRecoveryDurableAuthoritativeStorageHealthReceipt,
 )
 from app.modules.documents.recovery_durable_authoritative_storage_health_service import (
     RecoveryDurableAuthoritativeStorageHealthError,
     _durable_an_snapshot,
     _matches_snapshot,
     _qualification_hash,
+    _receipt_hash as _ao_receipt_hash,
 )
 
 PHYSICAL_DISPOSAL_ADMISSION_WINDOW = timedelta(minutes=5)
@@ -87,6 +89,81 @@ def _stored_ao_integrity_ok(
         reason=qualification.request_reason,
     )
     return expected == qualification.health_qualification_hash
+
+
+def _qualified_ao_receipt_integrity_ok(
+    db: Session,
+    qualification: EvidenceRecoveryDurableAuthoritativeStorageHealthQualification,
+) -> bool:
+    receipts = list(
+        db.scalars(
+            select(EvidenceRecoveryDurableAuthoritativeStorageHealthReceipt).where(
+                EvidenceRecoveryDurableAuthoritativeStorageHealthReceipt.organization_id
+                == qualification.organization_id,
+                EvidenceRecoveryDurableAuthoritativeStorageHealthReceipt.claim_id
+                == qualification.claim_id,
+                EvidenceRecoveryDurableAuthoritativeStorageHealthReceipt.document_id
+                == qualification.document_id,
+                EvidenceRecoveryDurableAuthoritativeStorageHealthReceipt.health_qualification_id
+                == qualification.id,
+                EvidenceRecoveryDurableAuthoritativeStorageHealthReceipt.ratification_id
+                == qualification.ratification_id,
+                EvidenceRecoveryDurableAuthoritativeStorageHealthReceipt.phase == "qualified",
+            )
+        ).all()
+    )
+    if len(receipts) != 1:
+        return False
+    receipt = receipts[0]
+    if (
+        qualification.qualified_by_id is None
+        or qualification.qualified_at is None
+        or qualification.qualification_reason is None
+    ):
+        return False
+    if not all(
+        (
+            receipt.health_state == "healthy",
+            receipt.observed_authority_kind == "recovery_storage",
+            receipt.observed_authority_tenure == "durable_recovery",
+            receipt.observed_ratification_active is True,
+            receipt.observed_durable_authority_created is True,
+            receipt.observed_local_authoritative is False,
+            receipt.observed_recovery_authoritative is True,
+            receipt.observed_authoritative_storage_changed is True,
+            receipt.authority_route_version == qualification.authority_route_version_at_request,
+            receipt.integrity_proof_hash == qualification.integrity_proof_hash,
+            receipt.request_snapshot_hash == qualification.request_snapshot_hash,
+            receipt.health_qualification_hash == qualification.health_qualification_hash,
+            receipt.actor_id == qualification.qualified_by_id,
+            _as_utc(receipt.transitioned_at) == _as_utc(qualification.qualified_at),
+            receipt.reason == qualification.qualification_reason,
+            receipt.local_evidence_preserved is True,
+            receipt.storage_write_performed is False,
+            receipt.route_mutation_performed is False,
+            receipt.ownership_mutation_performed is False,
+            receipt.read_path_switched is False,
+            receipt.write_path_switched is False,
+            receipt.document_storage_key_mutated is False,
+            receipt.destructive_action_performed is False,
+            receipt.physical_disposal_authorized is False,
+            receipt.s3_put_performed is False,
+            receipt.s3_copy_performed is False,
+            receipt.s3_delete_performed is False,
+            receipt.local_overwrite_performed is False,
+            receipt.local_move_performed is False,
+            receipt.local_delete_performed is False,
+        )
+    ):
+        return False
+    expected = _ao_receipt_hash(
+        qualification,
+        phase="qualified",
+        actor_id=receipt.actor_id,
+        reason=receipt.reason,
+        transitioned_at=_as_utc(receipt.transitioned_at),
+    )
+    return expected == receipt.receipt_hash
 
 
 def _document_binding(
@@ -482,6 +559,8 @@ def _fresh_document_bindings(
         matches: list[EvidenceRecoveryDurableAuthoritativeStorageHealthQualification] = []
         for qualification in candidates:
             if not _stored_ao_integrity_ok(qualification):
+                continue
+            if not _qualified_ao_receipt_integrity_ok(db, qualification):
                 continue
             try:
                 snapshot = _durable_an_snapshot(
