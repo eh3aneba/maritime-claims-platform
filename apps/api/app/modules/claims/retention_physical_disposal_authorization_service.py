@@ -6,10 +6,12 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.modules.claims.retention_disposal_dry_run_models import DisposalDryRunCeremony
 from app.modules.claims.retention_disposal_dry_run_service import _as_utc
 from app.modules.claims.retention_disposal_manifest_service import (
     revalidate_disposal_execution_manifest,
 )
+from app.modules.claims.retention_disposal_models import DisposalAuthorization
 from app.modules.claims.retention_disposal_release_models import DisposalReleaseReview
 from app.modules.claims.retention_disposal_release_service import (
     _approval_hash as _release_approval_hash,
@@ -19,6 +21,7 @@ from app.modules.claims.retention_disposal_release_service import (
 )
 from app.modules.claims.retention_physical_disposal_authorization_models import (
     PhysicalDisposalAdmissionAuthorization,
+    PhysicalDisposalAdmissionAuthorizationReceipt,
 )
 from app.modules.claims.retention_service import RetentionNotFoundError, get_claim_for_retention
 from app.modules.documents.recovery_durable_authoritative_storage_health_models import (
@@ -40,6 +43,10 @@ class PhysicalDisposalAdmissionError(ValueError):
         super().__init__(
             "Physical disposal admission failed: " + ", ".join(self.blocking_reasons)
         )
+
+
+class PhysicalDisposalAdmissionRetryableError(RuntimeError):
+    """Transient recovery-storage inspection failure that must not consume authority."""
 
 
 def _utc_now() -> datetime:
@@ -102,6 +109,11 @@ def _document_binding(
     return binding
 
 
+def _actor_set_hash(actor_ids: list[UUID | None]) -> str:
+    canonical_actor_ids = sorted({str(actor_id) for actor_id in actor_ids if actor_id is not None})
+    return _canonical_hash(canonical_actor_ids)
+
+
 def _authorization_hash(
     *,
     release_review_id: UUID,
@@ -110,6 +122,7 @@ def _authorization_hash(
     manifest_hash: str,
     inventory_hash: str,
     document_bindings_hash: str,
+    separation_actor_set_hash: str,
     requested_by_id: UUID,
     request_reason: str,
     requested_at: datetime,
@@ -123,6 +136,7 @@ def _authorization_hash(
             "manifest_hash": manifest_hash,
             "inventory_hash": inventory_hash,
             "document_bindings_hash": document_bindings_hash,
+            "separation_actor_set_hash": separation_actor_set_hash,
             "requested_by_id": str(requested_by_id),
             "request_reason": request_reason,
             "requested_at": _iso(requested_at),
@@ -149,6 +163,7 @@ def _approval_hash(
             "authorization_id": str(authorization.id),
             "authorization_hash": authorization.authorization_hash,
             "document_bindings_hash": authorization.document_bindings_hash,
+            "separation_actor_set_hash": authorization.separation_actor_set_hash,
             "approved_by_id": str(approved_by_id),
             "approved_at": _iso(approved_at),
             "approval_reason": approval_reason,
@@ -161,6 +176,98 @@ def _approval_hash(
             "local_delete_performed": False,
         }
     )
+
+
+def _receipt_hash(
+    *,
+    authorization: PhysicalDisposalAdmissionAuthorization,
+    sequence_number: int,
+    event_type: str,
+    status_after: str,
+    actor_id: UUID,
+    occurred_at: datetime,
+    reason: str,
+    prior_receipt_hash: str | None,
+) -> str:
+    return _canonical_hash(
+        {
+            "authorization_id": str(authorization.id),
+            "sequence_number": sequence_number,
+            "event_type": event_type,
+            "status_after": status_after,
+            "actor_id": str(actor_id),
+            "occurred_at": _iso(occurred_at),
+            "reason": reason,
+            "authorization_hash": authorization.authorization_hash,
+            "document_bindings_hash": authorization.document_bindings_hash,
+            "separation_actor_set_hash": authorization.separation_actor_set_hash,
+            "approval_hash": authorization.approval_hash,
+            "prior_receipt_hash": prior_receipt_hash,
+            "destructive_action_performed": False,
+            "storage_write_performed": False,
+            "s3_delete_performed": False,
+            "local_delete_performed": False,
+        }
+    )
+
+
+def _append_receipt(
+    db: Session,
+    *,
+    authorization: PhysicalDisposalAdmissionAuthorization,
+    event_type: str,
+    actor_id: UUID,
+    occurred_at: datetime,
+    reason: str,
+) -> PhysicalDisposalAdmissionAuthorizationReceipt:
+    latest = db.scalar(
+        select(PhysicalDisposalAdmissionAuthorizationReceipt)
+        .where(
+            PhysicalDisposalAdmissionAuthorizationReceipt.organization_id
+            == authorization.organization_id,
+            PhysicalDisposalAdmissionAuthorizationReceipt.authorization_id
+            == authorization.id,
+        )
+        .order_by(PhysicalDisposalAdmissionAuthorizationReceipt.sequence_number.desc())
+        .limit(1)
+        .with_for_update()
+    )
+    sequence_number = 1 if latest is None else latest.sequence_number + 1
+    prior_receipt_hash = None if latest is None else latest.receipt_hash
+    receipt_hash = _receipt_hash(
+        authorization=authorization,
+        sequence_number=sequence_number,
+        event_type=event_type,
+        status_after=authorization.status,
+        actor_id=actor_id,
+        occurred_at=occurred_at,
+        reason=reason,
+        prior_receipt_hash=prior_receipt_hash,
+    )
+    receipt = PhysicalDisposalAdmissionAuthorizationReceipt(
+        organization_id=authorization.organization_id,
+        claim_id=authorization.claim_id,
+        authorization_id=authorization.id,
+        sequence_number=sequence_number,
+        event_type=event_type,
+        status_after=authorization.status,
+        actor_id=actor_id,
+        occurred_at=occurred_at,
+        reason=reason,
+        authorization_hash=authorization.authorization_hash,
+        document_bindings_hash=authorization.document_bindings_hash,
+        separation_actor_set_hash=authorization.separation_actor_set_hash,
+        approval_hash=authorization.approval_hash,
+        prior_receipt_hash=prior_receipt_hash,
+        receipt_hash=receipt_hash,
+        destructive_action_performed=False,
+        storage_write_performed=False,
+        s3_delete_performed=False,
+        local_delete_performed=False,
+    )
+    db.add(receipt)
+    db.flush()
+    return receipt
 
 
 def _get_release_review(
@@ -244,6 +351,8 @@ def _verify_release_review_and_manifest(
     if not all(
         (
             manifest.id == review.disposal_execution_manifest_id,
+            manifest.disposal_authorization_id == review.disposal_authorization_id,
+            manifest.retention_policy_id == review.retention_policy_id,
             manifest.manifest_hash == review.manifest_hash,
             manifest.inventory_hash == review.inventory_hash,
             manifest.document_count == review.document_count,
@@ -252,6 +361,74 @@ def _verify_release_review_and_manifest(
     ):
         raise PhysicalDisposalAdmissionError("release_review_manifest_drift")
     return review, manifest, stage
+
+
+def _governance_actor_ids(
+    db: Session,
+    *,
+    organization_id: UUID,
+    claim_id: UUID,
+    review: DisposalReleaseReview,
+    manifest,
+    requested_by_id: UUID,
+) -> list[UUID]:
+    ceremony = db.scalar(
+        select(DisposalDryRunCeremony).where(
+            DisposalDryRunCeremony.id == review.disposal_dry_run_ceremony_id,
+            DisposalDryRunCeremony.organization_id == organization_id,
+            DisposalDryRunCeremony.claim_id == claim_id,
+        )
+    )
+    source_authorization = db.scalar(
+        select(DisposalAuthorization).where(
+            DisposalAuthorization.id == review.disposal_authorization_id,
+            DisposalAuthorization.organization_id == organization_id,
+            DisposalAuthorization.claim_id == claim_id,
+        )
+    )
+    if ceremony is None or source_authorization is None:
+        raise PhysicalDisposalAdmissionError("governance_actor_lineage_missing")
+    if not all(
+        (
+            ceremony.status == "attested",
+            ceremony.attested_by_id is not None,
+            ceremony.disposal_execution_manifest_id == manifest.id,
+            ceremony.disposal_authorization_id == review.disposal_authorization_id,
+            source_authorization.status == "approved",
+            source_authorization.approved_by_id is not None,
+            review.approved_by_id is not None,
+        )
+    ):
+        raise PhysicalDisposalAdmissionError("governance_actor_lineage_not_final")
+    actor_ids = [
+        requested_by_id,
+        review.requested_by_id,
+        review.approved_by_id,
+        review.quarantine_staged_by_id,
+        manifest.created_by_id,
+        ceremony.created_by_id,
+        ceremony.attested_by_id,
+        source_authorization.requested_by_id,
+        source_authorization.approved_by_id,
+    ]
+    return list({actor_id for actor_id in actor_ids if actor_id is not None})
+
+
+def _is_retryable_ao_error(exc: RecoveryDurableAuthoritativeStorageHealthError) -> bool:
+    message = str(exc).lower()
+    retryable_markers = (
+        "unavailable",
+        "unable to inspect durable recovery evidence",
+        "timeout",
+        "timed out",
+        "temporar",
+        "connection",
+        "endpoint",
+        "configured s3",
+        "recovery evidence store",
+        "service unavailable",
+    )
+    return any(marker in message for marker in retryable_markers)
 
 
 def _fresh_document_bindings(
@@ -268,6 +445,7 @@ def _fresh_document_bindings(
         raise PhysicalDisposalAdmissionError("manifest_document_count_mismatch")
 
     bindings: list[dict] = []
+    seen_document_ids: set[UUID] = set()
     for row in sorted(document_rows, key=lambda item: str(item.get("object_id", ""))):
         try:
             document_id = UUID(str(row["object_id"]))
@@ -277,6 +455,9 @@ def _fresh_document_bindings(
             row_fingerprint = str(row["row_fingerprint"])
         except (KeyError, TypeError, ValueError) as exc:
             raise PhysicalDisposalAdmissionError("manifest_document_binding_incomplete") from exc
+        if document_id in seen_document_ids:
+            raise PhysicalDisposalAdmissionError(f"manifest_document_duplicate:{document_id}")
+        seen_document_ids.add(document_id)
 
         candidates = list(
             db.scalars(
@@ -311,7 +492,9 @@ def _fresh_document_bindings(
                     ratification_id=qualification.ratification_id,
                     now=now,
                 )
-            except RecoveryDurableAuthoritativeStorageHealthError:
+            except RecoveryDurableAuthoritativeStorageHealthError as exc:
+                if _is_retryable_ao_error(exc):
+                    raise PhysicalDisposalAdmissionRetryableError(str(exc)) from exc
                 continue
             if not _matches_snapshot(qualification, snapshot):
                 continue
@@ -359,6 +542,7 @@ def _verify_existing_integrity(
         manifest_hash=authorization.manifest_hash,
         inventory_hash=authorization.inventory_hash,
         document_bindings_hash=authorization.document_bindings_hash,
+        separation_actor_set_hash=authorization.separation_actor_set_hash,
         requested_by_id=authorization.requested_by_id,
         request_reason=authorization.request_reason,
         requested_at=_as_utc(authorization.requested_at),
@@ -366,6 +550,21 @@ def _verify_existing_integrity(
     )
     if expected != authorization.authorization_hash:
         raise PhysicalDisposalAdmissionError("stored_authorization_hash_mismatch")
+
+
+def _terminalize(
+    authorization: PhysicalDisposalAdmissionAuthorization,
+    *,
+    status: str,
+    actor_id: UUID,
+    reason: str,
+    now: datetime,
+) -> None:
+    authorization.status = status
+    authorization.physical_disposal_authorized = False
+    authorization.terminal_by_id = actor_id
+    authorization.terminal_at = now
+    authorization.terminal_reason = reason
 
 
 def request_physical_disposal_admission(
@@ -403,6 +602,15 @@ def request_physical_disposal_admission(
         actor_id=requested_by_id,
         now=current_time,
     )
+    actor_ids = _governance_actor_ids(
+        db,
+        organization_id=organization_id,
+        claim_id=claim_id,
+        review=review,
+        manifest=manifest,
+        requested_by_id=requested_by_id,
+    )
+    separation_actor_set_hash = _actor_set_hash(actor_ids)
     bindings = _fresh_document_bindings(
         db,
         organization_id=organization_id,
@@ -427,6 +635,7 @@ def request_physical_disposal_admission(
         manifest_hash=manifest.manifest_hash,
         inventory_hash=manifest.inventory_hash,
         document_bindings_hash=bindings_hash,
+        separation_actor_set_hash=separation_actor_set_hash,
         requested_by_id=requested_by_id,
         request_reason=reason,
         requested_at=current_time,
@@ -444,6 +653,7 @@ def request_physical_disposal_admission(
         inventory_hash=manifest.inventory_hash,
         document_bindings=bindings,
         document_bindings_hash=bindings_hash,
+        separation_actor_set_hash=separation_actor_set_hash,
         document_count=manifest.document_count,
         total_file_size_bytes=manifest.total_file_size_bytes,
         requested_by_id=requested_by_id,
@@ -462,6 +672,14 @@ def request_physical_disposal_admission(
     )
     db.add(authorization)
     db.flush()
+    _append_receipt(
+        db,
+        authorization=authorization,
+        event_type="requested",
+        actor_id=requested_by_id,
+        occurred_at=current_time,
+        reason=reason,
+    )
     return authorization
 
 
@@ -544,33 +762,123 @@ def approve_physical_disposal_admission(
         for_update=True,
     )
     _verify_existing_integrity(authorization)
+    if authorization.status == "authorized":
+        if authorization.approved_by_id == approved_by_id and authorization.approval_reason == reason:
+            return authorization, "unchanged"
+        raise ValueError("Authorized physical disposal admission replay must match original approver and reason")
     if authorization.status != "pending_second_approval":
         return authorization, "unchanged"
-    if authorization.requested_by_id == approved_by_id:
-        raise ValueError("Physical disposal admission requester cannot approve their own authorization")
     if current_time >= _as_utc(authorization.authorization_expires_at):
-        authorization.status = "expired"
-        authorization.terminal_by_id = approved_by_id
-        authorization.terminal_at = current_time
-        authorization.terminal_reason = "Physical disposal admission validity window expired."
+        terminal_reason = "Physical disposal admission validity window expired."
+        _terminalize(
+            authorization,
+            status="expired",
+            actor_id=approved_by_id,
+            reason=terminal_reason,
+            now=current_time,
+        )
+        _append_receipt(
+            db,
+            authorization=authorization,
+            event_type="expired",
+            actor_id=approved_by_id,
+            occurred_at=current_time,
+            reason=terminal_reason,
+        )
         return authorization, "expired"
 
-    review, manifest, _stage = _verify_release_review_and_manifest(
-        db,
-        organization_id=organization_id,
-        claim_id=claim_id,
-        review_id=authorization.disposal_release_review_id,
-        actor_id=approved_by_id,
-        now=current_time,
-    )
-    live_bindings = _fresh_document_bindings(
-        db,
-        organization_id=organization_id,
-        claim_id=claim_id,
-        inventory=list(manifest.inventory or []),
-        expected_document_count=manifest.document_count,
-        now=current_time,
-    )
+    try:
+        review, manifest, _stage = _verify_release_review_and_manifest(
+            db,
+            organization_id=organization_id,
+            claim_id=claim_id,
+            review_id=authorization.disposal_release_review_id,
+            actor_id=approved_by_id,
+            now=current_time,
+        )
+        actor_ids = _governance_actor_ids(
+            db,
+            organization_id=organization_id,
+            claim_id=claim_id,
+            review=review,
+            manifest=manifest,
+            requested_by_id=authorization.requested_by_id,
+        )
+    except PhysicalDisposalAdmissionError as exc:
+        terminal_reason = "Governance lineage drift detected: " + ", ".join(exc.blocking_reasons)
+        _terminalize(
+            authorization,
+            status="invalidated",
+            actor_id=approved_by_id,
+            reason=terminal_reason,
+            now=current_time,
+        )
+        _append_receipt(
+            db,
+            authorization=authorization,
+            event_type="invalidated",
+            actor_id=approved_by_id,
+            occurred_at=current_time,
+            reason=terminal_reason,
+        )
+        return authorization, "invalidated"
+
+    live_actor_set_hash = _actor_set_hash(actor_ids)
+    if live_actor_set_hash != authorization.separation_actor_set_hash:
+        terminal_reason = "Material disposal-governance actor lineage drift detected."
+        _terminalize(
+            authorization,
+            status="invalidated",
+            actor_id=approved_by_id,
+            reason=terminal_reason,
+            now=current_time,
+        )
+        _append_receipt(
+            db,
+            authorization=authorization,
+            event_type="invalidated",
+            actor_id=approved_by_id,
+            occurred_at=current_time,
+            reason=terminal_reason,
+        )
+        return authorization, "invalidated"
+    if approved_by_id in set(actor_ids):
+        raise ValueError(
+            "Physical disposal admission approver must be independent of the requester and material disposal-governance actors"
+        )
+
+    try:
+        live_bindings = _fresh_document_bindings(
+            db,
+            organization_id=organization_id,
+            claim_id=claim_id,
+            inventory=list(manifest.inventory or []),
+            expected_document_count=manifest.document_count,
+            now=current_time,
+        )
+    except PhysicalDisposalAdmissionRetryableError:
+        raise
+    except PhysicalDisposalAdmissionError as exc:
+        terminal_reason = "Durable authoritative-storage binding invalid: " + ", ".join(
+            exc.blocking_reasons
+        )
+        _terminalize(
+            authorization,
+            status="invalidated",
+            actor_id=approved_by_id,
+            reason=terminal_reason,
+            now=current_time,
+        )
+        _append_receipt(
+            db,
+            authorization=authorization,
+            event_type="invalidated",
+            actor_id=approved_by_id,
+            occurred_at=current_time,
+            reason=terminal_reason,
+        )
+        return authorization, "invalidated"
+
     live_bindings_hash = _canonical_hash(live_bindings)
     if not all(
         (
@@ -582,10 +890,22 @@ def approve_physical_disposal_admission(
             live_bindings == list(authorization.document_bindings or []),
         )
     ):
-        authorization.status = "invalidated"
-        authorization.terminal_by_id = approved_by_id
-        authorization.terminal_at = current_time
-        authorization.terminal_reason = "Release, manifest, or AO document binding drift detected."
+        terminal_reason = "Release, manifest, or AO document binding drift detected."
+        _terminalize(
+            authorization,
+            status="invalidated",
+            actor_id=approved_by_id,
+            reason=terminal_reason,
+            now=current_time,
+        )
+        _append_receipt(
+            db,
+            authorization=authorization,
+            event_type="invalidated",
+            actor_id=approved_by_id,
+            occurred_at=current_time,
+            reason=terminal_reason,
+        )
         return authorization, "invalidated"
 
     authorization.status = "authorized"
@@ -598,6 +918,14 @@ def approve_physical_disposal_admission(
         approved_by_id=approved_by_id,
         approved_at=current_time,
         approval_reason=reason,
+    )
+    _append_receipt(
+        db,
+        authorization=authorization,
+        event_type="authorized",
+        actor_id=approved_by_id,
+        occurred_at=current_time,
+        reason=reason,
     )
     return authorization, "authorized"
 
@@ -622,16 +950,43 @@ def reject_physical_disposal_admission(
         for_update=True,
     )
     _verify_existing_integrity(authorization)
+    if authorization.status == "rejected":
+        if authorization.terminal_by_id == rejected_by_id and authorization.terminal_reason == reason:
+            return authorization, "unchanged"
+        raise ValueError("Rejected physical disposal admission replay must match original actor and reason")
     if authorization.status != "pending_second_approval":
         return authorization, "unchanged"
     if current_time >= _as_utc(authorization.authorization_expires_at):
-        authorization.status = "expired"
-        authorization.terminal_by_id = rejected_by_id
-        authorization.terminal_at = current_time
-        authorization.terminal_reason = "Physical disposal admission validity window expired."
+        terminal_reason = "Physical disposal admission validity window expired."
+        _terminalize(
+            authorization,
+            status="expired",
+            actor_id=rejected_by_id,
+            reason=terminal_reason,
+            now=current_time,
+        )
+        _append_receipt(
+            db,
+            authorization=authorization,
+            event_type="expired",
+            actor_id=rejected_by_id,
+            occurred_at=current_time,
+            reason=terminal_reason,
+        )
         return authorization, "expired"
-    authorization.status = "rejected"
-    authorization.terminal_by_id = rejected_by_id
-    authorization.terminal_at = current_time
-    authorization.terminal_reason = reason
+    _terminalize(
+        authorization,
+        status="rejected",
+        actor_id=rejected_by_id,
+        reason=reason,
+        now=current_time,
+    )
+    _append_receipt(
+        db,
+        authorization=authorization,
+        event_type="rejected",
+        actor_id=rejected_by_id,
+        occurred_at=current_time,
+        reason=reason,
+    )
     return authorization, "rejected"
