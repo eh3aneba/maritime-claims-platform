@@ -1,8 +1,16 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+
+def _as_utc(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
 
 
 class PhysicalDisposalAdmissionRequest(BaseModel):
@@ -54,6 +62,19 @@ class PhysicalDisposalAdmissionRead(BaseModel):
     created_at: datetime
     updated_at: datetime
 
+    @field_validator(
+        "requested_at",
+        "authorization_expires_at",
+        "approved_at",
+        "terminal_at",
+        "created_at",
+        "updated_at",
+        mode="after",
+    )
+    @classmethod
+    def normalize_utc_datetimes(cls, value: datetime | None) -> datetime | None:
+        return _as_utc(value)
+
 
 class PhysicalDisposalAdmissionReceiptRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -80,3 +101,10 @@ class PhysicalDisposalAdmissionReceiptRead(BaseModel):
     local_delete_performed: bool
     created_at: datetime
     updated_at: datetime
+
+    @field_validator("occurred_at", "created_at", "updated_at", mode="after")
+    @classmethod
+    def normalize_utc_datetimes(cls, value: datetime) -> datetime:
+        normalized = _as_utc(value)
+        assert normalized is not None
+        return normalized
