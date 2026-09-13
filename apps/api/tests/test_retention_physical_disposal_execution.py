@@ -13,6 +13,7 @@ from app.modules.claims import retention_physical_disposal_execution_service as 
 from app.modules.claims.retention_physical_disposal_execution_service import (
     PhysicalDisposalExecutionRetryableError,
 )
+from app.modules.documents import service as document_service
 from app.modules.documents.models import Document
 from tests.db_harness import TestingSessionLocal, client, reset_database
 from tests.test_evidence_recovery_durable_read_renewal_health_qualification import (
@@ -29,6 +30,13 @@ def setup_function() -> None:
 
 
 def _authorized_phase_17_4_a(monkeypatch, tmp_path: Path, endpoint: str, *, slug: str):
+    # The upstream recovery-chain fixture seeds the local evidence under tmp_path.
+    # Phase 17.4-B deliberately resolves the destructive target through the live
+    # document-storage configuration, so align that runtime root with the seeded
+    # evidence instead of bypassing the production storage boundary in the test.
+    monkeypatch.setattr(document_service.settings, "storage_backend", "local")
+    monkeypatch.setattr(document_service.settings, "local_storage_path", str(tmp_path))
+
     data = _prepare_real_phase_17_4_a_chain(monkeypatch, tmp_path, endpoint)
     requested = client.post(
         f"/api/v1/claims/{data['claim_id']}/disposal-release-reviews/"
