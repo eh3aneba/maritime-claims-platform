@@ -10,6 +10,7 @@ from app.modules.audit.service import write_audit_log
 from app.modules.claims.retention_physical_disposal_authorization_schemas import (
     PhysicalDisposalAdmissionDecision,
     PhysicalDisposalAdmissionRead,
+    PhysicalDisposalAdmissionReceiptRead,
     PhysicalDisposalAdmissionRequest,
 )
 from app.modules.claims.retention_physical_disposal_authorization_service import (
@@ -20,6 +21,9 @@ from app.modules.claims.retention_physical_disposal_authorization_service import
     list_physical_disposal_admissions,
     reject_physical_disposal_admission,
     request_physical_disposal_admission,
+)
+from app.modules.claims.retention_physical_disposal_receipt_service import (
+    list_physical_disposal_admission_receipts,
 )
 from app.modules.claims.retention_router import RetentionAdminMfa, RetentionReader
 from app.modules.claims.retention_service import RetentionNotFoundError
@@ -164,6 +168,28 @@ def get_physical_disposal_admission_endpoint(
     except RetentionNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     return _read(authorization)
+
+
+@router.get(
+    "/{claim_id}/physical-disposal-admissions/{authorization_id}/receipts",
+    response_model=list[PhysicalDisposalAdmissionReceiptRead],
+)
+def list_physical_disposal_admission_receipts_endpoint(
+    claim_id: UUID,
+    authorization_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: RetentionReader,
+) -> list[PhysicalDisposalAdmissionReceiptRead]:
+    try:
+        receipts = list_physical_disposal_admission_receipts(
+            db,
+            organization_id=current_user.organization_id,
+            claim_id=claim_id,
+            authorization_id=authorization_id,
+        )
+    except RetentionNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return [PhysicalDisposalAdmissionReceiptRead.model_validate(item) for item in receipts]
 
 
 @router.post(
