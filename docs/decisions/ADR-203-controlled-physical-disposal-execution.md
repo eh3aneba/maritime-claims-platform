@@ -13,7 +13,7 @@ Phase 17.4-B consumes exactly one valid Phase 17.4-A credential and deletes only
 
 Execution is two-stage:
 
-1. Freshly revalidate the approved release review, quarantine stage, execution manifest, every AO qualification and receipt, the Phase 17.4-A authorization and receipt chain, actor separation, and an active Phase V recovery read-ownership path. Verify local bytes and recovery bytes against the exact binding.
+1. Freshly revalidate the approved release review, quarantine stage, execution manifest, every bound AO qualification and receipt, the Phase 17.4-A authorization and receipt chain, actor separation, and the exact Phase AN/AO durable authoritative recovery-storage state. Verify the local bytes and the bound recovery replica bytes against the exact binding.
 2. Persist and commit an immutable execution intent and per-document target hashes before any unlink.
 3. Delete each exact local target. Persist deletion evidence after each item. A retry finding a missing local target under the same prepared execution reconciles that crash window rather than issuing a second deletion.
 4. Re-read the recovery object directly and verify its bound hash and size after each local deletion.
@@ -22,7 +22,7 @@ Execution is two-stage:
 A conflicting replay fails closed. A recovery-store outage before any unlink is retryable without consuming authority. An outage after an unlink leaves a durable partial execution that can only be reconciled by the same exact request.
 
 ## Read-path consequence
-After successful lawful local disposal, recovery is the only surviving evidence copy. The Phase V recovery read path therefore treats a successful, verified Phase 17.4-B execution item as retirement of the local fallback: reads verify the recovery object directly rather than requiring the deleted local bytes. The old local metadata remains immutable audit lineage.
+After successful lawful local disposal, recovery is the only surviving evidence copy. Recovery-backed document reads therefore treat a successful, verified Phase 17.4-B execution item as retirement of the local fallback: reads verify the recovery object directly rather than requiring the deleted local bytes. The old local metadata remains immutable audit lineage.
 
 Rollback or reconciliation to a deleted local source is not a valid state. Phase 17.4-B must fail closed around any operation that would restore local read ownership after a verified disposal.
 
