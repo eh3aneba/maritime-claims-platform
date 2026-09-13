@@ -21,14 +21,18 @@ Admission requires:
 The authorization binds the profile hash, discovery scope hash, manifest hash, run hash, requester, approval facts and a single future execution limit into deterministic SHA-256 lineage.
 
 ### Lifecycle
-The lifecycle is `pending_second_approval → authorized` or `rejected`. A pending request expires after ten minutes if not approved. An approved authorization expires after ten minutes if unused.
+The lifecycle is `pending_second_approval → authorized` or `rejected`. A pending request expires after exactly ten minutes if not approved. An approved authorization expires after exactly ten minutes if unused.
 
-Every transition emits an append-only hash-chained receipt. Exact replay is idempotent; changed replay conflicts. Receipt truncation, reordering, hash drift or bound profile/discovery drift fails closed.
+The fixed review and authorization TTLs are independently recomputed from the bound request/approval timestamps rather than merely trusted because they are included in a hash.
+
+If the bound Phase 17.5-A source profile becomes inactive, any pending or approved Phase 17.5-C artifact is reconciled fail-closed to `expired`, its live-connection authority is removed, and a terminal receipt is emitted. Upstream discovery/profile lineage is revalidated on every read, replay and decision transition.
+
+Every transition emits an append-only hash-chained receipt. Exact replay is idempotent; changed replay conflicts. Receipt truncation, reordering, hash drift or bound profile/discovery drift fails closed. Receipt actor, timestamp, reason, lifecycle status and decision hash are also cross-checked against the authorization record, so internally re-hashed event-fact drift does not become valid.
 
 ### Meaning of live_connection_authorized
 For the first time in the 17.5 series, a valid `authorized` artifact records `live_connection_authorized=true`.
 
-That flag means only that one later, separately implemented and separately reviewed executor may consume this authorization before expiry. It does not mean a provider connection exists and it does not contain any credential material.
+That flag means only that one later, separately implemented and separately reviewed executor may consume this authorization before expiry, and only while the upstream governed source remains active and integrity-valid. It does not mean a provider connection exists and it does not contain any credential material.
 
 ### Safety boundary
 Phase 17.5-C performs none of the following:
@@ -44,9 +48,9 @@ Phase 17.5-C performs none of the following:
 Database constraints keep every execution flag false. Only the temporary `live_connection_authorized` governance fact may become true while status is `authorized`.
 
 ## Consequences
-The platform gains a cryptographically bound four-eyes gate between governed discovery and any future credential/network executor. A future Phase 17.5-D may consume exactly one valid, unexpired 17.5-C authorization, but it must independently define credential custody, token handling, provider-client boundaries, rollback and health controls.
+The platform gains a cryptographically bound four-eyes gate between governed discovery and any future credential/network executor. A future Phase 17.5-D may consume exactly one valid, unexpired 17.5-C authorization, but it must revalidate this artifact and its upstream lineage immediately before execution and independently define credential custody, token handling, provider-client boundaries, rollback and health controls.
 
 ## Verification
-Release requires real-chain tests covering profile → discovery → authorization request → independent approval, self-approval rejection, replay, tenant isolation, expiry, source-profile disable drift, receipt tamper rejection and zero provider/evidence/document/claim execution.
+Release requires real-chain tests covering profile → discovery → authorization request → independent approval, self-approval rejection, replay, tenant isolation, temporal expiry, source-profile disable before and after approval, direct receipt tamper, re-hashed receipt-fact drift, re-hashed TTL-policy drift and zero provider/evidence/document/claim execution.
 
 References: #406, #404, ADR-205, ADR-206.
