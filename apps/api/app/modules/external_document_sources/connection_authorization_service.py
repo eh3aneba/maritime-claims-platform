@@ -19,7 +19,6 @@ from app.modules.external_document_sources.service import (
     get_external_document_source_profile,
 )
 
-
 _REVIEW_TTL = timedelta(minutes=10)
 _AUTHORIZATION_TTL = timedelta(minutes=10)
 _NON_EXECUTION_FIELDS = (
@@ -48,9 +47,7 @@ def _aware(value: datetime) -> datetime:
 
 
 def _iso(value: datetime | None) -> str | None:
-    if value is None:
-        return None
-    return _aware(value).isoformat()
+    return None if value is None else _aware(value).isoformat()
 
 
 def _canonical_hash(value) -> str:
@@ -68,10 +65,7 @@ def _normalize_text(value: str, *, field: str, minimum: int, maximum: int) -> st
 
 
 def _scope_hash(
-    *,
-    profile: ExternalDocumentSourceProfile,
-    discovery: ExternalDocumentSourceDiscoveryRun,
-    request_key: str,
+    *, profile: ExternalDocumentSourceProfile, discovery: ExternalDocumentSourceDiscoveryRun, request_key: str
 ) -> str:
     return _canonical_hash(
         {
@@ -185,8 +179,7 @@ def _get_authorization(
 
 
 def _receipts(
-    db: Session,
-    authorization: ExternalDocumentSourceConnectionAuthorization,
+    db: Session, authorization: ExternalDocumentSourceConnectionAuthorization
 ) -> list[ExternalDocumentSourceConnectionAuthorizationReceipt]:
     return list(
         db.scalars(
@@ -201,13 +194,10 @@ def _receipts(
 
 
 def _lineage(
-    db: Session,
-    authorization: ExternalDocumentSourceConnectionAuthorization,
+    db: Session, authorization: ExternalDocumentSourceConnectionAuthorization
 ) -> tuple[ExternalDocumentSourceProfile, ExternalDocumentSourceDiscoveryRun]:
     profile = get_external_document_source_profile(
-        db,
-        organization_id=authorization.organization_id,
-        profile_id=authorization.profile_id,
+        db, organization_id=authorization.organization_id, profile_id=authorization.profile_id
     )
     discovery = get_external_document_source_discovery(
         db,
@@ -234,20 +224,57 @@ def _expected_events(authorization: ExternalDocumentSourceConnectionAuthorizatio
     if authorization.status == "rejected":
         return ["requested", "rejected"]
     if authorization.status == "expired":
-        if authorization.authorization_hash is not None:
-            return ["requested", "authorized", "expired"]
-        return ["requested", "expired"]
+        return ["requested", "authorized", "expired"] if authorization.authorization_hash else ["requested", "expired"]
     raise ExternalDocumentSourceConflictError("External provider connection authorization status is invalid")
 
 
-def _ensure_integrity(
-    db: Session,
-    authorization: ExternalDocumentSourceConnectionAuthorization,
-) -> None:
+def _expected_receipt_facts(authorization: ExternalDocumentSourceConnectionAuthorization, event_type: str):
+    if event_type == "requested":
+        return (
+            authorization.requested_by_id,
+            authorization.requested_at,
+            authorization.request_reason,
+            "pending_second_approval",
+            authorization.request_hash,
+            False,
+        )
+    if event_type == "authorized":
+        return (
+            authorization.approved_by_id,
+            authorization.approved_at,
+            authorization.approval_reason,
+            "authorized",
+            authorization.authorization_hash,
+            True,
+        )
+    if event_type == "rejected":
+        return (
+            authorization.terminal_by_id,
+            authorization.terminal_at,
+            authorization.terminal_reason,
+            "rejected",
+            authorization.terminal_hash,
+            False,
+        )
+    if event_type == "expired":
+        return (
+            None,
+            authorization.terminal_at,
+            authorization.terminal_reason,
+            "expired",
+            authorization.terminal_hash,
+            False,
+        )
+    raise ExternalDocumentSourceConflictError("External provider connection authorization receipt event is invalid")
+
+
+def _ensure_integrity(db: Session, authorization: ExternalDocumentSourceConnectionAuthorization) -> None:
     profile, discovery = _lineage(db, authorization)
     expected_scope = _scope_hash(profile=profile, discovery=discovery, request_key=authorization.request_key)
     if authorization.scope_hash != expected_scope or authorization.request_hash != _request_hash(authorization):
         raise ExternalDocumentSourceConflictError("External provider connection authorization request integrity failed")
+    if _aware(authorization.review_expires_at) != _aware(authorization.requested_at) + _REVIEW_TTL:
+        raise ExternalDocumentSourceConflictError("External provider connection authorization review TTL drifted")
     if authorization.execution_limit != 1:
         raise ExternalDocumentSourceConflictError("External provider connection authorization execution boundary drifted")
     if any(bool(getattr(authorization, field)) for field in _NON_EXECUTION_FIELDS):
@@ -258,6 +285,10 @@ def _ensure_integrity(
     if authorization.authorization_hash is not None:
         if authorization.authorization_hash != _authorization_hash(authorization):
             raise ExternalDocumentSourceConflictError("External provider connection authorization decision integrity failed")
+        if authorization.approved_at is None or authorization.authorization_expires_at is None:
+            raise ExternalDocumentSourceConflictError("External provider connection authorization decision timing is incomplete")
+        if _aware(authorization.authorization_expires_at) != _aware(authorization.approved_at) + _AUTHORIZATION_TTL:
+            raise ExternalDocumentSourceConflictError("External provider connection authorization execution TTL drifted")
     if authorization.status in {"authorized", "expired"} and authorization.approved_by_id is not None:
         if authorization.requested_by_id == authorization.approved_by_id:
             raise ExternalDocumentSourceConflictError("External provider connection authorization four-eyes boundary drifted")
@@ -276,15 +307,21 @@ def _ensure_integrity(
             raise ExternalDocumentSourceConflictError("External provider connection authorization receipt scope drifted")
         if any(bool(getattr(receipt, field)) for field in _NON_EXECUTION_FIELDS):
             raise ExternalDocumentSourceConflictError("External provider connection authorization receipt safety boundary drifted")
-        expected_live = receipt.event_type == "authorized"
+
+        expected_actor, expected_time, expected_reason, expected_status, expected_decision, expected_live = _expected_receipt_facts(
+            authorization, receipt.event_type
+        )
+        if expected_time is None or expected_reason is None or expected_decision is None:
+            raise ExternalDocumentSourceConflictError("External provider connection authorization receipt facts are incomplete")
+        if (
+            receipt.actor_id != expected_actor
+            or _aware(receipt.occurred_at) != _aware(expected_time)
+            or receipt.reason != expected_reason
+            or receipt.status_after != expected_status
+        ):
+            raise ExternalDocumentSourceConflictError("External provider connection authorization receipt facts drifted")
         if receipt.live_connection_authorized != expected_live:
             raise ExternalDocumentSourceConflictError("External provider connection authorization receipt authority drifted")
-        expected_decision = {
-            "requested": authorization.request_hash,
-            "authorized": authorization.authorization_hash,
-            "rejected": authorization.terminal_hash,
-            "expired": authorization.terminal_hash,
-        }[receipt.event_type]
         if receipt.decision_hash != expected_decision:
             raise ExternalDocumentSourceConflictError("External provider connection authorization receipt decision drifted")
         if receipt.receipt_hash != _receipt_hash(receipt):
@@ -304,7 +341,6 @@ def _append_receipt(
     live_connection_authorized: bool,
 ) -> None:
     rows = _receipts(db, authorization)
-    prior = rows[-1].receipt_hash if rows else None
     receipt = ExternalDocumentSourceConnectionAuthorizationReceipt(
         organization_id=authorization.organization_id,
         authorization_id=authorization.id,
@@ -316,12 +352,38 @@ def _append_receipt(
         reason=reason,
         scope_hash=authorization.scope_hash,
         decision_hash=decision_hash,
-        prior_receipt_hash=prior,
+        prior_receipt_hash=rows[-1].receipt_hash if rows else None,
         live_connection_authorized=live_connection_authorized,
         **{field: False for field in _NON_EXECUTION_FIELDS},
     )
     receipt.receipt_hash = _receipt_hash(receipt)
     db.add(receipt)
+    db.flush()
+
+
+def _terminalize_expired(
+    db: Session,
+    authorization: ExternalDocumentSourceConnectionAuthorization,
+    *,
+    current: datetime,
+    reason: str,
+) -> None:
+    authorization.status = "expired"
+    authorization.live_connection_authorized = False
+    authorization.terminal_by_id = None
+    authorization.terminal_at = current
+    authorization.terminal_reason = reason
+    authorization.terminal_hash = _terminal_hash(authorization)
+    _append_receipt(
+        db,
+        authorization=authorization,
+        event_type="expired",
+        actor_id=None,
+        occurred_at=current,
+        reason=reason,
+        decision_hash=authorization.terminal_hash,
+        live_connection_authorized=False,
+    )
     db.flush()
 
 
@@ -332,47 +394,37 @@ def _expire_if_needed(
     now: datetime,
 ) -> bool:
     current = _aware(now)
-    if authorization.status == "pending_second_approval" and current >= _aware(authorization.review_expires_at):
-        authorization.status = "expired"
-        authorization.live_connection_authorized = False
-        authorization.terminal_by_id = None
-        authorization.terminal_at = current
-        authorization.terminal_reason = "Second-approval review window expired."
-        authorization.terminal_hash = _terminal_hash(authorization)
-        _append_receipt(
+    if authorization.status not in {"pending_second_approval", "authorized"}:
+        return False
+
+    profile, _ = _lineage(db, authorization)
+    if profile.status != "active":
+        _terminalize_expired(
             db,
-            authorization=authorization,
-            event_type="expired",
-            actor_id=None,
-            occurred_at=current,
-            reason=authorization.terminal_reason,
-            decision_hash=authorization.terminal_hash,
-            live_connection_authorized=False,
+            authorization,
+            current=current,
+            reason="Bound external document source profile is no longer active.",
         )
-        db.flush()
+        return True
+    if authorization.status == "pending_second_approval" and current >= _aware(authorization.review_expires_at):
+        _terminalize_expired(
+            db,
+            authorization,
+            current=current,
+            reason="Second-approval review window expired.",
+        )
         return True
     if (
         authorization.status == "authorized"
         and authorization.authorization_expires_at is not None
         and current >= _aware(authorization.authorization_expires_at)
     ):
-        authorization.status = "expired"
-        authorization.live_connection_authorized = False
-        authorization.terminal_by_id = None
-        authorization.terminal_at = current
-        authorization.terminal_reason = "Bounded provider connection authorization expired unused."
-        authorization.terminal_hash = _terminal_hash(authorization)
-        _append_receipt(
+        _terminalize_expired(
             db,
-            authorization=authorization,
-            event_type="expired",
-            actor_id=None,
-            occurred_at=current,
-            reason=authorization.terminal_reason,
-            decision_hash=authorization.terminal_hash,
-            live_connection_authorized=False,
+            authorization,
+            current=current,
+            reason="Bounded provider connection authorization expired unused.",
         )
-        db.flush()
         return True
     return False
 
@@ -389,8 +441,6 @@ def request_external_document_source_connection_authorization(
     now: datetime | None = None,
 ):
     profile = get_external_document_source_profile(db, organization_id=organization_id, profile_id=profile_id)
-    if profile.status != "active":
-        raise ExternalDocumentSourceConflictError("External document source profile must be active before connection authorization")
     discovery = get_external_document_source_discovery(
         db,
         organization_id=organization_id,
@@ -420,6 +470,9 @@ def request_external_document_source_connection_authorization(
             raise ExternalDocumentSourceConflictError("Conflicting replay for external provider connection authorization request_key")
         _ensure_integrity(db, existing)
         return existing, "expired" if changed else "unchanged"
+
+    if profile.status != "active":
+        raise ExternalDocumentSourceConflictError("External document source profile must be active before connection authorization")
 
     requested_at = _aware(now or _utc_now())
     authorization = ExternalDocumentSourceConnectionAuthorization(
@@ -491,10 +544,6 @@ def approve_external_document_source_connection_authorization(
         raise ExternalDocumentSourceConflictError("External provider connection authorization is not pending approval")
     if authorization.requested_by_id == approved_by_id:
         raise ExternalDocumentSourceConflictError("Independent second approval is required")
-
-    profile, _ = _lineage(db, authorization)
-    if profile.status != "active":
-        raise ExternalDocumentSourceConflictError("External document source profile is no longer active")
 
     authorization.status = "authorized"
     authorization.approved_by_id = approved_by_id
