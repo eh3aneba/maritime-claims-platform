@@ -359,3 +359,8 @@ def list_discovery_receipts_endpoint(
     except (ExternalDocumentSourceValidationError, ExternalDocumentSourceConflictError, ExternalDocumentSourceNotFoundError) as exc:
         _raise_service_error(exc)
     return [ExternalDocumentSourceDiscoveryReceiptRead.model_validate(receipt) for receipt in receipts]
+
+
+from app.modules.external_document_sources.connection_authorization_router import router as connection_authorization_router
+
+router.include_router(connection_authorization_router)
