@@ -1,5 +1,5 @@
 import hashlib
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from uuid import UUID
 
 from sqlalchemy import select
@@ -37,19 +37,15 @@ from app.modules.documents.models import Document
 from app.modules.documents.recovery_durable_authoritative_storage_health_models import (
     EvidenceRecoveryDurableAuthoritativeStorageHealthQualification,
 )
-from app.modules.documents.recovery_read_ownership_transition_read_service import (
-    resolve_recovery_document_read_ownership_transition,
+from app.modules.documents.recovery_durable_authoritative_storage_health_service import (
+    RecoveryDurableAuthoritativeStorageHealthError,
+    _durable_an_snapshot,
+    _matches_snapshot,
 )
-from app.modules.documents.recovery_read_ownership_transition_routing_models import (
-    EvidenceRecoveryReadOwnershipTransitionLease,
-)
-from app.modules.documents.recovery_routable_read_cutover_models import EvidenceRecoveryReadPathRoute
 from app.modules.documents.recovery_routable_read_cutover_service import (
     _load_replica,
     _read_verified_candidate,
 )
-
-EXECUTION_ROUTE_SAFETY_BUFFER = timedelta(minutes=5)
 
 
 class PhysicalDisposalExecutionError(ValueError):
@@ -271,58 +267,121 @@ def _qualification_actor_ids(qualification) -> set[UUID]:
     return actors
 
 
+def _is_retryable_recovery_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    return any(
+        marker in message
+        for marker in (
+            "unavailable",
+            "timeout",
+            "timed out",
+            "temporar",
+            "connection",
+            "endpoint",
+            "configured s3",
+            "recovery evidence store",
+            "service unavailable",
+        )
+    )
+
+
 def _verify_recovery_read_preflight(
     db: Session,
     *,
     document: Document,
+    qualification: EvidenceRecoveryDurableAuthoritativeStorageHealthQualification,
     expected_hash: str,
     expected_size: int,
     now: datetime,
 ) -> str:
-    route = db.scalar(
-        select(EvidenceRecoveryReadPathRoute).where(
-            EvidenceRecoveryReadPathRoute.organization_id == document.organization_id,
-            EvidenceRecoveryReadPathRoute.claim_id == document.claim_id,
-            EvidenceRecoveryReadPathRoute.document_id == document.id,
+    if not all(
+        (
+            qualification.status == "qualified",
+            qualification.health_state == "healthy",
+            qualification.observed_authority_kind == "recovery_storage",
+            qualification.observed_authority_tenure == "durable_recovery",
+            qualification.observed_ratification_active is True,
+            qualification.observed_durable_authority_created is True,
+            qualification.observed_local_authoritative is False,
+            qualification.observed_recovery_authoritative is True,
+            qualification.observed_authoritative_storage_changed is True,
+            qualification.source_file_hash == expected_hash,
+            qualification.source_file_size_bytes == expected_size,
         )
-    )
-    if (
-        route is None
-        or route.route_authority_kind != "read_ownership_transition"
-        or route.active_read_ownership_transition_lease_id is None
     ):
         raise PhysicalDisposalExecutionError(
-            f"Permanent recovery read-ownership transition is not active:{document.id}"
-        )
-    lease = db.scalar(
-        select(EvidenceRecoveryReadOwnershipTransitionLease).where(
-            EvidenceRecoveryReadOwnershipTransitionLease.id == route.active_read_ownership_transition_lease_id,
-            EvidenceRecoveryReadOwnershipTransitionLease.organization_id == document.organization_id,
-            EvidenceRecoveryReadOwnershipTransitionLease.claim_id == document.claim_id,
-            EvidenceRecoveryReadOwnershipTransitionLease.document_id == document.id,
-        )
-    )
-    if (
-        lease is None
-        or lease.status != "activated"
-        or lease.route_expires_at is None
-        or _as_utc(lease.route_expires_at) <= now + EXECUTION_ROUTE_SAFETY_BUFFER
-    ):
-        raise PhysicalDisposalExecutionError(
-            f"Recovery read-ownership transition lacks a safe execution window:{document.id}"
+            f"Bound AO qualification is not a healthy durable recovery authority:{document.id}"
         )
     try:
-        payload, source = resolve_recovery_document_read_ownership_transition(db, document=document, now=now)
-    except RuntimeError as exc:
-        message = str(exc).lower()
-        if any(marker in message for marker in ("unavailable", "timeout", "endpoint", "connection", "temporar")):
+        snapshot = _durable_an_snapshot(
+            db,
+            organization_id=document.organization_id,
+            claim_id=document.claim_id,
+            document_id=document.id,
+            ratification_id=qualification.ratification_id,
+            now=now,
+        )
+    except RecoveryDurableAuthoritativeStorageHealthError as exc:
+        if _is_retryable_recovery_error(exc):
             raise PhysicalDisposalExecutionRetryableError(str(exc)) from exc
         raise PhysicalDisposalExecutionError(str(exc)) from exc
-    if source != "recovery-replica-read-ownership-transition":
-        raise PhysicalDisposalExecutionError(f"Document is not served from recovery read ownership:{document.id}")
-    if hashlib.sha256(payload).hexdigest() != expected_hash or len(payload) != expected_size:
-        raise PhysicalDisposalExecutionError(f"Recovery read bytes failed bound integrity verification:{document.id}")
-    return source
+    if not _matches_snapshot(qualification, snapshot):
+        raise PhysicalDisposalExecutionError(
+            f"Bound AO qualification drifted from current durable authoritative recovery state:{document.id}"
+        )
+    route = snapshot.authority_route
+    ratification = snapshot.ratification
+    if not all(
+        (
+            route.authority_kind == "recovery_storage",
+            route.authority_tenure == "durable_recovery",
+            route.active_authority_lease_id is None,
+            route.durable_ratification_id == ratification.id,
+            route.route_version == ratification.authority_route_version_after_ratification,
+            route.local_authoritative is False,
+            route.recovery_authoritative is True,
+            route.authoritative_storage_changed is True,
+            ratification.status == "ratified",
+            ratification.ratification_active is True,
+            ratification.durable_authority_created is True,
+            ratification.local_authoritative is False,
+            ratification.recovery_authoritative is True,
+            ratification.authoritative_storage_changed is True,
+            ratification.replica_id == qualification.replica_id,
+            ratification.replica_hash == qualification.replica_hash,
+            ratification.source_file_hash == expected_hash,
+            ratification.source_file_size_bytes == expected_size,
+        )
+    ):
+        raise PhysicalDisposalExecutionError(
+            f"Durable authoritative recovery route drifted before physical disposal:{document.id}"
+        )
+    try:
+        replica = _load_replica(
+            db,
+            organization_id=qualification.organization_id,
+            claim_id=qualification.claim_id,
+            document_id=qualification.document_id,
+            replica_id=qualification.replica_id,
+        )
+        payload = _read_verified_candidate(replica)
+    except RuntimeError as exc:
+        if _is_retryable_recovery_error(exc):
+            raise PhysicalDisposalExecutionRetryableError(str(exc)) from exc
+        raise PhysicalDisposalExecutionError(str(exc)) from exc
+    if not all(
+        (
+            replica.replica_hash == qualification.replica_hash,
+            hashlib.sha256(payload).hexdigest() == expected_hash,
+            len(payload) == expected_size,
+            qualification.observed_recovery_hash == expected_hash,
+            qualification.observed_recovery_size_bytes == expected_size,
+        )
+    ):
+        raise PhysicalDisposalExecutionError(
+            f"Durable authoritative recovery bytes failed bound integrity verification:{document.id}"
+        )
+    return "recovery-replica-durable-authoritative-storage"
 
 
 def _verify_recovery_only_after_delete(
@@ -544,6 +603,10 @@ def execute_physical_disposal(
         ):
             raise PhysicalDisposalExecutionError("Phase 17.4-A governance or binding drift detected")
         actor_ids.add(authorization.approved_by_id)
+        if executor_id in actor_ids:
+            raise PhysicalDisposalExecutionError(
+                "Physical disposal executor must be independent of all material prior governance actors"
+            )
 
         preflight: list[tuple[dict, Document, EvidenceRecoveryDurableAuthoritativeStorageHealthQualification, str]] = []
         for binding in live_bindings:
@@ -560,6 +623,10 @@ def execute_physical_disposal(
                 qualification_id=qualification_id,
             )
             actor_ids.update(_qualification_actor_ids(qualification))
+            if executor_id in actor_ids:
+                raise PhysicalDisposalExecutionError(
+                    "Physical disposal executor must be independent of all material prior governance actors"
+                )
             target = inspect_local_disposal_target(document)
             if not all(
                 (
@@ -572,16 +639,12 @@ def execute_physical_disposal(
             read_source = _verify_recovery_read_preflight(
                 db,
                 document=document,
+                qualification=qualification,
                 expected_hash=binding["file_hash"],
                 expected_size=int(binding["file_size_bytes"]),
                 now=current_time,
             )
             preflight.append((binding, document, qualification, read_source))
-
-        if executor_id in actor_ids:
-            raise PhysicalDisposalExecutionError(
-                "Physical disposal executor must be independent of all material prior governance actors"
-            )
 
         execution = PhysicalDisposalExecution(
             organization_id=organization_id,
