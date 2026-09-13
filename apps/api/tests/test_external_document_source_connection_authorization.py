@@ -8,6 +8,8 @@ from app.modules.external_document_sources.connection_authorization_models impor
     ExternalDocumentSourceConnectionAuthorizationReceipt,
 )
 from app.modules.external_document_sources.connection_authorization_service import (
+    _receipt_hash,
+    _request_hash,
     get_external_document_source_connection_authorization,
 )
 from app.modules.external_document_sources.discovery_service import (
@@ -49,6 +51,22 @@ def _request_authorization(profile_id: str, run_id: str, requester_id: UUID, *, 
             "request_key": key,
             "reason": "Authorize one later bounded provider connection bootstrap without executing provider traffic.",
         },
+    )
+
+
+def _approve_authorization(profile_id: str, authorization_id: str, approver_id: UUID):
+    return client.post(
+        f"/api/v1/external-document-sources/profiles/{profile_id}/connection-authorizations/{authorization_id}/approve",
+        headers=_headers(approver_id),
+        json={"reason": "Independently approve one short-lived connection bootstrap authorization only."},
+    )
+
+
+def _disable_profile(profile_id: str, requester_id: UUID):
+    return client.post(
+        f"/api/v1/external-document-sources/profiles/{profile_id}/disable",
+        headers=_headers(requester_id),
+        json={"reason": "Disable the governed external source so downstream connection authority must fail closed."},
     )
 
 
@@ -95,11 +113,7 @@ def test_connection_authorization_requires_four_eyes_and_grants_no_execution_aut
     )
     assert self_approval.status_code == 409, self_approval.text
 
-    approved = client.post(
-        f"/api/v1/external-document-sources/profiles/{profile_id}/connection-authorizations/{authorization_id}/approve",
-        headers=_headers(approver_id),
-        json={"reason": "Independently approve one short-lived connection bootstrap authorization only."},
-    )
+    approved = _approve_authorization(profile_id, authorization_id, approver_id)
     assert approved.status_code == 200, approved.text
     approved_body = approved.json()
     assert approved_body["status"] == "authorized"
@@ -147,11 +161,7 @@ def test_authorized_connection_bootstrap_expires_fail_closed_without_execution()
     requested = _request_authorization(profile_id, run_id, requester_id, key="connection-expiry")
     assert requested.status_code == 201, requested.text
     authorization_id = requested.json()["id"]
-    approved = client.post(
-        f"/api/v1/external-document-sources/profiles/{profile_id}/connection-authorizations/{authorization_id}/approve",
-        headers=_headers(approver_id),
-        json={"reason": "Approve only the bounded short-lived connection bootstrap authorization."},
-    )
+    approved = _approve_authorization(profile_id, authorization_id, approver_id)
     assert approved.status_code == 200, approved.text
 
     with TestingSessionLocal() as db:
@@ -181,26 +191,61 @@ def test_authorized_connection_bootstrap_expires_fail_closed_without_execution()
     assert [row["event_type"] for row in receipts.json()] == ["requested", "authorized", "expired"]
 
 
-def test_profile_disable_blocks_pending_connection_authorization_approval() -> None:
-    _, requester_id, approver_id = _seed_tenant("conn-auth-disable")
+def test_profile_disable_terminalizes_pending_connection_authorization_fail_closed() -> None:
+    _, requester_id, approver_id = _seed_tenant("conn-auth-disable-pending")
     profile_id, run_id = _profile_and_discovery(requester_id, approver_id)
-    requested = _request_authorization(profile_id, run_id, requester_id, key="connection-disable")
+    requested = _request_authorization(profile_id, run_id, requester_id, key="connection-disable-pending")
     assert requested.status_code == 201, requested.text
     authorization_id = requested.json()["id"]
 
-    disabled = client.post(
-        f"/api/v1/external-document-sources/profiles/{profile_id}/disable",
-        headers=_headers(requester_id),
-        json={"reason": "Disable the governed source profile before provider connection authority is approved."},
-    )
+    disabled = _disable_profile(profile_id, requester_id)
     assert disabled.status_code == 200, disabled.text
 
-    blocked = client.post(
-        f"/api/v1/external-document-sources/profiles/{profile_id}/connection-authorizations/{authorization_id}/approve",
-        headers=_headers(approver_id),
-        json={"reason": "Attempt approval after the governed external source profile was disabled."},
+    reconciled = _approve_authorization(profile_id, authorization_id, approver_id)
+    assert reconciled.status_code == 200, reconciled.text
+    body = reconciled.json()
+    assert body["status"] == "expired"
+    assert body["live_connection_authorized"] is False
+    assert "no longer active" in body["terminal_reason"].lower()
+
+    receipts = client.get(
+        f"/api/v1/external-document-sources/profiles/{profile_id}/connection-authorizations/{authorization_id}/receipts",
+        headers=_headers(requester_id),
     )
-    assert blocked.status_code == 409, blocked.text
+    assert receipts.status_code == 200, receipts.text
+    assert [row["event_type"] for row in receipts.json()] == ["requested", "expired"]
+
+
+def test_profile_disable_revokes_previously_approved_live_connection_authority_on_read() -> None:
+    _, requester_id, approver_id = _seed_tenant("conn-auth-disable-approved")
+    profile_id, run_id = _profile_and_discovery(requester_id, approver_id)
+    requested = _request_authorization(profile_id, run_id, requester_id, key="connection-disable-approved")
+    assert requested.status_code == 201, requested.text
+    authorization_id = requested.json()["id"]
+    approved = _approve_authorization(profile_id, authorization_id, approver_id)
+    assert approved.status_code == 200, approved.text
+    assert approved.json()["live_connection_authorized"] is True
+
+    disabled = _disable_profile(profile_id, requester_id)
+    assert disabled.status_code == 200, disabled.text
+
+    reconciled = client.get(
+        f"/api/v1/external-document-sources/profiles/{profile_id}/connection-authorizations/{authorization_id}",
+        headers=_headers(approver_id),
+    )
+    assert reconciled.status_code == 200, reconciled.text
+    body = reconciled.json()
+    assert body["status"] == "expired"
+    assert body["live_connection_authorized"] is False
+    assert body["oauth_token_exchanged"] is False
+    assert body["remote_read_performed"] is False
+
+    receipts = client.get(
+        f"/api/v1/external-document-sources/profiles/{profile_id}/connection-authorizations/{authorization_id}/receipts",
+        headers=_headers(approver_id),
+    )
+    assert receipts.status_code == 200, receipts.text
+    assert [row["event_type"] for row in receipts.json()] == ["requested", "authorized", "expired"]
 
 
 def test_connection_authorization_reads_are_tenant_isolated() -> None:
@@ -240,3 +285,57 @@ def test_connection_authorization_receipt_tamper_fails_closed() -> None:
     )
     assert blocked.status_code == 409, blocked.text
     assert "integrity" in blocked.text.lower() or "receipt" in blocked.text.lower()
+
+
+def test_rehashed_receipt_fact_drift_still_fails_closed() -> None:
+    _, requester_id, approver_id = _seed_tenant("conn-auth-rehashed-receipt")
+    profile_id, run_id = _profile_and_discovery(requester_id, approver_id)
+    requested = _request_authorization(profile_id, run_id, requester_id, key="connection-rehashed-receipt")
+    assert requested.status_code == 201, requested.text
+    authorization_id = UUID(requested.json()["id"])
+
+    with TestingSessionLocal() as db:
+        receipt = (
+            db.query(ExternalDocumentSourceConnectionAuthorizationReceipt)
+            .filter_by(authorization_id=authorization_id, sequence_number=1)
+            .one()
+        )
+        receipt.reason = "Rehashed receipt reason that no longer matches the bound request facts."
+        receipt.receipt_hash = _receipt_hash(receipt)
+        db.commit()
+
+    blocked = client.get(
+        f"/api/v1/external-document-sources/profiles/{profile_id}/connection-authorizations/{authorization_id}",
+        headers=_headers(approver_id),
+    )
+    assert blocked.status_code == 409, blocked.text
+    assert "receipt facts" in blocked.text.lower()
+
+
+def test_rehashed_review_ttl_drift_still_fails_closed() -> None:
+    _, requester_id, approver_id = _seed_tenant("conn-auth-ttl-drift")
+    profile_id, run_id = _profile_and_discovery(requester_id, approver_id)
+    requested = _request_authorization(profile_id, run_id, requester_id, key="connection-ttl-drift")
+    assert requested.status_code == 201, requested.text
+    authorization_id = UUID(requested.json()["id"])
+
+    with TestingSessionLocal() as db:
+        authorization = db.get(ExternalDocumentSourceConnectionAuthorization, authorization_id)
+        assert authorization is not None
+        authorization.review_expires_at = authorization.review_expires_at + timedelta(minutes=1)
+        authorization.request_hash = _request_hash(authorization)
+        receipt = (
+            db.query(ExternalDocumentSourceConnectionAuthorizationReceipt)
+            .filter_by(authorization_id=authorization_id, sequence_number=1)
+            .one()
+        )
+        receipt.decision_hash = authorization.request_hash
+        receipt.receipt_hash = _receipt_hash(receipt)
+        db.commit()
+
+    blocked = client.get(
+        f"/api/v1/external-document-sources/profiles/{profile_id}/connection-authorizations/{authorization_id}",
+        headers=_headers(approver_id),
+    )
+    assert blocked.status_code == 409, blocked.text
+    assert "ttl" in blocked.text.lower()
