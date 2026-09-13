@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import hashlib
 from datetime import datetime
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.modules.documents.models import Document
@@ -31,7 +33,80 @@ from app.modules.documents.recovery_routable_read_cutover_service import (
     RecoveryRoutableReadCutoverNotFound,
     RecoveryRoutableReadCutoverUnavailable,
     _get_route,
+    _load_replica,
+    _read_verified_candidate,
 )
+
+
+def _successful_local_disposal_exists(db: Session, document: Document) -> bool:
+    # Local import avoids making the documents model graph depend on claims at import time.
+    from app.modules.claims.retention_physical_disposal_execution_models import (
+        PhysicalDisposalExecution,
+        PhysicalDisposalExecutionItem,
+    )
+
+    return (
+        db.scalar(
+            select(PhysicalDisposalExecutionItem.id)
+            .join(
+                PhysicalDisposalExecution,
+                PhysicalDisposalExecution.id == PhysicalDisposalExecutionItem.execution_id,
+            )
+            .where(
+                PhysicalDisposalExecution.organization_id == document.organization_id,
+                PhysicalDisposalExecution.claim_id == document.claim_id,
+                PhysicalDisposalExecution.status == "succeeded",
+                PhysicalDisposalExecution.local_delete_performed.is_(True),
+                PhysicalDisposalExecution.recovery_bytes_preserved.is_(True),
+                PhysicalDisposalExecutionItem.document_id == document.id,
+                PhysicalDisposalExecutionItem.status == "verified",
+                PhysicalDisposalExecutionItem.local_deleted.is_(True),
+                PhysicalDisposalExecutionItem.local_absent_after.is_(True),
+                PhysicalDisposalExecutionItem.recovery_verified_after.is_(True),
+            )
+            .limit(1)
+        )
+        is not None
+    )
+
+
+def _fresh_recovery_only_proof(db: Session, *, document: Document, authorization) -> tuple[str, bytes]:
+    """Verify the recovery copy without consulting local bytes after lawful disposal."""
+    replica = _load_replica(
+        db,
+        organization_id=document.organization_id,
+        claim_id=document.claim_id,
+        document_id=document.id,
+        replica_id=authorization.replica_id,
+    )
+    payload = _read_verified_candidate(replica)
+    storage_key_fingerprint = hashlib.sha256(document.storage_key.encode("utf-8")).hexdigest()
+    if not all(
+        (
+            document.file_hash.lower() == authorization.source_file_hash,
+            document.file_size_bytes == authorization.source_file_size_bytes,
+            storage_key_fingerprint == authorization.local_storage_key_fingerprint,
+            replica.replica_hash == authorization.replica_hash,
+            replica.recovery_bucket_fingerprint == authorization.recovery_bucket_fingerprint,
+            hashlib.sha256(replica.recovery_storage_key.encode("utf-8")).hexdigest()
+            == authorization.candidate_storage_key_fingerprint,
+            hashlib.sha256(payload).hexdigest() == authorization.source_file_hash,
+            len(payload) == authorization.source_file_size_bytes,
+        )
+    ):
+        raise RecoveryReadOwnershipTransitionRoutingConflict(
+            "Recovery evidence integrity drifted after lawful local disposal"
+        )
+    proof = hashlib.sha256(
+        (
+            f"{authorization.id}|{authorization.phase_t_health_qualification_id}|"
+            f"{authorization.replica_id}|{authorization.source_file_hash}|"
+            f"{authorization.source_file_size_bytes}|{authorization.local_storage_key_fingerprint}|"
+            f"{authorization.recovery_bucket_fingerprint}|{authorization.candidate_storage_key_fingerprint}|"
+            f"{hashlib.sha256(payload).hexdigest()}|{len(payload)}"
+        ).encode("utf-8")
+    ).hexdigest()
+    return proof, payload
 
 
 def _authorization_matches_lease(authorization, lease) -> bool:
@@ -108,7 +183,8 @@ def resolve_recovery_document_read_ownership_transition(
             raise RecoveryReadOwnershipTransitionRoutingConflict(
                 "Phase V read authority is not active"
             )
-        if current_time >= _as_utc(lease.route_expires_at):
+        local_fallback_retired = _successful_local_disposal_exists(db, document)
+        if current_time >= _as_utc(lease.route_expires_at) and not local_fallback_retired:
             raise RecoveryReadOwnershipTransitionRoutingConflict(
                 "Phase V read-ownership route expired; reconciliation or rollback is required"
             )
@@ -166,13 +242,18 @@ def resolve_recovery_document_read_ownership_transition(
             raise RecoveryReadOwnershipTransitionRoutingConflict(
                 "Phase U approval receipt drifted while Phase V owned reads"
             )
-        integrity_proof_hash, payload = _fresh_source_and_candidate_proof(
-            db, authorization=authorization
-        )
-        if integrity_proof_hash != lease.integrity_proof_hash:
-            raise RecoveryReadOwnershipTransitionRoutingConflict(
-                "Phase V fresh integrity proof no longer matches the prepared lease"
+        if local_fallback_retired:
+            _proof, payload = _fresh_recovery_only_proof(
+                db, document=document, authorization=authorization
             )
+        else:
+            integrity_proof_hash, payload = _fresh_source_and_candidate_proof(
+                db, authorization=authorization
+            )
+            if integrity_proof_hash != lease.integrity_proof_hash:
+                raise RecoveryReadOwnershipTransitionRoutingConflict(
+                    "Phase V fresh integrity proof no longer matches the prepared lease"
+                )
         return payload, "recovery-replica-read-ownership-transition"
     except RecoveryReadOwnershipTransitionRoutingError:
         raise
