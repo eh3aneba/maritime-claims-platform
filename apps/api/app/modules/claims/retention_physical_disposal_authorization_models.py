@@ -143,6 +143,7 @@ class PhysicalDisposalAdmissionAuthorization(UUIDPrimaryKeyMixin, TimestampMixin
     inventory_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     document_bindings: Mapped[list[dict]] = mapped_column(JSON, nullable=False)
     document_bindings_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    separation_actor_set_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     document_count: Mapped[int] = mapped_column(Integer, nullable=False)
     total_file_size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
 
@@ -184,6 +185,107 @@ class PhysicalDisposalAdmissionAuthorization(UUIDPrimaryKeyMixin, TimestampMixin
     )
     terminal_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     terminal_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    destructive_action_performed: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=false()
+    )
+    storage_write_performed: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=false()
+    )
+    s3_delete_performed: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=false()
+    )
+    local_delete_performed: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=false()
+    )
+
+
+class PhysicalDisposalAdmissionAuthorizationReceipt(
+    UUIDPrimaryKeyMixin,
+    TimestampMixin,
+    Base,
+):
+    """Append-only, hash-chained lifecycle evidence for a Phase 17.4-A credential."""
+
+    __tablename__ = "physical_disposal_admission_authorization_receipts"
+    __table_args__ = (
+        UniqueConstraint(
+            "authorization_id",
+            "sequence_number",
+            name="uq_pd_adm_receipt_authorization_sequence",
+        ),
+        UniqueConstraint(
+            "organization_id",
+            "receipt_hash",
+            name="uq_pd_adm_receipt_org_hash",
+        ),
+        CheckConstraint("sequence_number > 0", name="ck_pd_adm_receipt_sequence"),
+        CheckConstraint(
+            "event_type IN ('requested','authorized','rejected','expired','invalidated')",
+            name="ck_pd_adm_receipt_event",
+        ),
+        CheckConstraint(
+            "(event_type = 'requested' AND status_after = 'pending_second_approval') OR "
+            "(event_type = 'authorized' AND status_after = 'authorized') OR "
+            "(event_type = 'rejected' AND status_after = 'rejected') OR "
+            "(event_type = 'expired' AND status_after = 'expired') OR "
+            "(event_type = 'invalidated' AND status_after = 'invalidated')",
+            name="ck_pd_adm_receipt_status_mapping",
+        ),
+        CheckConstraint(
+            "(sequence_number = 1 AND prior_receipt_hash IS NULL) OR "
+            "(sequence_number > 1 AND prior_receipt_hash IS NOT NULL)",
+            name="ck_pd_adm_receipt_chain",
+        ),
+        CheckConstraint(
+            "destructive_action_performed = false",
+            name="ck_pd_adm_receipt_no_destructive_action",
+        ),
+        CheckConstraint(
+            "storage_write_performed = false",
+            name="ck_pd_adm_receipt_no_storage_write",
+        ),
+        CheckConstraint(
+            "s3_delete_performed = false",
+            name="ck_pd_adm_receipt_no_s3_delete",
+        ),
+        CheckConstraint(
+            "local_delete_performed = false",
+            name="ck_pd_adm_receipt_no_local_delete",
+        ),
+        Index(
+            "ix_pd_adm_receipt_org_auth_seq",
+            "organization_id",
+            "authorization_id",
+            "sequence_number",
+        ),
+    )
+
+    organization_id: Mapped[UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    claim_id: Mapped[UUID] = mapped_column(
+        ForeignKey("claims.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    authorization_id: Mapped[UUID] = mapped_column(
+        ForeignKey("physical_disposal_admission_authorizations.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    sequence_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    event_type: Mapped[str] = mapped_column(String(24), nullable=False)
+    status_after: Mapped[str] = mapped_column(String(32), nullable=False)
+    actor_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    authorization_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    document_bindings_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    separation_actor_set_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    approval_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    prior_receipt_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    receipt_hash: Mapped[str] = mapped_column(String(64), nullable=False)
 
     destructive_action_performed: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=false()
