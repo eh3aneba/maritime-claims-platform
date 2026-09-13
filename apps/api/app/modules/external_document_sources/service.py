@@ -217,6 +217,7 @@ def _verify_receipts(db: Session, profile: ExternalDocumentSourceProfile) -> Non
     )
     if not receipts:
         raise ExternalDocumentSourceConflictError("External document source receipt chain is missing")
+
     prior: str | None = None
     for expected, receipt in enumerate(receipts, start=1):
         if receipt.sequence_number != expected or receipt.prior_receipt_hash != prior:
@@ -238,6 +239,92 @@ def _verify_receipts(db: Session, profile: ExternalDocumentSourceProfile) -> Non
         if any(bool(getattr(receipt, field)) for field in _SAFETY_FIELDS):
             raise ExternalDocumentSourceConflictError("External document source receipt safety boundary drifted")
         prior = receipt.receipt_hash
+
+    expected_events = ["requested"]
+    if profile.status in {"active", "disabled"}:
+        expected_events.append("approved")
+    elif profile.status == "rejected":
+        expected_events.append("rejected")
+    if profile.status == "disabled":
+        expected_events.append("disabled")
+    if [row.event_type for row in receipts] != expected_events:
+        raise ExternalDocumentSourceConflictError("External document source receipt lifecycle is incomplete or inconsistent")
+    if receipts[-1].status_after != profile.status:
+        raise ExternalDocumentSourceConflictError("External document source receipt terminal status drifted")
+
+    requested = receipts[0]
+    if not all(
+        (
+            requested.status_after == "pending_second_approval",
+            requested.actor_id == profile.requested_by_id,
+            _iso(requested.occurred_at) == _iso(profile.requested_at),
+            requested.reason == profile.request_reason,
+            requested.decision_hash is None,
+        )
+    ):
+        raise ExternalDocumentSourceConflictError("External document source request receipt drifted")
+
+    if profile.status in {"active", "disabled"}:
+        if any(
+            value is None
+            for value in (
+                profile.approved_by_id,
+                profile.approved_at,
+                profile.approval_reason,
+                profile.approval_hash,
+            )
+        ):
+            raise ExternalDocumentSourceConflictError("External document source approval evidence is incomplete")
+        recomputed_approval_hash = _approval_hash(
+            profile,
+            actor_id=profile.approved_by_id,
+            occurred_at=profile.approved_at,
+            reason=profile.approval_reason,
+        )
+        if profile.approval_hash != recomputed_approval_hash:
+            raise ExternalDocumentSourceConflictError("External document source approval decision integrity failed")
+        approved = receipts[1]
+        if not all(
+            (
+                approved.status_after == "active",
+                approved.actor_id == profile.approved_by_id,
+                _iso(approved.occurred_at) == _iso(profile.approved_at),
+                approved.reason == profile.approval_reason,
+                approved.decision_hash == profile.approval_hash,
+            )
+        ):
+            raise ExternalDocumentSourceConflictError("External document source approval receipt drifted")
+
+    if profile.status in {"rejected", "disabled"}:
+        if any(
+            value is None
+            for value in (
+                profile.terminal_by_id,
+                profile.terminal_at,
+                profile.terminal_reason,
+                profile.terminal_hash,
+            )
+        ):
+            raise ExternalDocumentSourceConflictError("External document source terminal evidence is incomplete")
+        recomputed_terminal_hash = _terminal_hash(
+            profile,
+            actor_id=profile.terminal_by_id,
+            occurred_at=profile.terminal_at,
+            reason=profile.terminal_reason,
+            status=profile.status,
+        )
+        if profile.terminal_hash != recomputed_terminal_hash:
+            raise ExternalDocumentSourceConflictError("External document source terminal decision integrity failed")
+        terminal = receipts[-1]
+        if not all(
+            (
+                terminal.actor_id == profile.terminal_by_id,
+                _iso(terminal.occurred_at) == _iso(profile.terminal_at),
+                terminal.reason == profile.terminal_reason,
+                terminal.decision_hash == profile.terminal_hash,
+            )
+        ):
+            raise ExternalDocumentSourceConflictError("External document source terminal receipt drifted")
 
 
 def _ensure_profile_integrity(db: Session, profile: ExternalDocumentSourceProfile) -> None:
