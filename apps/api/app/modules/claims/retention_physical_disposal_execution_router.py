@@ -19,6 +19,7 @@ from app.modules.claims.retention_physical_disposal_execution_service import (
     get_physical_disposal_execution,
     list_physical_disposal_execution_receipts,
 )
+from app.modules.claims.retention_physical_disposal_storage import PhysicalDisposalStorageError
 from app.modules.claims.retention_router import RetentionAdminMfa, RetentionReader
 from app.modules.claims.retention_service import RetentionNotFoundError
 
@@ -87,7 +88,7 @@ def execute_physical_disposal_endpoint(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail={"code": "physical_disposal_retryable", "message": str(exc)},
         ) from exc
-    except (PhysicalDisposalExecutionError, IntegrityError, ValueError) as exc:
+    except (PhysicalDisposalExecutionError, PhysicalDisposalStorageError, IntegrityError, ValueError) as exc:
         db.rollback()
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     return _read(execution, items)
@@ -105,10 +106,7 @@ def get_physical_disposal_execution_endpoint(
 ) -> PhysicalDisposalExecutionRead:
     try:
         execution, items = get_physical_disposal_execution(
-            db,
-            organization_id=current_user.organization_id,
-            claim_id=claim_id,
-            execution_id=execution_id,
+            db, organization_id=current_user.organization_id, claim_id=claim_id, execution_id=execution_id
         )
     except RetentionNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
@@ -127,10 +125,7 @@ def list_physical_disposal_execution_receipts_endpoint(
 ) -> list[PhysicalDisposalExecutionReceiptRead]:
     try:
         receipts = list_physical_disposal_execution_receipts(
-            db,
-            organization_id=current_user.organization_id,
-            claim_id=claim_id,
-            execution_id=execution_id,
+            db, organization_id=current_user.organization_id, claim_id=claim_id, execution_id=execution_id
         )
     except RetentionNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
