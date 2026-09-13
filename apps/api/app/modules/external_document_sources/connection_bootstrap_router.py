@@ -1,7 +1,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -10,6 +10,7 @@ from app.modules.audit.service import write_audit_log
 from app.modules.external_document_sources.connection_authorization_router import (
     ConnectionAuthorizationAdminMfa,
     _commit_expiry_if_needed,
+    router,
 )
 from app.modules.external_document_sources.connection_bootstrap_schemas import (
     ExternalDocumentSourceConnectionBootstrapExecutionRead,
@@ -26,9 +27,6 @@ from app.modules.external_document_sources.service import (
     ExternalDocumentSourceNotFoundError,
     ExternalDocumentSourceValidationError,
 )
-from app.modules.users.models import User
-
-router = APIRouter()
 
 
 def _raise_service_error(exc: Exception) -> None:
