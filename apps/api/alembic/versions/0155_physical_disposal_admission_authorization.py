@@ -98,19 +98,19 @@ def upgrade() -> None:
         sa.CheckConstraint("s3_delete_performed = false", name="ck_physical_disposal_admission_no_s3_delete"),
         sa.CheckConstraint("local_delete_performed = false", name="ck_physical_disposal_admission_no_local_delete"),
     )
-    op.create_index("ix_physical_disposal_admission_org_claim_status", TABLE, ["organization_id", "claim_id", "status"])
-    op.create_index("ix_physical_disposal_admission_org_expiry", TABLE, ["organization_id", "authorization_expires_at"])
-    for column in (
-        "organization_id",
-        "claim_id",
-        "disposal_release_review_id",
-        "disposal_quarantine_stage_id",
-        "disposal_execution_manifest_id",
-        "requested_by_id",
-        "approved_by_id",
-        "terminal_by_id",
+    op.create_index("ix_pd_adm_org_claim_status", TABLE, ["organization_id", "claim_id", "status"])
+    op.create_index("ix_pd_adm_org_expiry", TABLE, ["organization_id", "authorization_expires_at"])
+    for name, column in (
+        ("ix_pd_adm_org", "organization_id"),
+        ("ix_pd_adm_claim", "claim_id"),
+        ("ix_pd_adm_review", "disposal_release_review_id"),
+        ("ix_pd_adm_stage", "disposal_quarantine_stage_id"),
+        ("ix_pd_adm_manifest", "disposal_execution_manifest_id"),
+        ("ix_pd_adm_requester", "requested_by_id"),
+        ("ix_pd_adm_approver", "approved_by_id"),
+        ("ix_pd_adm_terminal", "terminal_by_id"),
     ):
-        op.create_index(f"ix_{TABLE}_{column}", TABLE, [column])
+        op.create_index(name, TABLE, [column])
 
 
 def downgrade() -> None:
