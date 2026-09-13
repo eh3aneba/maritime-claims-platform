@@ -97,6 +97,7 @@ from app.modules.documents.recovery_shadow_router import router as recovery_shad
 from app.modules.documents.router import router as documents_router
 from app.modules.email_ingestion.router import router as email_ingestion_router
 from app.modules.evidence_search.router import router as evidence_search_router
+from app.modules.external_document_sources.router import router as external_document_sources_router
 from app.modules.external_portal.router import router as external_portal_router
 from app.modules.evidence_matrix.router import router as evidence_matrix_router
 from app.modules.health.router import router as health_router
@@ -235,6 +236,7 @@ app.include_router(recovery_authoritative_storage_ratification_authorization_rou
 app.include_router(recovery_authoritative_storage_ratification_execution_router, prefix=settings.api_v1_prefix)
 app.include_router(recovery_durable_authoritative_storage_health_router, prefix=settings.api_v1_prefix)
 app.include_router(email_ingestion_router, prefix=settings.api_v1_prefix)
+app.include_router(external_document_sources_router, prefix=settings.api_v1_prefix)
 app.include_router(evidence_search_router, prefix=settings.api_v1_prefix)
 app.include_router(external_portal_router, prefix=settings.api_v1_prefix)
 app.include_router(evidence_matrix_router, prefix=settings.api_v1_prefix)
