@@ -207,7 +207,7 @@ def test_phase_17_4_b_post_delete_recovery_outage_resumes_same_execution(
         request_id = uuid4()
         original_verify = phase_17_4_b_service._verify_recovery_only_after_delete
 
-        def _temporary_recovery_outage(**_kwargs):
+        def _temporary_recovery_outage(*_args, **_kwargs):
             raise PhysicalDisposalExecutionRetryableError(
                 "Temporary recovery endpoint unavailable after local delete"
             )
