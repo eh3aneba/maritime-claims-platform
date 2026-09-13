@@ -14,6 +14,7 @@ from app.modules.claims.retention_physical_disposal_authorization_schemas import
 )
 from app.modules.claims.retention_physical_disposal_authorization_service import (
     PhysicalDisposalAdmissionError,
+    PhysicalDisposalAdmissionRetryableError,
     approve_physical_disposal_admission,
     get_physical_disposal_admission,
     list_physical_disposal_admissions,
@@ -42,6 +43,7 @@ def _audit_values(authorization) -> dict:
         "manifest_hash": authorization.manifest_hash,
         "inventory_hash": authorization.inventory_hash,
         "document_bindings_hash": authorization.document_bindings_hash,
+        "separation_actor_set_hash": authorization.separation_actor_set_hash,
         "document_count": authorization.document_count,
         "total_file_size_bytes": authorization.total_file_size_bytes,
         "authorization_hash": authorization.authorization_hash,
@@ -56,6 +58,17 @@ def _audit_values(authorization) -> dict:
         "s3_delete_performed": authorization.s3_delete_performed,
         "local_delete_performed": authorization.local_delete_performed,
     }
+
+
+def _retryable_http_error(exc: PhysicalDisposalAdmissionRetryableError) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail={
+            "code": "physical_disposal_recovery_unavailable",
+            "retryable": True,
+            "detail": str(exc),
+        },
+    )
 
 
 @router.post(
@@ -93,6 +106,9 @@ def request_physical_disposal_admission_endpoint(
     except RetentionNotFoundError as exc:
         db.rollback()
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except PhysicalDisposalAdmissionRetryableError as exc:
+        db.rollback()
+        raise _retryable_http_error(exc) from exc
     except PhysicalDisposalAdmissionError as exc:
         db.rollback()
         raise HTTPException(
@@ -190,6 +206,9 @@ def approve_physical_disposal_admission_endpoint(
     except RetentionNotFoundError as exc:
         db.rollback()
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except PhysicalDisposalAdmissionRetryableError as exc:
+        db.rollback()
+        raise _retryable_http_error(exc) from exc
     except PhysicalDisposalAdmissionError as exc:
         db.rollback()
         raise HTTPException(
