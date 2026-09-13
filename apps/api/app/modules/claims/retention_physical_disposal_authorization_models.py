@@ -103,13 +103,13 @@ class PhysicalDisposalAdmissionAuthorization(UUIDPrimaryKeyMixin, TimestampMixin
             name="ck_physical_disposal_admission_no_local_delete",
         ),
         Index(
-            "ix_physical_disposal_admission_org_claim_status",
+            "ix_pd_adm_org_claim_status",
             "organization_id",
             "claim_id",
             "status",
         ),
         Index(
-            "ix_physical_disposal_admission_org_expiry",
+            "ix_pd_adm_org_expiry",
             "organization_id",
             "authorization_expires_at",
         ),
@@ -254,7 +254,7 @@ class PhysicalDisposalAdmissionAuthorizationReceipt(
             name="ck_pd_adm_receipt_no_local_delete",
         ),
         Index(
-            "ix_pd_adm_receipt_org_auth_seq",
+            "ix_pd_adm_rcpt_org_auth_seq",
             "organization_id",
             "authorization_id",
             "sequence_number",
