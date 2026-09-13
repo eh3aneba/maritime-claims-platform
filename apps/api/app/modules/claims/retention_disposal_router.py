@@ -11,6 +11,9 @@ from app.modules.claims.retention_disposal_dry_run_router import router as dry_r
 from app.modules.claims.retention_disposal_manifest_router import router as manifest_router
 from app.modules.claims.retention_disposal_quarantine_router import router as quarantine_router
 from app.modules.claims.retention_disposal_release_router import router as release_router
+from app.modules.claims.retention_physical_disposal_authorization_router import (
+    router as physical_disposal_admission_router,
+)
 from app.modules.claims.retention_disposal_schemas import (
     DisposalAuthorizationDecision,
     DisposalAuthorizationRead,
@@ -32,6 +35,7 @@ router.include_router(manifest_router)
 router.include_router(dry_run_router)
 router.include_router(quarantine_router)
 router.include_router(release_router)
+router.include_router(physical_disposal_admission_router)
 
 
 def _read(authorization) -> DisposalAuthorizationRead:
