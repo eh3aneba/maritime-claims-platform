@@ -38,6 +38,19 @@ qualification ID/hash, Phase AN ratification ID/hash, integrity proof hash, file
 hash, byte size, storage-key fingerprint and manifest row fingerprint. The whole set
 is SHA-256 bound into the admission authorization.
 
+The credential also binds a canonical hash of the material governance actor set.
+The second approver must be independent from the Phase 17.4-A requester, the final
+release-review requester and approver, quarantine creator, manifest creator, dry-run
+creator and attester, and the original disposal-authorization requester and approver.
+The actor set is re-derived before approval; any lineage drift invalidates the
+credential.
+
+Each lifecycle transition emits a separate append-only, SHA-256 hash-chained receipt.
+Receipts cover request, authorization, rejection, expiry and invalidation, bind the
+authorization/document/actor-set hashes and previous receipt hash, and preserve the
+same non-destructive safety flags as the credential. Exact replay does not create a
+second receipt.
+
 The credential is:
 
 - tenant- and claim-scoped;
@@ -45,7 +58,14 @@ The credential is:
 - valid for at most five minutes and never beyond the live quarantine/manifest
   window;
 - subject to a second independent retention-admin + MFA approval;
-- invalidated if release, manifest or AO evidence drifts before approval.
+- invalidated if release, manifest, actor lineage or AO evidence drifts before
+  approval.
+
+A recovery-storage inspection failure is treated differently from semantic drift.
+If the authoritative recovery store is temporarily unavailable, the request/approval
+fails as retryable and the transaction is rolled back. A pending credential is not
+expired, invalidated or otherwise consumed merely because storage inspection was
+unavailable.
 
 ## Safety boundary
 
@@ -58,8 +78,9 @@ Phase 17.4-A is **authorization only**. It does not:
 - remove a database row;
 - consume the authorization.
 
-Database constraints permanently require the Phase 17.4-A record itself to report
-no destructive action, no storage write, no S3 delete and no local delete.
+Database constraints permanently require the Phase 17.4-A record and its lifecycle
+receipts to report no destructive action, no storage write, no S3 delete and no local
+delete.
 
 ## Consequences
 
