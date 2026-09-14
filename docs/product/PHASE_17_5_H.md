@@ -52,7 +52,7 @@ No locator namespace/name/version or resolved secret value is stored by H.
 - `GET /api/v1/external-document-sources/profiles/{profile_id}/provider-client-activation-executions/{execution_id}`
 - `GET /api/v1/external-document-sources/profiles/{profile_id}/provider-client-activation-executions/{execution_id}/receipts`
 
-All endpoints require Admin + MFA.
+All endpoints require Admin + MFA. Request schemas forbid additional fields, so secret/token-like material such as `client_secret` cannot be smuggled into the Phase H request body.
 
 ## Safety boundary
 The sole new positive execution fact is:
@@ -97,12 +97,14 @@ The consolidated H acceptance test uses one database reset and covers:
 - pending G denial;
 - legitimate rejected G denial in a rollback transaction;
 - legitimate expired G denial in a rollback transaction;
+- explicit rejection of secret-like extra request fields;
 - tenant isolation;
 - successful one-time G consumption;
 - immediate terminalization of consumed G;
 - exact replay and changed replay conflict;
 - second-consumption rejection;
 - requested/completed H receipt chain;
+- receipt truncation rejection in a rollback transaction;
 - receipt tamper rejection;
 - upstream credential-binding disable causing completed H reads to fail closed;
 - unchanged Claim and Document counts; and
