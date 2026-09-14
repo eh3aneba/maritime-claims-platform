@@ -15,6 +15,11 @@ from app.modules.external_document_sources.credential_reference_health_service i
 )
 from app.modules.external_document_sources.discovery_service import clear_external_document_source_discovery_adapters
 from tests.db_harness import TestingSessionLocal, client, reset_database
+from tests.test_external_document_source_connection_authorization import (
+    _approve_authorization,
+    _request_authorization,
+)
+from tests.test_external_document_source_connection_bootstrap import _execute
 from tests.test_external_document_source_credential_reference import (
     _approve_binding,
     _completed_bootstrap,
@@ -62,14 +67,58 @@ def teardown_function() -> None:
 
 
 def _active_binding(seed: str):
-    _, requester_id, approver_id, profile_id, _, _, execution_id = _completed_bootstrap(seed)
+    _, requester_id, approver_id, profile_id, run_id, _, execution_id = _completed_bootstrap(seed)
     requested = _request_binding(profile_id, execution_id, requester_id, key=f"{seed}-binding")
     assert requested.status_code == 201, requested.text
     binding_id = requested.json()["id"]
     approved = _approve_binding(profile_id, binding_id, approver_id)
     assert approved.status_code == 200, approved.text
     assert approved.json()["status"] == "active"
-    return requester_id, approver_id, profile_id, binding_id
+    return requester_id, approver_id, profile_id, run_id, binding_id
+
+
+def _additional_active_binding(
+    profile_id: str,
+    run_id: str,
+    requester_id: UUID,
+    approver_id: UUID,
+    *,
+    seed: str,
+) -> str:
+    authorization = _request_authorization(
+        profile_id,
+        run_id,
+        requester_id,
+        key=f"{seed}-authorization",
+    )
+    assert authorization.status_code == 201, authorization.text
+    authorization_id = authorization.json()["id"]
+    approved_authorization = _approve_authorization(profile_id, authorization_id, approver_id)
+    assert approved_authorization.status_code == 200, approved_authorization.text
+    assert approved_authorization.json()["status"] == "authorized"
+
+    executed = _execute(
+        profile_id,
+        authorization_id,
+        requester_id,
+        key=f"{seed}-bootstrap",
+    )
+    assert executed.status_code == 201, executed.text
+    assert executed.json()["status"] == "completed"
+    execution_id = executed.json()["id"]
+
+    requested_binding = _request_binding(
+        profile_id,
+        execution_id,
+        requester_id,
+        key=f"{seed}-binding",
+    )
+    assert requested_binding.status_code == 201, requested_binding.text
+    binding_id = requested_binding.json()["id"]
+    approved_binding = _approve_binding(profile_id, binding_id, approver_id)
+    assert approved_binding.status_code == 200, approved_binding.text
+    assert approved_binding.json()["status"] == "active"
+    return binding_id
 
 
 def _qualify(
@@ -87,8 +136,8 @@ def _qualify(
     )
 
 
-def test_credential_reference_health_success_replay_tenant_tamper_drift_and_no_secret_persistence() -> None:
-    requester_id, _, profile_id, binding_id = _active_binding("cred-health-success")
+def test_credential_reference_health_full_governance_and_bounded_results_without_secret_persistence() -> None:
+    requester_id, approver_id, profile_id, run_id, binding_id = _active_binding("cred-health-success")
     _, other_requester, _ = _seed_tenant("cred-health-other-tenant")
     resolver = _DeterministicResolver(resolvable=True)
     register_external_document_source_credential_reference_health_resolver("azure_key_vault", resolver)
@@ -220,8 +269,9 @@ def test_credential_reference_health_success_replay_tenant_tamper_drift_and_no_s
     assert restored.status_code == 200, restored.text
 
     with TestingSessionLocal() as db:
-        row = db.query(ExternalDocumentSourceCredentialReferenceHealthQualification).one()
-        row.binding_approval_hash = "0" * 64
+        first_row = db.get(ExternalDocumentSourceCredentialReferenceHealthQualification, UUID(qualification_id))
+        assert first_row is not None
+        first_row.binding_approval_hash = "0" * 64
         db.commit()
 
     drifted = client.get(
@@ -230,29 +280,47 @@ def test_credential_reference_health_success_replay_tenant_tamper_drift_and_no_s
     )
     assert drifted.status_code == 409, drifted.text
 
+    clear_external_document_source_credential_reference_health_resolvers()
+    second_binding_id = _additional_active_binding(
+        profile_id,
+        run_id,
+        requester_id,
+        approver_id,
+        seed="cred-health-unresolvable",
+    )
 
-def test_credential_reference_health_resolver_absence_unresolvable_and_binding_disable_fail_closed() -> None:
-    requester_id, _, profile_id, binding_id = _active_binding("cred-health-unresolvable")
-
-    unavailable = _qualify(profile_id, binding_id, requester_id, key="cred-health-unavailable-check")
+    unavailable = _qualify(
+        profile_id,
+        second_binding_id,
+        requester_id,
+        key="cred-health-unavailable-check",
+    )
     assert unavailable.status_code == 409, unavailable.text
     with TestingSessionLocal() as db:
-        assert db.query(ExternalDocumentSourceCredentialReferenceHealthQualification).count() == 0
+        assert db.query(ExternalDocumentSourceCredentialReferenceHealthQualification).count() == 1
 
-    resolver = _DeterministicResolver(resolvable=False, failure_code="reference_not_found")
-    register_external_document_source_credential_reference_health_resolver("azure_key_vault", resolver)
-    qualified = _qualify(profile_id, binding_id, requester_id, key="cred-health-unavailable-check")
-    assert qualified.status_code == 201, qualified.text
-    body = qualified.json()
-    qualification_id = body["id"]
-    assert body["result_status"] == "unresolvable"
-    assert body["failure_code"] == "reference_not_found"
-    assert body["provider_network_performed"] is False
-    assert body["oauth_token_exchanged"] is False
-    assert resolver.calls == 1
+    unresolvable_resolver = _DeterministicResolver(resolvable=False, failure_code="reference_not_found")
+    register_external_document_source_credential_reference_health_resolver(
+        "azure_key_vault",
+        unresolvable_resolver,
+    )
+    unresolvable = _qualify(
+        profile_id,
+        second_binding_id,
+        requester_id,
+        key="cred-health-unavailable-check",
+    )
+    assert unresolvable.status_code == 201, unresolvable.text
+    unresolvable_body = unresolvable.json()
+    second_qualification_id = unresolvable_body["id"]
+    assert unresolvable_body["result_status"] == "unresolvable"
+    assert unresolvable_body["failure_code"] == "reference_not_found"
+    assert unresolvable_body["provider_network_performed"] is False
+    assert unresolvable_body["oauth_token_exchanged"] is False
+    assert unresolvable_resolver.calls == 1
 
     disabled = client.post(
-        f"/api/v1/external-document-sources/profiles/{profile_id}/credential-reference-bindings/{binding_id}/disable",
+        f"/api/v1/external-document-sources/profiles/{profile_id}/credential-reference-bindings/{second_binding_id}/disable",
         headers=_headers(requester_id),
         json={"reason": "Disable the upstream credential reference so Phase F must immediately fail closed."},
     )
@@ -260,7 +328,12 @@ def test_credential_reference_health_resolver_absence_unresolvable_and_binding_d
     assert disabled.json()["status"] == "disabled"
 
     read = client.get(
-        f"/api/v1/external-document-sources/profiles/{profile_id}/credential-reference-health-qualifications/{qualification_id}",
+        f"/api/v1/external-document-sources/profiles/{profile_id}/credential-reference-health-qualifications/{second_qualification_id}",
         headers=_headers(requester_id),
     )
     assert read.status_code == 409, read.text
+
+    with TestingSessionLocal() as db:
+        assert db.query(Claim).count() == claims_before
+        assert db.query(Document).count() == documents_before
+        assert db.query(ExternalDocumentSourceCredentialReferenceHealthQualification).count() == 2
