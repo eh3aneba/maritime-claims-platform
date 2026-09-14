@@ -14,6 +14,7 @@ from app.modules.external_document_sources.provider_client_activation_authorizat
 )
 from app.modules.external_document_sources.provider_client_activation_authorization_service import (
     get_external_document_source_provider_client_activation_authorization,
+    reject_external_document_source_provider_client_activation_authorization,
 )
 from tests.db_harness import TestingSessionLocal, client, reset_database
 from tests.test_external_document_source_credential_reference_health import (
@@ -27,6 +28,7 @@ from tests.test_external_document_source_discovery import _headers, _seed_tenant
 
 _REQUEST_REASON = "Authorize one later bounded provider-client activation only, without OAuth or provider traffic."
 _APPROVAL_REASON = "Independently approve one short-lived provider-client activation authorization only."
+_REJECTION_REASON = "Independently reject this provider-client activation authorization without provider execution."
 
 
 def setup_function() -> None:
@@ -123,6 +125,45 @@ def test_provider_client_activation_authorization_full_governance_without_provid
         reason="Attempt to change the governed activation authorization request after its first immutable request.",
     )
     assert changed_replay.status_code == 409, changed_replay.text
+
+    # Exercise pending-review expiry on the same real lineage, but roll the
+    # transaction back so this one authorization can continue through the
+    # independent rejection and approval paths without another expensive setup.
+    with TestingSessionLocal() as db:
+        row = db.get(ExternalDocumentSourceProviderClientActivationAuthorization, UUID(authorization_id))
+        assert row is not None
+        pending_future = row.review_expires_at + timedelta(seconds=1)
+        pending_expired, outcome = get_external_document_source_provider_client_activation_authorization(
+            db,
+            organization_id=row.organization_id,
+            profile_id=row.profile_id,
+            authorization_id=row.id,
+            now=pending_future,
+        )
+        assert outcome == "expired"
+        assert pending_expired.status == "expired"
+        assert pending_expired.authorization_hash is None
+        assert pending_expired.provider_client_activation_authorized is False
+        db.rollback()
+
+    # Exercise the independent rejection lifecycle in a rollback transaction,
+    # preserving the committed pending state for the real approval path below.
+    with TestingSessionLocal() as db:
+        row = db.get(ExternalDocumentSourceProviderClientActivationAuthorization, UUID(authorization_id))
+        assert row is not None
+        rejected, outcome = reject_external_document_source_provider_client_activation_authorization(
+            db,
+            organization_id=row.organization_id,
+            profile_id=row.profile_id,
+            authorization_id=row.id,
+            rejected_by_id=approver_id,
+            decision_reason=_REJECTION_REASON,
+        )
+        assert outcome == "rejected"
+        assert rejected.status == "rejected"
+        assert rejected.terminal_by_id == approver_id
+        assert rejected.provider_client_activation_authorized is False
+        db.rollback()
 
     self_approval = _approve(profile_id, authorization_id, requester_id)
     assert self_approval.status_code == 409, self_approval.text
