@@ -52,7 +52,7 @@ class ExternalDocumentSourceCredentialReferenceHealthQualification(
     _CredentialReferenceHealthSafetyMixin,
     Base,
 ):
-    __tablename__ = "external_document_source_credential_reference_health_qualifications"
+    __tablename__ = "external_document_source_credential_reference_health_checks"
     __table_args__ = (
         UniqueConstraint("credential_reference_binding_id", name="uq_ext_doc_cred_health_binding"),
         UniqueConstraint("organization_id", "profile_id", "request_key", name="uq_ext_doc_cred_health_request"),
@@ -130,7 +130,7 @@ class ExternalDocumentSourceCredentialReferenceHealthReceipt(
 
     organization_id: Mapped[UUID] = mapped_column(ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False, index=True)
     qualification_id: Mapped[UUID] = mapped_column(
-        ForeignKey("external_document_source_credential_reference_health_qualifications.id", ondelete="RESTRICT"),
+        ForeignKey("external_document_source_credential_reference_health_checks.id", ondelete="RESTRICT"),
         nullable=False,
         index=True,
     )
