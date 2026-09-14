@@ -1,13 +1,13 @@
 """Add governed provider-client activation authorization.
 
-Revision ID: 0164_external_document_source_provider_client_activation_authorization
+Revision ID: 0164_external_document_source_provider_client_activation
 Revises: 0163_external_document_source_credential_reference_health
 """
 
 from alembic import op
 import sqlalchemy as sa
 
-revision = "0164_external_document_source_provider_client_activation_authorization"
+revision = "0164_external_document_source_provider_client_activation"
 down_revision = "0163_external_document_source_credential_reference_health"
 branch_labels = None
 depends_on = None
