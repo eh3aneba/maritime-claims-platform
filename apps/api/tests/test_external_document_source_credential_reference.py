@@ -69,12 +69,42 @@ def _approve_binding(profile_id: str, binding_id: str, actor_id: UUID):
     )
 
 
-def test_credential_reference_requires_real_bootstrap_and_four_eyes_without_secret_execution() -> None:
-    _, requester_id, approver_id, profile_id, _, _, execution_id = _completed_bootstrap("cred-ref-success")
+def test_credential_reference_full_governance_input_safety_and_tamper_without_secret_execution() -> None:
+    _, requester_id, approver_id, profile_id, _, _, execution_id = _completed_bootstrap("cred-ref-governance")
 
     with TestingSessionLocal() as db:
         claims_before = db.query(Claim).count()
         documents_before = db.query(Document).count()
+
+    extra_secret = _request_binding(
+        profile_id,
+        execution_id,
+        requester_id,
+        key="cred-ref-extra-secret",
+        extra={"client_secret": "must-not-be-accepted"},
+    )
+    assert extra_secret.status_code == 422, extra_secret.text
+
+    secret_like = _request_binding(
+        profile_id,
+        execution_id,
+        requester_id,
+        key="cred-ref-secret-like",
+        name="AK" + "IA1234567890123456",
+    )
+    assert secret_like.status_code == 422, secret_like.text
+
+    url_like = _request_binding(
+        profile_id,
+        execution_id,
+        requester_id,
+        key="cred-ref-url-like",
+        name="https://vault.example/secret?token=value",
+    )
+    assert url_like.status_code == 422, url_like.text
+
+    with TestingSessionLocal() as db:
+        assert db.query(ExternalDocumentSourceCredentialReferenceBinding).count() == 0
 
     requested = _request_binding(profile_id, execution_id, requester_id, key="cred-ref-success-binding")
     assert requested.status_code == 201, requested.text
@@ -152,40 +182,21 @@ def test_credential_reference_requires_real_bootstrap_and_four_eyes_without_secr
         assert db.query(Document).count() == documents_before
         assert db.query(ExternalDocumentSourceCredentialReferenceBinding).count() == 1
         assert db.query(ExternalDocumentSourceCredentialReferenceReceipt).count() == 2
+        receipt = (
+            db.query(ExternalDocumentSourceCredentialReferenceReceipt)
+            .filter(ExternalDocumentSourceCredentialReferenceReceipt.binding_id == UUID(binding_id))
+            .order_by(ExternalDocumentSourceCredentialReferenceReceipt.sequence_number.asc())
+            .first()
+        )
+        assert receipt is not None
+        receipt.reason = "Tampered credential-reference receipt reason that must invalidate the chain."
+        db.commit()
 
-
-def test_credential_reference_rejects_extra_secret_fields_and_secret_like_or_url_locators() -> None:
-    _, requester_id, _, profile_id, _, _, execution_id = _completed_bootstrap("cred-ref-input-safety")
-
-    extra_secret = _request_binding(
-        profile_id,
-        execution_id,
-        requester_id,
-        key="cred-ref-extra-secret",
-        extra={"client_secret": "must-not-be-accepted"},
+    tampered_read = client.get(
+        f"/api/v1/external-document-sources/profiles/{profile_id}/credential-reference-bindings/{binding_id}",
+        headers=_headers(requester_id),
     )
-    assert extra_secret.status_code == 422, extra_secret.text
-
-    secret_like = _request_binding(
-        profile_id,
-        execution_id,
-        requester_id,
-        key="cred-ref-secret-like",
-        name="AK" + "IA1234567890123456",
-    )
-    assert secret_like.status_code == 422, secret_like.text
-
-    url_like = _request_binding(
-        profile_id,
-        execution_id,
-        requester_id,
-        key="cred-ref-url-like",
-        name="https://vault.example/secret?token=value",
-    )
-    assert url_like.status_code == 422, url_like.text
-
-    with TestingSessionLocal() as db:
-        assert db.query(ExternalDocumentSourceCredentialReferenceBinding).count() == 0
+    assert tampered_read.status_code == 409, tampered_read.text
 
 
 def test_active_credential_reference_fails_closed_when_source_profile_is_disabled_then_can_be_disabled_for_history() -> None:
@@ -223,8 +234,18 @@ def test_active_credential_reference_fails_closed_when_source_profile_is_disable
     assert historical.json()["status"] == "disabled"
 
 
-def test_credential_reference_rejection_is_terminal_and_auditable() -> None:
-    _, requester_id, approver_id, profile_id, _, _, execution_id = _completed_bootstrap("cred-ref-reject")
+def test_credential_reference_tenant_isolation_and_rejection_are_fail_closed_and_auditable() -> None:
+    _, requester_id, approver_id, profile_id, _, _, execution_id = _completed_bootstrap("cred-ref-tenant-reject")
+    _, other_requester, _ = _seed_tenant("cred-ref-other-tenant")
+
+    wrong_tenant = _request_binding(
+        profile_id,
+        execution_id,
+        other_requester,
+        key="cred-ref-wrong-tenant",
+    )
+    assert wrong_tenant.status_code == 404, wrong_tenant.text
+
     requested = _request_binding(profile_id, execution_id, requester_id, key="cred-ref-reject-binding")
     assert requested.status_code == 201, requested.text
     binding_id = requested.json()["id"]
@@ -245,45 +266,3 @@ def test_credential_reference_rejection_is_terminal_and_auditable() -> None:
     )
     assert receipts.status_code == 200, receipts.text
     assert [row["event_type"] for row in receipts.json()] == ["requested", "rejected"]
-
-
-def test_credential_reference_is_tenant_isolated() -> None:
-    _, requester_id, _, profile_id, _, _, execution_id = _completed_bootstrap("cred-ref-tenant-a")
-    _, other_requester, _ = _seed_tenant("cred-ref-tenant-b")
-
-    wrong_tenant = _request_binding(
-        profile_id,
-        execution_id,
-        other_requester,
-        key="cred-ref-wrong-tenant",
-    )
-    assert wrong_tenant.status_code == 404, wrong_tenant.text
-
-    valid = _request_binding(profile_id, execution_id, requester_id, key="cred-ref-right-tenant")
-    assert valid.status_code == 201, valid.text
-
-
-def test_credential_reference_receipt_tamper_fails_closed() -> None:
-    _, requester_id, approver_id, profile_id, _, _, execution_id = _completed_bootstrap("cred-ref-tamper")
-    requested = _request_binding(profile_id, execution_id, requester_id, key="cred-ref-tamper-binding")
-    assert requested.status_code == 201, requested.text
-    binding_id = requested.json()["id"]
-    approved = _approve_binding(profile_id, binding_id, approver_id)
-    assert approved.status_code == 200, approved.text
-
-    with TestingSessionLocal() as db:
-        receipt = (
-            db.query(ExternalDocumentSourceCredentialReferenceReceipt)
-            .filter(ExternalDocumentSourceCredentialReferenceReceipt.binding_id == UUID(binding_id))
-            .order_by(ExternalDocumentSourceCredentialReferenceReceipt.sequence_number.asc())
-            .first()
-        )
-        assert receipt is not None
-        receipt.reason = "Tampered credential-reference receipt reason that must invalidate the chain."
-        db.commit()
-
-    read = client.get(
-        f"/api/v1/external-document-sources/profiles/{profile_id}/credential-reference-bindings/{binding_id}",
-        headers=_headers(requester_id),
-    )
-    assert read.status_code == 409, read.text
