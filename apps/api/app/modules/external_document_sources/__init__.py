@@ -14,6 +14,10 @@ from app.modules.external_document_sources.credential_reference_health_models im
     ExternalDocumentSourceCredentialReferenceHealthQualification,
     ExternalDocumentSourceCredentialReferenceHealthReceipt,
 )
+from app.modules.external_document_sources.credential_resolution_execution_models import (
+    ExternalDocumentSourceCredentialResolutionExecution,
+    ExternalDocumentSourceCredentialResolutionExecutionReceipt,
+)
 from app.modules.external_document_sources.provider_client_activation_authorization_models import (
     ExternalDocumentSourceProviderClientActivationAuthorization,
     ExternalDocumentSourceProviderClientActivationAuthorizationReceipt,
@@ -29,6 +33,7 @@ from app.modules.external_document_sources.provider_client_activation_execution_
 from app.modules.external_document_sources import connection_bootstrap_router as _connection_bootstrap_router  # noqa: F401,E402
 from app.modules.external_document_sources import credential_reference_router as _credential_reference_router  # noqa: F401,E402
 from app.modules.external_document_sources import credential_reference_health_router as _credential_reference_health_router  # noqa: F401,E402
+from app.modules.external_document_sources import credential_resolution_execution_router as _credential_resolution_execution_router  # noqa: F401,E402
 from app.modules.external_document_sources import provider_client_activation_authorization_router as _provider_client_activation_authorization_router  # noqa: F401,E402
 from app.modules.external_document_sources import provider_client_activation_execution_router as _provider_client_activation_execution_router  # noqa: F401,E402
 
@@ -41,6 +46,8 @@ __all__ = [
     "ExternalDocumentSourceCredentialReferenceReceipt",
     "ExternalDocumentSourceCredentialReferenceHealthQualification",
     "ExternalDocumentSourceCredentialReferenceHealthReceipt",
+    "ExternalDocumentSourceCredentialResolutionExecution",
+    "ExternalDocumentSourceCredentialResolutionExecutionReceipt",
     "ExternalDocumentSourceProviderClientActivationAuthorization",
     "ExternalDocumentSourceProviderClientActivationAuthorizationReceipt",
     "ExternalDocumentSourceProviderClientActivationExecution",
