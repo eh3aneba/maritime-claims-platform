@@ -17,10 +17,14 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  backend:
-    name: Backend tests
+  backend-shard:
+    name: Backend tests shard ${{ matrix.shard }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1]
     defaults:
       run:
         working-directory: apps/api
@@ -51,8 +55,39 @@ jobs:
       - name: Compile backend
         run: python -m compileall app alembic
 
-      - name: Run backend test suite
-        run: pytest -q
+      - name: Run backend test shard
+        shell: bash
+        run: |
+          mapfile -t test_files < <(find tests -type f -name 'test_*.py' | sort)
+          shard_files=()
+          for index in "${!test_files[@]}"; do
+            if (( index % 2 == ${{ matrix.shard }} )); then
+              shard_files+=("${test_files[$index]}")
+            fi
+          done
+          if (( ${#shard_files[@]} == 0 )); then
+            echo "No backend tests selected for shard ${{ matrix.shard }}" >&2
+            exit 1
+          fi
+          printf 'Running %s backend test files in shard %s\n' "${#shard_files[@]}" "${{ matrix.shard }}"
+          pytest -q "${shard_files[@]}"
+
+  backend:
+    name: Backend tests
+    needs: backend-shard
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Verify all backend shards succeeded
+        env:
+          SHARD_RESULT: ${{ needs.backend-shard.result }}
+        run: |
+          if [ "$SHARD_RESULT" != "success" ]; then
+            echo "Backend shard matrix result: $SHARD_RESULT" >&2
+            exit 1
+          fi
+          echo "All backend test shards succeeded."
 
   migrations:
     name: PostgreSQL migration chain
@@ -194,7 +229,7 @@ jobs:
           CUSTOM_COMPILE_COMMAND="pip-compile --generate-hashes --output-file=apps/api/requirements-dev.lock --strip-extras apps/api/requirements-dev.in" \
             pip-compile --generate-hashes --strip-extras --resolver=backtracking \
               --output-file=apps/api/requirements-dev.lock apps/api/requirements-dev.in
-          CUSTOM_COMPILE_COMMAND="pip-compile --generate-hashes --output-file=tests/browser/requirements.lock --strip-extras tests/browser/requirements.txt" \
+          CUSTOM_COMPILE_COMMAND="pip-compile --generate-hashes --output-file=tests/browser/requirements.lock --strip-extras apps/api/requirements-dev.in" \
             pip-compile --generate-hashes --strip-extras --resolver=backtracking \
               --output-file=tests/browser/requirements.lock tests/browser/requirements.txt
           npm install --package-lock-only --ignore-scripts --no-audit --no-fund \
