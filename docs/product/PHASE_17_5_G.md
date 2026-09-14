@@ -91,6 +91,8 @@ The Phase G acceptance path uses one database reset and covers:
 - real A→B→C→D→E→F→G lineage;
 - tenant isolation;
 - exact replay and changed replay conflict;
+- pending second-approval review expiry on the real lineage;
+- independent rejection lifecycle on the real lineage;
 - self-approval rejection and independent second approval;
 - all OAuth/provider/Evidence/Document/claim flags remaining false;
 - append-only receipt chain;
@@ -98,6 +100,8 @@ The Phase G acceptance path uses one database reset and covers:
 - approved authorization expiry;
 - rejection of an `unresolvable` Phase F qualification using a second C→D→E→F chain on the same governed profile/discovery; and
 - upstream credential-binding disable causing Phase G reads to fail closed.
+
+The pending-expiry and rejection paths are exercised inside rollback transactions so they do not require duplicate A→F setup and do not consume CI runtime simply to recreate the same governed lineage.
 
 ## Next boundary
 A separately reviewed Phase 17.5-H may consume one exact unexpired Phase G authorization into a bounded provider-client activation execution. Phase H must not silently add remote document reads or Evidence admission. Any OAuth/token acquisition or real provider-network step must remain explicit, independently bounded and auditable.
