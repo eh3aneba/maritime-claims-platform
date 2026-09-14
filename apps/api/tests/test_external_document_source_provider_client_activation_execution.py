@@ -21,6 +21,7 @@ from app.modules.external_document_sources.provider_client_activation_execution_
 )
 from app.modules.external_document_sources.provider_client_activation_execution_service import (
     execute_external_document_source_provider_client_activation,
+    get_external_document_source_provider_client_activation_execution,
 )
 from app.modules.external_document_sources.service import ExternalDocumentSourceConflictError
 from tests.db_harness import TestingSessionLocal, client, reset_database
@@ -130,6 +131,19 @@ def test_provider_client_activation_execution_consumes_one_authorization_without
     assert approved.status_code == 200, approved.text
     assert approved.json()["status"] == "authorized"
     assert approved.json()["provider_client_activation_authorized"] is True
+
+    # Request schemas do not accept secret/token material even though Phase H
+    # has an authorized upstream governance grant.
+    forbidden_secret_field = client.post(
+        f"/api/v1/external-document-sources/profiles/{profile_id}/provider-client-activation-authorizations/{authorization_id}/activation-executions",
+        headers=_headers(requester_id),
+        json={
+            "request_key": "provider-client-activation-execution-secret-field",
+            "reason": _EXECUTION_REASON,
+            "client_secret": "not-accepted-by-phase-h",
+        },
+    )
+    assert forbidden_secret_field.status_code == 422, forbidden_secret_field.text
 
     # Exercise approved-but-expired G state in a rollback transaction, preserving
     # the committed authorized state for the successful H consumption below.
@@ -271,6 +285,34 @@ def test_provider_client_activation_execution_consumes_one_authorization_without
         assert row["evidence_admitted"] is False
         assert row["document_created"] is False
         assert row["claim_mutated"] is False
+
+    # Truncation must fail closed, tested in a rollback transaction so the
+    # durable execution remains available for the tamper and upstream checks.
+    with TestingSessionLocal() as db:
+        completed_receipt = (
+            db.query(ExternalDocumentSourceProviderClientActivationExecutionReceipt)
+            .filter(
+                ExternalDocumentSourceProviderClientActivationExecutionReceipt.execution_id == UUID(execution_id),
+                ExternalDocumentSourceProviderClientActivationExecutionReceipt.sequence_number == 2,
+            )
+            .one()
+        )
+        db.delete(completed_receipt)
+        db.flush()
+        execution = db.get(ExternalDocumentSourceProviderClientActivationExecution, UUID(execution_id))
+        assert execution is not None
+        try:
+            get_external_document_source_provider_client_activation_execution(
+                db,
+                organization_id=execution.organization_id,
+                profile_id=execution.profile_id,
+                execution_id=execution.id,
+            )
+        except ExternalDocumentSourceConflictError:
+            pass
+        else:
+            raise AssertionError("Truncated Phase H receipt chain must fail closed")
+        db.rollback()
 
     with TestingSessionLocal() as db:
         assert db.query(Claim).count() == claims_before
