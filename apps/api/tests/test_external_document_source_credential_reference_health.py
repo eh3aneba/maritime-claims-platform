@@ -23,6 +23,7 @@ from tests.test_external_document_source_credential_reference import (
 from tests.test_external_document_source_discovery import _headers, _seed_tenant
 
 _SECRET_MARKER = "phase-f-secret-value-must-never-persist"
+_DEFAULT_REASON = "Qualify only whether the governed external credential reference is resolvable."
 
 
 class _DeterministicResolver:
@@ -77,7 +78,7 @@ def _qualify(
     actor_id: UUID,
     *,
     key: str,
-    reason: str = "Qualify only whether the governed external credential reference is resolvable.",
+    reason: str = _DEFAULT_REASON,
 ):
     return client.post(
         f"/api/v1/external-document-sources/profiles/{profile_id}/credential-reference-bindings/{binding_id}/health-qualifications",
@@ -86,10 +87,15 @@ def _qualify(
     )
 
 
-def test_credential_reference_health_success_replay_tamper_and_no_secret_persistence() -> None:
+def test_credential_reference_health_success_replay_tenant_tamper_drift_and_no_secret_persistence() -> None:
     requester_id, _, profile_id, binding_id = _active_binding("cred-health-success")
+    _, other_requester, _ = _seed_tenant("cred-health-other-tenant")
     resolver = _DeterministicResolver(resolvable=True)
     register_external_document_source_credential_reference_health_resolver("azure_key_vault", resolver)
+
+    wrong_tenant = _qualify(profile_id, binding_id, other_requester, key="cred-health-wrong-tenant")
+    assert wrong_tenant.status_code == 404, wrong_tenant.text
+    assert resolver.calls == 0
 
     with TestingSessionLocal() as db:
         claims_before = db.query(Claim).count()
@@ -195,6 +201,35 @@ def test_credential_reference_health_success_replay_tamper_and_no_secret_persist
     )
     assert tampered.status_code == 409, tampered.text
 
+    with TestingSessionLocal() as db:
+        receipt = (
+            db.query(ExternalDocumentSourceCredentialReferenceHealthReceipt)
+            .filter(
+                ExternalDocumentSourceCredentialReferenceHealthReceipt.qualification_id == UUID(qualification_id),
+                ExternalDocumentSourceCredentialReferenceHealthReceipt.sequence_number == 1,
+            )
+            .one()
+        )
+        receipt.reason = _DEFAULT_REASON
+        db.commit()
+
+    restored = client.get(
+        f"/api/v1/external-document-sources/profiles/{profile_id}/credential-reference-health-qualifications/{qualification_id}",
+        headers=_headers(requester_id),
+    )
+    assert restored.status_code == 200, restored.text
+
+    with TestingSessionLocal() as db:
+        row = db.query(ExternalDocumentSourceCredentialReferenceHealthQualification).one()
+        row.binding_approval_hash = "0" * 64
+        db.commit()
+
+    drifted = client.get(
+        f"/api/v1/external-document-sources/profiles/{profile_id}/credential-reference-health-qualifications/{qualification_id}",
+        headers=_headers(requester_id),
+    )
+    assert drifted.status_code == 409, drifted.text
+
 
 def test_credential_reference_health_resolver_absence_unresolvable_and_binding_disable_fail_closed() -> None:
     requester_id, _, profile_id, binding_id = _active_binding("cred-health-unresolvable")
@@ -229,30 +264,3 @@ def test_credential_reference_health_resolver_absence_unresolvable_and_binding_d
         headers=_headers(requester_id),
     )
     assert read.status_code == 409, read.text
-
-
-def test_credential_reference_health_tenant_isolation_and_upstream_integrity_drift_fail_closed() -> None:
-    requester_id, _, profile_id, binding_id = _active_binding("cred-health-tenant")
-    _, other_requester, _ = _seed_tenant("cred-health-other-tenant")
-    resolver = _DeterministicResolver(resolvable=True)
-    register_external_document_source_credential_reference_health_resolver("azure_key_vault", resolver)
-
-    wrong_tenant = _qualify(profile_id, binding_id, other_requester, key="cred-health-wrong-tenant")
-    assert wrong_tenant.status_code == 404, wrong_tenant.text
-    assert resolver.calls == 0
-
-    qualified = _qualify(profile_id, binding_id, requester_id, key="cred-health-right-tenant")
-    assert qualified.status_code == 201, qualified.text
-    qualification_id = qualified.json()["id"]
-    assert resolver.calls == 1
-
-    with TestingSessionLocal() as db:
-        row = db.query(ExternalDocumentSourceCredentialReferenceHealthQualification).one()
-        row.binding_approval_hash = "0" * 64
-        db.commit()
-
-    drifted = client.get(
-        f"/api/v1/external-document-sources/profiles/{profile_id}/credential-reference-health-qualifications/{qualification_id}",
-        headers=_headers(requester_id),
-    )
-    assert drifted.status_code == 409, drifted.text
