@@ -12,7 +12,7 @@ down_revision = "0162_external_document_source_credential_reference"
 branch_labels = None
 depends_on = None
 
-QUALIFICATION = "external_document_source_credential_reference_health_qualifications"
+QUALIFICATION = "external_document_source_credential_reference_health_checks"
 RECEIPT = "external_document_source_credential_reference_health_receipts"
 
 
