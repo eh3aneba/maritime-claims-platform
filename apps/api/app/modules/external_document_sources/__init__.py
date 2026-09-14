@@ -18,6 +18,10 @@ from app.modules.external_document_sources.provider_client_activation_authorizat
     ExternalDocumentSourceProviderClientActivationAuthorization,
     ExternalDocumentSourceProviderClientActivationAuthorizationReceipt,
 )
+from app.modules.external_document_sources.provider_client_activation_execution_models import (
+    ExternalDocumentSourceProviderClientActivationExecution,
+    ExternalDocumentSourceProviderClientActivationExecutionReceipt,
+)
 
 # Import downstream routers for route-registration side effects. They mount
 # endpoints on the existing connection-authorization APIRouter, which is later
@@ -26,6 +30,7 @@ from app.modules.external_document_sources import connection_bootstrap_router as
 from app.modules.external_document_sources import credential_reference_router as _credential_reference_router  # noqa: F401,E402
 from app.modules.external_document_sources import credential_reference_health_router as _credential_reference_health_router  # noqa: F401,E402
 from app.modules.external_document_sources import provider_client_activation_authorization_router as _provider_client_activation_authorization_router  # noqa: F401,E402
+from app.modules.external_document_sources import provider_client_activation_execution_router as _provider_client_activation_execution_router  # noqa: F401,E402
 
 __all__ = [
     "ExternalDocumentSourceConnectionAuthorization",
@@ -38,4 +43,6 @@ __all__ = [
     "ExternalDocumentSourceCredentialReferenceHealthReceipt",
     "ExternalDocumentSourceProviderClientActivationAuthorization",
     "ExternalDocumentSourceProviderClientActivationAuthorizationReceipt",
+    "ExternalDocumentSourceProviderClientActivationExecution",
+    "ExternalDocumentSourceProviderClientActivationExecutionReceipt",
 ]
