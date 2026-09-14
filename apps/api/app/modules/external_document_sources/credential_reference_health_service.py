@@ -15,6 +15,9 @@ from app.modules.external_document_sources.credential_reference_health_models im
     ExternalDocumentSourceCredentialReferenceHealthQualification,
     ExternalDocumentSourceCredentialReferenceHealthReceipt,
 )
+from app.modules.external_document_sources.credential_reference_models import (
+    ExternalDocumentSourceCredentialReferenceBinding,
+)
 from app.modules.external_document_sources.credential_reference_service import (
     get_external_document_source_credential_reference,
 )
@@ -127,6 +130,11 @@ def _normalize_resolver_kind(value: str) -> str:
     if not _SAFE_IDENTIFIER.fullmatch(normalized):
         raise ExternalDocumentSourceConflictError("Credential reference resolver kind is invalid")
     return normalized
+
+
+def _validate_persisted_text(value: str, *, minimum: int, maximum: int, field: str) -> None:
+    if value != value.strip() or len(value) < minimum or len(value) > maximum:
+        raise ExternalDocumentSourceConflictError(f"Credential reference health {field} drifted")
 
 
 def _validate_probe_result(result: CredentialReferenceHealthProbeResult) -> tuple[str, str | None]:
@@ -268,8 +276,41 @@ def _active_binding(db: Session, row: ExternalDocumentSourceCredentialReferenceH
     return binding
 
 
+def _lock_active_binding(
+    db: Session,
+    *,
+    organization_id: UUID,
+    profile_id: UUID,
+    binding_id: UUID,
+):
+    locked = db.scalar(
+        select(ExternalDocumentSourceCredentialReferenceBinding)
+        .where(
+            ExternalDocumentSourceCredentialReferenceBinding.id == binding_id,
+            ExternalDocumentSourceCredentialReferenceBinding.organization_id == organization_id,
+            ExternalDocumentSourceCredentialReferenceBinding.profile_id == profile_id,
+        )
+        .with_for_update()
+    )
+    if locked is None:
+        raise ExternalDocumentSourceNotFoundError("Credential reference binding not found")
+    binding = get_external_document_source_credential_reference(
+        db,
+        organization_id=organization_id,
+        profile_id=profile_id,
+        binding_id=binding_id,
+    )
+    if binding.status != "active" or binding.approval_hash is None:
+        raise ExternalDocumentSourceConflictError("Only an active credential reference binding may be health-qualified")
+    return binding
+
+
 def _ensure_integrity(db: Session, row: ExternalDocumentSourceCredentialReferenceHealthQualification) -> None:
     binding = _active_binding(db, row)
+    _validate_persisted_text(row.request_key, minimum=1, maximum=128, field="request_key")
+    _validate_persisted_text(row.request_reason, minimum=8, maximum=2000, field="request reason")
+    if _normalize_resolver_kind(row.resolver_kind) != row.resolver_kind:
+        raise ExternalDocumentSourceConflictError("Credential reference health resolver kind drifted")
     expected_scope = _scope_hash(binding=binding, resolver_kind=row.resolver_kind, request_key=row.request_key)
     if row.scope_hash != expected_scope or row.request_hash != _request_hash(row):
         raise ExternalDocumentSourceConflictError("Credential reference health request integrity failed")
@@ -367,14 +408,12 @@ def qualify_external_document_source_credential_reference_health(
     normalized_key = _normalize_text(request_key, field="request_key", minimum=1, maximum=128)
     normalized_reason = _normalize_text(request_reason, field="reason", minimum=8, maximum=2000)
 
-    binding = get_external_document_source_credential_reference(
+    binding = _lock_active_binding(
         db,
         organization_id=organization_id,
         profile_id=profile_id,
         binding_id=binding_id,
     )
-    if binding.status != "active" or binding.approval_hash is None:
-        raise ExternalDocumentSourceConflictError("Only an active credential reference binding may be health-qualified")
 
     existing = db.scalar(
         select(ExternalDocumentSourceCredentialReferenceHealthQualification).where(
