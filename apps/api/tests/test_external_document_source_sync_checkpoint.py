@@ -254,7 +254,8 @@ def test_phase_o_bounded_initial_synchronization_checkpoint(caplog: pytest.LogCa
         persisted_payload = "\n".join(persisted) + json.dumps(audit.new_values, sort_keys=True) + (audit.details or "")
         for marker in (_FILE_BODY_MARKER, _STORAGE_SECRET, _PROVIDER_URL, internal_storage_key):
             assert marker not in persisted_payload
-        assert "storage_object_key" not in json.dumps(audit.new_values, sort_keys=True)
+        assert "storage_object_key" not in audit.new_values
+        assert "storage_object_key_hash" in audit.new_values
 
         original_state_hash = execution.checkpoint_state_hash
         execution.checkpoint_state_hash = "0" * 64
