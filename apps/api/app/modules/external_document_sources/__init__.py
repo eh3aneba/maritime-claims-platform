@@ -30,6 +30,11 @@ from app.modules.external_document_sources.provider_client_health_models import 
     ExternalDocumentSourceProviderClientHealthExecution,
     ExternalDocumentSourceProviderClientHealthReceipt,
 )
+from app.modules.external_document_sources.remote_metadata_listing_models import (
+    ExternalDocumentSourceRemoteMetadataListingExecution,
+    ExternalDocumentSourceRemoteMetadataListingItem,
+    ExternalDocumentSourceRemoteMetadataListingReceipt,
+)
 from app.modules.external_document_sources.token_acquisition_execution_models import (
     ExternalDocumentSourceTokenAcquisitionExecution,
     ExternalDocumentSourceTokenAcquisitionExecutionReceipt,
@@ -45,6 +50,7 @@ from app.modules.external_document_sources import credential_resolution_executio
 from app.modules.external_document_sources import provider_client_activation_authorization_router as _provider_client_activation_authorization_router  # noqa: F401,E402
 from app.modules.external_document_sources import provider_client_activation_execution_router as _provider_client_activation_execution_router  # noqa: F401,E402
 from app.modules.external_document_sources import provider_client_health_router as _provider_client_health_router  # noqa: F401,E402
+from app.modules.external_document_sources import remote_metadata_listing_router as _remote_metadata_listing_router  # noqa: F401,E402
 from app.modules.external_document_sources import token_acquisition_execution_router as _token_acquisition_execution_router  # noqa: F401,E402
 
 __all__ = [
@@ -64,6 +70,9 @@ __all__ = [
     "ExternalDocumentSourceProviderClientActivationExecutionReceipt",
     "ExternalDocumentSourceProviderClientHealthExecution",
     "ExternalDocumentSourceProviderClientHealthReceipt",
+    "ExternalDocumentSourceRemoteMetadataListingExecution",
+    "ExternalDocumentSourceRemoteMetadataListingItem",
+    "ExternalDocumentSourceRemoteMetadataListingReceipt",
     "ExternalDocumentSourceTokenAcquisitionExecution",
     "ExternalDocumentSourceTokenAcquisitionExecutionReceipt",
 ]
