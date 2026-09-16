@@ -43,6 +43,10 @@ from app.modules.external_document_sources.remote_metadata_listing_models import
     ExternalDocumentSourceRemoteMetadataListingItem,
     ExternalDocumentSourceRemoteMetadataListingReceipt,
 )
+from app.modules.external_document_sources.sync_checkpoint_models import (
+    ExternalDocumentSourceSyncCheckpointExecution,
+    ExternalDocumentSourceSyncCheckpointReceipt,
+)
 from app.modules.external_document_sources.token_acquisition_execution_models import (
     ExternalDocumentSourceTokenAcquisitionExecution,
     ExternalDocumentSourceTokenAcquisitionExecutionReceipt,
@@ -61,6 +65,7 @@ from app.modules.external_document_sources import provider_client_health_router 
 from app.modules.external_document_sources import remote_content_staging_router as _remote_content_staging_router  # noqa: F401,E402
 from app.modules.external_document_sources import remote_file_content_read_router as _remote_file_content_read_router  # noqa: F401,E402
 from app.modules.external_document_sources import remote_metadata_listing_router as _remote_metadata_listing_router  # noqa: F401,E402
+from app.modules.external_document_sources import sync_checkpoint_router as _sync_checkpoint_router  # noqa: F401,E402
 from app.modules.external_document_sources import token_acquisition_execution_router as _token_acquisition_execution_router  # noqa: F401,E402
 
 __all__ = [
@@ -87,6 +92,8 @@ __all__ = [
     "ExternalDocumentSourceRemoteMetadataListingExecution",
     "ExternalDocumentSourceRemoteMetadataListingItem",
     "ExternalDocumentSourceRemoteMetadataListingReceipt",
+    "ExternalDocumentSourceSyncCheckpointExecution",
+    "ExternalDocumentSourceSyncCheckpointReceipt",
     "ExternalDocumentSourceTokenAcquisitionExecution",
     "ExternalDocumentSourceTokenAcquisitionExecutionReceipt",
 ]
