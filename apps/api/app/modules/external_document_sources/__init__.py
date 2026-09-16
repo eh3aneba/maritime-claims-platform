@@ -2,6 +2,10 @@ from app.modules.external_document_sources.change_detection_models import (
     ExternalDocumentSourceChangeDetectionExecution,
     ExternalDocumentSourceChangeDetectionReceipt,
 )
+from app.modules.external_document_sources.checkpoint_generation_models import (
+    ExternalDocumentSourceCheckpointGenerationExecution,
+    ExternalDocumentSourceCheckpointGenerationReceipt,
+)
 from app.modules.external_document_sources.connection_authorization_models import (
     ExternalDocumentSourceConnectionAuthorization,
     ExternalDocumentSourceConnectionAuthorizationReceipt,
@@ -64,6 +68,7 @@ from app.modules.external_document_sources.versioned_restaging_models import (
 # endpoints on the existing connection-authorization APIRouter, which is later
 # included by external_document_sources.router.
 from app.modules.external_document_sources import change_detection_router as _change_detection_router  # noqa: F401,E402
+from app.modules.external_document_sources import checkpoint_generation_router as _checkpoint_generation_router  # noqa: F401,E402
 from app.modules.external_document_sources import connection_bootstrap_router as _connection_bootstrap_router  # noqa: F401,E402
 from app.modules.external_document_sources import credential_reference_router as _credential_reference_router  # noqa: F401,E402
 from app.modules.external_document_sources import credential_reference_health_router as _credential_reference_health_router  # noqa: F401,E402
@@ -81,6 +86,8 @@ from app.modules.external_document_sources import versioned_restaging_router as 
 __all__ = [
     "ExternalDocumentSourceChangeDetectionExecution",
     "ExternalDocumentSourceChangeDetectionReceipt",
+    "ExternalDocumentSourceCheckpointGenerationExecution",
+    "ExternalDocumentSourceCheckpointGenerationReceipt",
     "ExternalDocumentSourceConnectionAuthorization",
     "ExternalDocumentSourceConnectionAuthorizationReceipt",
     "ExternalDocumentSourceConnectionBootstrapExecution",
