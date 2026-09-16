@@ -168,6 +168,11 @@ class ExternalDocumentSourceChangeDetectionExecution(UUIDPrimaryKeyMixin, Timest
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completion_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
+    @property
+    def metadata_item_hash(self) -> str:
+        """Immutable Phase L item hash carried forward as Phase P baseline lineage."""
+        return self.baseline_metadata_item_hash
+
 
 class ExternalDocumentSourceChangeDetectionReceipt(UUIDPrimaryKeyMixin, TimestampMixin, _ChangeDetectionSafetyMixin, Base):
     __tablename__ = "external_doc_source_change_detect_receipts"

@@ -55,6 +55,10 @@ from app.modules.external_document_sources.token_acquisition_execution_models im
     ExternalDocumentSourceTokenAcquisitionExecution,
     ExternalDocumentSourceTokenAcquisitionExecutionReceipt,
 )
+from app.modules.external_document_sources.versioned_restaging_models import (
+    ExternalDocumentSourceVersionedRestagingExecution,
+    ExternalDocumentSourceVersionedRestagingReceipt,
+)
 
 # Import downstream routers for route-registration side effects. They mount
 # endpoints on the existing connection-authorization APIRouter, which is later
@@ -72,6 +76,7 @@ from app.modules.external_document_sources import remote_file_content_read_route
 from app.modules.external_document_sources import remote_metadata_listing_router as _remote_metadata_listing_router  # noqa: F401,E402
 from app.modules.external_document_sources import sync_checkpoint_router as _sync_checkpoint_router  # noqa: F401,E402
 from app.modules.external_document_sources import token_acquisition_execution_router as _token_acquisition_execution_router  # noqa: F401,E402
+from app.modules.external_document_sources import versioned_restaging_router as _versioned_restaging_router  # noqa: F401,E402
 
 __all__ = [
     "ExternalDocumentSourceChangeDetectionExecution",
@@ -103,4 +108,6 @@ __all__ = [
     "ExternalDocumentSourceSyncCheckpointReceipt",
     "ExternalDocumentSourceTokenAcquisitionExecution",
     "ExternalDocumentSourceTokenAcquisitionExecutionReceipt",
+    "ExternalDocumentSourceVersionedRestagingExecution",
+    "ExternalDocumentSourceVersionedRestagingReceipt",
 ]
