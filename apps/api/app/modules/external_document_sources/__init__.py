@@ -30,6 +30,10 @@ from app.modules.external_document_sources.provider_client_health_models import 
     ExternalDocumentSourceProviderClientHealthExecution,
     ExternalDocumentSourceProviderClientHealthReceipt,
 )
+from app.modules.external_document_sources.remote_content_staging_models import (
+    ExternalDocumentSourceRemoteContentStagingExecution,
+    ExternalDocumentSourceRemoteContentStagingReceipt,
+)
 from app.modules.external_document_sources.remote_file_content_read_models import (
     ExternalDocumentSourceRemoteFileContentReadExecution,
     ExternalDocumentSourceRemoteFileContentReadReceipt,
@@ -54,6 +58,7 @@ from app.modules.external_document_sources import credential_resolution_executio
 from app.modules.external_document_sources import provider_client_activation_authorization_router as _provider_client_activation_authorization_router  # noqa: F401,E402
 from app.modules.external_document_sources import provider_client_activation_execution_router as _provider_client_activation_execution_router  # noqa: F401,E402
 from app.modules.external_document_sources import provider_client_health_router as _provider_client_health_router  # noqa: F401,E402
+from app.modules.external_document_sources import remote_content_staging_router as _remote_content_staging_router  # noqa: F401,E402
 from app.modules.external_document_sources import remote_file_content_read_router as _remote_file_content_read_router  # noqa: F401,E402
 from app.modules.external_document_sources import remote_metadata_listing_router as _remote_metadata_listing_router  # noqa: F401,E402
 from app.modules.external_document_sources import token_acquisition_execution_router as _token_acquisition_execution_router  # noqa: F401,E402
@@ -75,6 +80,8 @@ __all__ = [
     "ExternalDocumentSourceProviderClientActivationExecutionReceipt",
     "ExternalDocumentSourceProviderClientHealthExecution",
     "ExternalDocumentSourceProviderClientHealthReceipt",
+    "ExternalDocumentSourceRemoteContentStagingExecution",
+    "ExternalDocumentSourceRemoteContentStagingReceipt",
     "ExternalDocumentSourceRemoteFileContentReadExecution",
     "ExternalDocumentSourceRemoteFileContentReadReceipt",
     "ExternalDocumentSourceRemoteMetadataListingExecution",
