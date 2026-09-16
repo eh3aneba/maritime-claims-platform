@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import BigInteger, Boolean, CheckConstraint, DateTime, ForeignKey, Index, String, Text, UniqueConstraint, false, true
+from sqlalchemy import BigInteger, Boolean, CheckConstraint, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, false, true
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -109,6 +109,8 @@ class ExternalDocumentSourceChangeDetectionExecution(UUIDPrimaryKeyMixin, Timest
         CheckConstraint("provider_kind IN ('sharepoint','google_drive')", name="ck_ext_doc_cd_exec_provider"),
         CheckConstraint("status IN ('requested','completed')", name="ck_ext_doc_cd_exec_status"),
         CheckConstraint("result_status IS NULL OR result_status IN ('unchanged','changed','missing')", name="ck_ext_doc_cd_exec_result"),
+        CheckConstraint("baseline_item_kind IN ('file','folder')", name="ck_ext_doc_cd_exec_base_kind"),
+        CheckConstraint("observed_item_kind IS NULL OR observed_item_kind IN ('file','folder')", name="ck_ext_doc_cd_exec_obs_kind"),
         CheckConstraint("baseline_byte_size IS NULL OR (baseline_byte_size >= 0 AND baseline_byte_size <= 1000000000000000)", name="ck_ext_doc_cd_exec_base_size"),
         CheckConstraint("observed_byte_size IS NULL OR (observed_byte_size >= 0 AND observed_byte_size <= 1000000000000000)", name="ck_ext_doc_cd_exec_obs_size"),
         CheckConstraint(
@@ -135,6 +137,9 @@ class ExternalDocumentSourceChangeDetectionExecution(UUIDPrimaryKeyMixin, Timest
     baseline_metadata_item_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     baseline_projection_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     baseline_provider_item_id_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    baseline_item_kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    baseline_display_name_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    baseline_parent_item_id_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     baseline_version_token_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     baseline_byte_size: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     baseline_modified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -149,6 +154,9 @@ class ExternalDocumentSourceChangeDetectionExecution(UUIDPrimaryKeyMixin, Timest
     result_status: Mapped[str | None] = mapped_column(String(24), nullable=True)
     observed_projection_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     observed_provider_item_id_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    observed_item_kind: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    observed_display_name_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    observed_parent_item_id_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     observed_version_token_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     observed_byte_size: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     observed_modified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -180,7 +188,7 @@ class ExternalDocumentSourceChangeDetectionReceipt(UUIDPrimaryKeyMixin, Timestam
 
     organization_id: Mapped[UUID] = mapped_column(ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False, index=True)
     execution_id: Mapped[UUID] = mapped_column(ForeignKey("external_doc_source_change_detect_execs.id", ondelete="RESTRICT"), nullable=False, index=True)
-    sequence_number: Mapped[int] = mapped_column(nullable=False)
+    sequence_number: Mapped[int] = mapped_column(Integer, nullable=False)
     event_type: Mapped[str] = mapped_column(String(24), nullable=False)
     status_after: Mapped[str] = mapped_column(String(24), nullable=False)
     actor_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True)
