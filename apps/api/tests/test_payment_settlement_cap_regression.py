@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from app.modules.settlements.models import PaymentAuthorization, PaymentStatus
 from tests.db_harness import TestingSessionLocal, client, reset_database
 from tests.test_claims_api import login
@@ -117,7 +119,7 @@ def test_approval_revalidates_cap_for_legacy_or_pre_fix_overallocated_state() ->
     # Approval must still fail closed instead of converting invalid ledger state
     # into first_approved/authorized authority.
     with TestingSessionLocal() as db:
-        row = db.get(PaymentAuthorization, payment_a["id"])
+        row = db.get(PaymentAuthorization, UUID(payment_a["id"]))
         assert row is not None
         row.status = PaymentStatus.UNDER_REVIEW
         db.commit()
@@ -132,6 +134,6 @@ def test_approval_revalidates_cap_for_legacy_or_pre_fix_overallocated_state() ->
     assert "cannot exceed" in approval.json()["detail"]
 
     with TestingSessionLocal() as db:
-        row = db.get(PaymentAuthorization, payment_a["id"])
+        row = db.get(PaymentAuthorization, UUID(payment_a["id"]))
         assert row is not None
         assert row.status == PaymentStatus.UNDER_REVIEW
