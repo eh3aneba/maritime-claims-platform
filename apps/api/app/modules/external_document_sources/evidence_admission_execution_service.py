@@ -588,6 +588,7 @@ def execute_external_document_source_evidence_admission(
     )
     promoted = False
     temp_exists = False
+    committed = False
     try:
         stored = local_storage.save_bytes(payload, quarantine_key)
         temp_exists = True
@@ -740,9 +741,14 @@ def execute_external_document_source_evidence_admission(
             ),
         )
         db.commit()
+        committed = True
         db.refresh(execution)
         return execution, "admitted"
     except SQLAlchemyError as exc:
+        if committed:
+            raise ExternalDocumentSourceConflictError(
+                "Evidence admission was committed but response finalization failed; replay the same request key"
+            ) from exc
         db.rollback()
         _cleanup_local_storage(
             local_storage=local_storage,
@@ -753,6 +759,10 @@ def execute_external_document_source_evidence_admission(
         )
         raise ExternalDocumentSourceConflictError("Evidence admission could not be committed safely") from exc
     except StorageError as exc:
+        if committed:
+            raise ExternalDocumentSourceConflictError(
+                "Evidence admission was committed but local response finalization failed; replay the same request key"
+            ) from exc
         db.rollback()
         _cleanup_local_storage(
             local_storage=local_storage,
@@ -763,6 +773,8 @@ def execute_external_document_source_evidence_admission(
         )
         raise ExternalDocumentSourceConflictError("Local Evidence storage operation failed") from exc
     except Exception:
+        if committed:
+            raise
         db.rollback()
         _cleanup_local_storage(
             local_storage=local_storage,
