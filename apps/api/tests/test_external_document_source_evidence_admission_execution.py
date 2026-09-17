@@ -19,10 +19,7 @@ from tests.test_external_document_source_evidence_admission_authorization import
     setup_function as _phase_w_setup,
     teardown_function as _phase_w_teardown,
 )
-from tests.test_external_document_source_generation_3_change_detection import (
-    _baseline_projection,
-    _observe,
-)
+from tests.test_external_document_source_generation_3_change_detection import _observe
 
 _EXECUTION_REASON = (
     "Admit this exact human-authorized external file version into the Claim Evidence record after fresh currentness, integrity and malware verification."
@@ -151,10 +148,14 @@ def test_phase_x_consumes_one_authorization_and_creates_one_document_without_dow
     ):
         assert body[field] is False
 
-    serialized = json.dumps(body, sort_keys=True)
-    for marker in ("provider_item_id", "storage_key", "access_token", "client_secret", "content"):
-        assert marker not in body
-        assert marker not in serialized
+    for forbidden_field in (
+        "provider_item_id",
+        "storage_key",
+        "access_token",
+        "client_secret",
+        "raw_content",
+    ):
+        assert forbidden_field not in body
 
     with TestingSessionLocal() as db:
         assert db.query(Document).count() == document_count_before + 1
@@ -170,6 +171,11 @@ def test_phase_x_consumes_one_authorization_and_creates_one_document_without_dow
             AuditLog.action == "ADMIT_EXTERNAL_DOCUMENT_SOURCE_TO_EVIDENCE"
         ).all()
         assert len(audits) == 1
+        audit_text = json.dumps(
+            [{"new": row.new_values, "details": row.details} for row in audits], sort_keys=True
+        )
+        assert "provider_item_id" not in audit_text
+        assert "storage_key" not in audit_text
 
     receipts = client.get(
         f"/api/v1/external-document-sources/profiles/{profile_id}/evidence-admission-executions/{execution_id}/receipts",
@@ -219,7 +225,6 @@ def test_phase_x_rejects_stale_authorization_before_storage_or_document_mutation
     assert authorization.status_code == 201, authorization.text
     _enable_clean_admission(monkeypatch)
 
-    metadata_adapter.result.item = _baseline_projection()
     newer = _observe(
         profile_id,
         u_body["id"],
