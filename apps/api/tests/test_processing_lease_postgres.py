@@ -26,8 +26,9 @@ from app.modules.vessels.models import Vessel
 
 
 @pytest.mark.skipif(
-    not os.environ.get("DATABASE_URL", "").startswith("postgresql"),
-    reason="PostgreSQL lease-fencing regression requires the PostgreSQL CI job",
+    os.environ.get("PROCESSING_LEASE_POSTGRES_TEST") != "1"
+    or not os.environ.get("DATABASE_URL", "").startswith("postgresql"),
+    reason="PostgreSQL lease-fencing regression runs only in its dedicated PostgreSQL CI job",
 )
 def test_recovered_processing_lease_fences_late_old_worker_flush() -> None:
     engine = create_engine(os.environ["DATABASE_URL"], future=True)
