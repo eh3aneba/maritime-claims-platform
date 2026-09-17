@@ -40,6 +40,7 @@ jobs:
     env:
       APP_ENV: test
       DATABASE_URL: postgresql+psycopg://mcri_ci:mcri_ci_password@127.0.0.1:5432/mcri_processing_lease_ci
+      PROCESSING_LEASE_POSTGRES_TEST: "1"
       SECRET_KEY: ci-only-processing-lease-fence-not-a-deployment-secret-2026
       AI_PROVIDER: disabled
       OPENAI_API_KEY: ""
