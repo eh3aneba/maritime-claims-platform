@@ -6,17 +6,29 @@ from fastapi import HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.modules.settlements.models import PaymentAuthorization, SettlementProposal, SettlementStatus
-from app.modules.settlements.service import ACTIVE_PAYMENT_STATUSES
+from app.modules.settlements.models import (
+    PaymentAuthorization,
+    PaymentStatus,
+    SettlementProposal,
+    SettlementStatus,
+)
+
+_CAPACITY_ACTIVE_PAYMENT_STATUSES = {
+    PaymentStatus.DRAFT,
+    PaymentStatus.UNDER_REVIEW,
+    PaymentStatus.FIRST_APPROVED,
+    PaymentStatus.AUTHORIZED,
+    PaymentStatus.PAID_EXTERNALLY,
+}
 
 
 def lock_and_validate_payment_capacity(db: Session, item: PaymentAuthorization) -> SettlementProposal:
-    """Serialize active-payment transitions against one accepted settlement cap.
+    """Serialize and validate any transition that carries settlement capacity.
 
-    The settlement row is locked for the duration of the caller's transaction so
-    create/resubmit/approval paths cannot race past the accepted amount. The
-    current payment is excluded from the aggregate and then added exactly once,
-    which works whether it is already active or is re-entering from rejected.
+    The accepted settlement row is the serialization point. The current payment
+    is excluded from the aggregate and then added exactly once, so this works for
+    both an already-active row progressing through approval and a rejected row
+    re-entering the active ledger.
     """
     settlement = db.scalar(
         select(SettlementProposal)
@@ -36,7 +48,7 @@ def lock_and_validate_payment_capacity(db: Session, item: PaymentAuthorization) 
         select(func.coalesce(func.sum(PaymentAuthorization.amount), 0)).where(
             PaymentAuthorization.settlement_id == settlement.id,
             PaymentAuthorization.id != item.id,
-            PaymentAuthorization.status.in_(ACTIVE_PAYMENT_STATUSES),
+            PaymentAuthorization.status.in_(_CAPACITY_ACTIVE_PAYMENT_STATUSES),
         )
     )
     if Decimal(allocated_other) + item.amount > settlement.amount:
