@@ -240,8 +240,7 @@ def test_phase_v_generation3_successor_exact_item_observation(caplog: pytest.Log
     assert adapter.last_policy.max_response_bytes == 65536
     assert _upstream_io(metadata_adapter, q_adapter, phase_m_read_adapter, t_adapter, store) == upstream_before
 
-    serialized = json.dumps(body, sort_keys=True)
-    for forbidden_marker in (
+    for forbidden_field in (
         "provider_item_id",
         "metadata_endpoint_url",
         "provider_origin",
@@ -250,11 +249,11 @@ def test_phase_v_generation3_successor_exact_item_observation(caplog: pytest.Log
         "content",
         "access_token",
         "client_secret",
-        _SECRET,
-        _TOKEN,
-        _RAW_RESPONSE,
     ):
-        assert forbidden_marker not in serialized
+        assert forbidden_field not in body
+    serialized = json.dumps(body, sort_keys=True)
+    for marker in (_SECRET, _TOKEN, _RAW_RESPONSE, _PROVIDER_URL):
+        assert marker not in serialized
 
     receipts = client.get(
         f"/api/v1/external-document-sources/profiles/{profile_id}/generation-3-successor-change-detection-executions/{execution_id}/receipts",
