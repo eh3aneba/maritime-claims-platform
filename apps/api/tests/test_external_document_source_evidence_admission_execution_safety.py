@@ -1,4 +1,5 @@
 from dataclasses import replace
+from uuid import UUID
 
 import pytest
 
@@ -165,7 +166,7 @@ def test_phase_x_hides_cross_tenant_authorization_and_detects_authorization_tamp
     assert hidden.status_code == 404, hidden.text
 
     with TestingSessionLocal() as db:
-        row = db.get(ExternalDocumentSourceEvidenceAdmissionAuthorization, authorization_id)
+        row = db.get(ExternalDocumentSourceEvidenceAdmissionAuthorization, UUID(authorization_id))
         assert row is not None
         row.authorization_hash = "0" * 64
         db.commit()
