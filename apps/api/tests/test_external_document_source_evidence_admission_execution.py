@@ -1,4 +1,5 @@
 import json
+from uuid import UUID
 
 import pytest
 
@@ -159,7 +160,7 @@ def test_phase_x_consumes_one_authorization_and_creates_one_document_without_dow
 
     with TestingSessionLocal() as db:
         assert db.query(Document).count() == document_count_before + 1
-        document = db.get(Document, document_id)
+        document = db.get(Document, UUID(document_id))
         assert document is not None
         assert document.claim_id == claim_id
         assert document.processing_status == DocumentProcessingStatus.UPLOADED
