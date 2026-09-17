@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 import json
 from datetime import datetime, timezone
-from pathlib import Path
 from uuid import UUID, uuid4
 
 from fastapi import HTTPException
@@ -462,6 +461,23 @@ def _read_staged_payload(candidate):
     return payload
 
 
+def _cleanup_local_storage(
+    *,
+    local_storage,
+    promoted: bool,
+    temp_exists: bool,
+    canonical_key: str,
+    quarantine_key: str,
+) -> None:
+    try:
+        if promoted:
+            local_storage.delete_physical(canonical_key)
+        elif temp_exists:
+            local_storage.delete_physical(quarantine_key)
+    except (StorageError, OSError):
+        pass
+
+
 def execute_external_document_source_evidence_admission(
     db: Session,
     *,
@@ -526,6 +542,10 @@ def execute_external_document_source_evidence_admission(
     payload = _read_staged_payload(candidate)
     if len(payload) == 0:
         raise ExternalDocumentSourceConflictError("Empty external files cannot be admitted as Evidence")
+    if len(payload) > settings.max_upload_bytes:
+        raise ExternalDocumentSourceConflictError(
+            "Authorized staged file exceeds the configured Evidence upload limit"
+        )
     if authorization.authorized_byte_size is not None and len(payload) != authorization.authorized_byte_size:
         raise ExternalDocumentSourceConflictError("Staged bytes no longer match the authorized remote byte count")
 
@@ -724,17 +744,33 @@ def execute_external_document_source_evidence_admission(
         return execution, "admitted"
     except SQLAlchemyError as exc:
         db.rollback()
-        if promoted:
-            local_storage.delete_physical(canonical_key)
-        elif temp_exists:
-            local_storage.delete_physical(quarantine_key)
+        _cleanup_local_storage(
+            local_storage=local_storage,
+            promoted=promoted,
+            temp_exists=temp_exists,
+            canonical_key=canonical_key,
+            quarantine_key=quarantine_key,
+        )
         raise ExternalDocumentSourceConflictError("Evidence admission could not be committed safely") from exc
+    except StorageError as exc:
+        db.rollback()
+        _cleanup_local_storage(
+            local_storage=local_storage,
+            promoted=promoted,
+            temp_exists=temp_exists,
+            canonical_key=canonical_key,
+            quarantine_key=quarantine_key,
+        )
+        raise ExternalDocumentSourceConflictError("Local Evidence storage operation failed") from exc
     except Exception:
         db.rollback()
-        if promoted:
-            local_storage.delete_physical(canonical_key)
-        elif temp_exists:
-            local_storage.delete_physical(quarantine_key)
+        _cleanup_local_storage(
+            local_storage=local_storage,
+            promoted=promoted,
+            temp_exists=temp_exists,
+            canonical_key=canonical_key,
+            quarantine_key=quarantine_key,
+        )
         raise
     finally:
         del payload
