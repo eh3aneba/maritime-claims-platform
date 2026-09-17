@@ -7,7 +7,6 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.modules.auth.dependencies import CurrentUser, require_roles
 from app.modules.claims.security import get_claim_for_tenant
-from app.modules.settlements.payment_transition_controls import lock_and_validate_payment_capacity
 from app.modules.settlements.schemas import (
     DispositionRecord, PaidRecord, PaymentCreate, PaymentResponse, ReviewNote,
     SettlementCreate, SettlementLedgerResponse, SettlementResponse, SettlementUpdate,
@@ -75,17 +74,13 @@ def payment_create(claim_id: UUID, payload: PaymentCreate, current_user: Current
 @router.post("/payments/{item_id}/submit", response_model=PaymentResponse)
 def payment_submit(claim_id: UUID, item_id: UUID, current_user: CurrentUser, db: Annotated[Session, Depends(get_db)]):
     claim = _claim(db, claim_id, current_user.organization_id)
-    item = get_payment(db, claim, item_id)
-    lock_and_validate_payment_capacity(db, item)
-    return submit_payment(db, item, current_user)
+    return submit_payment(db, get_payment(db, claim, item_id), current_user)
 
 
 @router.post("/payments/{item_id}/approve", response_model=PaymentResponse)
 def payment_approve(claim_id: UUID, item_id: UUID, payload: ReviewNote, manager: Manager, db: Annotated[Session, Depends(get_db)]):
     claim = _claim(db, claim_id, manager.organization_id)
-    item = get_payment(db, claim, item_id)
-    lock_and_validate_payment_capacity(db, item)
-    return approve_payment(db, item, manager, payload.note)
+    return approve_payment(db, get_payment(db, claim, item_id), manager, payload.note)
 
 
 @router.post("/payments/{item_id}/reject", response_model=PaymentResponse)
