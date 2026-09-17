@@ -6,6 +6,10 @@ from app.modules.external_document_sources.checkpoint_generation_models import (
     ExternalDocumentSourceCheckpointGenerationExecution,
     ExternalDocumentSourceCheckpointGenerationReceipt,
 )
+from app.modules.external_document_sources.checkpoint_generation_3_models import (
+    ExternalDocumentSourceCheckpointGeneration3Execution,
+    ExternalDocumentSourceCheckpointGeneration3Receipt,
+)
 from app.modules.external_document_sources.connection_authorization_models import (
     ExternalDocumentSourceConnectionAuthorization,
     ExternalDocumentSourceConnectionAuthorizationReceipt,
@@ -77,6 +81,7 @@ from app.modules.external_document_sources.versioned_restaging_models import (
 # included by external_document_sources.router.
 from app.modules.external_document_sources import change_detection_router as _change_detection_router  # noqa: F401,E402
 from app.modules.external_document_sources import checkpoint_generation_router as _checkpoint_generation_router  # noqa: F401,E402
+from app.modules.external_document_sources import checkpoint_generation_3_router as _checkpoint_generation_3_router  # noqa: F401,E402
 from app.modules.external_document_sources import connection_bootstrap_router as _connection_bootstrap_router  # noqa: F401,E402
 from app.modules.external_document_sources import credential_reference_router as _credential_reference_router  # noqa: F401,E402
 from app.modules.external_document_sources import credential_reference_health_router as _credential_reference_health_router  # noqa: F401,E402
@@ -98,6 +103,8 @@ __all__ = [
     "ExternalDocumentSourceChangeDetectionReceipt",
     "ExternalDocumentSourceCheckpointGenerationExecution",
     "ExternalDocumentSourceCheckpointGenerationReceipt",
+    "ExternalDocumentSourceCheckpointGeneration3Execution",
+    "ExternalDocumentSourceCheckpointGeneration3Receipt",
     "ExternalDocumentSourceConnectionAuthorization",
     "ExternalDocumentSourceConnectionAuthorizationReceipt",
     "ExternalDocumentSourceConnectionBootstrapExecution",
