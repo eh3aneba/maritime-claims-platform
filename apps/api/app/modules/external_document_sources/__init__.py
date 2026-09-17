@@ -55,6 +55,10 @@ from app.modules.external_document_sources.successor_change_detection_models imp
     ExternalDocumentSourceSuccessorChangeDetectionExecution,
     ExternalDocumentSourceSuccessorChangeDetectionReceipt,
 )
+from app.modules.external_document_sources.successor_versioned_restaging_models import (
+    ExternalDocumentSourceSuccessorVersionedRestagingExecution,
+    ExternalDocumentSourceSuccessorVersionedRestagingReceipt,
+)
 from app.modules.external_document_sources.sync_checkpoint_models import (
     ExternalDocumentSourceSyncCheckpointExecution,
     ExternalDocumentSourceSyncCheckpointReceipt,
@@ -84,6 +88,7 @@ from app.modules.external_document_sources import remote_content_staging_router 
 from app.modules.external_document_sources import remote_file_content_read_router as _remote_file_content_read_router  # noqa: F401,E402
 from app.modules.external_document_sources import remote_metadata_listing_router as _remote_metadata_listing_router  # noqa: F401,E402
 from app.modules.external_document_sources import successor_change_detection_router as _successor_change_detection_router  # noqa: F401,E402
+from app.modules.external_document_sources import successor_versioned_restaging_router as _successor_versioned_restaging_router  # noqa: F401,E402
 from app.modules.external_document_sources import sync_checkpoint_router as _sync_checkpoint_router  # noqa: F401,E402
 from app.modules.external_document_sources import token_acquisition_execution_router as _token_acquisition_execution_router  # noqa: F401,E402
 from app.modules.external_document_sources import versioned_restaging_router as _versioned_restaging_router  # noqa: F401,E402
@@ -118,6 +123,8 @@ __all__ = [
     "ExternalDocumentSourceRemoteMetadataListingReceipt",
     "ExternalDocumentSourceSuccessorChangeDetectionExecution",
     "ExternalDocumentSourceSuccessorChangeDetectionReceipt",
+    "ExternalDocumentSourceSuccessorVersionedRestagingExecution",
+    "ExternalDocumentSourceSuccessorVersionedRestagingReceipt",
     "ExternalDocumentSourceSyncCheckpointExecution",
     "ExternalDocumentSourceSyncCheckpointReceipt",
     "ExternalDocumentSourceTokenAcquisitionExecution",
