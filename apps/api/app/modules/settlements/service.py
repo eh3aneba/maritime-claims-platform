@@ -15,6 +15,10 @@ from app.modules.adjustments.service import adjustment_source_state
 from app.modules.audit.service import write_audit_log
 from app.modules.claims.models import Claim
 from app.modules.settlements.models import PaymentAuthorization, PaymentStatus, SettlementProposal, SettlementStatus
+from app.modules.settlements.payment_transition_controls import (
+    lock_and_validate_payment_capacity,
+    lock_payment_transition,
+)
 from app.modules.settlements.schemas import PaymentCreate, SettlementCreate, SettlementUpdate
 from app.modules.users.models import User
 
@@ -294,6 +298,7 @@ def create_payment(db: Session, claim: Claim, user: User, payload: PaymentCreate
 
 
 def submit_payment(db: Session, item: PaymentAuthorization, user: User) -> PaymentAuthorization:
+    _, item = lock_and_validate_payment_capacity(db, item)
     if item.status not in {PaymentStatus.DRAFT, PaymentStatus.REJECTED}:
         raise HTTPException(409, "Only draft or rejected payment authorizations can be submitted")
     item.status = PaymentStatus.UNDER_REVIEW
@@ -305,8 +310,13 @@ def submit_payment(db: Session, item: PaymentAuthorization, user: User) -> Payme
 
 
 def approve_payment(db: Session, item: PaymentAuthorization, user: User, note: str) -> PaymentAuthorization:
+    _, item = lock_and_validate_payment_capacity(db, item)
+    if item.status not in {PaymentStatus.UNDER_REVIEW, PaymentStatus.FIRST_APPROVED}:
+        raise HTTPException(409, "Payment authorization is not awaiting approval")
     if item.created_by_id == user.id:
         raise HTTPException(409, "Payment creator cannot approve their own authorization")
+    if item.status == PaymentStatus.FIRST_APPROVED and item.first_approved_by_id == user.id:
+        raise HTTPException(409, "Second approval must be made by a different Manager/Admin")
     now = datetime.now(UTC)
     if item.status == PaymentStatus.UNDER_REVIEW:
         item.status = PaymentStatus.FIRST_APPROVED
@@ -314,9 +324,7 @@ def approve_payment(db: Session, item: PaymentAuthorization, user: User, note: s
         item.first_approved_at = now
         item.first_approval_note = note.strip()
         action = "FIRST_APPROVE_PAYMENT_AUTHORIZATION"
-    elif item.status == PaymentStatus.FIRST_APPROVED:
-        if item.first_approved_by_id == user.id:
-            raise HTTPException(409, "Second approval must be made by a different Manager/Admin")
+    else:
         item.status = PaymentStatus.AUTHORIZED
         item.second_approved_by_id = user.id
         item.second_approved_at = now
@@ -335,8 +343,6 @@ def approve_payment(db: Session, item: PaymentAuthorization, user: User, note: s
             }
         )
         action = "SECOND_APPROVE_PAYMENT_AUTHORIZATION"
-    else:
-        raise HTTPException(409, "Payment authorization is not awaiting approval")
     _audit(
         db,
         obj=item,
@@ -351,6 +357,7 @@ def approve_payment(db: Session, item: PaymentAuthorization, user: User, note: s
 
 
 def reject_payment(db: Session, item: PaymentAuthorization, user: User, note: str) -> PaymentAuthorization:
+    _, item = lock_payment_transition(db, item)
     if item.status not in {PaymentStatus.UNDER_REVIEW, PaymentStatus.FIRST_APPROVED}:
         raise HTTPException(409, "Payment authorization is not awaiting review")
     item.status = PaymentStatus.REJECTED
@@ -374,6 +381,7 @@ def record_paid(
     value_date,
     note: str | None,
 ) -> PaymentAuthorization:
+    _, item = lock_payment_transition(db, item)
     if item.status != PaymentStatus.AUTHORIZED:
         raise HTTPException(409, "Only a fully authorized payment can be recorded as paid externally")
     item.status = PaymentStatus.PAID_EXTERNALLY

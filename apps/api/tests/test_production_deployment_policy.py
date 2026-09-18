@@ -95,6 +95,7 @@ def test_preflight_enforces_production_policy_without_secret_leakage(monkeypatch
         next_public_api_base_url="http://api.mcri.app/api/v1",
         database_url="postgresql+psycopg://mcri:synthetic@db:5432/mcri",
         ai_provider="disabled",
+        ai_production_control_plane_enabled=False,
         ai_model="",
         openai_api_key="",
         allow_external_ai_restricted=False,
@@ -116,3 +117,74 @@ def test_preflight_enforces_production_policy_without_secret_leakage(monkeypatch
     assert any("SECRET_KEY" in error for error in errors)
     assert any("NEXT_PUBLIC_API_BASE_URL" in error for error in errors)
     assert secret not in "\n".join(errors)
+
+
+
+def _production_ai_settings(tmp_path, *, control_plane_enabled: bool):
+    return SimpleNamespace(
+        app_env="production",
+        cors_origins=["https://app.mcri.app"],
+        cors_allowed_origins="https://app.mcri.app",
+        secret_key=SAFE_SECRET,
+        next_public_api_base_url=SAFE_API_URL,
+        database_url="postgresql+psycopg://mcri:synthetic@db:5432/mcri",
+        ai_provider="openai",
+        ai_production_control_plane_enabled=control_plane_enabled,
+        ai_model="gpt-production-pinned",
+        openai_api_key="synthetic-production-provider-key",
+        allow_external_ai_restricted=False,
+        ai_max_input_chars=60000,
+        ai_max_output_tokens=2000,
+        ai_prompt_bundle_version="2026-08-20.1",
+        ai_schema_bundle_version="2026-08-20.1",
+        storage_backend="local",
+        local_storage_path=str(tmp_path),
+        s3_foundation_enabled=False,
+        malware_scan_enabled=True,
+        clamav_host="clamav",
+        clamav_port=3310,
+        clamav_timeout_seconds=1.0,
+    )
+
+
+def test_production_openai_requires_explicit_control_plane_capability(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    settings = _production_ai_settings(tmp_path, control_plane_enabled=False)
+    monkeypatch.setattr(preflight, "get_settings", lambda: settings)
+    monkeypatch.setattr(preflight, "ping_clamd", lambda **_kwargs: None)
+
+    errors, _warnings = preflight.run_preflight(require_db=False)
+
+    assert "AI_PRODUCTION_CONTROL_PLANE_ENABLED must be true before OpenAI may be configured in production" in errors
+    assert all("Sprint 11A permits AI_PROVIDER=openai only in staging" not in error for error in errors)
+
+
+def test_governed_production_openai_configuration_is_not_rejected_only_for_environment(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    settings = _production_ai_settings(tmp_path, control_plane_enabled=True)
+    monkeypatch.setattr(preflight, "get_settings", lambda: settings)
+    monkeypatch.setattr(preflight, "ping_clamd", lambda **_kwargs: None)
+
+    errors, _warnings = preflight.run_preflight(require_db=False)
+
+    assert errors == []
+
+
+def test_staging_openai_does_not_require_production_control_plane_flag(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    settings = _production_ai_settings(tmp_path, control_plane_enabled=False)
+    settings.app_env = "staging"
+    settings.secret_key = "staging-safe-" + ("b" * 40)
+    monkeypatch.setattr(preflight, "get_settings", lambda: settings)
+    monkeypatch.setattr(preflight, "ping_clamd", lambda **_kwargs: None)
+
+    errors, _warnings = preflight.run_preflight(require_db=False)
+
+    assert not any("AI_PRODUCTION_CONTROL_PLANE_ENABLED" in error for error in errors)
+    assert not any("AI_PROVIDER=openai requires" in error for error in errors)
