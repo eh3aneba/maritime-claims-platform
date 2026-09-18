@@ -15,7 +15,10 @@ from app.modules.adjustments.service import adjustment_source_state
 from app.modules.audit.service import write_audit_log
 from app.modules.claims.models import Claim
 from app.modules.settlements.models import PaymentAuthorization, PaymentStatus, SettlementProposal, SettlementStatus
-from app.modules.settlements.payment_transition_controls import (\n    lock_and_validate_payment_capacity,\n    lock_payment_transition,\n)
+from app.modules.settlements.payment_transition_controls import (
+    lock_and_validate_payment_capacity,
+    lock_payment_transition,
+)
 from app.modules.settlements.schemas import PaymentCreate, SettlementCreate, SettlementUpdate
 from app.modules.users.models import User
 
