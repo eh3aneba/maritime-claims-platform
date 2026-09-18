@@ -27,6 +27,8 @@ Phase X may create exactly one local `Document`/Evidence record from one authori
 
 Phase X does **not** perform a remote content reread, folder/list operation, provider write/delete, staged-object write/delete, OCR, parsing, extraction, indexing, AI analysis, Claim assessment mutation, checkpoint advancement, subscription creation, or background synchronization. The new Document remains in `uploaded` processing state and no processing job is enqueued.
 
+That boundary also applies to pre-existing processing APIs after admission. Until a later control-plane phase explicitly grants downstream-processing authority, any attempt to enqueue text extraction or AI/content processing for a Phase-X-admitted Document fails closed. Security-only malware rescans remain permitted.
+
 ## Consequences
 - Remote content authority remains narrower than a provider reread: bytes come from the immutable staged object already cryptographically bound into the generation-3 checkpoint.
 - A newer observation invalidates an older human authorization even when the provider file later appears unchanged; a new authorization is required.
