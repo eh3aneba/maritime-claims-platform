@@ -343,3 +343,21 @@ def test_phase_x_processing_guard_blocks_content_jobs_but_allows_security_rescan
         )
         assert security_job.job_type == ProcessingJobType.MALWARE_RESCAN
         db.rollback()
+
+
+
+def test_phase_x_admitted_external_evidence_is_not_presented_as_retryable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    actor_id, claim_id, document_id = _admit_phase_x_document_for_processing_guard(monkeypatch)
+
+    summary = client.get(
+        f"/api/v1/claims/{claim_id}/documents/{document_id}/processing",
+        headers=_headers(actor_id),
+    )
+    assert summary.status_code == 200, summary.text
+    body = summary.json()
+    assert body["operator_status"] == "uploaded"
+    assert body["can_retry"] is False
+    assert body["retry_recommended"] is False
+    assert body["job"] is None
