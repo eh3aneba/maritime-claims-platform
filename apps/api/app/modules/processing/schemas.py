@@ -35,8 +35,21 @@ class TextExtractionSummary(BaseModel):
     warnings: list | None
 
 
+class OperatorProcessingJobResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    document_id: UUID
+    job_type: ProcessingJobType
+    status: ProcessingJobStatus
+    attempt_count: int
+    max_attempts: int
+    created_at: datetime
+    completed_at: datetime | None
+
+
 class DocumentProcessingSummary(BaseModel):
-    job: ProcessingJobResponse | None
+    job: OperatorProcessingJobResponse | None
     text_extraction: TextExtractionSummary | None
     operator_status: Literal["uploaded", "queued", "running", "completed", "failed"]
     can_retry: bool
