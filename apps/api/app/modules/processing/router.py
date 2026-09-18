@@ -9,7 +9,11 @@ from app.modules.auth.dependencies import CurrentUser
 from app.modules.claims.security import get_claim_for_tenant
 from app.modules.documents.security import get_document_for_tenant
 from app.modules.processing.schemas import DocumentProcessingSummary, ProcessingJobResponse
-from app.modules.processing.service import enqueue_text_extraction, get_processing_summary
+from app.modules.processing.service import (
+    ExternalEvidenceProcessingAuthorizationRequired,
+    enqueue_text_extraction,
+    get_processing_summary,
+)
 
 router = APIRouter(prefix="/claims/{claim_id}/documents/{document_id}/processing", tags=["document-processing"])
 
@@ -53,7 +57,13 @@ def retry_processing(
     )
     if document is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
-    job = enqueue_text_extraction(db, document=document, requested_by_id=current_user.id)
+    try:
+        job = enqueue_text_extraction(db, document=document, requested_by_id=current_user.id)
+    except ExternalEvidenceProcessingAuthorizationRequired as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
     db.commit()
     db.refresh(job)
     return ProcessingJobResponse.model_validate(job)
