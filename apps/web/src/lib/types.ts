@@ -355,6 +355,37 @@ export interface ClaimIntakeApprovalResult {
 }
 
 export type DocumentProcessingStatus = "uploaded" | "processing" | "processed" | "failed";
+export type ProcessingJobStatus = "pending" | "running" | "completed" | "failed";
+export type OperatorProcessingStatus = "uploaded" | "queued" | "running" | "completed" | "failed";
+
+export interface ProcessingJobSummary {
+  id: string;
+  document_id: string;
+  job_type: string;
+  status: ProcessingJobStatus;
+  attempt_count: number;
+  max_attempts: number;
+  last_error: string | null;
+  result: Record<string, unknown> | null;
+  created_at: string;
+  completed_at: string | null;
+}
+
+export interface DocumentProcessingSummary {
+  job: ProcessingJobSummary | null;
+  text_extraction: {
+    extraction_method: string;
+    extractor_version: string;
+    char_count: number;
+    segment_count: number;
+    requires_ocr: boolean;
+    text_hash: string | null;
+    warnings: unknown[] | null;
+  } | null;
+  operator_status: OperatorProcessingStatus;
+  can_retry: boolean;
+  retry_recommended: boolean;
+}
 export type ConfidentialityLevel = "internal" | "confidential" | "restricted";
 export type DocumentMalwareScanStatus =
   | "legacy_unscanned"
