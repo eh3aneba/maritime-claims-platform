@@ -55,6 +55,7 @@ RUN apk add --no-cache \
         zlib \
     && python3.13 --version \
     && pdftotext -v 2>&1 | head -n 1 \
+    && pdftoppm -v 2>&1 | head -n 1 \
     && tesseract --version | head -n 1 \
     && tesseract --list-langs | grep -Fx eng \
     && tesseract --list-langs | grep -Fx fas
