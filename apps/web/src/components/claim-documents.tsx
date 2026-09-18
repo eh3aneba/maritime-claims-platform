@@ -9,10 +9,12 @@ import {
   deleteClaimDocument,
   downloadClaimDocument,
   getCurrentUser,
+  getDocumentProcessingSummary,
   listClaimDocuments,
   purgeQuarantinedUpload,
   queueLegacyEvidenceRescan,
   replaceClaimDocument,
+  retryDocumentProcessing,
   retryQuarantinedUpload,
   runDocumentIntelligence,
   uploadClaimDocument,
@@ -25,6 +27,8 @@ import type {
   ConfidentialityLevel,
   CurrentUser,
   DocumentMalwareScanStatus,
+  DocumentProcessingSummary,
+  OperatorProcessingStatus,
   QuarantinedUpload,
 } from "@/lib/types";
 
@@ -99,6 +103,22 @@ function intelligenceActionKey(documentType: string | null): EvidenceKey {
   return "action.analyzeReport";
 }
 
+const processingStatusKeys: Record<OperatorProcessingStatus, EvidenceKey> = {
+  uploaded: "processing.uploaded",
+  queued: "processing.queued",
+  running: "processing.running",
+  completed: "processing.completed",
+  failed: "processing.failed",
+};
+
+const processingStatusClasses: Record<OperatorProcessingStatus, string> = {
+  uploaded: "text-slate-500",
+  queued: "text-cyan-700",
+  running: "text-indigo-700",
+  completed: "text-emerald-700",
+  failed: "text-red-700",
+};
+
 export function ClaimDocuments({ claimId }: { claimId: string }) {
   const { locale } = useLocale();
   const ev = (key: EvidenceKey, values?: Record<string, string | number>) => evidenceT(locale, key, values);
@@ -106,6 +126,7 @@ export function ClaimDocuments({ claimId }: { claimId: string }) {
   const replacementInputRef = useRef<HTMLInputElement | null>(null);
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [documents, setDocuments] = useState<ClaimDocument[]>([]);
+  const [processingSummaries, setProcessingSummaries] = useState<Record<string, DocumentProcessingSummary>>({});
   const [quarantinedUploads, setQuarantinedUploads] = useState<QuarantinedUpload[]>([]);
   const [documentType, setDocumentType] = useState("");
   const [confidentiality, setConfidentiality] = useState<ConfidentialityLevel>("confidential");
@@ -133,6 +154,18 @@ export function ClaimDocuments({ claimId }: { claimId: string }) {
       const result = await listClaimDocuments(claimId);
       setDocuments(result.items);
       setQuarantinedUploads(result.quarantined_items);
+
+      const summaries = await Promise.all(result.items.map(async (document) => {
+        try {
+          const summary = await getDocumentProcessingSummary(claimId, document.id);
+          return [document.id, summary] as const;
+        } catch {
+          return null;
+        }
+      }));
+      setProcessingSummaries(Object.fromEntries(
+        summaries.filter((item): item is readonly [string, DocumentProcessingSummary] => item !== null),
+      ));
     } catch (e) {
       setError(e instanceof ApiError ? e.detail : ev("loadError"));
     } finally {
@@ -147,6 +180,15 @@ export function ClaimDocuments({ claimId }: { claimId: string }) {
   useEffect(() => {
     getCurrentUser().then(setCurrentUser).catch(() => setCurrentUser(null));
   }, []);
+
+  useEffect(() => {
+    const hasActiveProcessing = Object.values(processingSummaries).some(
+      (summary) => summary.operator_status === "queued" || summary.operator_status === "running",
+    );
+    if (!hasActiveProcessing) return;
+    const timer = window.setTimeout(() => void refresh(), 3000);
+    return () => window.clearTimeout(timer);
+  }, [claimId, processingSummaries]);
 
   async function uploadFiles(files: File[]) {
     const allowed = ["pdf", "jpg", "jpeg", "png", "docx", "xlsx"];
