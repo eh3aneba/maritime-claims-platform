@@ -1,21 +1,34 @@
-FROM python:3.13-alpine AS base
-
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+FROM cgr.dev/chainguard/wolfi-base:latest AS python-builder
 
 WORKDIR /app
 
-# Use Alpine's signed security-updated util-linux/libuuid package rather than maintaining
-# a private repack of upstream source. CVE-2026-78408 is fixed in Alpine libuuid 2.42.3-r1.
-# The minimum-version constraint keeps the build fail-closed if an older repository snapshot
-# is ever selected while allowing later signed security revisions to supersede r1.
-RUN apk add --no-cache --upgrade 'libuuid>=2.42.3-r1' \
-    && apk info --installed 'libuuid>=2.42.3-r1' >/dev/null \
-    && python -c "import _uuid, uuid; value = uuid.uuid4(); assert value.version == 4; print(value)"
+RUN apk add --no-cache \
+        build-base \
+        libuuid \
+        py3.13-pip \
+        python-3.13 \
+        zlib \
+    && python3.13 --version \
+    && pip3.13 --version
 
 COPY requirements.lock .
-RUN pip install --no-cache-dir --require-hashes -r requirements.lock
+RUN pip3.13 install --no-cache-dir --require-hashes --prefix=/install -r requirements.lock
 
+FROM cgr.dev/chainguard/wolfi-base:latest AS base
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PATH="/usr/local/bin:/usr/bin:/bin"
+
+WORKDIR /app
+
+RUN apk add --no-cache \
+        libuuid \
+        python-3.13 \
+        zlib \
+    && python3.13 -c "import _uuid, uuid, zlib; value = uuid.uuid4(); assert value.version == 4; print(value, zlib.ZLIB_VERSION)"
+
+COPY --from=python-builder /install/ /usr/local/
 COPY pyproject.toml alembic.ini ./
 COPY alembic ./alembic
 COPY app ./app
@@ -48,4 +61,4 @@ CMD ["python", "-m", "app.workers.document_worker"]
 
 FROM base AS api
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["python3.13", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
