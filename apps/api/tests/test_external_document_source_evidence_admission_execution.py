@@ -11,10 +11,16 @@ from app.modules.external_document_sources.evidence_admission_execution_models i
     ExternalDocumentSourceEvidenceAdmissionExecution,
     ExternalDocumentSourceEvidenceAdmissionExecutionReceipt,
 )
-from app.modules.processing.models import DocumentProcessingJob, ProcessingJobType
+from app.modules.processing.models import (
+    DocumentProcessingJob,
+    DocumentTextExtraction,
+    ProcessingJobStatus,
+    ProcessingJobType,
+)
 from app.modules.processing.service import (
     ExternalEvidenceProcessingAuthorizationRequired,
     enqueue_processing_job,
+    process_job,
 )
 from tests.db_harness import TestingSessionLocal, client
 from tests.test_external_document_source_discovery import _headers
@@ -343,3 +349,88 @@ def test_phase_x_processing_guard_blocks_content_jobs_but_allows_security_rescan
         )
         assert security_job.job_type == ProcessingJobType.MALWARE_RESCAN
         db.rollback()
+
+
+
+def test_phase_x_worker_revalidates_authority_for_preexisting_content_job(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    actor_id, claim_id, document_id = _admit_phase_x_document_for_processing_guard(monkeypatch)
+
+    with TestingSessionLocal() as db:
+        document = db.get(Document, document_id)
+        assert document is not None
+
+        # Simulate a stale/legacy job that exists despite the enqueue-time guard.
+        job = DocumentProcessingJob(
+            organization_id=document.organization_id,
+            claim_id=claim_id,
+            document_id=document.id,
+            requested_by_id=actor_id,
+            job_type=ProcessingJobType.EXTRACT_TEXT,
+            status=ProcessingJobStatus.RUNNING,
+            max_attempts=3,
+            attempt_count=1,
+        )
+        db.add(job)
+        db.commit()
+        db.refresh(job)
+
+        process_job(db, job=job)
+
+        db.refresh(job)
+        db.refresh(document)
+        assert job.status == ProcessingJobStatus.FAILED
+        assert job.result == {
+            "blocked": True,
+            "reason": "processing_authorization_required",
+        }
+        assert document.processing_status == DocumentProcessingStatus.UPLOADED
+        assert (
+            db.query(DocumentTextExtraction)
+            .filter(DocumentTextExtraction.document_id == document_id)
+            .count()
+            == 0
+        )
+
+
+def test_phase_x_security_rescan_cannot_escalate_into_content_processing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    actor_id, _claim_id, document_id = _admit_phase_x_document_for_processing_guard(monkeypatch)
+
+    with TestingSessionLocal() as db:
+        document = db.get(Document, document_id)
+        assert document is not None
+        assert document.malware_scan_status == DocumentMalwareScanStatus.CLEAN
+
+        security_job = enqueue_processing_job(
+            db,
+            document=document,
+            requested_by_id=actor_id,
+            job_type=ProcessingJobType.MALWARE_RESCAN,
+        )
+        db.commit()
+        db.refresh(security_job)
+
+        process_job(db, job=security_job)
+
+        db.refresh(security_job)
+        db.refresh(document)
+        assert security_job.status == ProcessingJobStatus.COMPLETED
+        assert document.processing_status == DocumentProcessingStatus.UPLOADED
+        assert (
+            db.query(DocumentTextExtraction)
+            .filter(DocumentTextExtraction.document_id == document_id)
+            .count()
+            == 0
+        )
+        assert (
+            db.query(DocumentProcessingJob)
+            .filter(
+                DocumentProcessingJob.document_id == document_id,
+                DocumentProcessingJob.job_type != ProcessingJobType.MALWARE_RESCAN,
+            )
+            .count()
+            == 0
+        )
