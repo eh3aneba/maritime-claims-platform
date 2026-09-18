@@ -1,16 +1,14 @@
-from datetime import UTC, datetime, timedelta
 from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.core.config import get_settings
 from app.db.session import get_db
 from app.modules.auth.dependencies import CurrentUser
 from app.modules.claims.security import get_claim_for_tenant
 from app.modules.documents.security import get_document_for_tenant
-from app.modules.processing.lease_recovery import recover_stale_processing_jobs
+from app.modules.processing.lease_recovery import (\n    is_processing_job_stale,\n    recover_stale_processing_jobs,\n)
 from app.modules.processing.models import ProcessingJobStatus, ProcessingJobType
 from app.modules.processing.schemas import (
     DocumentProcessingSummary,
@@ -20,9 +18,6 @@ from app.modules.processing.schemas import (
 from app.modules.processing.service import enqueue_text_extraction, get_processing_summary
 
 router = APIRouter(prefix="/claims/{claim_id}/documents/{document_id}/processing", tags=["document-processing"])
-settings = get_settings()
-
-
 def _operator_state(document, job):
     if job is None:
         if document.processing_status.value == "processed":
@@ -34,13 +29,8 @@ def _operator_state(document, job):
     if job.status == ProcessingJobStatus.PENDING:
         return "queued", False, False
     if job.status == ProcessingJobStatus.RUNNING:
-        locked_at = job.locked_at
-        if locked_at is not None:
-            if locked_at.tzinfo is None:
-                locked_at = locked_at.replace(tzinfo=UTC)
-            stale = locked_at < datetime.now(UTC) - timedelta(seconds=settings.processing_stale_after_seconds)
-            if stale:
-                return "running", True, True
+        if is_processing_job_stale(job):
+            return "running", True, True
         return "running", False, False
     if job.status == ProcessingJobStatus.COMPLETED:
         return "completed", False, False
