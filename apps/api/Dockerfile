@@ -57,8 +57,12 @@ RUN apk add --no-cache \
     && pdftotext -v 2>&1 | head -n 1 \
     && pdftoppm -v 2>&1 | head -n 1 \
     && tesseract --version | head -n 1 \
-    && tesseract --list-langs | grep -Fx eng \
-    && tesseract --list-langs | grep -Fx fas
+    && test -f /usr/share/tessdata/eng.traineddata \
+    && test -f /usr/share/tessdata/fas.traineddata \
+    && tesseract --list-langs | tee /tmp/tesseract-langs.txt \
+    && grep -F eng /tmp/tesseract-langs.txt \
+    && grep -F fas /tmp/tesseract-langs.txt \
+    && rm -f /tmp/tesseract-langs.txt
 
 COPY --from=python-builder /opt/venv /opt/venv
 COPY pyproject.toml alembic.ini ./
