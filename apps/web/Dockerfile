@@ -11,14 +11,11 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build
 
-FROM node:22-alpine AS runner
+FROM cgr.dev/chainguard/wolfi-base:latest AS runner
 WORKDIR /app
 ENV NODE_ENV=production
-RUN apk upgrade --no-cache libssl3 libcrypto3 \
-    && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
-    && rm -f /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack \
-        /usr/local/bin/pnpm /usr/local/bin/pnpx \
-        /usr/local/bin/yarn /usr/local/bin/yarnpkg
+RUN apk add --no-cache nodejs-22 zlib \
+    && node --version
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/public ./public
