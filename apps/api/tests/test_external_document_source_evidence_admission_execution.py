@@ -497,5 +497,7 @@ def test_phase_x_retry_rejects_before_mutating_stale_processing_lease(
         assert job.status == ProcessingJobStatus.RUNNING
         assert job.attempt_count == 1
         assert job.locked_by == "legacy-worker"
-        assert job.locked_at == stale_locked_at
+        assert job.locked_at is not None
+        locked_at = job.locked_at if job.locked_at.tzinfo is not None else job.locked_at.replace(tzinfo=UTC)
+        assert locked_at == stale_locked_at
         assert document.processing_status == DocumentProcessingStatus.UPLOADED
