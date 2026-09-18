@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.modules.auth.dependencies import CurrentUser, require_roles
+from app.modules.auth.dependencies import CurrentUser, require_roles_with_mfa
 from app.modules.claims.security import get_claim_for_tenant
 from app.modules.settlements.schemas import (
     DispositionRecord, PaidRecord, PaymentCreate, PaymentResponse, ReviewNote,
@@ -19,7 +19,10 @@ from app.modules.settlements.service import (
 from app.modules.users.models import User, UserRole
 
 router = APIRouter(prefix="/claims/{claim_id}/settlement-ledger", tags=["settlement-ledger"])
-Manager = Annotated[User, Depends(require_roles(UserRole.ADMIN, UserRole.CLAIMS_MANAGER))]
+SensitiveManager = Annotated[
+    User,
+    Depends(require_roles_with_mfa(UserRole.ADMIN, UserRole.CLAIMS_MANAGER)),
+]
 
 
 def _claim(db: Session, claim_id: UUID, organization_id: UUID):
@@ -53,7 +56,7 @@ def settlement_submit(claim_id: UUID, item_id: UUID, current_user: CurrentUser, 
 
 
 @router.post("/settlements/{item_id}/{action}", response_model=SettlementResponse)
-def settlement_review(claim_id: UUID, item_id: UUID, action: str, payload: ReviewNote, manager: Manager, db: Annotated[Session, Depends(get_db)]):
+def settlement_review(claim_id: UUID, item_id: UUID, action: str, payload: ReviewNote, manager: SensitiveManager, db: Annotated[Session, Depends(get_db)]):
     if action not in {"approve", "reject"}:
         raise HTTPException(404, "Review action not found")
     claim = _claim(db, claim_id, manager.organization_id)
@@ -61,7 +64,7 @@ def settlement_review(claim_id: UUID, item_id: UUID, action: str, payload: Revie
 
 
 @router.post("/settlements/{item_id}/disposition/record", response_model=SettlementResponse)
-def settlement_disposition(claim_id: UUID, item_id: UUID, payload: DispositionRecord, manager: Manager, db: Annotated[Session, Depends(get_db)]):
+def settlement_disposition(claim_id: UUID, item_id: UUID, payload: DispositionRecord, manager: SensitiveManager, db: Annotated[Session, Depends(get_db)]):
     claim = _claim(db, claim_id, manager.organization_id)
     return record_disposition(db, get_settlement(db, claim, item_id), manager, payload.disposition, payload.note)
 
@@ -78,19 +81,19 @@ def payment_submit(claim_id: UUID, item_id: UUID, current_user: CurrentUser, db:
 
 
 @router.post("/payments/{item_id}/approve", response_model=PaymentResponse)
-def payment_approve(claim_id: UUID, item_id: UUID, payload: ReviewNote, manager: Manager, db: Annotated[Session, Depends(get_db)]):
+def payment_approve(claim_id: UUID, item_id: UUID, payload: ReviewNote, manager: SensitiveManager, db: Annotated[Session, Depends(get_db)]):
     claim = _claim(db, claim_id, manager.organization_id)
     return approve_payment(db, get_payment(db, claim, item_id), manager, payload.note)
 
 
 @router.post("/payments/{item_id}/reject", response_model=PaymentResponse)
-def payment_reject(claim_id: UUID, item_id: UUID, payload: ReviewNote, manager: Manager, db: Annotated[Session, Depends(get_db)]):
+def payment_reject(claim_id: UUID, item_id: UUID, payload: ReviewNote, manager: SensitiveManager, db: Annotated[Session, Depends(get_db)]):
     claim = _claim(db, claim_id, manager.organization_id)
     return reject_payment(db, get_payment(db, claim, item_id), manager, payload.note)
 
 
 @router.post("/payments/{item_id}/record-paid", response_model=PaymentResponse)
-def payment_paid(claim_id: UUID, item_id: UUID, payload: PaidRecord, manager: Manager, db: Annotated[Session, Depends(get_db)]):
+def payment_paid(claim_id: UUID, item_id: UUID, payload: PaidRecord, manager: SensitiveManager, db: Annotated[Session, Depends(get_db)]):
     if not payload.confirm_paid_externally:
         raise HTTPException(422, "Explicit confirmation of external payment is required")
     claim = _claim(db, claim_id, manager.organization_id)
