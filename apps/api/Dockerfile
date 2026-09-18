@@ -42,7 +42,7 @@ FROM cgr.dev/chainguard/wolfi-base@sha256:1d95114038f76513a9ace6fca107d5582b08c6
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PATH="/opt/venv/bin:/usr/bin:/bin" \
-    TESSDATA_PREFIX="/usr/share"
+    TESSDATA_PREFIX="/usr/share/tessdata"
 
 WORKDIR /app
 
@@ -60,8 +60,8 @@ RUN apk add --no-cache \
     && test -f /usr/share/tessdata/eng.traineddata \
     && test -f /usr/share/tessdata/fas.traineddata \
     && tesseract --list-langs | tee /tmp/tesseract-langs.txt \
-    && grep -F eng /tmp/tesseract-langs.txt \
-    && grep -F fas /tmp/tesseract-langs.txt \
+    && grep -Fx eng /tmp/tesseract-langs.txt \
+    && grep -Fx fas /tmp/tesseract-langs.txt \
     && rm -f /tmp/tesseract-langs.txt
 
 COPY --from=python-builder /opt/venv /opt/venv
