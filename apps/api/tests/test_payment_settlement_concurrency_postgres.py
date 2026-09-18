@@ -276,9 +276,9 @@ def test_concurrent_rejected_resubmits_allow_only_one_to_reenter_capacity() -> N
                     PaymentAuthorization.settlement_id == ids["settlement_id"]
                 )
             ).all()
-            assert sorted(row.status for row in rows) == [
-                PaymentStatus.REJECTED,
-                PaymentStatus.UNDER_REVIEW,
+            assert sorted(row.status.value for row in rows) == [
+                PaymentStatus.REJECTED.value,
+                PaymentStatus.UNDER_REVIEW.value,
             ]
             assert _active_total(db, ids["settlement_id"]) == Decimal("700.00")
     finally:
