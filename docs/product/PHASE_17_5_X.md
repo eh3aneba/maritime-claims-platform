@@ -37,3 +37,7 @@ If canonical local storage promotion succeeds but the database commit fails, the
 ## Operator note
 
 Phase-W authorization and Phase-X admission are distinct human-control events. If a newer generation-3 observation exists, do not bypass the stale-authorization failure: review the new remote version and create a new authorization before admitting it.
+
+## Downstream processing boundary
+
+The admitted Document remains in `uploaded` state, but that state is not processing authority. Existing Retry/Intelligence entrypoints must fail closed for Phase-X-admitted Evidence until a later control-plane phase explicitly grants text-extraction/AI/content-processing authority. Security-only malware rescans remain permitted.
