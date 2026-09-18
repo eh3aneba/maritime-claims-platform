@@ -135,3 +135,65 @@ def test_retry_endpoint_recovers_expired_running_extraction_instead_of_echoing_i
         assert job.locked_by is None
         assert job.locked_at is None
         assert job.attempt_count == 1
+
+
+
+def test_processing_summary_marks_stale_running_job_as_recoverable() -> None:
+    claim_id, document_id, _job_id = _seed_running_job(attempt_count=1, max_attempts=3)
+
+    client.cookies.clear()
+    login("alpha", "alpha-handler@example.com")
+    response = client.get(
+        f"/api/v1/claims/{claim_id}/documents/{document_id}/processing"
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["operator_status"] == "running"
+    assert payload["can_retry"] is True
+    assert payload["retry_recommended"] is True
+    assert payload["job"]["attempt_count"] == 1
+    assert payload["job"]["max_attempts"] == 3
+    assert "locked_by" not in payload["job"]
+    assert "locked_at" not in payload["job"]
+
+
+def test_processing_summary_changes_to_queued_after_stale_retry_recovery() -> None:
+    claim_id, document_id, job_id = _seed_running_job(attempt_count=1, max_attempts=3)
+
+    client.cookies.clear()
+    login("alpha", "alpha-handler@example.com")
+    retry = client.post(
+        f"/api/v1/claims/{claim_id}/documents/{document_id}/processing/retry"
+    )
+    assert retry.status_code == 202, retry.text
+    assert retry.json()["id"] == str(job_id)
+    assert retry.json()["status"] == "pending"
+
+    summary = client.get(
+        f"/api/v1/claims/{claim_id}/documents/{document_id}/processing"
+    )
+    assert summary.status_code == 200, summary.text
+    payload = summary.json()
+    assert payload["operator_status"] == "queued"
+    assert payload["can_retry"] is False
+    assert payload["retry_recommended"] is False
+
+
+def test_processing_summary_marks_terminal_failure_retryable() -> None:
+    claim_id, document_id, _job_id = _seed_running_job(attempt_count=3, max_attempts=3)
+
+    with TestingSessionLocal() as db:
+        assert recover_stale_processing_jobs(db, document_id=document_id) == 1
+
+    client.cookies.clear()
+    login("alpha", "alpha-handler@example.com")
+    summary = client.get(
+        f"/api/v1/claims/{claim_id}/documents/{document_id}/processing"
+    )
+    assert summary.status_code == 200, summary.text
+    payload = summary.json()
+    assert payload["operator_status"] == "failed"
+    assert payload["can_retry"] is True
+    assert payload["retry_recommended"] is True
+    assert payload["job"]["attempt_count"] == 3
+    assert payload["job"]["max_attempts"] == 3
