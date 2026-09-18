@@ -1,4 +1,5 @@
 import json
+from datetime import UTC, datetime
 from uuid import UUID
 
 import pytest
@@ -371,6 +372,7 @@ def test_phase_x_worker_revalidates_authority_for_preexisting_content_job(
             status=ProcessingJobStatus.RUNNING,
             max_attempts=3,
             attempt_count=1,
+            available_at=datetime.now(UTC),
         )
         db.add(job)
         db.commit()
