@@ -358,21 +358,24 @@ export type DocumentProcessingStatus = "uploaded" | "processing" | "processed" |
 export type ProcessingJobStatus = "pending" | "running" | "completed" | "failed";
 export type OperatorProcessingStatus = "uploaded" | "queued" | "running" | "completed" | "failed";
 
-export interface ProcessingJobSummary {
+export interface OperatorProcessingJobSummary {
   id: string;
   document_id: string;
   job_type: string;
   status: ProcessingJobStatus;
   attempt_count: number;
   max_attempts: number;
-  last_error: string | null;
-  result: Record<string, unknown> | null;
   created_at: string;
   completed_at: string | null;
 }
 
+export interface ProcessingJobSummary extends OperatorProcessingJobSummary {
+  last_error: string | null;
+  result: Record<string, unknown> | null;
+}
+
 export interface DocumentProcessingSummary {
-  job: ProcessingJobSummary | null;
+  job: OperatorProcessingJobSummary | null;
   text_extraction: {
     extraction_method: string;
     extractor_version: string;
