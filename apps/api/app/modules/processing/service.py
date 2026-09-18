@@ -231,8 +231,39 @@ def claim_next_job(
     return job
 
 
+def _block_job_for_missing_processing_authority(
+    db: Session,
+    *,
+    job: DocumentProcessingJob,
+    document: Document | None,
+) -> None:
+    job.status = ProcessingJobStatus.FAILED
+    job.completed_at = datetime.now(UTC)
+    job.locked_at = None
+    job.locked_by = None
+    job.last_error = "Downstream processing authority is not available for this Evidence."
+    job.result = {
+        "blocked": True,
+        "reason": "processing_authorization_required",
+    }
+    if document is not None and job.job_type == ProcessingJobType.EXTRACT_TEXT:
+        document.processing_status = DocumentProcessingStatus.UPLOADED
+    db.commit()
+
+
 def process_job(db: Session, *, job: DocumentProcessingJob) -> None:
     document = db.get(Document, job.document_id)
+    if (
+        job.job_type != ProcessingJobType.MALWARE_RESCAN
+        and document is not None
+        and external_evidence_requires_processing_release(db, document=document)
+    ):
+        _block_job_for_missing_processing_authority(
+            db,
+            job=job,
+            document=document,
+        )
+        return
     if (
         job.job_type != ProcessingJobType.MALWARE_RESCAN
         and document is not None
