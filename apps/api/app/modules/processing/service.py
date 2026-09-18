@@ -28,6 +28,42 @@ from app.modules.processing.models import (
 settings = get_settings()
 
 
+class ExternalEvidenceProcessingAuthorizationRequired(RuntimeError):
+    """Raised when admitted external Evidence has no downstream-processing authority."""
+
+
+def _ensure_document_processing_authority(
+    db: Session,
+    *,
+    document: Document,
+    job_type: ProcessingJobType,
+) -> None:
+    # Phase 17.5-X admits one governed external item as Evidence but deliberately
+    # grants no extraction/AI authority. Security-only malware rescans remain
+    # available. A later control-plane phase must explicitly replace this
+    # fail-closed rule when downstream processing authority is introduced.
+    if job_type == ProcessingJobType.MALWARE_RESCAN:
+        return
+
+    from app.modules.external_document_sources.evidence_admission_execution_models import (
+        ExternalDocumentSourceEvidenceAdmissionExecution,
+    )
+
+    admitted_execution_id = db.scalar(
+        select(ExternalDocumentSourceEvidenceAdmissionExecution.id)
+        .where(
+            ExternalDocumentSourceEvidenceAdmissionExecution.organization_id
+            == document.organization_id,
+            ExternalDocumentSourceEvidenceAdmissionExecution.document_id == document.id,
+        )
+        .limit(1)
+    )
+    if admitted_execution_id is not None:
+        raise ExternalEvidenceProcessingAuthorizationRequired(
+            "External Evidence was admitted without downstream processing authority"
+        )
+
+
 def _storage() -> LocalDocumentStorage:
     if settings.storage_backend != "local":
         raise RuntimeError(f"Unsupported storage backend: {settings.storage_backend}")
@@ -85,6 +121,11 @@ def enqueue_processing_job(
     requested_by_id: UUID | None,
     job_type: ProcessingJobType,
 ) -> DocumentProcessingJob:
+    _ensure_document_processing_authority(
+        db,
+        document=document,
+        job_type=job_type,
+    )
     existing = db.scalar(
         select(DocumentProcessingJob).where(
             DocumentProcessingJob.document_id == document.id,
