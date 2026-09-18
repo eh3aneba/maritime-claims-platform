@@ -27,9 +27,35 @@ from app.modules.intelligence.schemas import (
 )
 from app.modules.intelligence.service import get_engine_log_event_candidates, get_latest_ai_result
 from app.modules.processing.models import DocumentTextExtraction, ProcessingJobType
-from app.modules.processing.service import enqueue_processing_job
+from app.modules.processing.service import (
+    ExternalEvidenceProcessingAuthorizationRequired,
+    enqueue_processing_job,
+)
 
 settings = get_settings()
+
+
+def _enqueue_authorized_processing_job(
+    db: Session,
+    *,
+    document: Document,
+    requested_by_id: UUID,
+    job_type: ProcessingJobType,
+):
+    try:
+        return enqueue_processing_job(
+            db,
+            document=document,
+            requested_by_id=requested_by_id,
+            job_type=job_type,
+        )
+    except ExternalEvidenceProcessingAuthorizationRequired as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+
+
 router = APIRouter(
     prefix="/claims/{claim_id}/documents/{document_id}/intelligence",
     tags=["document-intelligence"],
@@ -94,8 +120,12 @@ def _enqueue_primary_intelligence(
             db, organization_id=current_user.organization_id, document=document,
             expected_document_type=expected_document_type,
             input_char_count=text_extraction.char_count, requested_by_id=current_user.id)
-    job = enqueue_processing_job(
-        db, document=document, requested_by_id=current_user.id, job_type=job_type)
+    job = _enqueue_authorized_processing_job(
+        db,
+        document=document,
+        requested_by_id=current_user.id,
+        job_type=job_type,
+    )
     if provider.name == "openai":
         db.flush()
         if settings.app_env.lower().strip() == "production":
@@ -198,8 +228,12 @@ def _enqueue_specialized_intelligence(
             expected_document_type=expected_document_type,
             input_char_count=text_extraction.char_count,
             requested_by_id=current_user.id)
-    job = enqueue_processing_job(
-        db, document=document, requested_by_id=current_user.id, job_type=job_type)
+    job = _enqueue_authorized_processing_job(
+        db,
+        document=document,
+        requested_by_id=current_user.id,
+        job_type=job_type,
+    )
     db.commit(); db.refresh(job)
     return {"job_id": str(job.id), "status": job.status.value}
 
