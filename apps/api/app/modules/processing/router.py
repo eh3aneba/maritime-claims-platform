@@ -12,7 +12,11 @@ from app.modules.claims.security import get_claim_for_tenant
 from app.modules.documents.security import get_document_for_tenant
 from app.modules.processing.lease_recovery import recover_stale_processing_jobs
 from app.modules.processing.models import ProcessingJobStatus, ProcessingJobType
-from app.modules.processing.schemas import (\n    DocumentProcessingSummary,\n    OperatorProcessingJobResponse,\n    ProcessingJobResponse,\n)
+from app.modules.processing.schemas import (
+    DocumentProcessingSummary,
+    OperatorProcessingJobResponse,
+    ProcessingJobResponse,
+)
 from app.modules.processing.service import enqueue_text_extraction, get_processing_summary
 
 router = APIRouter(prefix="/claims/{claim_id}/documents/{document_id}/processing", tags=["document-processing"])
