@@ -46,6 +46,7 @@ class Settings(BaseSettings):
     ocr_max_pages: int = 20
     ocr_timeout_seconds: float = 120.0
     ai_provider: str = "disabled"
+    ai_production_control_plane_enabled: bool = False
     ai_model: str = ""
     openai_api_key: str = ""
     ai_max_input_chars: int = 60000
