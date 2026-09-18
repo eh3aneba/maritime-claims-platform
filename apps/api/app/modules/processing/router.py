@@ -101,6 +101,12 @@ def retry_processing(
     if document is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
 
+    if external_evidence_requires_processing_release(db, document=document):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="External Evidence was admitted without downstream processing authority",
+        )
+
     # Retry is also an operator recovery point. A genuinely active lease remains
     # untouched, while an expired RUNNING extraction is returned to the bounded
     # attempt queue (or terminally failed when its budget is exhausted).
