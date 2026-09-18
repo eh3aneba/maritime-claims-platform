@@ -1,4 +1,4 @@
-import type { AIReviewDetail, AIReviewGroupQueueResponse, AIReviewQueueResponse, AIReviewResult, AISourcePreview, Claim, ClaimDocument, ClaimDocumentRequirement, ClaimFactListResponse, ClaimListResponse, CurrentUser, DocumentListResponse, EngineLogEventsResponse, ClaimChronologyResponse, ClaimRuleSummary, ClaimTaskListResponse, DocumentRequestResult, Vessel, VesselListResponse, TechnicalReviewResponse, FinancialReviewResponse, CostReviewStatus, LegacyRescanResponse, QuarantineRetryResponse, ClaimIntakeApprovalResult, ClaimIntakeDraft } from "./types";
+import type { AIReviewDetail, AIReviewGroupQueueResponse, AIReviewQueueResponse, AIReviewResult, AISourcePreview, Claim, ClaimDocument, ClaimDocumentRequirement, ClaimFactListResponse, ClaimListResponse, CurrentUser, DocumentListResponse, EngineLogEventsResponse, ClaimChronologyResponse, ClaimRuleSummary, ClaimTaskListResponse, DocumentRequestResult, Vessel, VesselListResponse, TechnicalReviewResponse, FinancialReviewResponse, CostReviewStatus, LegacyRescanResponse, QuarantineRetryResponse, ClaimIntakeApprovalResult, ClaimIntakeDraft, DocumentProcessingSummary, ProcessingJobSummary } from "./types";
 import type { EvidenceMatrixResponse } from "./types";
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api/v1";
@@ -174,6 +174,19 @@ export function createVessel(payload: {
 }
 export function listClaimDocuments(claimId: string) {
   return apiFetch<DocumentListResponse>(`/claims/${claimId}/documents`);
+}
+
+export function getDocumentProcessingSummary(claimId: string, documentId: string) {
+  return apiFetch<DocumentProcessingSummary>(
+    `/claims/${claimId}/documents/${documentId}/processing`,
+  );
+}
+
+export function retryDocumentProcessing(claimId: string, documentId: string) {
+  return apiFetch<ProcessingJobSummary>(
+    `/claims/${claimId}/documents/${documentId}/processing/retry`,
+    { method: "POST" },
+  );
 }
 
 export function deleteClaimDocument(claimId: string, documentId: string) {

@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.ai.gateway.registry import get_ai_provider
 from app.core.config import get_settings
-from app.modules.ai_governance.service import require_external_ai_runtime_authorization
+from app.modules.ai_runtime import require_external_ai_runtime_authorization
 from app.modules.audit.service import write_audit_log
 from app.modules.documents.models import (
     Document,
@@ -26,6 +26,47 @@ from app.modules.processing.models import (
 )
 
 settings = get_settings()
+
+
+class ExternalEvidenceProcessingAuthorizationRequired(RuntimeError):
+    """Raised when admitted external Evidence has no downstream-processing authority."""
+
+
+def external_evidence_requires_processing_release(
+    db: Session,
+    *,
+    document: Document,
+) -> bool:
+    from app.modules.external_document_sources.evidence_admission_execution_models import (
+        ExternalDocumentSourceEvidenceAdmissionExecution,
+    )
+
+    return (
+        db.scalar(
+            select(ExternalDocumentSourceEvidenceAdmissionExecution.id)
+            .where(
+                ExternalDocumentSourceEvidenceAdmissionExecution.organization_id
+                == document.organization_id,
+                ExternalDocumentSourceEvidenceAdmissionExecution.document_id == document.id,
+            )
+            .limit(1)
+        )
+        is not None
+    )
+
+
+def _ensure_document_processing_authority(
+    db: Session,
+    *,
+    document: Document,
+    job_type: ProcessingJobType,
+) -> None:
+    if job_type == ProcessingJobType.MALWARE_RESCAN:
+        return
+    if external_evidence_requires_processing_release(db, document=document):
+        raise ExternalEvidenceProcessingAuthorizationRequired(
+            "External Evidence was admitted without downstream processing authority"
+        )
 
 
 def _storage() -> LocalDocumentStorage:
@@ -85,6 +126,11 @@ def enqueue_processing_job(
     requested_by_id: UUID | None,
     job_type: ProcessingJobType,
 ) -> DocumentProcessingJob:
+    _ensure_document_processing_authority(
+        db,
+        document=document,
+        job_type=job_type,
+    )
     existing = db.scalar(
         select(DocumentProcessingJob).where(
             DocumentProcessingJob.document_id == document.id,
@@ -185,8 +231,39 @@ def claim_next_job(
     return job
 
 
+def _block_job_for_missing_processing_authority(
+    db: Session,
+    *,
+    job: DocumentProcessingJob,
+    document: Document | None,
+) -> None:
+    job.status = ProcessingJobStatus.FAILED
+    job.completed_at = datetime.now(UTC)
+    job.locked_at = None
+    job.locked_by = None
+    job.last_error = "Downstream processing authority is not available for this Evidence."
+    job.result = {
+        "blocked": True,
+        "reason": "processing_authorization_required",
+    }
+    if document is not None and job.job_type == ProcessingJobType.EXTRACT_TEXT:
+        document.processing_status = DocumentProcessingStatus.UPLOADED
+    db.commit()
+
+
 def process_job(db: Session, *, job: DocumentProcessingJob) -> None:
     document = db.get(Document, job.document_id)
+    if (
+        job.job_type != ProcessingJobType.MALWARE_RESCAN
+        and document is not None
+        and external_evidence_requires_processing_release(db, document=document)
+    ):
+        _block_job_for_missing_processing_authority(
+            db,
+            job=job,
+            document=document,
+        )
+        return
     if (
         job.job_type != ProcessingJobType.MALWARE_RESCAN
         and document is not None

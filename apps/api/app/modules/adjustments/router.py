@@ -25,7 +25,7 @@ from app.modules.adjustments.service import (
     update_line,
     update_statement,
 )
-from app.modules.auth.dependencies import CurrentUser, require_roles
+from app.modules.auth.dependencies import CurrentUser, require_roles, require_roles_with_mfa
 from app.modules.claims.security import get_claim_for_tenant
 from app.modules.users.models import User, UserRole
 
@@ -33,6 +33,10 @@ router = APIRouter(prefix="/claims/{claim_id}/adjustments", tags=["adjustments"]
 AdjustmentEditor = Annotated[
     User,
     Depends(require_roles(UserRole.ADMIN, UserRole.CLAIMS_MANAGER, UserRole.CLAIMS_HANDLER)),
+]
+SensitiveManager = Annotated[
+    User,
+    Depends(require_roles_with_mfa(UserRole.ADMIN, UserRole.CLAIMS_MANAGER)),
 ]
 
 
@@ -127,7 +131,7 @@ def adjustment_approve(
     claim_id: UUID,
     statement_id: UUID,
     payload: AdjustmentReview,
-    manager: Annotated[User, Depends(require_roles(UserRole.ADMIN, UserRole.CLAIMS_MANAGER))],
+    manager: SensitiveManager,
     db: Annotated[Session, Depends(get_db)],
 ) -> AdjustmentStatementResponse:
     claim = _claim(db, claim_id, manager.organization_id)
@@ -141,7 +145,7 @@ def adjustment_reject(
     claim_id: UUID,
     statement_id: UUID,
     payload: AdjustmentReview,
-    manager: Annotated[User, Depends(require_roles(UserRole.ADMIN, UserRole.CLAIMS_MANAGER))],
+    manager: SensitiveManager,
     db: Annotated[Session, Depends(get_db)],
 ) -> AdjustmentStatementResponse:
     claim = _claim(db, claim_id, manager.organization_id)

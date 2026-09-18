@@ -9,10 +9,12 @@ import {
   deleteClaimDocument,
   downloadClaimDocument,
   getCurrentUser,
+  getDocumentProcessingSummary,
   listClaimDocuments,
   purgeQuarantinedUpload,
   queueLegacyEvidenceRescan,
   replaceClaimDocument,
+  retryDocumentProcessing,
   retryQuarantinedUpload,
   runDocumentIntelligence,
   uploadClaimDocument,
@@ -25,6 +27,8 @@ import type {
   ConfidentialityLevel,
   CurrentUser,
   DocumentMalwareScanStatus,
+  DocumentProcessingSummary,
+  OperatorProcessingStatus,
   QuarantinedUpload,
 } from "@/lib/types";
 
@@ -99,6 +103,22 @@ function intelligenceActionKey(documentType: string | null): EvidenceKey {
   return "action.analyzeReport";
 }
 
+const processingStatusKeys: Record<OperatorProcessingStatus, EvidenceKey> = {
+  uploaded: "processing.uploaded",
+  queued: "processing.queued",
+  running: "processing.running",
+  completed: "processing.completed",
+  failed: "processing.failed",
+};
+
+const processingStatusClasses: Record<OperatorProcessingStatus, string> = {
+  uploaded: "text-slate-500",
+  queued: "text-cyan-700",
+  running: "text-indigo-700",
+  completed: "text-emerald-700",
+  failed: "text-red-700",
+};
+
 export function ClaimDocuments({ claimId }: { claimId: string }) {
   const { locale } = useLocale();
   const ev = (key: EvidenceKey, values?: Record<string, string | number>) => evidenceT(locale, key, values);
@@ -106,6 +126,7 @@ export function ClaimDocuments({ claimId }: { claimId: string }) {
   const replacementInputRef = useRef<HTMLInputElement | null>(null);
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [documents, setDocuments] = useState<ClaimDocument[]>([]);
+  const [processingSummaries, setProcessingSummaries] = useState<Record<string, DocumentProcessingSummary>>({});
   const [quarantinedUploads, setQuarantinedUploads] = useState<QuarantinedUpload[]>([]);
   const [documentType, setDocumentType] = useState("");
   const [confidentiality, setConfidentiality] = useState<ConfidentialityLevel>("confidential");
@@ -133,6 +154,18 @@ export function ClaimDocuments({ claimId }: { claimId: string }) {
       const result = await listClaimDocuments(claimId);
       setDocuments(result.items);
       setQuarantinedUploads(result.quarantined_items);
+
+      const summaries = await Promise.all(result.items.filter((document) => document.is_current).map(async (document) => {
+        try {
+          const summary = await getDocumentProcessingSummary(claimId, document.id);
+          return [document.id, summary] as const;
+        } catch {
+          return null;
+        }
+      }));
+      setProcessingSummaries(Object.fromEntries(
+        summaries.filter((item): item is readonly [string, DocumentProcessingSummary] => item !== null),
+      ));
     } catch (e) {
       setError(e instanceof ApiError ? e.detail : ev("loadError"));
     } finally {
@@ -147,6 +180,15 @@ export function ClaimDocuments({ claimId }: { claimId: string }) {
   useEffect(() => {
     getCurrentUser().then(setCurrentUser).catch(() => setCurrentUser(null));
   }, []);
+
+  useEffect(() => {
+    const hasActiveProcessing = Object.values(processingSummaries).some(
+      (summary) => summary.operator_status === "queued" || summary.operator_status === "running",
+    );
+    if (!hasActiveProcessing) return;
+    const timer = window.setTimeout(() => void refresh(), 3000);
+    return () => window.clearTimeout(timer);
+  }, [claimId, processingSummaries]);
 
   async function uploadFiles(files: File[]) {
     const allowed = ["pdf", "jpg", "jpeg", "png", "docx", "xlsx"];
@@ -328,6 +370,23 @@ export function ClaimDocuments({ claimId }: { claimId: string }) {
     }
   }
 
+  async function retryProcessing(document: ClaimDocument) {
+    const stateKey = `processing:${document.id}`;
+    if (operationState[stateKey]) return;
+    setError("");
+    setOperationMessage("");
+    setOperationState((current) => ({ ...current, [stateKey]: ev("processing.retrying") }));
+    try {
+      await retryDocumentProcessing(claimId, document.id);
+      setOperationMessage(ev("processing.retryQueued"));
+      await refresh();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.detail : ev("processing.retryFailed"));
+    } finally {
+      setOperationState((current) => ({ ...current, [stateKey]: "" }));
+    }
+  }
+
   async function analyzeDocument(document: ClaimDocument) {
     const typeMap: Record<string, DocumentIntelligenceType> = {
       chief_engineer_report: "ce-report",
@@ -384,7 +443,7 @@ export function ClaimDocuments({ claimId }: { claimId: string }) {
       {error ? <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div> : null}
 
       <div className="mt-6 overflow-hidden rounded-xl border border-slate-200">
-        {loading ? <div className="p-6 text-sm text-slate-500">{ev("loading")}</div> : documents.length === 0 ? <div className="p-8 text-center"><p className="text-sm font-medium text-slate-700">{ev("empty.title")}</p><p className="mt-1 text-xs text-slate-500">{ev("empty.help")}</p></div> : <div className="overflow-x-auto"><table className="data-table min-w-[840px]"><thead><tr><th>{ev("table.document")}</th><th>{ev("table.type")}</th><th>{ev("table.size")}</th><th>{ev("table.integrity")}</th><th>{ev("table.access")}</th><th className="text-end">{ev("table.actions")}</th></tr></thead><tbody>{documents.map((document) => { const scan = malwareStatus(document.malware_scan_status, locale); const available = evidenceAvailable(document); return <tr key={document.id} className={document.is_current ? "" : "bg-slate-50/70"}><td><div className="flex flex-wrap items-center gap-2"><p className="font-medium text-slate-800" dir="ltr">{document.original_filename}</p><span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${document.is_current ? "bg-emerald-100 text-emerald-800" : "bg-slate-200 text-slate-600"}`}><span dir="ltr">v{document.version_number}</span> · {document.is_current ? ev("version.current") : ev("version.superseded")}</span></div><p className="mt-1 text-xs text-slate-400">{ev("uploadedAt", { date: "" }).trim()} <span dir="ltr">{formatDateTime(document.created_at, locale)}</span></p>{document.replacement_reason ? <p className="mt-1 max-w-md text-xs text-slate-500" dir="auto">{ev("replacementReason", { reason: document.replacement_reason })}</p> : null}</td><td>{readableType(document.document_type, locale)}</td><td dir="ltr">{formatBytes(document.file_size_bytes)}</td><td><span title={document.file_hash} className="font-mono text-xs text-slate-500" dir="ltr">SHA-256 · {document.file_hash.slice(0, 10)}…</span><p className={`mt-1 text-[11px] font-semibold ${scan.className}`}>{scan.label}</p></td><td>{ev(confidentialityKeys[document.confidentiality_level])}</td><td>{available ? <><div className="flex flex-wrap justify-end gap-2">{document.processing_status === "processed" && ["chief_engineer_report", "engine_log", "running_hours_record", "pms_record", "workshop_report", "quotation", "invoice"].includes(document.document_type ?? "") ? <button onClick={() => void analyzeDocument(document)} className="text-xs font-semibold text-indigo-700 hover:text-indigo-950">{intelligenceState[document.id] || ev(intelligenceActionKey(document.document_type))}</button> : null}<button onClick={() => void download(document)} className="text-xs font-semibold text-cyan-800 hover:text-cyan-950">{ev("action.download")}</button>{document.is_current ? <button onClick={() => startReplacement(document)} className="text-xs font-semibold text-indigo-700 hover:text-indigo-950">{operationState[document.id] || ev("action.replace")}</button> : null}{document.is_current ? <button onClick={() => void removeDocument(document)} className="text-xs font-semibold text-red-600 hover:text-red-800">{ev("action.remove")}</button> : null}</div>{intelligenceState[document.id] ? <div className="mt-1 text-end"><Link href="/ai-review" className="text-[11px] font-semibold text-slate-500 hover:text-slate-800">{ev("action.openAiReview")}</Link></div> : null}</> : <p className="text-end text-xs font-semibold text-red-700">{ev("action.blocked")}</p>}</td></tr>; })}</tbody></table></div>}
+        {loading ? <div className="p-6 text-sm text-slate-500">{ev("loading")}</div> : documents.length === 0 ? <div className="p-8 text-center"><p className="text-sm font-medium text-slate-700">{ev("empty.title")}</p><p className="mt-1 text-xs text-slate-500">{ev("empty.help")}</p></div> : <div className="overflow-x-auto"><table className="data-table min-w-[840px]"><thead><tr><th>{ev("table.document")}</th><th>{ev("table.type")}</th><th>{ev("table.size")}</th><th>{ev("table.integrity")}</th><th>{ev("table.access")}</th><th className="text-end">{ev("table.actions")}</th></tr></thead><tbody>{documents.map((document) => { const scan = malwareStatus(document.malware_scan_status, locale); const available = evidenceAvailable(document); const processing = processingSummaries[document.id]; const processingStatus: OperatorProcessingStatus = processing?.operator_status ?? (document.processing_status === "processed" ? "completed" : document.processing_status === "processing" ? "running" : document.processing_status); const processingStateKey = `processing:${document.id}`; return <tr key={document.id} className={document.is_current ? "" : "bg-slate-50/70"}><td><div className="flex flex-wrap items-center gap-2"><p className="font-medium text-slate-800" dir="ltr">{document.original_filename}</p><span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${document.is_current ? "bg-emerald-100 text-emerald-800" : "bg-slate-200 text-slate-600"}`}><span dir="ltr">v{document.version_number}</span> · {document.is_current ? ev("version.current") : ev("version.superseded")}</span></div><p className="mt-1 text-xs text-slate-400">{ev("uploadedAt", { date: "" }).trim()} <span dir="ltr">{formatDateTime(document.created_at, locale)}</span></p>{document.replacement_reason ? <p className="mt-1 max-w-md text-xs text-slate-500" dir="auto">{ev("replacementReason", { reason: document.replacement_reason })}</p> : null}<p className={`mt-1 text-[11px] font-semibold ${processingStatusClasses[processingStatus]}`}>{ev(processingStatusKeys[processingStatus])}</p>{processing?.job && (processing.operator_status === "failed" || processing.retry_recommended) ? <p className="mt-0.5 text-[10px] text-slate-500">{ev("processing.attempts", { attempts: processing.job.attempt_count, max: processing.job.max_attempts })}</p> : null}</td><td>{readableType(document.document_type, locale)}</td><td dir="ltr">{formatBytes(document.file_size_bytes)}</td><td><span title={document.file_hash} className="font-mono text-xs text-slate-500" dir="ltr">SHA-256 · {document.file_hash.slice(0, 10)}…</span><p className={`mt-1 text-[11px] font-semibold ${scan.className}`}>{scan.label}</p></td><td>{ev(confidentialityKeys[document.confidentiality_level])}</td><td>{available ? <><div className="flex flex-wrap justify-end gap-2">{document.is_current && processing?.can_retry ? <button type="button" disabled={Boolean(operationState[processingStateKey])} onClick={() => void retryProcessing(document)} className="text-xs font-semibold text-amber-700 hover:text-amber-950 disabled:cursor-not-allowed disabled:opacity-60">{operationState[processingStateKey] || ev(processing.operator_status === "running" ? "processing.recover" : "processing.retry")}</button> : null}{document.processing_status === "processed" && ["chief_engineer_report", "engine_log", "running_hours_record", "pms_record", "workshop_report", "quotation", "invoice"].includes(document.document_type ?? "") ? <button onClick={() => void analyzeDocument(document)} className="text-xs font-semibold text-indigo-700 hover:text-indigo-950">{intelligenceState[document.id] || ev(intelligenceActionKey(document.document_type))}</button> : null}<button onClick={() => void download(document)} className="text-xs font-semibold text-cyan-800 hover:text-cyan-950">{ev("action.download")}</button>{document.is_current ? <button onClick={() => startReplacement(document)} className="text-xs font-semibold text-indigo-700 hover:text-indigo-950">{operationState[document.id] || ev("action.replace")}</button> : null}{document.is_current ? <button onClick={() => void removeDocument(document)} className="text-xs font-semibold text-red-600 hover:text-red-800">{ev("action.remove")}</button> : null}</div>{intelligenceState[document.id] ? <div className="mt-1 text-end"><Link href="/ai-review" className="text-[11px] font-semibold text-slate-500 hover:text-slate-800">{ev("action.openAiReview")}</Link></div> : null}</> : <p className="text-end text-xs font-semibold text-red-700">{ev("action.blocked")}</p>}</td></tr>; })}</tbody></table></div>}
       </div>
 
       {quarantinedUploads.length ? <div className="mt-6 overflow-hidden rounded-xl border border-red-200 bg-red-50/40"><div className="border-b border-red-200 px-4 py-3"><h3 className="text-sm font-semibold text-red-900">{ev("quarantine.title")}</h3><p className="mt-1 text-xs text-red-700">{ev("quarantine.help")}</p></div><div className="overflow-x-auto"><table className="data-table min-w-[820px]"><thead><tr><th>{ev("quarantine.table.upload")}</th><th>{ev("quarantine.table.size")}</th><th>{ev("quarantine.table.scan")}</th><th>{ev("quarantine.table.reference")}</th><th className="text-end">{ev("quarantine.table.actions")}</th></tr></thead><tbody>{quarantinedUploads.map((upload) => <tr key={upload.id}><td><p className="font-medium text-slate-800" dir="ltr">{upload.original_filename}</p><p className="mt-1 text-xs text-slate-500">{ev("quarantine.blockedAt", { date: "" }).trim()} <span dir="ltr">{formatDateTime(upload.scanned_at, locale)}</span></p></td><td dir="ltr">{formatBytes(upload.file_size_bytes)}</td><td><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${upload.status === "infected" ? "bg-red-100 text-red-800" : "bg-amber-100 text-amber-800"}`}>{upload.status === "infected" ? <>{ev("quarantine.malwareDetected")}{upload.threat_name ? <span dir="ltr"> · {upload.threat_name}</span> : null}</> : ev("quarantine.scannerUnavailable", { count: upload.retry_count })}</span></td><td><span className="font-mono text-xs text-slate-500" dir="ltr">{upload.id.slice(0, 8)}…</span></td><td><div className="flex flex-wrap justify-end gap-2">{canManageEvidence && upload.status === "scan_error" ? <button type="button" onClick={() => void retryQuarantine(upload)} className="text-xs font-semibold text-cyan-800 hover:text-cyan-950">{operationState[upload.id] || ev("quarantine.retryScan")}</button> : null}{isAdmin ? <button type="button" onClick={() => void purgeQuarantine(upload)} className="text-xs font-semibold text-red-700 hover:text-red-950">{ev("quarantine.purgeBytes")}</button> : null}{!canManageEvidence ? <span className="text-xs text-slate-500">{ev("quarantine.managerApproval")}</span> : null}</div></td></tr>)}</tbody></table></div></div> : null}
