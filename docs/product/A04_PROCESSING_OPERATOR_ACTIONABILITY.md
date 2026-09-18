@@ -14,6 +14,8 @@ The processing summary now exposes three operator-safe fields:
 
 The UI does not decide retry eligibility from local timers or from `Document.processing_status`. Backend state remains authoritative.
 
+Stale-lease classification also reuses the same backend predicate as A03 recovery, so operator presentation and recovery cannot silently drift to different timeout semantics.
+
 ## Stale running jobs
 
 A running extraction whose durable lease is older than `PROCESSING_STALE_AFTER_SECONDS` remains labelled Running but becomes recoverable. Selecting Recover uses the existing A03 retry endpoint. That endpoint atomically recovers the stale lease to Pending (or fails it if the attempt budget is exhausted), after which the UI refreshes from the backend and shows Queued or Failed.
