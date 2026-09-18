@@ -12,13 +12,15 @@ RUN apk add --no-cache \
     && pip3.13 --version
 
 COPY requirements.lock .
-RUN pip3.13 install --no-cache-dir --require-hashes --prefix=/install -r requirements.lock
+RUN python3.13 -m venv /opt/venv \
+    && /opt/venv/bin/python -m pip install --no-cache-dir --require-hashes -r requirements.lock \
+    && /opt/venv/bin/python -c "import alembic, fastapi, sqlalchemy; print('venv-ready')"
 
 FROM cgr.dev/chainguard/wolfi-base:latest AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PATH="/usr/local/bin:/usr/bin:/bin"
+    PATH="/opt/venv/bin:/usr/bin:/bin"
 
 WORKDIR /app
 
@@ -28,7 +30,7 @@ RUN apk add --no-cache \
         zlib \
     && python3.13 -c "import _uuid, uuid, zlib; value = uuid.uuid4(); assert value.version == 4; print(value, zlib.ZLIB_VERSION)"
 
-COPY --from=python-builder /install/ /usr/local/
+COPY --from=python-builder /opt/venv /opt/venv
 COPY pyproject.toml alembic.ini ./
 COPY alembic ./alembic
 COPY app ./app
@@ -61,4 +63,4 @@ CMD ["python", "-m", "app.workers.document_worker"]
 
 FROM base AS api
 
-CMD ["python3.13", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
