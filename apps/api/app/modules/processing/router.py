@@ -12,7 +12,7 @@ from app.modules.claims.security import get_claim_for_tenant
 from app.modules.documents.security import get_document_for_tenant
 from app.modules.processing.lease_recovery import recover_stale_processing_jobs
 from app.modules.processing.models import ProcessingJobStatus, ProcessingJobType
-from app.modules.processing.schemas import DocumentProcessingSummary, ProcessingJobResponse
+from app.modules.processing.schemas import (\n    DocumentProcessingSummary,\n    OperatorProcessingJobResponse,\n    ProcessingJobResponse,\n)
 from app.modules.processing.service import enqueue_text_extraction, get_processing_summary
 
 router = APIRouter(prefix="/claims/{claim_id}/documents/{document_id}/processing", tags=["document-processing"])
@@ -63,7 +63,7 @@ def processing_summary(
     )
     operator_status, can_retry, retry_recommended = _operator_state(document, job)
     return DocumentProcessingSummary(
-        job=ProcessingJobResponse.model_validate(job) if job else None,
+        job=OperatorProcessingJobResponse.model_validate(job) if job else None,
         text_extraction=extraction,
         operator_status=operator_status,
         can_retry=can_retry,
