@@ -155,6 +155,8 @@ def test_processing_summary_marks_stale_running_job_as_recoverable() -> None:
     assert payload["job"]["max_attempts"] == 3
     assert "locked_by" not in payload["job"]
     assert "locked_at" not in payload["job"]
+    assert "last_error" not in payload["job"]
+    assert "result" not in payload["job"]
 
 
 def test_processing_summary_changes_to_queued_after_stale_retry_recovery() -> None:
