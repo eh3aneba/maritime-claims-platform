@@ -11,6 +11,11 @@ from app.modules.external_document_sources.evidence_admission_execution_models i
     ExternalDocumentSourceEvidenceAdmissionExecution,
     ExternalDocumentSourceEvidenceAdmissionExecutionReceipt,
 )
+from app.modules.processing.models import DocumentProcessingJob, ProcessingJobType
+from app.modules.processing.service import (
+    ExternalEvidenceProcessingAuthorizationRequired,
+    enqueue_processing_job,
+)
 from tests.db_harness import TestingSessionLocal, client
 from tests.test_external_document_source_discovery import _headers
 from tests.test_external_document_source_evidence_admission_authorization import (
@@ -252,3 +257,89 @@ def test_phase_x_rejects_stale_authorization_before_storage_or_document_mutation
     with TestingSessionLocal() as db:
         assert db.query(Document).count() == documents_before
         assert db.query(ExternalDocumentSourceEvidenceAdmissionExecution).count() == 0
+
+
+def _admit_phase_x_document_for_processing_guard(monkeypatch: pytest.MonkeyPatch):
+    upstream, _metadata_adapter, observation = _unchanged_phase_v()
+    actor_id = upstream[0]
+    profile_id = upstream[1]
+    claim_id = _seed_claim(actor_id, "x-processing-guard")
+    authorization = _authorize(
+        profile_id,
+        observation["id"],
+        claim_id,
+        actor_id,
+        key="phase-x-auth-processing-guard",
+    )
+    assert authorization.status_code == 201, authorization.text
+    _enable_clean_admission(monkeypatch)
+    admitted = _execute(
+        profile_id,
+        authorization.json()["id"],
+        actor_id,
+        key="phase-x-exec-processing-guard",
+    )
+    assert admitted.status_code == 201, admitted.text
+    return actor_id, claim_id, UUID(admitted.json()["document_id"])
+
+
+def test_phase_x_admitted_external_evidence_cannot_be_retried_into_processing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    actor_id, claim_id, document_id = _admit_phase_x_document_for_processing_guard(monkeypatch)
+
+    retry = client.post(
+        f"/api/v1/claims/{claim_id}/documents/{document_id}/processing/retry",
+        headers=_headers(actor_id),
+    )
+    assert retry.status_code == 409, retry.text
+    assert "downstream processing authority" in retry.json()["detail"].lower()
+
+    with TestingSessionLocal() as db:
+        document = db.get(Document, document_id)
+        assert document is not None
+        assert document.processing_status == DocumentProcessingStatus.UPLOADED
+        assert (
+            db.query(DocumentProcessingJob)
+            .filter(DocumentProcessingJob.document_id == document_id)
+            .count()
+            == 0
+        )
+
+
+def test_phase_x_processing_guard_blocks_content_jobs_but_allows_security_rescan(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    actor_id, _claim_id, document_id = _admit_phase_x_document_for_processing_guard(monkeypatch)
+
+    with TestingSessionLocal() as db:
+        document = db.get(Document, document_id)
+        assert document is not None
+
+        for job_type in (
+            ProcessingJobType.EXTRACT_TEXT,
+            ProcessingJobType.AI_EXTRACT_CE_REPORT,
+            ProcessingJobType.AI_EXTRACT_ENGINE_LOG,
+            ProcessingJobType.AI_EXTRACT_RUNNING_HOURS,
+            ProcessingJobType.AI_EXTRACT_PMS_HISTORY,
+            ProcessingJobType.AI_EXTRACT_WORKSHOP_REPORT,
+            ProcessingJobType.AI_EXTRACT_QUOTATION,
+            ProcessingJobType.AI_EXTRACT_INVOICE,
+        ):
+            with pytest.raises(ExternalEvidenceProcessingAuthorizationRequired):
+                enqueue_processing_job(
+                    db,
+                    document=document,
+                    requested_by_id=actor_id,
+                    job_type=job_type,
+                )
+            db.rollback()
+
+        security_job = enqueue_processing_job(
+            db,
+            document=document,
+            requested_by_id=actor_id,
+            job_type=ProcessingJobType.MALWARE_RESCAN,
+        )
+        assert security_job.job_type == ProcessingJobType.MALWARE_RESCAN
+        db.rollback()
