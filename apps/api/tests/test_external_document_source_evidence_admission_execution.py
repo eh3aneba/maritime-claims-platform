@@ -454,3 +454,48 @@ def test_phase_x_admitted_external_evidence_is_not_presented_as_retryable(
     assert body["can_retry"] is False
     assert body["retry_recommended"] is False
     assert body["job"] is None
+
+
+
+def test_phase_x_retry_rejects_before_mutating_stale_processing_lease(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    actor_id, claim_id, document_id = _admit_phase_x_document_for_processing_guard(monkeypatch)
+    stale_locked_at = datetime(2000, 1, 1, tzinfo=UTC)
+
+    with TestingSessionLocal() as db:
+        document = db.get(Document, document_id)
+        assert document is not None
+        job = DocumentProcessingJob(
+            organization_id=document.organization_id,
+            claim_id=claim_id,
+            document_id=document.id,
+            requested_by_id=actor_id,
+            job_type=ProcessingJobType.EXTRACT_TEXT,
+            status=ProcessingJobStatus.RUNNING,
+            max_attempts=3,
+            attempt_count=1,
+            available_at=stale_locked_at,
+            locked_at=stale_locked_at,
+            locked_by="legacy-worker",
+        )
+        db.add(job)
+        db.commit()
+        job_id = job.id
+
+    retry = client.post(
+        f"/api/v1/claims/{claim_id}/documents/{document_id}/processing/retry",
+        headers=_headers(actor_id),
+    )
+    assert retry.status_code == 409, retry.text
+
+    with TestingSessionLocal() as db:
+        job = db.get(DocumentProcessingJob, job_id)
+        document = db.get(Document, document_id)
+        assert job is not None
+        assert document is not None
+        assert job.status == ProcessingJobStatus.RUNNING
+        assert job.attempt_count == 1
+        assert job.locked_by == "legacy-worker"
+        assert job.locked_at == stale_locked_at
+        assert document.processing_status == DocumentProcessingStatus.UPLOADED
