@@ -116,7 +116,24 @@ def _exercise_real_scanned_ocr(page, fixture: Path) -> None:
     page.locator('input[type="file"]').set_input_files(str(fixture))
     page.get_by_role("button", name="Upload & extract").click()
     type_select = page.get_by_label("Document type", exact=True)
-    expect(type_select).to_be_visible(timeout=90_000)
+    try:
+        expect(type_select).to_be_visible(timeout=90_000)
+    except AssertionError as exc:
+        draft_id = page.evaluate(
+            f"window.sessionStorage.getItem('{ACTIVE_DRAFT_KEY}')"
+        )
+        if draft_id:
+            response = page.context.request.get(
+                f"{API_URL}/api/v1/claim-intake/drafts/{draft_id}"
+            )
+            payload = response.json() if response.ok else {
+                "status_code": response.status,
+                "body": response.text(),
+            }
+            raise AssertionError(
+                f"Scanned OCR draft never reached review state: {payload}"
+            ) from exc
+        raise
     expect(page.get_by_text(re.compile(r"Method\s+tesseract:eng\+fas", re.I))).to_be_visible()
     expect(page.get_by_text(re.compile(r"Draft reference", re.I))).to_be_visible()
     reject_button = page.get_by_role(
