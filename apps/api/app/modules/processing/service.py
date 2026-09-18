@@ -32,6 +32,29 @@ class ExternalEvidenceProcessingAuthorizationRequired(RuntimeError):
     """Raised when admitted external Evidence has no downstream-processing authority."""
 
 
+def external_evidence_requires_processing_release(
+    db: Session,
+    *,
+    document: Document,
+) -> bool:
+    from app.modules.external_document_sources.evidence_admission_execution_models import (
+        ExternalDocumentSourceEvidenceAdmissionExecution,
+    )
+
+    return (
+        db.scalar(
+            select(ExternalDocumentSourceEvidenceAdmissionExecution.id)
+            .where(
+                ExternalDocumentSourceEvidenceAdmissionExecution.organization_id
+                == document.organization_id,
+                ExternalDocumentSourceEvidenceAdmissionExecution.document_id == document.id,
+            )
+            .limit(1)
+        )
+        is not None
+    )
+
+
 def _ensure_document_processing_authority(
     db: Session,
     *,
@@ -45,20 +68,7 @@ def _ensure_document_processing_authority(
     if job_type == ProcessingJobType.MALWARE_RESCAN:
         return
 
-    from app.modules.external_document_sources.evidence_admission_execution_models import (
-        ExternalDocumentSourceEvidenceAdmissionExecution,
-    )
-
-    admitted_execution_id = db.scalar(
-        select(ExternalDocumentSourceEvidenceAdmissionExecution.id)
-        .where(
-            ExternalDocumentSourceEvidenceAdmissionExecution.organization_id
-            == document.organization_id,
-            ExternalDocumentSourceEvidenceAdmissionExecution.document_id == document.id,
-        )
-        .limit(1)
-    )
-    if admitted_execution_id is not None:
+    if external_evidence_requires_processing_release(db, document=document):
         raise ExternalEvidenceProcessingAuthorizationRequired(
             "External Evidence was admitted without downstream processing authority"
         )
