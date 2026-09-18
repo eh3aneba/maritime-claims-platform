@@ -155,7 +155,7 @@ export function ClaimDocuments({ claimId }: { claimId: string }) {
       setDocuments(result.items);
       setQuarantinedUploads(result.quarantined_items);
 
-      const summaries = await Promise.all(result.items.map(async (document) => {
+      const summaries = await Promise.all(result.items.filter((document) => document.is_current).map(async (document) => {
         try {
           const summary = await getDocumentProcessingSummary(claimId, document.id);
           return [document.id, summary] as const;
