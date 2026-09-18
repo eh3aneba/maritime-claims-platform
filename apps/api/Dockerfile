@@ -1,4 +1,4 @@
-FROM cgr.dev/chainguard/wolfi-base:latest AS python-builder
+FROM cgr.dev/chainguard/wolfi-base@sha256:1d95114038f76513a9ace6fca107d5582b08c65981f81f61cb56bf7fd2ef216d AS python-builder
 
 WORKDIR /app
 
@@ -16,7 +16,7 @@ RUN python3.13 -m venv /opt/venv \
     && /opt/venv/bin/python -m pip install --no-cache-dir --require-hashes -r requirements.lock \
     && /opt/venv/bin/python -c "import alembic, fastapi, sqlalchemy; print('venv-ready')"
 
-FROM cgr.dev/chainguard/wolfi-base:latest AS base
+FROM cgr.dev/chainguard/wolfi-base@sha256:1d95114038f76513a9ace6fca107d5582b08c65981f81f61cb56bf7fd2ef216d AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -37,24 +37,29 @@ COPY app ./app
 
 EXPOSE 8000
 
-FROM python:3.13-slim AS worker
+FROM cgr.dev/chainguard/wolfi-base@sha256:1d95114038f76513a9ace6fca107d5582b08c65981f81f61cb56bf7fd2ef216d AS worker
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    PATH="/opt/venv/bin:/usr/bin:/bin" \
+    TESSDATA_PREFIX="/usr/share"
 
 WORKDIR /app
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
+RUN apk add --no-cache \
+        libuuid \
         poppler-utils \
-        tesseract-ocr \
-        tesseract-ocr-eng \
-        tesseract-ocr-fas \
-    && rm -rf /var/lib/apt/lists/*
+        python-3.13 \
+        tessdata \
+        tesseract \
+        zlib \
+    && python3.13 --version \
+    && pdftotext -v 2>&1 | head -n 1 \
+    && tesseract --version | head -n 1 \
+    && tesseract --list-langs | grep -Fx eng \
+    && tesseract --list-langs | grep -Fx fas
 
-COPY requirements.lock .
-RUN pip install --no-cache-dir --require-hashes -r requirements.lock
-
+COPY --from=python-builder /opt/venv /opt/venv
 COPY pyproject.toml alembic.ini ./
 COPY alembic ./alembic
 COPY app ./app
