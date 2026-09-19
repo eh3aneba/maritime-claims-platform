@@ -8,6 +8,8 @@ from app.db.session import get_db
 from app.modules.auth.dependencies import CurrentUser
 from app.modules.claims.security import get_claim_for_tenant
 from app.modules.documents.security import get_document_for_tenant
+from app.modules.processing.lease_recovery import recover_stale_processing_jobs
+from app.modules.processing.models import ProcessingJobType
 from app.modules.processing.schemas import DocumentProcessingSummary, ProcessingJobResponse
 from app.modules.processing.service import enqueue_text_extraction, get_processing_summary
 
@@ -53,6 +55,16 @@ def retry_processing(
     )
     if document is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+
+    # Retry is also an operator recovery point. A genuinely active lease remains
+    # untouched, while an expired RUNNING extraction is returned to the bounded
+    # attempt queue (or terminally failed when its budget is exhausted).
+    recover_stale_processing_jobs(
+        db,
+        document_id=document.id,
+        job_type=ProcessingJobType.EXTRACT_TEXT,
+        limit=1,
+    )
     job = enqueue_text_extraction(db, document=document, requested_by_id=current_user.id)
     db.commit()
     db.refresh(job)

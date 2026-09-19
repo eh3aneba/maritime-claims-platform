@@ -78,10 +78,20 @@ def run_preflight(*, require_db: bool = True) -> tuple[list[str], list[str]]:
         if settings.ai_provider.lower() == "openai":
             if not settings.openai_api_key.strip():
                 _fail(errors, "OPENAI_API_KEY is required when AI_PROVIDER=openai")
-            if env != "staging":
-                _fail(errors, "Sprint 11A permits AI_PROVIDER=openai only in staging")
+            if env not in {"staging", "production"}:
+                _fail(
+                    errors,
+                    "AI_PROVIDER=openai requires staging or a governed production deployment",
+                )
+            if env == "production" and not getattr(
+                settings, "ai_production_control_plane_enabled", False
+            ):
+                _fail(
+                    errors,
+                    "AI_PRODUCTION_CONTROL_PLANE_ENABLED must be true before OpenAI may be configured in production",
+                )
             if settings.allow_external_ai_restricted:
-                _fail(errors, "Restricted documents cannot be enabled for external AI in Sprint 11A")
+                _fail(errors, "Restricted documents cannot be enabled for external AI")
             if not 1000 <= settings.ai_max_input_chars <= 60000:
                 _fail(errors, "AI_MAX_INPUT_CHARS must be between 1000 and 60000")
             if not 128 <= settings.ai_max_output_tokens <= 4096:

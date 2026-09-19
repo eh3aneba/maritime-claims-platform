@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.ai.gateway.registry import get_ai_provider
 from app.core.config import get_settings
-from app.modules.ai_governance.service import require_external_ai_runtime_authorization
+from app.modules.ai_runtime import require_external_ai_runtime_authorization
 from app.modules.audit.service import write_audit_log
 from app.modules.documents.models import (
     Document,
