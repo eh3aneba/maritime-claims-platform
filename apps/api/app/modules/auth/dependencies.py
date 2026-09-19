@@ -228,21 +228,40 @@ def enforce_mfa_policy_for_context(
     )
 
 
+def _authorize_roles(context: AuthContext, allowed_roles: tuple[UserRole, ...]) -> User:
+    current_user = context.user
+    # Database User.role remains authoritative; token or IdP role claims are ignored here.
+    if current_user.role not in allowed_roles:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient permissions",
+        )
+    return current_user
+
+
 def require_roles(*allowed_roles: UserRole) -> Callable[..., User]:
     def dependency(
         context: CurrentAuthContext,
         request: Request,
         db: Annotated[Session, Depends(get_db)],
     ) -> User:
-        current_user = context.user
-        # Database User.role remains authoritative; token or IdP role claims are ignored here.
-        if current_user.role not in allowed_roles:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Insufficient permissions",
-            )
+        current_user = _authorize_roles(context, allowed_roles)
         if _is_mfa_sensitive_auth_path(request.url.path):
             enforce_mfa_policy_for_context(db, context=context)
+        return current_user
+
+    return dependency
+
+
+def require_roles_with_mfa(*allowed_roles: UserRole) -> Callable[..., User]:
+    """Require an allowed role and full MFA assurance for this session."""
+
+    def dependency(
+        context: CurrentAuthContext,
+        db: Annotated[Session, Depends(get_db)],
+    ) -> User:
+        current_user = _authorize_roles(context, allowed_roles)
+        enforce_mfa_policy_for_context(db, context=context)
         return current_user
 
     return dependency
