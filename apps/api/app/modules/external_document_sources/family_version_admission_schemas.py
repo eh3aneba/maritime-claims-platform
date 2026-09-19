@@ -41,7 +41,7 @@ class ExternalDocumentSourceFamilyVersionAdmissionAuthorizationRead(BaseModel):
     authorized_projection_hash: str
     authorized_display_name_hash: str
     authorized_version_token_hash: str | None
-    authorized_byte_size: int
+    authorized_byte_size: int | None
     authorized_mime_type_class: str | None
     candidate_content_sha256: str
     candidate_content_byte_count: int
