@@ -11,10 +11,11 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build
 
-FROM alpine:3.24.2@sha256:5b02b42e375f7426f8d65c3af331ca05d9878f9989230354504e0b9dfd431f60 AS runner
+FROM alpine:3.24.1@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b AS runner
 WORKDIR /app
 ENV NODE_ENV=production
-RUN apk add --no-cache nodejs \
+RUN apk upgrade --no-cache \
+    && apk add --no-cache nodejs \
     && node --version
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
