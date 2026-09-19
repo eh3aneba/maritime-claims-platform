@@ -1,4 +1,4 @@
-FROM python:3.14.7-alpine3.24 AS python-builder
+FROM python:3.14.7-alpine3.23 AS python-builder
 
 WORKDIR /app
 
@@ -17,7 +17,7 @@ RUN python -m venv /opt/venv \
     && /opt/venv/bin/python -m pip check \
     && /opt/venv/bin/python -c "import alembic, fastapi, sqlalchemy; print('venv-ready')"
 
-FROM python:3.14.7-alpine3.24 AS base
+FROM python:3.14.7-alpine3.23 AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -25,7 +25,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-RUN apk add --no-cache libuuid zlib \
+RUN apk upgrade --no-cache \
+    && apk add --no-cache libuuid zlib \
     && python -c "import _uuid, uuid, zlib; value = uuid.uuid4(); assert value.version == 4; print(value, zlib.ZLIB_VERSION)" \
     && rm -rf /usr/local/lib/python3.14/site-packages/pip* /usr/local/bin/pip*
 
@@ -36,7 +37,7 @@ COPY app ./app
 
 EXPOSE 8000
 
-FROM python:3.14.7-alpine3.24 AS worker
+FROM python:3.14.7-alpine3.23 AS worker
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -45,7 +46,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-RUN apk add --no-cache \
+RUN apk upgrade --no-cache \
+    && apk add --no-cache \
         libuuid \
         poppler-utils \
         tesseract-ocr \
