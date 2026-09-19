@@ -30,7 +30,7 @@ from app.modules.processing.service import (
     process_job,
 )
 from tests.db_harness import TestingSessionLocal, client
-from tests.test_external_document_source_discovery import _headers
+from tests.test_external_document_source_discovery import _headers, _seed_tenant
 from tests.test_external_document_source_evidence_family_binding import (
     _admit,
     _bind,
@@ -412,4 +412,27 @@ def test_phase_z_release_fails_closed_when_document_ceases_to_be_current(
                     requested_by_id=actor_id,
                     job_type=ProcessingJobType.EXTRACT_TEXT,
                 )
+
+def test_phase_z_cross_tenant_release_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _actor_id, _profile_id, claim_id, execution, _binding = _bound(
+        monkeypatch,
+        "cross-tenant",
+    )
+    document_id = UUID(execution["document_id"])
+    _other_org_id, other_admin_id, _other_approver_id = _seed_tenant(
+        "phase-z-cross-tenant"
+    )
+
+    rejected = _grant(
+        claim_id,
+        document_id,
+        other_admin_id,
+        key="phase-z-cross-tenant-release",
+    )
+    assert rejected.status_code == 404, rejected.text
+
+    with TestingSessionLocal() as db:
+        assert db.query(ExternalDocumentSourceProcessingRelease).count() == 0
 
