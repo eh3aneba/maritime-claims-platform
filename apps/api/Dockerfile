@@ -157,6 +157,7 @@ RUN /sbin/apk add --no-cache \
         libpng \
         libstdc++ \
         libwebp \
+        libwebpmux \
         libxml2 \
         nss \
         openjpeg \
