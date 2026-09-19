@@ -389,7 +389,7 @@ export interface DocumentProcessingSummary {
   can_retry: boolean;
   retry_recommended: boolean;
   processing_release_required: boolean;
-  processing_release_status: "not_applicable" | "required" | "active";
+  processing_release_status: "not_applicable" | "required" | "active" | "revoked";
 }
 
 export interface ExternalEvidenceProcessingRelease {
