@@ -87,6 +87,7 @@ RUN /sbin/apk add --no-cache \
         cairo \
         icu-libs \
         leptonica \
+        libgomp \
         libstdc++ \
         pango \
         poppler-utils \
