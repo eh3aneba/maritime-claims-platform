@@ -144,7 +144,6 @@ class ExternalDocumentSourceFamilyVersionAdmissionRead(BaseModel):
     prior_projection_hash: str
     prior_provider_version_hash: str | None
     prior_document_file_hash: str
-    fresh_observation_execution_id: UUID
     fresh_projection_hash: str
     fresh_display_name_hash: str
     fresh_version_token_hash: str | None
