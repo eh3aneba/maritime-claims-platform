@@ -48,6 +48,9 @@ from app.modules.external_document_sources.family_version_admission_models impor
     ExternalDocumentSourceFamilyVersionAdmissionExecution,
     ExternalDocumentSourceFamilyVersionAdmissionReceipt,
 )
+from app.modules.external_document_sources.generation_3_change_detection_models import (
+    ExternalDocumentSourceGeneration3ChangeDetectionExecution,
+)
 from app.modules.external_document_sources.service import (
     ExternalDocumentSourceConflictError,
     ExternalDocumentSourceNotFoundError,
@@ -236,6 +239,37 @@ def _receipts(
             )
         ).all()
     )
+
+
+def _authorized_generation_3_observation(
+    db: Session,
+    authorization: ExternalDocumentSourceEvidenceAdmissionAuthorization,
+) -> ExternalDocumentSourceGeneration3ChangeDetectionExecution:
+    observation = db.scalar(
+        select(ExternalDocumentSourceGeneration3ChangeDetectionExecution).where(
+            ExternalDocumentSourceGeneration3ChangeDetectionExecution.id
+            == authorization.generation_3_change_detection_execution_id,
+            ExternalDocumentSourceGeneration3ChangeDetectionExecution.organization_id
+            == authorization.organization_id,
+            ExternalDocumentSourceGeneration3ChangeDetectionExecution.profile_id
+            == authorization.profile_id,
+        )
+    )
+    if observation is None:
+        raise ExternalDocumentSourceConflictError(
+            "Authorized generation-3 observation lineage is missing"
+        )
+    if (
+        observation.status != "completed"
+        or observation.result_status != "unchanged"
+        or observation.completion_hash != authorization.observation_completion_hash
+        or observation.observed_projection_hash
+        != authorization.authorized_projection_hash
+    ):
+        raise ExternalDocumentSourceConflictError(
+            "Authorized generation-3 observation lineage drifted"
+        )
+    return observation
 
 
 def _binding_for_update(
@@ -453,6 +487,8 @@ def _ensure_execution_integrity(
     _ensure_binding_integrity(db, binding)
 
     prior, new = _documents(db, execution)
+    observation = _authorized_generation_3_observation(db, authorization)
+
     expected = {
         "claim_id": binding.claim_id,
         "profile_id": binding.profile_id,
@@ -461,7 +497,7 @@ def _ensure_execution_integrity(
         "checkpoint_generation_3_execution_id":
             authorization.checkpoint_generation_3_execution_id,
         "successor_versioned_restaging_execution_id":
-            authorization.successor_versioned_restaging_execution_id,
+            observation.successor_versioned_restaging_execution_id,
         "document_family_id": binding.document_family_id,
         "provider_kind": binding.provider_kind,
         "profile_hash": binding.profile_hash,
@@ -669,6 +705,7 @@ def execute_external_document_source_family_version_admission(
         profile_id=profile_id,
         binding_id=binding_id,
     )
+    observation = _authorized_generation_3_observation(db, authorization)
     if (
         authorization.claim_id != binding.claim_id
         or authorization.profile_id != binding.profile_id
@@ -853,7 +890,7 @@ def execute_external_document_source_family_version_admission(
             checkpoint_generation_3_execution_id=
                 authorization.checkpoint_generation_3_execution_id,
             successor_versioned_restaging_execution_id=
-                authorization.successor_versioned_restaging_execution_id,
+                observation.successor_versioned_restaging_execution_id,
             document_family_id=binding.document_family_id,
             prior_document_id=current_document.id,
             prior_version_number=current_document.version_number,
