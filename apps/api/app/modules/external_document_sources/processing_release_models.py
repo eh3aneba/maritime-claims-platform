@@ -42,7 +42,12 @@ class ExternalDocumentSourceProcessingRelease(
 ):
     __tablename__ = "external_doc_source_processing_releases"
     __table_args__ = (
-        UniqueConstraint("binding_id", name="uq_ext_doc_proc_release_binding"),
+        UniqueConstraint(
+            "binding_id",
+            "document_id",
+            "document_version_number",
+            name="uq_ext_doc_proc_release_binding_version",
+        ),
         UniqueConstraint("organization_id", "profile_id", "request_key", name="uq_ext_doc_proc_release_request"),
         UniqueConstraint(
             "organization_id",
