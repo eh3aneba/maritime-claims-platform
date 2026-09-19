@@ -6,13 +6,24 @@ import pytest
 
 from app.modules.audit.models import AuditLog
 from app.modules.claims.models import Claim
-from app.modules.documents.models import Document
+from app.modules.documents.models import Document, DocumentProcessingStatus
 from app.modules.external_document_sources.evidence_family_binding_models import (
     ExternalDocumentSourceEvidenceFamilyBinding,
     ExternalDocumentSourceEvidenceFamilyBindingReceipt,
 )
 from app.modules.external_document_sources.generation_3_change_detection_models import (
     ExternalDocumentSourceGeneration3ChangeDetectionExecution,
+)
+from app.modules.processing.models import (
+    DocumentProcessingJob,
+    DocumentTextExtraction,
+    ProcessingJobStatus,
+    ProcessingJobType,
+)
+from app.modules.processing.service import (
+    ExternalEvidenceProcessingAuthorizationRequired,
+    enqueue_processing_job,
+    process_job,
 )
 from tests.db_harness import TestingSessionLocal, client
 from tests.test_external_document_source_discovery import _headers
@@ -356,3 +367,87 @@ def test_phase_y_rejects_tampered_document_family_lineage(
 
     with TestingSessionLocal() as db:
         assert db.query(ExternalDocumentSourceEvidenceFamilyBinding).count() == 0
+
+def test_phase_y_binding_preserves_processing_release_boundary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    actor_id, profile_id, claim_id, execution, _adapter, _store = _admit(
+        monkeypatch,
+        "processing-boundary",
+    )
+    bound = _bind(
+        profile_id,
+        execution["id"],
+        actor_id,
+        key="phase-y-bind-processing-boundary",
+    )
+    assert bound.status_code == 201, bound.text
+    document_id = UUID(execution["document_id"])
+
+    retry = client.post(
+        f"/api/v1/claims/{claim_id}/documents/{document_id}/processing/retry",
+        headers=_headers(actor_id),
+    )
+    assert retry.status_code == 409, retry.text
+    assert "downstream processing authority" in retry.json()["detail"].lower()
+
+    with TestingSessionLocal() as db:
+        document = db.get(Document, document_id)
+        assert document is not None
+        assert document.processing_status == DocumentProcessingStatus.UPLOADED
+
+        with pytest.raises(ExternalEvidenceProcessingAuthorizationRequired):
+            enqueue_processing_job(
+                db,
+                document=document,
+                requested_by_id=actor_id,
+                job_type=ProcessingJobType.EXTRACT_TEXT,
+            )
+        db.rollback()
+
+        document = db.get(Document, document_id)
+        assert document is not None
+        security_job = enqueue_processing_job(
+            db,
+            document=document,
+            requested_by_id=actor_id,
+            job_type=ProcessingJobType.MALWARE_RESCAN,
+        )
+        assert security_job.job_type == ProcessingJobType.MALWARE_RESCAN
+        db.rollback()
+
+    with TestingSessionLocal() as db:
+        document = db.get(Document, document_id)
+        assert document is not None
+        legacy_job = DocumentProcessingJob(
+            organization_id=document.organization_id,
+            claim_id=claim_id,
+            document_id=document.id,
+            requested_by_id=actor_id,
+            job_type=ProcessingJobType.EXTRACT_TEXT,
+            status=ProcessingJobStatus.RUNNING,
+            max_attempts=3,
+            attempt_count=1,
+            available_at=datetime.now(UTC),
+        )
+        db.add(legacy_job)
+        db.commit()
+        db.refresh(legacy_job)
+
+        process_job(db, job=legacy_job)
+
+        db.refresh(legacy_job)
+        db.refresh(document)
+        assert legacy_job.status == ProcessingJobStatus.FAILED
+        assert legacy_job.result == {
+            "blocked": True,
+            "reason": "processing_authorization_required",
+        }
+        assert document.processing_status == DocumentProcessingStatus.UPLOADED
+        assert (
+            db.query(DocumentTextExtraction)
+            .filter(DocumentTextExtraction.document_id == document_id)
+            .count()
+            == 0
+        )
+
