@@ -355,7 +355,7 @@ def ensure_processing_release_integrity(
             )
 
 
-def get_active_processing_release_for_document(
+def get_processing_release_for_document(
     db: Session,
     *,
     document: Document,
@@ -370,7 +370,16 @@ def get_active_processing_release_for_document(
     if release is None:
         return None
     ensure_processing_release_integrity(db, release)
-    if release.status != "active":
+    return release
+
+
+def get_active_processing_release_for_document(
+    db: Session,
+    *,
+    document: Document,
+) -> ExternalDocumentSourceProcessingRelease | None:
+    release = get_processing_release_for_document(db, document=document)
+    if release is None or release.status != "active":
         return None
     return release
 
