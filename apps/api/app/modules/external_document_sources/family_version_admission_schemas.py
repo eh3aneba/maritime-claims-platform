@@ -4,10 +4,118 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
 
+class ExternalDocumentSourceFamilyVersionAdmissionAuthorizationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    request_key: str = Field(min_length=1, max_length=128)
+    reason: str = Field(min_length=20, max_length=2000)
+
+
 class ExternalDocumentSourceFamilyVersionAdmissionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     request_key: str = Field(min_length=1, max_length=128)
     reason: str = Field(min_length=20, max_length=2000)
+
+
+class ExternalDocumentSourceFamilyVersionAdmissionAuthorizationRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    organization_id: UUID
+    claim_id: UUID
+    profile_id: UUID
+    binding_id: UUID
+    successor_change_detection_execution_id: UUID
+    successor_versioned_restaging_execution_id: UUID
+    document_family_id: UUID
+    expected_prior_document_id: UUID
+    expected_prior_version_number: int
+    provider_kind: str
+    profile_hash: str
+    stable_source_item_hash: str
+    successor_change_completion_hash: str
+    candidate_content_proof_hash: str
+    candidate_completion_hash: str
+    prior_projection_hash: str
+    prior_provider_version_hash: str | None
+    prior_document_file_hash: str
+    authorized_projection_hash: str
+    authorized_display_name_hash: str
+    authorized_version_token_hash: str | None
+    authorized_byte_size: int
+    authorized_mime_type_class: str | None
+    candidate_content_sha256: str
+    candidate_content_byte_count: int
+    candidate_storage_object_key_hash: str
+    request_key: str
+    scope_hash: str
+    request_hash: str
+    status: str
+    authorized_by_id: UUID
+    authorization_reason: str
+    authorized_at: datetime
+    authorization_hash: str
+
+    durable_family_binding_verified: bool
+    stable_source_identity_verified: bool
+    staged_candidate_verified: bool
+    current_document_verified: bool
+    human_authorization_recorded: bool
+    remote_metadata_read_performed: bool
+    remote_content_read_performed: bool
+    storage_read_performed: bool
+    storage_write_performed: bool
+    document_mutated: bool
+    processing_enqueued: bool
+    ai_executed: bool
+    claim_mutated: bool
+    checkpoint_advanced: bool
+    background_sync_started: bool
+
+    @field_serializer("authorized_at")
+    def _utc(self, value: datetime) -> str:
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc).isoformat()
+
+
+class ExternalDocumentSourceFamilyVersionAdmissionAuthorizationReceiptRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    organization_id: UUID
+    authorization_id: UUID
+    sequence_number: int
+    event_type: str
+    status_after: str
+    actor_id: UUID
+    occurred_at: datetime
+    reason: str
+    scope_hash: str
+    decision_hash: str
+    prior_receipt_hash: str | None
+    receipt_hash: str
+
+    durable_family_binding_verified: bool
+    stable_source_identity_verified: bool
+    staged_candidate_verified: bool
+    current_document_verified: bool
+    human_authorization_recorded: bool
+    remote_metadata_read_performed: bool
+    remote_content_read_performed: bool
+    storage_read_performed: bool
+    storage_write_performed: bool
+    document_mutated: bool
+    processing_enqueued: bool
+    ai_executed: bool
+    claim_mutated: bool
+    checkpoint_advanced: bool
+    background_sync_started: bool
+
+    @field_serializer("occurred_at")
+    def _utc(self, value: datetime) -> str:
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc).isoformat()
 
 
 class ExternalDocumentSourceFamilyVersionAdmissionRead(BaseModel):
@@ -19,8 +127,7 @@ class ExternalDocumentSourceFamilyVersionAdmissionRead(BaseModel):
     profile_id: UUID
     binding_id: UUID
     authorization_id: UUID
-    generation_3_change_detection_execution_id: UUID
-    checkpoint_generation_3_execution_id: UUID
+    successor_change_detection_execution_id: UUID
     successor_versioned_restaging_execution_id: UUID
     document_family_id: UUID
     prior_document_id: UUID
@@ -31,13 +138,13 @@ class ExternalDocumentSourceFamilyVersionAdmissionRead(BaseModel):
     profile_hash: str
     stable_source_item_hash: str
     authorization_hash: str
-    authorized_projection_hash: str
-    observation_completion_hash: str
+    successor_change_completion_hash: str
     candidate_content_proof_hash: str
     candidate_completion_hash: str
     prior_projection_hash: str
     prior_provider_version_hash: str | None
     prior_document_file_hash: str
+    fresh_observation_execution_id: UUID
     fresh_projection_hash: str
     fresh_display_name_hash: str
     fresh_version_token_hash: str | None
@@ -59,11 +166,10 @@ class ExternalDocumentSourceFamilyVersionAdmissionRead(BaseModel):
     executed_at: datetime
     completion_hash: str
 
-    upstream_authorization_verified: bool
+    authorization_verified: bool
     durable_family_binding_verified: bool
     stable_source_identity_verified: bool
     authorization_single_use_consumed: bool
-    latest_generation_3_observation_confirmed: bool
     fresh_exact_item_metadata_read_performed: bool
     fresh_remote_version_current: bool
     staged_content_integrity_verified: bool
@@ -111,11 +217,10 @@ class ExternalDocumentSourceFamilyVersionAdmissionReceiptRead(BaseModel):
     prior_receipt_hash: str | None
     receipt_hash: str
 
-    upstream_authorization_verified: bool
+    authorization_verified: bool
     durable_family_binding_verified: bool
     stable_source_identity_verified: bool
     authorization_single_use_consumed: bool
-    latest_generation_3_observation_confirmed: bool
     fresh_exact_item_metadata_read_performed: bool
     fresh_remote_version_current: bool
     staged_content_integrity_verified: bool
