@@ -506,6 +506,26 @@ def execute_external_document_source_evidence_admission(
         )
     _active_claim(db, organization_id=organization_id, claim_id=authorization.claim_id)
 
+    # The Phase-W authorization is single-use across both initial admission (X)
+    # and later family-version admission (AA). Import locally to avoid a
+    # module-registration cycle.
+    from app.modules.external_document_sources.family_version_admission_models import (
+        ExternalDocumentSourceFamilyVersionAdmissionExecution,
+    )
+
+    later_consumption = db.scalar(
+        select(ExternalDocumentSourceFamilyVersionAdmissionExecution.id).where(
+            ExternalDocumentSourceFamilyVersionAdmissionExecution.organization_id
+            == organization_id,
+            ExternalDocumentSourceFamilyVersionAdmissionExecution.authorization_id
+            == authorization.id,
+        )
+    )
+    if later_consumption is not None:
+        raise ExternalDocumentSourceConflictError(
+            "Authorization was already consumed by a later Evidence family-version admission"
+        )
+
     existing = db.scalar(
         select(ExternalDocumentSourceEvidenceAdmissionExecution).where(
             ExternalDocumentSourceEvidenceAdmissionExecution.authorization_id == authorization.id,
