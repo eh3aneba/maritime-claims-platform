@@ -355,3 +355,61 @@ def test_phase_z_tampered_or_stale_release_fails_closed(
         assert document is not None
         with pytest.raises(ExternalDocumentSourceConflictError):
             get_active_processing_release_for_document(db, document=document)
+
+@pytest.mark.parametrize("mutation", ["superseded", "deleted"])
+def test_phase_z_release_fails_closed_when_document_ceases_to_be_current(
+    monkeypatch: pytest.MonkeyPatch,
+    mutation: str,
+) -> None:
+    actor_id, _profile_id, claim_id, execution, _binding = _bound(
+        monkeypatch,
+        f"stale-{mutation}",
+    )
+    document_id = UUID(execution["document_id"])
+
+    release = _grant(
+        claim_id,
+        document_id,
+        actor_id,
+        key=f"phase-z-release-{mutation}",
+    )
+    assert release.status_code == 201, release.text
+
+    with TestingSessionLocal() as db:
+        document = db.get(Document, document_id)
+        assert document is not None
+        if mutation == "superseded":
+            document.is_current = False
+            document.superseded_at = datetime.now(UTC)
+        else:
+            document.deleted_at = datetime.now(UTC)
+        db.commit()
+
+    summary = client.get(
+        f"/api/v1/claims/{claim_id}/documents/{document_id}/processing",
+        headers=_headers(actor_id),
+    )
+    if mutation == "deleted":
+        assert summary.status_code == 404, summary.text
+    else:
+        assert summary.status_code == 200, summary.text
+        assert summary.json()["processing_release_required"] is True
+        assert summary.json()["processing_release_status"] == "required"
+        assert summary.json()["can_retry"] is False
+
+    with TestingSessionLocal() as db:
+        document = db.get(Document, document_id)
+        assert document is not None
+        with pytest.raises(
+            (ExternalDocumentSourceConflictError, ExternalEvidenceProcessingAuthorizationRequired)
+        ):
+            if mutation == "deleted":
+                get_active_processing_release_for_document(db, document=document)
+            else:
+                enqueue_processing_job(
+                    db,
+                    document=document,
+                    requested_by_id=actor_id,
+                    job_type=ProcessingJobType.EXTRACT_TEXT,
+                )
+
