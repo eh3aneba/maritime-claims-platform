@@ -18,6 +18,12 @@ from app.modules.external_document_sources.family_version_admission_models impor
     ExternalDocumentSourceFamilyVersionAdmissionExecution,
     ExternalDocumentSourceFamilyVersionAdmissionReceipt,
 )
+from app.modules.external_document_sources.evidence_family_binding_models import (
+    ExternalDocumentSourceEvidenceFamilyBinding,
+)
+from app.modules.external_document_sources.generation_3_change_detection_models import (
+    ExternalDocumentSourceGeneration3ChangeDetectionExecution,
+)
 from app.modules.external_document_sources.remote_file_content_read_service import (
     register_external_document_source_remote_file_content_read_adapter,
 )
@@ -30,6 +36,7 @@ from tests.test_external_document_source_checkpoint_generation_3 import (
 from tests.test_external_document_source_discovery import _headers, _seed_tenant
 from tests.test_external_document_source_evidence_admission_authorization import (
     _authorize,
+    _seed_claim,
 )
 from tests.test_external_document_source_evidence_admission_execution import (
     _execute as _execute_initial,
@@ -48,6 +55,7 @@ from tests.test_external_document_source_successor_change_detection import (
     _observe as _observe_s,
 )
 from tests.test_external_document_source_successor_versioned_restaging import (
+    _T_BODY,
     _TReadAdapter,
     _restage_successor,
 )
@@ -140,12 +148,15 @@ def _later_authorization(
     claim_id: UUID,
     actor_id: UUID,
     suffix: str,
+    body: bytes = _V2_BODY,
+    version: str = _V2_VERSION,
+    modified: datetime = _V2_MODIFIED,
 ):
     r_row = _latest_phase_r(profile_id)
     projection = _generation2_projection(
-        size=len(_V2_BODY),
-        version=_V2_VERSION,
-        modified=_V2_MODIFIED,
+        size=len(body),
+        version=version,
+        modified=modified,
     )
 
     s_adapter = _ChangeAdapter()
@@ -165,8 +176,8 @@ def _later_authorization(
     assert s.json()["result_status"] == "changed"
 
     t_adapter = _TReadAdapter(
-        content=_V2_BODY,
-        version=_V2_VERSION,
+        content=body,
+        version=version,
         media="application/pdf",
     )
     register_external_document_source_remote_file_content_read_adapter(
@@ -376,6 +387,28 @@ def test_phase_aa_admits_exact_later_version_without_inheriting_processing_autho
     )
     assert altered.status_code == 409, altered.text
 
+    v2_release = client.post(
+        f"/api/v1/claims/{claim_id}/documents/{v2_id}/processing/release",
+        headers=_headers(actor_id),
+        json={
+            "request_key": "phase-aa-v2-release",
+            "reason": (
+                "Authorize local deterministic processing for the exact current "
+                "v2 Evidence after separate AA admission."
+            ),
+        },
+    )
+    assert v2_release.status_code == 201, v2_release.text
+    assert v2_release.json()["document_id"] == str(v2_id)
+    assert v2_release.json()["document_version_number"] == 2
+    assert v2_release.json()["ai_processing_authorized"] is False
+
+    v2_retry = client.post(
+        f"/api/v1/claims/{claim_id}/documents/{v2_id}/processing/retry",
+        headers=_headers(actor_id),
+    )
+    assert v2_retry.status_code == 202, v2_retry.text
+
     initial_path_reuse = _execute_initial(
         profile_id,
         authorization["id"],
@@ -434,3 +467,186 @@ def test_phase_aa_cross_tenant_and_stale_authorization_fail_closed(
         assert current.is_current is True
         assert current.version_number == 1
         assert db.query(ExternalDocumentSourceFamilyVersionAdmissionExecution).count() == 0
+
+def test_phase_aa_rejects_same_content_even_when_remote_metadata_version_changed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    actor_id, profile_id, claim_id, _initial_execution, binding = _bound_v1(
+        monkeypatch,
+        "same-content",
+    )
+    authorization, _v_adapter = _later_authorization(
+        profile_id=profile_id,
+        claim_id=claim_id,
+        actor_id=actor_id,
+        suffix="same-content",
+        body=_T_BODY,
+        version="f" * 64,
+        modified=datetime(2026, 9, 19, 16, 30, tzinfo=UTC),
+    )
+    _enable_clean_aa(monkeypatch)
+
+    rejected = _aa_admit(
+        profile_id,
+        binding["id"],
+        authorization["id"],
+        actor_id,
+        key="phase-aa-same-content",
+    )
+    assert rejected.status_code == 409, rejected.text
+    assert "duplicate" in rejected.text.lower() or "bytes" in rejected.text.lower()
+
+    with TestingSessionLocal() as db:
+        rows = list(
+            db.scalars(
+                select(Document).where(
+                    Document.claim_id == claim_id,
+                    Document.document_family_id
+                    == UUID(binding["document_family_id"]),
+                    Document.deleted_at.is_(None),
+                )
+            ).all()
+        )
+        assert len(rows) == 1
+        assert rows[0].version_number == 1
+        assert rows[0].is_current is True
+
+
+def test_phase_aa_rejects_authorization_for_a_different_claim_family(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    actor_id, profile_id, claim_id, _initial_execution, binding = _bound_v1(
+        monkeypatch,
+        "wrong-family",
+    )
+    authorization, _v_adapter = _later_authorization(
+        profile_id=profile_id,
+        claim_id=claim_id,
+        actor_id=actor_id,
+        suffix="wrong-family",
+    )
+
+    with TestingSessionLocal() as db:
+        latest_v = db.scalar(
+            select(ExternalDocumentSourceGeneration3ChangeDetectionExecution)
+            .where(
+                ExternalDocumentSourceGeneration3ChangeDetectionExecution.profile_id
+                == UUID(profile_id),
+                ExternalDocumentSourceGeneration3ChangeDetectionExecution.status
+                == "completed",
+                ExternalDocumentSourceGeneration3ChangeDetectionExecution.result_status
+                == "unchanged",
+            )
+            .order_by(
+                ExternalDocumentSourceGeneration3ChangeDetectionExecution.created_at.desc(),
+                ExternalDocumentSourceGeneration3ChangeDetectionExecution.id.desc(),
+            )
+            .limit(1)
+        )
+        assert latest_v is not None
+        latest_v_id = latest_v.id
+
+    other_claim_id = _seed_claim(actor_id, "aa-wrong-family-other")
+    other_authorization = _authorize(
+        profile_id,
+        str(latest_v_id),
+        other_claim_id,
+        actor_id,
+        key="phase-aa-wrong-family-other-auth",
+    )
+    assert other_authorization.status_code == 201, other_authorization.text
+
+    rejected = _aa_admit(
+        profile_id,
+        binding["id"],
+        other_authorization.json()["id"],
+        actor_id,
+        key="phase-aa-wrong-family-exec",
+    )
+    assert rejected.status_code == 409, rejected.text
+
+    with TestingSessionLocal() as db:
+        assert (
+            db.query(ExternalDocumentSourceFamilyVersionAdmissionExecution)
+            .filter(
+                ExternalDocumentSourceFamilyVersionAdmissionExecution.binding_id
+                == UUID(binding["id"])
+            )
+            .count()
+            == 0
+        )
+        current = list(
+            db.scalars(
+                select(Document).where(
+                    Document.claim_id == claim_id,
+                    Document.document_family_id
+                    == UUID(binding["document_family_id"]),
+                    Document.is_current.is_(True),
+                )
+            ).all()
+        )
+        assert len(current) == 1
+        assert current[0].version_number == 1
+
+    # Ensure the valid authorization created for the original Claim was not
+    # accidentally consumed by the wrong-family attempt.
+    _enable_clean_aa(monkeypatch)
+    accepted = _aa_admit(
+        profile_id,
+        binding["id"],
+        authorization["id"],
+        actor_id,
+        key="phase-aa-correct-family-after-reject",
+    )
+    assert accepted.status_code == 201, accepted.text
+
+
+def test_phase_aa_binding_tamper_fails_before_document_version_mutation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    actor_id, profile_id, claim_id, _initial_execution, binding = _bound_v1(
+        monkeypatch,
+        "tamper",
+    )
+    authorization, _v_adapter = _later_authorization(
+        profile_id=profile_id,
+        claim_id=claim_id,
+        actor_id=actor_id,
+        suffix="tamper",
+    )
+    _enable_clean_aa(monkeypatch)
+
+    with TestingSessionLocal() as db:
+        row = db.get(
+            ExternalDocumentSourceEvidenceFamilyBinding,
+            UUID(binding["id"]),
+        )
+        assert row is not None
+        row.stable_source_item_hash = "0" * 64
+        db.commit()
+
+    rejected = _aa_admit(
+        profile_id,
+        binding["id"],
+        authorization["id"],
+        actor_id,
+        key="phase-aa-tampered-binding",
+    )
+    assert rejected.status_code == 409, rejected.text
+
+    with TestingSessionLocal() as db:
+        documents = list(
+            db.scalars(
+                select(Document).where(
+                    Document.claim_id == claim_id,
+                    Document.document_family_id
+                    == UUID(binding["document_family_id"]),
+                    Document.deleted_at.is_(None),
+                )
+            ).all()
+        )
+        assert len(documents) == 1
+        assert documents[0].version_number == 1
+        assert documents[0].is_current is True
+        assert db.query(ExternalDocumentSourceFamilyVersionAdmissionExecution).count() == 0
+
