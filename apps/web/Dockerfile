@@ -11,14 +11,10 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build
 
-FROM node:22-alpine3.24@sha256:b6f26b36c8ff49624cfdac716b8ea1138d606df02586a77d364bb5536a634f85 AS runner
+FROM alpine:3.24.2@sha256:5b02b42e375f7426f8d65c3af331ca05d9878f9989230354504e0b9dfd431f60 AS runner
 WORKDIR /app
 ENV NODE_ENV=production
-RUN apk upgrade --no-cache \
-    && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
-    && rm -f /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack \
-        /usr/local/bin/pnpm /usr/local/bin/pnpx \
-        /usr/local/bin/yarn /usr/local/bin/yarnpkg \
+RUN apk add --no-cache nodejs \
     && node --version
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
