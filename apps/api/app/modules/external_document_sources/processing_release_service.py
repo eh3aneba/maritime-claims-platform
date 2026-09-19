@@ -434,13 +434,16 @@ def grant_processing_release(
         .where(
             ExternalDocumentSourceProcessingRelease.organization_id == organization_id,
             ExternalDocumentSourceProcessingRelease.binding_id == binding.id,
+            ExternalDocumentSourceProcessingRelease.document_id == document.id,
+            ExternalDocumentSourceProcessingRelease.document_version_number
+            == document.version_number,
         )
         .with_for_update()
     )
     if existing is not None:
         ensure_processing_release_integrity(db, existing)
         raise ExternalDocumentSourceConflictError(
-            "External Evidence family already has a processing release lifecycle"
+            "This exact external Evidence version already has a processing release lifecycle"
         )
 
     released_at = _utc_now()
