@@ -14,7 +14,10 @@ RUN npm run build
 FROM node:22-alpine3.24 AS runner
 WORKDIR /app
 ENV NODE_ENV=production
-RUN /sbin/apk upgrade --no-cache \
+RUN /sbin/apk add --no-cache --allow-downgrades \
+        --repository=https://dl-cdn.alpinelinux.org/alpine/v3.19/main \
+        'zlib=1.3.1-r0' \
+    && /sbin/apk info -v zlib \
     && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
     && rm -f /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack \
         /usr/local/bin/pnpm /usr/local/bin/pnpx /usr/local/bin/yarn /usr/local/bin/yarnpkg \
