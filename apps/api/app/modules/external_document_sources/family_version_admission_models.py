@@ -173,7 +173,7 @@ class ExternalDocumentSourceFamilyVersionAdmissionAuthorization(
     authorized_projection_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     authorized_display_name_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     authorized_version_token_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    authorized_byte_size: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    authorized_byte_size: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     authorized_mime_type_class: Mapped[str | None] = mapped_column(String(128), nullable=True)
     candidate_content_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     candidate_content_byte_count: Mapped[int] = mapped_column(BigInteger, nullable=False)
