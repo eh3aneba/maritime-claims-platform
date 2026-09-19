@@ -32,7 +32,7 @@ class ExternalEvidenceProcessingAuthorizationRequired(RuntimeError):
     """Raised when admitted external Evidence has no downstream-processing authority."""
 
 
-def external_evidence_requires_processing_release(
+def _is_admitted_external_evidence(
     db: Session,
     *,
     document: Document,
@@ -55,6 +55,37 @@ def external_evidence_requires_processing_release(
     )
 
 
+def external_evidence_processing_release_status(
+    db: Session,
+    *,
+    document: Document,
+) -> str:
+    if not _is_admitted_external_evidence(db, document=document):
+        return "not_applicable"
+
+    from app.modules.external_document_sources.processing_release_service import (
+        get_active_processing_release_for_document,
+    )
+    from app.modules.external_document_sources.service import (
+        ExternalDocumentSourceConflictError,
+        ExternalDocumentSourceNotFoundError,
+    )
+
+    try:
+        release = get_active_processing_release_for_document(db, document=document)
+    except (ExternalDocumentSourceConflictError, ExternalDocumentSourceNotFoundError):
+        return "required"
+    return "active" if release is not None else "required"
+
+
+def external_evidence_requires_processing_release(
+    db: Session,
+    *,
+    document: Document,
+) -> bool:
+    return external_evidence_processing_release_status(db, document=document) == "required"
+
+
 def _ensure_document_processing_authority(
     db: Session,
     *,
@@ -65,7 +96,7 @@ def _ensure_document_processing_authority(
         return
     if external_evidence_requires_processing_release(db, document=document):
         raise ExternalEvidenceProcessingAuthorizationRequired(
-            "External Evidence was admitted without downstream processing authority"
+            "External Evidence requires an active exact-current downstream processing release"
         )
 
 
