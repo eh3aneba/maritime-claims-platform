@@ -271,7 +271,6 @@ class ExternalDocumentSourceFamilyVersionAdmissionExecution(
     prior_provider_version_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     prior_document_file_hash: Mapped[str] = mapped_column(String(64), nullable=False)
 
-    fresh_observation_execution_id: Mapped[UUID] = mapped_column(ForeignKey("external_doc_source_successor_change_detect_execs.id", ondelete="RESTRICT"), nullable=False)
     fresh_projection_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     fresh_display_name_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     fresh_version_token_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
