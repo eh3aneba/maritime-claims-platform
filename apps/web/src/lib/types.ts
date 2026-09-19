@@ -388,6 +388,24 @@ export interface DocumentProcessingSummary {
   operator_status: OperatorProcessingStatus;
   can_retry: boolean;
   retry_recommended: boolean;
+  processing_release_required: boolean;
+  processing_release_status: "not_applicable" | "required" | "active";
+}
+
+export interface ExternalEvidenceProcessingRelease {
+  id: string;
+  organization_id: string;
+  claim_id: string;
+  profile_id: string;
+  binding_id: string;
+  document_family_id: string;
+  document_id: string;
+  document_version_number: number;
+  status: "active" | "revoked";
+  local_text_processing_authorized: boolean;
+  ai_processing_authorized: boolean;
+  released_at: string;
+  revoked_at: string | null;
 }
 export type ConfidentialityLevel = "internal" | "confidential" | "restricted";
 export type DocumentMalwareScanStatus =
