@@ -157,7 +157,7 @@ def upgrade() -> None:
         sa.Column("authorized_projection_hash", sa.String(64), nullable=False),
         sa.Column("authorized_display_name_hash", sa.String(64), nullable=False),
         sa.Column("authorized_version_token_hash", sa.String(64), nullable=True),
-        sa.Column("authorized_byte_size", sa.BigInteger(), nullable=False),
+        sa.Column("authorized_byte_size", sa.BigInteger(), nullable=True),
         sa.Column("authorized_mime_type_class", sa.String(128), nullable=True),
         sa.Column("candidate_content_sha256", sa.String(64), nullable=False),
         sa.Column("candidate_content_byte_count", sa.BigInteger(), nullable=False),
@@ -187,7 +187,7 @@ def upgrade() -> None:
         sa.CheckConstraint("provider_kind IN ('sharepoint','google_drive')", name="ck_ext_doc_fva_auth_provider"),
         sa.CheckConstraint("status = 'authorized'", name="ck_ext_doc_fva_auth_status"),
         sa.CheckConstraint("expected_prior_version_number >= 1", name="ck_ext_doc_fva_auth_prior_version"),
-        sa.CheckConstraint("authorized_byte_size >= 0", name="ck_ext_doc_fva_auth_size"),
+        sa.CheckConstraint("authorized_byte_size IS NULL OR authorized_byte_size >= 0", name="ck_ext_doc_fva_auth_size"),
         sa.CheckConstraint("candidate_content_byte_count >= 0", name="ck_ext_doc_fva_auth_candidate_size"),
         *_auth_safety_constraints("ext_doc_fva_auth"),
     )
