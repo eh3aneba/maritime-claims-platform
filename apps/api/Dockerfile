@@ -52,8 +52,10 @@ RUN /sbin/apk upgrade --no-cache \
         poppler-utils \
         tesseract-ocr \
         tesseract-ocr-data-eng \
-        tesseract-ocr-data-fas \
         zlib \
+    && /sbin/apk add --no-cache \
+        --repository=https://dl-cdn.alpinelinux.org/alpine/edge/community \
+        'tesseract-ocr-data-fas=5.5.2-r0' \
     && python --version \
     && pdftotext -v 2>&1 | head -n 1 \
     && pdftoppm -v 2>&1 | head -n 1 \
