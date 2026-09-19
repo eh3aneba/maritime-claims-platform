@@ -92,7 +92,7 @@ RUN python -c "import hashlib,urllib.request; u='https://poppler.freedesktop.org
     && cmake -S /src/poppler -B /src/poppler/build -G Ninja \
         -DCMAKE_INSTALL_PREFIX=/opt/poppler \
         -DCMAKE_PREFIX_PATH=/opt/ocr \
-        -DCMAKE_BUILD_TYPE=MinSizeRel \
+        -DCMAKE_BUILD_TYPE=RelWithDebInfo \
         -DENABLE_GPGME=OFF \
         -DENABLE_LIBCURL=OFF \
         -DENABLE_QT5=OFF \
