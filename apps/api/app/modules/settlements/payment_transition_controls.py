@@ -22,13 +22,16 @@ _CAPACITY_ACTIVE_PAYMENT_STATUSES = {
 }
 
 
-def lock_and_validate_payment_capacity(db: Session, item: PaymentAuthorization) -> SettlementProposal:
-    """Serialize and validate any transition that carries settlement capacity.
+def lock_payment_transition(
+    db: Session,
+    item: PaymentAuthorization,
+) -> tuple[SettlementProposal, PaymentAuthorization]:
+    """Serialize one payment transition on settlement then payment rows.
 
-    The accepted settlement row is the serialization point. The current payment
-    is excluded from the aggregate and then added exactly once, so this works for
-    both an already-active row progressing through approval and a rejected row
-    re-entering the active ledger.
+    Callers may have loaded the payment before waiting on the settlement lock.
+    Re-read the payment with populate_existing while holding both row locks so a
+    waiter cannot continue from stale workflow state after another transaction
+    commits a competing transition.
     """
     settlement = db.scalar(
         select(SettlementProposal)
@@ -44,16 +47,46 @@ def lock_and_validate_payment_capacity(db: Session, item: PaymentAuthorization) 
     if settlement.status != SettlementStatus.ACCEPTED:
         raise HTTPException(409, "Payment authorization requires an accepted settlement")
 
+    locked_item = db.scalar(
+        select(PaymentAuthorization)
+        .where(
+            PaymentAuthorization.id == item.id,
+            PaymentAuthorization.settlement_id == settlement.id,
+            PaymentAuthorization.organization_id == item.organization_id,
+            PaymentAuthorization.claim_id == item.claim_id,
+        )
+        .execution_options(populate_existing=True)
+        .with_for_update()
+    )
+    if locked_item is None:
+        raise HTTPException(409, "Payment authorization disappeared during transition")
+    return settlement, locked_item
+
+
+def lock_and_validate_payment_capacity(
+    db: Session,
+    item: PaymentAuthorization,
+) -> tuple[SettlementProposal, PaymentAuthorization]:
+    """Serialize and validate any transition that carries settlement capacity.
+
+    The accepted settlement row is the global serialization point. The payment
+    row is then locked and refreshed so state-machine checks use current durable
+    state even when the caller loaded the row before waiting for the settlement
+    lock. The current payment is excluded from the aggregate and added exactly
+    once.
+    """
+    settlement, locked_item = lock_payment_transition(db, item)
+
     allocated_other = db.scalar(
         select(func.coalesce(func.sum(PaymentAuthorization.amount), 0)).where(
             PaymentAuthorization.settlement_id == settlement.id,
-            PaymentAuthorization.id != item.id,
+            PaymentAuthorization.id != locked_item.id,
             PaymentAuthorization.status.in_(_CAPACITY_ACTIVE_PAYMENT_STATUSES),
         )
     )
-    if Decimal(allocated_other) + item.amount > settlement.amount:
+    if Decimal(allocated_other) + locked_item.amount > settlement.amount:
         raise HTTPException(
             422,
             "Cumulative payment authorizations cannot exceed the accepted settlement amount",
         )
-    return settlement
+    return settlement, locked_item
