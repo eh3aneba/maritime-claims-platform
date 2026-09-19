@@ -1,34 +1,35 @@
-FROM cgr.dev/chainguard/wolfi-base@sha256:1d95114038f76513a9ace6fca107d5582b08c65981f81f61cb56bf7fd2ef216d AS python-builder
+FROM python:3.14.7-alpine3.24@sha256:6f945b4c17e0a1ee862ada29a91406bc86d58180ce7de902d8de1f30730e3760 AS python-builder
 
 WORKDIR /app
 
-RUN apk add --no-cache \
+RUN apk upgrade --no-cache \
+    && apk add --no-cache \
         build-base \
         libuuid \
-        py3.13-pip \
-        python-3.13 \
-        zlib \
-    && python3.13 --version \
-    && pip3.13 --version
+        zlib-dev \
+    && python --version \
+    && python -m pip --version
 
 COPY requirements.lock .
-RUN python3.13 -m venv /opt/venv \
+RUN python -m venv /opt/venv \
     && /opt/venv/bin/python -m pip install --no-cache-dir --require-hashes -r requirements.lock \
+    && /opt/venv/bin/python -m pip check \
     && /opt/venv/bin/python -c "import alembic, fastapi, sqlalchemy; print('venv-ready')"
 
-FROM cgr.dev/chainguard/wolfi-base@sha256:1d95114038f76513a9ace6fca107d5582b08c65981f81f61cb56bf7fd2ef216d AS base
+FROM python:3.14.7-alpine3.24@sha256:6f945b4c17e0a1ee862ada29a91406bc86d58180ce7de902d8de1f30730e3760 AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PATH="/opt/venv/bin:/usr/bin:/bin"
+    PATH="/opt/venv/bin:/usr/local/bin:/usr/bin:/bin"
 
 WORKDIR /app
 
-RUN apk add --no-cache \
+RUN apk upgrade --no-cache \
+    && apk add --no-cache \
         libuuid \
-        python-3.13 \
         zlib \
-    && python3.13 -c "import _uuid, uuid, zlib; value = uuid.uuid4(); assert value.version == 4; print(value, zlib.ZLIB_VERSION)"
+    && python -c "import _uuid, uuid, zlib; value = uuid.uuid4(); assert value.version == 4; print(value, zlib.ZLIB_VERSION)" \
+    && rm -rf /usr/local/lib/python3.14/site-packages/pip* /usr/local/bin/pip*
 
 COPY --from=python-builder /opt/venv /opt/venv
 COPY pyproject.toml alembic.ini ./
@@ -37,23 +38,23 @@ COPY app ./app
 
 EXPOSE 8000
 
-FROM cgr.dev/chainguard/wolfi-base@sha256:1d95114038f76513a9ace6fca107d5582b08c65981f81f61cb56bf7fd2ef216d AS worker
+FROM python:3.14.7-alpine3.24@sha256:6f945b4c17e0a1ee862ada29a91406bc86d58180ce7de902d8de1f30730e3760 AS worker
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PATH="/opt/venv/bin:/usr/bin:/bin" \
+    PATH="/opt/venv/bin:/usr/local/bin:/usr/bin:/bin" \
     TESSDATA_PREFIX="/usr/share/tessdata"
 
 WORKDIR /app
 
-RUN apk add --no-cache \
+RUN apk upgrade --no-cache \
+    && apk add --no-cache \
         libuuid \
         poppler-utils \
-        python-3.13 \
-        tessdata \
-        tesseract \
+        tesseract-ocr \
+        tesseract-ocr-data-fas \
         zlib \
-    && python3.13 --version \
+    && python --version \
     && pdftotext -v 2>&1 | head -n 1 \
     && pdftoppm -v 2>&1 | head -n 1 \
     && tesseract --version | head -n 1 \
@@ -62,7 +63,8 @@ RUN apk add --no-cache \
     && tesseract --list-langs | tee /tmp/tesseract-langs.txt \
     && grep -Fx eng /tmp/tesseract-langs.txt \
     && grep -Fx fas /tmp/tesseract-langs.txt \
-    && rm -f /tmp/tesseract-langs.txt
+    && rm -f /tmp/tesseract-langs.txt \
+    && rm -rf /usr/local/lib/python3.14/site-packages/pip* /usr/local/bin/pip*
 
 COPY --from=python-builder /opt/venv /opt/venv
 COPY pyproject.toml alembic.ini ./
