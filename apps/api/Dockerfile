@@ -48,14 +48,13 @@ WORKDIR /app
 
 RUN /sbin/apk upgrade --no-cache \
     && /sbin/apk add --no-cache \
+        ca-certificates \
         libuuid \
         poppler-utils \
         tesseract-ocr \
         tesseract-ocr-data-eng \
         zlib \
-    && /sbin/apk add --no-cache \
-        --repository=https://dl-cdn.alpinelinux.org/alpine/edge/community \
-        'tesseract-ocr-data-fas=5.5.2-r0' \
+    && python -c "import hashlib,pathlib,urllib.request; url='https://raw.githubusercontent.com/tesseract-ocr/tessdata/ced78752cc61322fb554c280d13360b35b8684e4/fas.traineddata'; data=urllib.request.urlopen(url, timeout=60).read(); assert len(data)==561272, len(data); git_sha=hashlib.sha1(b'blob '+str(len(data)).encode()+b'\\0'+data).hexdigest(); assert git_sha=='a0b9843164d928caad5afb0bd6973c964ba5b0b9', git_sha; print('fas.sha256='+hashlib.sha256(data).hexdigest()); pathlib.Path('/usr/share/tessdata/fas.traineddata').write_bytes(data)" \
     && python --version \
     && pdftotext -v 2>&1 | head -n 1 \
     && pdftoppm -v 2>&1 | head -n 1 \
