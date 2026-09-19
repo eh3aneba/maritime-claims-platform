@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.ai.gateway.registry import get_ai_provider
 from app.core.config import get_settings
-from app.modules.ai_governance.service import require_external_ai_runtime_authorization
+from app.modules.ai_runtime import require_external_ai_runtime_authorization
 from app.modules.audit.service import write_audit_log
 from app.modules.documents.models import (
     Document,
@@ -61,13 +61,8 @@ def _ensure_document_processing_authority(
     document: Document,
     job_type: ProcessingJobType,
 ) -> None:
-    # Phase 17.5-X admits one governed external item as Evidence but deliberately
-    # grants no extraction/AI authority. Security-only malware rescans remain
-    # available. A later control-plane phase must explicitly replace this
-    # fail-closed rule when downstream processing authority is introduced.
     if job_type == ProcessingJobType.MALWARE_RESCAN:
         return
-
     if external_evidence_requires_processing_release(db, document=document):
         raise ExternalEvidenceProcessingAuthorizationRequired(
             "External Evidence was admitted without downstream processing authority"
