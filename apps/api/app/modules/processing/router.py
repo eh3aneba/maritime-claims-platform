@@ -21,6 +21,7 @@ from app.modules.processing.schemas import (
 from app.modules.processing.service import (
     ExternalEvidenceProcessingAuthorizationRequired,
     enqueue_text_extraction,
+    external_evidence_processing_release_status,
     external_evidence_requires_processing_release,
     get_processing_summary,
 )
@@ -67,10 +68,11 @@ def processing_summary(
     job, extraction = get_processing_summary(
         db, document_id=document.id, organization_id=current_user.organization_id
     )
-    processing_release_required = external_evidence_requires_processing_release(
+    processing_release_status = external_evidence_processing_release_status(
         db,
         document=document,
     )
+    processing_release_required = processing_release_status == "required"
     operator_status, can_retry, retry_recommended = _operator_state(
         document,
         job,
@@ -82,6 +84,8 @@ def processing_summary(
         operator_status=operator_status,
         can_retry=can_retry,
         retry_recommended=retry_recommended,
+        processing_release_required=processing_release_required,
+        processing_release_status=processing_release_status,
     )
 
 
@@ -126,3 +130,6 @@ def retry_processing(
     db.commit()
     db.refresh(job)
     return ProcessingJobResponse.model_validate(job)
+
+# Phase 17.5-Z mounts the explicit processing-release endpoints on this router.
+from app.modules.external_document_sources import processing_release_router as _processing_release_router  # noqa: E402,F401
