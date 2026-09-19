@@ -14,7 +14,7 @@ RUN npm run build
 FROM node:22-alpine3.24 AS runner
 WORKDIR /app
 ENV NODE_ENV=production
-RUN /sbin/apk add --no-cache --allow-downgrades \
+RUN /sbin/apk add --no-cache \
         --repository=https://dl-cdn.alpinelinux.org/alpine/v3.19/main \
         'zlib=1.3.1-r0' \
     && /sbin/apk info -v zlib \

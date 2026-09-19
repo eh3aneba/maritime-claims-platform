@@ -51,7 +51,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-RUN /sbin/apk add --no-cache --allow-downgrades \
+RUN /sbin/apk add --no-cache \
         --repository=https://dl-cdn.alpinelinux.org/alpine/v3.19/main \
         'zlib=1.3.1-r0' \
     && /sbin/apk add --no-cache libuuid \
@@ -76,7 +76,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-RUN /sbin/apk add --no-cache --allow-downgrades \
+RUN /sbin/apk add --no-cache \
         --repository=https://dl-cdn.alpinelinux.org/alpine/v3.19/main \
         'zlib=1.3.1-r0' \
     && /sbin/apk add --no-cache \
