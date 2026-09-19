@@ -11,13 +11,19 @@ from app.modules.external_document_sources.connection_authorization_router impor
     router,
 )
 from app.modules.external_document_sources.family_version_admission_schemas import (
+    ExternalDocumentSourceFamilyVersionAdmissionAuthorizationRead,
+    ExternalDocumentSourceFamilyVersionAdmissionAuthorizationReceiptRead,
+    ExternalDocumentSourceFamilyVersionAdmissionAuthorizationRequest,
     ExternalDocumentSourceFamilyVersionAdmissionRead,
     ExternalDocumentSourceFamilyVersionAdmissionReceiptRead,
     ExternalDocumentSourceFamilyVersionAdmissionRequest,
 )
 from app.modules.external_document_sources.family_version_admission_service import (
+    authorize_external_document_source_family_version_admission,
     execute_external_document_source_family_version_admission,
     get_external_document_source_family_version_admission,
+    get_external_document_source_family_version_admission_authorization,
+    list_external_document_source_family_version_admission_authorization_receipts,
     list_external_document_source_family_version_admission_receipts,
 )
 from app.modules.external_document_sources.service import (
@@ -42,6 +48,124 @@ def _raise_service_error(exc: Exception) -> None:
         status_code=status.HTTP_409_CONFLICT,
         detail=str(exc),
     ) from exc
+
+
+@router.post(
+    (
+        "/profiles/{profile_id}/evidence-family-bindings/{binding_id}"
+        "/version-admission-authorizations/{successor_versioned_restaging_execution_id}"
+    ),
+    response_model=ExternalDocumentSourceFamilyVersionAdmissionAuthorizationRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def authorize_family_version_admission_endpoint(
+    profile_id: UUID,
+    binding_id: UUID,
+    successor_versioned_restaging_execution_id: UUID,
+    payload: ExternalDocumentSourceFamilyVersionAdmissionAuthorizationRequest,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: ConnectionAuthorizationAdminMfa,
+) -> ExternalDocumentSourceFamilyVersionAdmissionAuthorizationRead:
+    try:
+        authorization, _outcome = (
+            authorize_external_document_source_family_version_admission(
+                db,
+                organization_id=current_user.organization_id,
+                profile_id=profile_id,
+                binding_id=binding_id,
+                successor_versioned_restaging_execution_id=
+                    successor_versioned_restaging_execution_id,
+                authorized_by_id=current_user.id,
+                request_key=payload.request_key,
+                authorization_reason=payload.reason,
+            )
+        )
+        return ExternalDocumentSourceFamilyVersionAdmissionAuthorizationRead.model_validate(
+            authorization
+        )
+    except (
+        ExternalDocumentSourceValidationError,
+        ExternalDocumentSourceConflictError,
+        ExternalDocumentSourceNotFoundError,
+        IntegrityError,
+        ValueError,
+    ) as exc:
+        db.rollback()
+        _raise_service_error(exc)
+
+
+@router.get(
+    "/profiles/{profile_id}/evidence-family-version-admission-authorizations/{authorization_id}",
+    response_model=ExternalDocumentSourceFamilyVersionAdmissionAuthorizationRead,
+)
+def get_family_version_admission_authorization_endpoint(
+    profile_id: UUID,
+    authorization_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: ConnectionAuthorizationAdminMfa,
+) -> ExternalDocumentSourceFamilyVersionAdmissionAuthorizationRead:
+    try:
+        authorization = (
+            get_external_document_source_family_version_admission_authorization(
+                db,
+                organization_id=current_user.organization_id,
+                profile_id=profile_id,
+                authorization_id=authorization_id,
+            )
+        )
+        return ExternalDocumentSourceFamilyVersionAdmissionAuthorizationRead.model_validate(
+            authorization
+        )
+    except (
+        ExternalDocumentSourceValidationError,
+        ExternalDocumentSourceConflictError,
+        ExternalDocumentSourceNotFoundError,
+        IntegrityError,
+        ValueError,
+    ) as exc:
+        db.rollback()
+        _raise_service_error(exc)
+
+
+@router.get(
+    (
+        "/profiles/{profile_id}/evidence-family-version-admission-authorizations"
+        "/{authorization_id}/receipts"
+    ),
+    response_model=list[
+        ExternalDocumentSourceFamilyVersionAdmissionAuthorizationReceiptRead
+    ],
+)
+def list_family_version_admission_authorization_receipts_endpoint(
+    profile_id: UUID,
+    authorization_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: ConnectionAuthorizationAdminMfa,
+) -> list[ExternalDocumentSourceFamilyVersionAdmissionAuthorizationReceiptRead]:
+    try:
+        rows = (
+            list_external_document_source_family_version_admission_authorization_receipts(
+                db,
+                organization_id=current_user.organization_id,
+                profile_id=profile_id,
+                authorization_id=authorization_id,
+            )
+        )
+        return [
+            ExternalDocumentSourceFamilyVersionAdmissionAuthorizationReceiptRead.model_validate(
+                row
+            )
+            for row in rows
+        ]
+    except (
+        ExternalDocumentSourceValidationError,
+        ExternalDocumentSourceConflictError,
+        ExternalDocumentSourceNotFoundError,
+        IntegrityError,
+        ValueError,
+    ) as exc:
+        db.rollback()
+        _raise_service_error(exc)
 
 
 @router.post(
