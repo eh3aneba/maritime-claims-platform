@@ -43,6 +43,8 @@ from app.modules.external_document_sources.evidence_family_binding_models import
     ExternalDocumentSourceEvidenceFamilyBindingReceipt,
 )
 from app.modules.external_document_sources.family_version_admission_models import (
+    ExternalDocumentSourceFamilyVersionAdmissionAuthorization,
+    ExternalDocumentSourceFamilyVersionAdmissionAuthorizationReceipt,
     ExternalDocumentSourceFamilyVersionAdmissionExecution,
     ExternalDocumentSourceFamilyVersionAdmissionReceipt,
 )
@@ -150,6 +152,8 @@ __all__ = [
     "ExternalDocumentSourceEvidenceAdmissionExecutionReceipt",
     "ExternalDocumentSourceEvidenceFamilyBinding",
     "ExternalDocumentSourceEvidenceFamilyBindingReceipt",
+    "ExternalDocumentSourceFamilyVersionAdmissionAuthorization",
+    "ExternalDocumentSourceFamilyVersionAdmissionAuthorizationReceipt",
     "ExternalDocumentSourceFamilyVersionAdmissionExecution",
     "ExternalDocumentSourceFamilyVersionAdmissionReceipt",
     "ExternalDocumentSourceProcessingRelease",
