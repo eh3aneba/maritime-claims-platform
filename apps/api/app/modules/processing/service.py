@@ -64,7 +64,7 @@ def external_evidence_processing_release_status(
         return "not_applicable"
 
     from app.modules.external_document_sources.processing_release_service import (
-        get_active_processing_release_for_document,
+        get_processing_release_for_document,
     )
     from app.modules.external_document_sources.service import (
         ExternalDocumentSourceConflictError,
@@ -72,10 +72,12 @@ def external_evidence_processing_release_status(
     )
 
     try:
-        release = get_active_processing_release_for_document(db, document=document)
+        release = get_processing_release_for_document(db, document=document)
     except (ExternalDocumentSourceConflictError, ExternalDocumentSourceNotFoundError):
         return "required"
-    return "active" if release is not None else "required"
+    if release is None:
+        return "required"
+    return "active" if release.status == "active" else "revoked"
 
 
 def external_evidence_requires_processing_release(
@@ -83,7 +85,7 @@ def external_evidence_requires_processing_release(
     *,
     document: Document,
 ) -> bool:
-    return external_evidence_processing_release_status(db, document=document) == "required"
+    return external_evidence_processing_release_status(db, document=document) in {"required", "revoked"}
 
 
 def _ensure_document_processing_authority(
