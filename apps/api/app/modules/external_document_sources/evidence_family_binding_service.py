@@ -135,7 +135,12 @@ def _generation_3_observation(
     return observation
 
 
-def _verify_document_baseline(db: Session, execution: ExternalDocumentSourceEvidenceAdmissionExecution):
+def _verify_document_baseline(
+    db: Session,
+    execution: ExternalDocumentSourceEvidenceAdmissionExecution,
+    *,
+    require_uploaded: bool,
+):
     document = _get_document(db, execution)
     if (
         document.id != execution.document_id
@@ -143,12 +148,15 @@ def _verify_document_baseline(db: Session, execution: ExternalDocumentSourceEvid
         or document.version_number != 1
         or not document.is_current
         or document.supersedes_document_id is not None
-        or document.processing_status != DocumentProcessingStatus.UPLOADED
         or document.file_hash != execution.document_file_hash
         or document.file_size_bytes != execution.document_file_size_bytes
     ):
         raise ExternalDocumentSourceConflictError(
             "Admitted Document is not a valid initial Evidence-family baseline"
+        )
+    if require_uploaded and document.processing_status != DocumentProcessingStatus.UPLOADED:
+        raise ExternalDocumentSourceConflictError(
+            "Admitted Document baseline was already processed before family binding"
         )
     return document
 
@@ -281,7 +289,7 @@ def _ensure_binding_integrity(
             "Evidence family binding admission lineage is missing"
         )
     _ensure_execution_integrity(db, execution)
-    document = _verify_document_baseline(db, execution)
+    document = _verify_document_baseline(db, execution, require_uploaded=False)
     observation = _generation_3_observation(db, execution)
 
     expected = {
@@ -424,7 +432,7 @@ def bind_external_document_source_evidence_family(
         organization_id=organization_id,
         claim_id=execution.claim_id,
     )
-    document = _verify_document_baseline(db, execution)
+    document = _verify_document_baseline(db, execution, require_uploaded=True)
     observation = _generation_3_observation(db, execution)
     stable_source_item_hash = observation.observed_provider_item_id_hash
     if stable_source_item_hash is None:

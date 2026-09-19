@@ -10,12 +10,14 @@ import {
   downloadClaimDocument,
   getCurrentUser,
   getDocumentProcessingSummary,
+  grantDocumentProcessingRelease,
   listClaimDocuments,
   purgeQuarantinedUpload,
   queueLegacyEvidenceRescan,
   replaceClaimDocument,
   retryDocumentProcessing,
   retryQuarantinedUpload,
+  revokeDocumentProcessingRelease,
   runDocumentIntelligence,
   uploadClaimDocument,
 } from "@/lib/api";
@@ -387,6 +389,58 @@ export function ClaimDocuments({ claimId }: { claimId: string }) {
     }
   }
 
+  async function authorizeProcessing(document: ClaimDocument) {
+    if (!isAdmin) return;
+    const reason = window.prompt(ev("processing.releasePrompt")) ?? "";
+    if (reason.trim().length < 20) {
+      setError(ev("processing.releaseReasonRequired"));
+      return;
+    }
+    const stateKey = `processing-release:${document.id}`;
+    if (operationState[stateKey]) return;
+    const requestKey = typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? `ui-${crypto.randomUUID()}`
+      : `ui-${document.id}-${Date.now()}`;
+    setError("");
+    setOperationMessage("");
+    setOperationState((current) => ({ ...current, [stateKey]: ev("processing.releasing") }));
+    try {
+      await grantDocumentProcessingRelease(claimId, document.id, requestKey, reason.trim());
+      setOperationMessage(ev("processing.releaseGranted"));
+      await refresh();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.detail : ev("processing.releaseFailed"));
+    } finally {
+      setOperationState((current) => ({ ...current, [stateKey]: "" }));
+    }
+  }
+
+  async function revokeProcessingAuthorization(document: ClaimDocument) {
+    if (!isAdmin) return;
+    const reason = window.prompt(ev("processing.revokePrompt")) ?? "";
+    if (reason.trim().length < 20) {
+      setError(ev("processing.revokeReasonRequired"));
+      return;
+    }
+    const stateKey = `processing-revoke:${document.id}`;
+    if (operationState[stateKey]) return;
+    const requestKey = typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? `ui-${crypto.randomUUID()}`
+      : `ui-${document.id}-${Date.now()}`;
+    setError("");
+    setOperationMessage("");
+    setOperationState((current) => ({ ...current, [stateKey]: ev("processing.revoking") }));
+    try {
+      await revokeDocumentProcessingRelease(claimId, document.id, requestKey, reason.trim());
+      setOperationMessage(ev("processing.releaseRevoked"));
+      await refresh();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.detail : ev("processing.revokeFailed"));
+    } finally {
+      setOperationState((current) => ({ ...current, [stateKey]: "" }));
+    }
+  }
+
   async function analyzeDocument(document: ClaimDocument) {
     const typeMap: Record<string, DocumentIntelligenceType> = {
       chief_engineer_report: "ce-report",
@@ -443,7 +497,7 @@ export function ClaimDocuments({ claimId }: { claimId: string }) {
       {error ? <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div> : null}
 
       <div className="mt-6 overflow-hidden rounded-xl border border-slate-200">
-        {loading ? <div className="p-6 text-sm text-slate-500">{ev("loading")}</div> : documents.length === 0 ? <div className="p-8 text-center"><p className="text-sm font-medium text-slate-700">{ev("empty.title")}</p><p className="mt-1 text-xs text-slate-500">{ev("empty.help")}</p></div> : <div className="overflow-x-auto"><table className="data-table min-w-[840px]"><thead><tr><th>{ev("table.document")}</th><th>{ev("table.type")}</th><th>{ev("table.size")}</th><th>{ev("table.integrity")}</th><th>{ev("table.access")}</th><th className="text-end">{ev("table.actions")}</th></tr></thead><tbody>{documents.map((document) => { const scan = malwareStatus(document.malware_scan_status, locale); const available = evidenceAvailable(document); const processing = processingSummaries[document.id]; const processingStatus: OperatorProcessingStatus = processing?.operator_status ?? (document.processing_status === "processed" ? "completed" : document.processing_status === "processing" ? "running" : document.processing_status); const processingStateKey = `processing:${document.id}`; return <tr key={document.id} className={document.is_current ? "" : "bg-slate-50/70"}><td><div className="flex flex-wrap items-center gap-2"><p className="font-medium text-slate-800" dir="ltr">{document.original_filename}</p><span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${document.is_current ? "bg-emerald-100 text-emerald-800" : "bg-slate-200 text-slate-600"}`}><span dir="ltr">v{document.version_number}</span> · {document.is_current ? ev("version.current") : ev("version.superseded")}</span></div><p className="mt-1 text-xs text-slate-400">{ev("uploadedAt", { date: "" }).trim()} <span dir="ltr">{formatDateTime(document.created_at, locale)}</span></p>{document.replacement_reason ? <p className="mt-1 max-w-md text-xs text-slate-500" dir="auto">{ev("replacementReason", { reason: document.replacement_reason })}</p> : null}<p className={`mt-1 text-[11px] font-semibold ${processingStatusClasses[processingStatus]}`}>{ev(processingStatusKeys[processingStatus])}</p>{processing?.job && (processing.operator_status === "failed" || processing.retry_recommended) ? <p className="mt-0.5 text-[10px] text-slate-500">{ev("processing.attempts", { attempts: processing.job.attempt_count, max: processing.job.max_attempts })}</p> : null}</td><td>{readableType(document.document_type, locale)}</td><td dir="ltr">{formatBytes(document.file_size_bytes)}</td><td><span title={document.file_hash} className="font-mono text-xs text-slate-500" dir="ltr">SHA-256 · {document.file_hash.slice(0, 10)}…</span><p className={`mt-1 text-[11px] font-semibold ${scan.className}`}>{scan.label}</p></td><td>{ev(confidentialityKeys[document.confidentiality_level])}</td><td>{available ? <><div className="flex flex-wrap justify-end gap-2">{document.is_current && processing?.can_retry ? <button type="button" disabled={Boolean(operationState[processingStateKey])} onClick={() => void retryProcessing(document)} className="text-xs font-semibold text-amber-700 hover:text-amber-950 disabled:cursor-not-allowed disabled:opacity-60">{operationState[processingStateKey] || ev(processing.operator_status === "running" ? "processing.recover" : "processing.retry")}</button> : null}{document.processing_status === "processed" && ["chief_engineer_report", "engine_log", "running_hours_record", "pms_record", "workshop_report", "quotation", "invoice"].includes(document.document_type ?? "") ? <button onClick={() => void analyzeDocument(document)} className="text-xs font-semibold text-indigo-700 hover:text-indigo-950">{intelligenceState[document.id] || ev(intelligenceActionKey(document.document_type))}</button> : null}<button onClick={() => void download(document)} className="text-xs font-semibold text-cyan-800 hover:text-cyan-950">{ev("action.download")}</button>{document.is_current ? <button onClick={() => startReplacement(document)} className="text-xs font-semibold text-indigo-700 hover:text-indigo-950">{operationState[document.id] || ev("action.replace")}</button> : null}{document.is_current ? <button onClick={() => void removeDocument(document)} className="text-xs font-semibold text-red-600 hover:text-red-800">{ev("action.remove")}</button> : null}</div>{intelligenceState[document.id] ? <div className="mt-1 text-end"><Link href="/ai-review" className="text-[11px] font-semibold text-slate-500 hover:text-slate-800">{ev("action.openAiReview")}</Link></div> : null}</> : <p className="text-end text-xs font-semibold text-red-700">{ev("action.blocked")}</p>}</td></tr>; })}</tbody></table></div>}
+        {loading ? <div className="p-6 text-sm text-slate-500">{ev("loading")}</div> : documents.length === 0 ? <div className="p-8 text-center"><p className="text-sm font-medium text-slate-700">{ev("empty.title")}</p><p className="mt-1 text-xs text-slate-500">{ev("empty.help")}</p></div> : <div className="overflow-x-auto"><table className="data-table min-w-[840px]"><thead><tr><th>{ev("table.document")}</th><th>{ev("table.type")}</th><th>{ev("table.size")}</th><th>{ev("table.integrity")}</th><th>{ev("table.access")}</th><th className="text-end">{ev("table.actions")}</th></tr></thead><tbody>{documents.map((document) => { const scan = malwareStatus(document.malware_scan_status, locale); const available = evidenceAvailable(document); const processing = processingSummaries[document.id]; const processingStatus: OperatorProcessingStatus = processing?.operator_status ?? (document.processing_status === "processed" ? "completed" : document.processing_status === "processing" ? "running" : document.processing_status); const processingStateKey = `processing:${document.id}`; return <tr key={document.id} className={document.is_current ? "" : "bg-slate-50/70"}><td><div className="flex flex-wrap items-center gap-2"><p className="font-medium text-slate-800" dir="ltr">{document.original_filename}</p><span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${document.is_current ? "bg-emerald-100 text-emerald-800" : "bg-slate-200 text-slate-600"}`}><span dir="ltr">v{document.version_number}</span> · {document.is_current ? ev("version.current") : ev("version.superseded")}</span></div><p className="mt-1 text-xs text-slate-400">{ev("uploadedAt", { date: "" }).trim()} <span dir="ltr">{formatDateTime(document.created_at, locale)}</span></p>{document.replacement_reason ? <p className="mt-1 max-w-md text-xs text-slate-500" dir="auto">{ev("replacementReason", { reason: document.replacement_reason })}</p> : null}<p className={`mt-1 text-[11px] font-semibold ${processing?.processing_release_required ? "text-amber-700" : processingStatusClasses[processingStatus]}`}>{ev(processing?.processing_release_status === "revoked" ? "processing.authorizationRevoked" : processing?.processing_release_required ? "processing.awaitingAuthorization" : processingStatusKeys[processingStatus])}</p>{processing?.job && (processing.operator_status === "failed" || processing.retry_recommended) ? <p className="mt-0.5 text-[10px] text-slate-500">{ev("processing.attempts", { attempts: processing.job.attempt_count, max: processing.job.max_attempts })}</p> : null}</td><td>{readableType(document.document_type, locale)}</td><td dir="ltr">{formatBytes(document.file_size_bytes)}</td><td><span title={document.file_hash} className="font-mono text-xs text-slate-500" dir="ltr">SHA-256 · {document.file_hash.slice(0, 10)}…</span><p className={`mt-1 text-[11px] font-semibold ${scan.className}`}>{scan.label}</p></td><td>{ev(confidentialityKeys[document.confidentiality_level])}</td><td>{available ? <><div className="flex flex-wrap justify-end gap-2">{document.is_current && isAdmin && processing?.processing_release_status === "required" ? <button type="button" disabled={Boolean(operationState[`processing-release:${document.id}`])} onClick={() => void authorizeProcessing(document)} className="text-xs font-semibold text-amber-700 hover:text-amber-950 disabled:cursor-not-allowed disabled:opacity-60">{operationState[`processing-release:${document.id}`] || ev("processing.release")}</button> : null}{document.is_current && isAdmin && processing?.processing_release_status === "active" ? <button type="button" disabled={Boolean(operationState[`processing-revoke:${document.id}`])} onClick={() => void revokeProcessingAuthorization(document)} className="text-xs font-semibold text-slate-600 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-60">{operationState[`processing-revoke:${document.id}`] || ev("processing.revoke")}</button> : null}{document.is_current && processing?.can_retry ? <button type="button" disabled={Boolean(operationState[processingStateKey])} onClick={() => void retryProcessing(document)} className="text-xs font-semibold text-amber-700 hover:text-amber-950 disabled:cursor-not-allowed disabled:opacity-60">{operationState[processingStateKey] || ev(processing.operator_status === "running" ? "processing.recover" : "processing.retry")}</button> : null}{document.processing_status === "processed" && ["chief_engineer_report", "engine_log", "running_hours_record", "pms_record", "workshop_report", "quotation", "invoice"].includes(document.document_type ?? "") ? <button onClick={() => void analyzeDocument(document)} className="text-xs font-semibold text-indigo-700 hover:text-indigo-950">{intelligenceState[document.id] || ev(intelligenceActionKey(document.document_type))}</button> : null}<button onClick={() => void download(document)} className="text-xs font-semibold text-cyan-800 hover:text-cyan-950">{ev("action.download")}</button>{document.is_current ? <button onClick={() => startReplacement(document)} className="text-xs font-semibold text-indigo-700 hover:text-indigo-950">{operationState[document.id] || ev("action.replace")}</button> : null}{document.is_current ? <button onClick={() => void removeDocument(document)} className="text-xs font-semibold text-red-600 hover:text-red-800">{ev("action.remove")}</button> : null}</div>{intelligenceState[document.id] ? <div className="mt-1 text-end"><Link href="/ai-review" className="text-[11px] font-semibold text-slate-500 hover:text-slate-800">{ev("action.openAiReview")}</Link></div> : null}</> : <p className="text-end text-xs font-semibold text-red-700">{ev("action.blocked")}</p>}</td></tr>; })}</tbody></table></div>}
       </div>
 
       {quarantinedUploads.length ? <div className="mt-6 overflow-hidden rounded-xl border border-red-200 bg-red-50/40"><div className="border-b border-red-200 px-4 py-3"><h3 className="text-sm font-semibold text-red-900">{ev("quarantine.title")}</h3><p className="mt-1 text-xs text-red-700">{ev("quarantine.help")}</p></div><div className="overflow-x-auto"><table className="data-table min-w-[820px]"><thead><tr><th>{ev("quarantine.table.upload")}</th><th>{ev("quarantine.table.size")}</th><th>{ev("quarantine.table.scan")}</th><th>{ev("quarantine.table.reference")}</th><th className="text-end">{ev("quarantine.table.actions")}</th></tr></thead><tbody>{quarantinedUploads.map((upload) => <tr key={upload.id}><td><p className="font-medium text-slate-800" dir="ltr">{upload.original_filename}</p><p className="mt-1 text-xs text-slate-500">{ev("quarantine.blockedAt", { date: "" }).trim()} <span dir="ltr">{formatDateTime(upload.scanned_at, locale)}</span></p></td><td dir="ltr">{formatBytes(upload.file_size_bytes)}</td><td><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${upload.status === "infected" ? "bg-red-100 text-red-800" : "bg-amber-100 text-amber-800"}`}>{upload.status === "infected" ? <>{ev("quarantine.malwareDetected")}{upload.threat_name ? <span dir="ltr"> · {upload.threat_name}</span> : null}</> : ev("quarantine.scannerUnavailable", { count: upload.retry_count })}</span></td><td><span className="font-mono text-xs text-slate-500" dir="ltr">{upload.id.slice(0, 8)}…</span></td><td><div className="flex flex-wrap justify-end gap-2">{canManageEvidence && upload.status === "scan_error" ? <button type="button" onClick={() => void retryQuarantine(upload)} className="text-xs font-semibold text-cyan-800 hover:text-cyan-950">{operationState[upload.id] || ev("quarantine.retryScan")}</button> : null}{isAdmin ? <button type="button" onClick={() => void purgeQuarantine(upload)} className="text-xs font-semibold text-red-700 hover:text-red-950">{ev("quarantine.purgeBytes")}</button> : null}{!canManageEvidence ? <span className="text-xs text-slate-500">{ev("quarantine.managerApproval")}</span> : null}</div></td></tr>)}</tbody></table></div></div> : null}

@@ -42,6 +42,10 @@ from app.modules.external_document_sources.evidence_family_binding_models import
     ExternalDocumentSourceEvidenceFamilyBinding,
     ExternalDocumentSourceEvidenceFamilyBindingReceipt,
 )
+from app.modules.external_document_sources.processing_release_models import (
+    ExternalDocumentSourceProcessingRelease,
+    ExternalDocumentSourceProcessingReleaseReceipt,
+)
 from app.modules.external_document_sources.generation_3_change_detection_models import (
     ExternalDocumentSourceGeneration3ChangeDetectionExecution,
     ExternalDocumentSourceGeneration3ChangeDetectionReceipt,
@@ -141,6 +145,8 @@ __all__ = [
     "ExternalDocumentSourceEvidenceAdmissionExecutionReceipt",
     "ExternalDocumentSourceEvidenceFamilyBinding",
     "ExternalDocumentSourceEvidenceFamilyBindingReceipt",
+    "ExternalDocumentSourceProcessingRelease",
+    "ExternalDocumentSourceProcessingReleaseReceipt",
     "ExternalDocumentSourceGeneration3ChangeDetectionExecution",
     "ExternalDocumentSourceGeneration3ChangeDetectionReceipt",
     "ExternalDocumentSourceProviderClientActivationAuthorization",

@@ -54,3 +54,5 @@ class DocumentProcessingSummary(BaseModel):
     operator_status: Literal["uploaded", "queued", "running", "completed", "failed"]
     can_retry: bool
     retry_recommended: bool
+    processing_release_required: bool
+    processing_release_status: Literal["not_applicable", "required", "active", "revoked"]
