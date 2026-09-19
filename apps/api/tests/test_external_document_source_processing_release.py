@@ -2,7 +2,9 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 import pytest
+from fastapi import HTTPException
 
+import app.modules.intelligence.router as intelligence_router
 from app.modules.documents.models import Document, DocumentProcessingStatus
 from app.modules.external_document_sources.evidence_family_binding_models import (
     ExternalDocumentSourceEvidenceFamilyBinding,
@@ -435,4 +437,83 @@ def test_phase_z_cross_tenant_release_fails_closed(
 
     with TestingSessionLocal() as db:
         assert db.query(ExternalDocumentSourceProcessingRelease).count() == 0
+
+def test_phase_z_local_release_does_not_bypass_independent_ai_authorization(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    actor_id, _profile_id, claim_id, execution, _binding = _bound(
+        monkeypatch,
+        "ai-boundary",
+    )
+    document_id = UUID(execution["document_id"])
+
+    release = _grant(
+        claim_id,
+        document_id,
+        actor_id,
+        key="phase-z-release-ai-boundary",
+    )
+    assert release.status_code == 201, release.text
+    assert release.json()["ai_processing_authorized"] is False
+
+    with TestingSessionLocal() as db:
+        document = db.get(Document, document_id)
+        assert document is not None
+        document.processing_status = DocumentProcessingStatus.PROCESSED
+        db.add(
+            DocumentTextExtraction(
+                organization_id=document.organization_id,
+                document_id=document.id,
+                extraction_method="phase-z-test",
+                extractor_version="phase-z-test-v1",
+                char_count=120,
+                segment_count=1,
+                requires_ocr=False,
+                text_hash="a" * 64,
+                warnings=[],
+            )
+        )
+        db.commit()
+
+    class _OpenAIProvider:
+        name = "openai"
+
+    calls = {"count": 0}
+
+    def _deny_ai(*_args, **_kwargs):
+        calls["count"] += 1
+        raise HTTPException(
+            status_code=409,
+            detail="Independent AI runtime authorization is still required.",
+        )
+
+    monkeypatch.setattr(
+        intelligence_router,
+        "_provider_for_document",
+        lambda _document: _OpenAIProvider(),
+    )
+    monkeypatch.setattr(
+        intelligence_router,
+        "require_external_ai_runtime_authorization",
+        _deny_ai,
+    )
+
+    response = client.post(
+        f"/api/v1/claims/{claim_id}/documents/{document_id}/intelligence/ce-report",
+        headers=_headers(actor_id),
+    )
+    assert response.status_code == 409, response.text
+    assert "independent ai runtime authorization" in response.json()["detail"].lower()
+    assert calls["count"] == 1
+
+    with TestingSessionLocal() as db:
+        assert (
+            db.query(DocumentProcessingJob)
+            .filter(
+                DocumentProcessingJob.document_id == document_id,
+                DocumentProcessingJob.job_type == ProcessingJobType.AI_EXTRACT_CE_REPORT,
+            )
+            .count()
+            == 0
+        )
 
