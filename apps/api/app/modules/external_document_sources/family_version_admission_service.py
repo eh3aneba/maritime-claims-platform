@@ -262,6 +262,108 @@ def _binding_for_update(
     return binding
 
 
+def _lock_current_family_document(
+    db: Session,
+    *,
+    organization_id: UUID,
+    claim_id: UUID,
+    document_family_id: UUID,
+    expected_current_document_id: UUID | None = None,
+) -> Document:
+    current = db.scalar(
+        select(Document)
+        .where(
+            Document.organization_id == organization_id,
+            Document.claim_id == claim_id,
+            Document.document_family_id == document_family_id,
+            Document.is_current.is_(True),
+            Document.deleted_at.is_(None),
+        )
+        .with_for_update()
+    )
+    if current is None:
+        raise ExternalDocumentSourceConflictError(
+            "Evidence family has no canonical current Document"
+        )
+    if (
+        expected_current_document_id is not None
+        and current.id != expected_current_document_id
+    ):
+        raise ExternalDocumentSourceConflictError(
+            "Evidence family current Document changed before version admission"
+        )
+    return current
+
+
+def _establish_next_document_version(
+    db: Session,
+    *,
+    prior_document: Document,
+    executed_by_id: UUID,
+    executed_at: datetime,
+    new_document_id: UUID,
+    original_filename: str,
+    mime_type: str,
+    file_size_bytes: int,
+    file_hash: str,
+    storage_key: str,
+    malware_scanned_at: datetime,
+    replacement_reason: str,
+) -> Document:
+    if (
+        not prior_document.is_current
+        or prior_document.deleted_at is not None
+    ):
+        raise ExternalDocumentSourceConflictError(
+            "Evidence family prior Document is no longer current"
+        )
+
+    prior_document.is_current = False
+    prior_document.superseded_at = executed_at
+    prior_document.superseded_by_id = executed_by_id
+    db.flush()
+
+    new_document = Document(
+        id=new_document_id,
+        organization_id=prior_document.organization_id,
+        claim_id=prior_document.claim_id,
+        uploaded_by_id=executed_by_id,
+        supersedes_document_id=prior_document.id,
+        document_family_id=prior_document.document_family_id,
+        version_number=prior_document.version_number + 1,
+        is_current=True,
+        replacement_reason=replacement_reason,
+        source_admission_note=replacement_reason[:1000],
+        filename=original_filename,
+        original_filename=original_filename,
+        document_type=prior_document.document_type,
+        mime_type=mime_type,
+        file_size_bytes=file_size_bytes,
+        file_hash=file_hash,
+        storage_key=storage_key,
+        confidentiality_level=prior_document.confidentiality_level,
+        malware_scan_status=DocumentMalwareScanStatus.CLEAN,
+        malware_scanned_at=malware_scanned_at,
+    )
+    db.add(new_document)
+    db.flush()
+
+    current_count = db.scalar(
+        select(func.count(Document.id)).where(
+            Document.organization_id == prior_document.organization_id,
+            Document.claim_id == prior_document.claim_id,
+            Document.document_family_id == prior_document.document_family_id,
+            Document.is_current.is_(True),
+            Document.deleted_at.is_(None),
+        )
+    )
+    if current_count != 1:
+        raise ExternalDocumentSourceConflictError(
+            "Evidence family current-version invariant was not established"
+        )
+    return new_document
+
+
 def _documents(
     db: Session,
     execution: ExternalDocumentSourceFamilyVersionAdmissionExecution,
@@ -577,21 +679,12 @@ def execute_external_document_source_family_version_admission(
             "Later-version authorization does not belong to the bound Evidence family"
         )
 
-    current_document = db.scalar(
-        select(Document)
-        .where(
-            Document.organization_id == organization_id,
-            Document.claim_id == binding.claim_id,
-            Document.document_family_id == binding.document_family_id,
-            Document.is_current.is_(True),
-            Document.deleted_at.is_(None),
-        )
-        .with_for_update()
+    current_document = _lock_current_family_document(
+        db,
+        organization_id=organization_id,
+        claim_id=binding.claim_id,
+        document_family_id=binding.document_family_id,
     )
-    if current_document is None:
-        raise ExternalDocumentSourceConflictError(
-            "Bound Evidence family has no canonical current Document"
-        )
 
     prior_projection_hash, prior_provider_version_hash = _prior_source_state(
         db,
@@ -732,51 +825,21 @@ def execute_external_document_source_family_version_admission(
         promoted = True
 
         executed_at = _utc_now()
-        new_version_number = current_document.version_number + 1
-
-        current_document.is_current = False
-        current_document.superseded_at = executed_at
-        current_document.superseded_by_id = executed_by_id
-        db.flush()
-
-        new_document = Document(
-            id=new_document_id,
-            organization_id=organization_id,
-            claim_id=binding.claim_id,
-            uploaded_by_id=executed_by_id,
-            supersedes_document_id=current_document.id,
-            document_family_id=binding.document_family_id,
-            version_number=new_version_number,
-            is_current=True,
-            replacement_reason=normalized_reason,
-            source_admission_note=normalized_reason[:1000],
-            filename=original_filename,
+        new_document = _establish_next_document_version(
+            db,
+            prior_document=current_document,
+            executed_by_id=executed_by_id,
+            executed_at=executed_at,
+            new_document_id=new_document_id,
             original_filename=original_filename,
-            document_type=current_document.document_type,
             mime_type=mime_type,
             file_size_bytes=stored.file_size_bytes,
             file_hash=stored.file_hash,
             storage_key=canonical_key,
-            confidentiality_level=current_document.confidentiality_level,
-            malware_scan_status=DocumentMalwareScanStatus.CLEAN,
             malware_scanned_at=scanned_at,
+            replacement_reason=normalized_reason,
         )
-        db.add(new_document)
-        db.flush()
-
-        current_count = db.scalar(
-            select(func.count(Document.id)).where(
-                Document.organization_id == organization_id,
-                Document.claim_id == binding.claim_id,
-                Document.document_family_id == binding.document_family_id,
-                Document.is_current.is_(True),
-                Document.deleted_at.is_(None),
-            )
-        )
-        if current_count != 1:
-            raise ExternalDocumentSourceConflictError(
-                "Evidence family current-version invariant was not established"
-            )
+        new_version_number = new_document.version_number
 
         execution = ExternalDocumentSourceFamilyVersionAdmissionExecution(
             id=uuid4(),
