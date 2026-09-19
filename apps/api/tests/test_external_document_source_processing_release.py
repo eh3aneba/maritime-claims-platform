@@ -217,6 +217,15 @@ def test_phase_z_worker_revalidates_release_and_revocation_blocks_queued_content
     assert replay.status_code == 200, replay.text
     assert replay.json()["id"] == revoked.json()["id"]
 
+    summary = client.get(
+        f"/api/v1/claims/{claim_id}/documents/{document_id}/processing",
+        headers=_headers(actor_id),
+    )
+    assert summary.status_code == 200, summary.text
+    assert summary.json()["processing_release_required"] is True
+    assert summary.json()["processing_release_status"] == "revoked"
+    assert summary.json()["can_retry"] is False
+
     with TestingSessionLocal() as db:
         job = db.get(DocumentProcessingJob, job_id)
         document = db.get(Document, document_id)
