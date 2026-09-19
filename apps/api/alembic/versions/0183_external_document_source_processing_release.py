@@ -79,7 +79,12 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["released_by_id"], ["users.id"], ondelete="RESTRICT"),
         sa.ForeignKeyConstraint(["revoked_by_id"], ["users.id"], ondelete="RESTRICT"),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("binding_id", name="uq_ext_doc_proc_release_binding"),
+        sa.UniqueConstraint(
+            "binding_id",
+            "document_id",
+            "document_version_number",
+            name="uq_ext_doc_proc_release_binding_version",
+        ),
         sa.UniqueConstraint("organization_id", "profile_id", "request_key", name="uq_ext_doc_proc_release_request"),
         sa.UniqueConstraint(
             "organization_id",
