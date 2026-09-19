@@ -149,6 +149,13 @@ def test_phase_z_release_unlocks_local_processing_without_granting_ai(
     assert summary.json()["processing_release_required"] is False
     assert summary.json()["processing_release_status"] == "active"
 
+    retry = client.post(
+        f"/api/v1/claims/{claim_id}/documents/{document_id}/processing/retry",
+        headers=_headers(actor_id),
+    )
+    assert retry.status_code == 202, retry.text
+    assert retry.json()["job_type"] == ProcessingJobType.EXTRACT_TEXT.value
+
     with TestingSessionLocal() as db:
         document = db.get(Document, document_id)
         assert document is not None
@@ -159,6 +166,7 @@ def test_phase_z_release_unlocks_local_processing_without_granting_ai(
             job_type=ProcessingJobType.EXTRACT_TEXT,
         )
         assert job.job_type == ProcessingJobType.EXTRACT_TEXT
+        assert job.id == UUID(retry.json()["id"])
         db.rollback()
 
         # Z is not AI permission. The release itself remains explicitly non-AI.
