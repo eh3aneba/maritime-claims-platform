@@ -72,7 +72,7 @@ def processing_summary(
         db,
         document=document,
     )
-    processing_release_required = processing_release_status == "required"
+    processing_release_required = processing_release_status in {"required", "revoked"}
     operator_status, can_retry, retry_recommended = _operator_state(
         document,
         job,
