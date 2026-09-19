@@ -24,7 +24,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [0, 1, 2, 3]
+        # Five shards keep the growing backend suite below the bounded
+        # per-shard timeout while preserving deterministic sorted-file
+        # distribution and full test coverage.
+        shard: [0, 1, 2, 3, 4]
     defaults:
       run:
         working-directory: apps/api
