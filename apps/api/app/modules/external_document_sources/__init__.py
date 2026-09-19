@@ -38,6 +38,10 @@ from app.modules.external_document_sources.evidence_admission_execution_models i
     ExternalDocumentSourceEvidenceAdmissionExecution,
     ExternalDocumentSourceEvidenceAdmissionExecutionReceipt,
 )
+from app.modules.external_document_sources.evidence_family_binding_models import (
+    ExternalDocumentSourceEvidenceFamilyBinding,
+    ExternalDocumentSourceEvidenceFamilyBindingReceipt,
+)
 from app.modules.external_document_sources.generation_3_change_detection_models import (
     ExternalDocumentSourceGeneration3ChangeDetectionExecution,
     ExternalDocumentSourceGeneration3ChangeDetectionReceipt,
@@ -100,6 +104,7 @@ from app.modules.external_document_sources import credential_reference_health_ro
 from app.modules.external_document_sources import credential_resolution_execution_router as _credential_resolution_execution_router  # noqa: F401,E402
 from app.modules.external_document_sources import evidence_admission_authorization_router as _evidence_admission_authorization_router  # noqa: F401,E402
 from app.modules.external_document_sources import evidence_admission_execution_router as _evidence_admission_execution_router  # noqa: F401,E402
+from app.modules.external_document_sources import evidence_family_binding_router as _evidence_family_binding_router  # noqa: F401,E402
 from app.modules.external_document_sources import generation_3_change_detection_router as _generation_3_change_detection_router  # noqa: F401,E402
 from app.modules.external_document_sources import provider_client_activation_authorization_router as _provider_client_activation_authorization_router  # noqa: F401,E402
 from app.modules.external_document_sources import provider_client_activation_execution_router as _provider_client_activation_execution_router  # noqa: F401,E402
@@ -134,6 +139,8 @@ __all__ = [
     "ExternalDocumentSourceEvidenceAdmissionAuthorizationReceipt",
     "ExternalDocumentSourceEvidenceAdmissionExecution",
     "ExternalDocumentSourceEvidenceAdmissionExecutionReceipt",
+    "ExternalDocumentSourceEvidenceFamilyBinding",
+    "ExternalDocumentSourceEvidenceFamilyBindingReceipt",
     "ExternalDocumentSourceGeneration3ChangeDetectionExecution",
     "ExternalDocumentSourceGeneration3ChangeDetectionReceipt",
     "ExternalDocumentSourceProviderClientActivationAuthorization",
