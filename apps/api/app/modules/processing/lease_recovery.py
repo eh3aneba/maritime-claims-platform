@@ -149,6 +149,23 @@ def _retry_delay_seconds(attempt_count: int) -> int:
     return min(300, 15 * (2 ** max(0, attempt_count - 1)))
 
 
+def processing_stale_cutoff(*, now: datetime | None = None) -> datetime:
+    reference = now or datetime.now(UTC)
+    return reference - timedelta(seconds=settings.processing_stale_after_seconds)
+
+
+def is_processing_job_stale(
+    job: DocumentProcessingJob,
+    *,
+    now: datetime | None = None,
+) -> bool:
+    return (
+        job.status == ProcessingJobStatus.RUNNING
+        and job.locked_at is not None
+        and _aware(job.locked_at) < processing_stale_cutoff(now=now)
+    )
+
+
 def recover_stale_processing_jobs(
     db: Session,
     *,
@@ -164,7 +181,7 @@ def recover_stale_processing_jobs(
     """
 
     now = datetime.now(UTC)
-    cutoff = now - timedelta(seconds=settings.processing_stale_after_seconds)
+    cutoff = processing_stale_cutoff(now=now)
     conditions = [
         DocumentProcessingJob.status == ProcessingJobStatus.RUNNING,
         DocumentProcessingJob.locked_at.is_not(None),
