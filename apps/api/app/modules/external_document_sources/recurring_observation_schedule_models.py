@@ -48,7 +48,7 @@ def _safety_constraints(prefix: str):
         ("family_binding_verified", "family"),
         ("stable_source_identity_verified", "source"),
         ("human_authorization_recorded", "human"),
-        ("bounded_cadence_verified", "cadence"),
+        ("bounded_cadence_verified", "bounded_cadence"),
     )
     false_fields = (
         ("provider_client_constructed", "client"),
