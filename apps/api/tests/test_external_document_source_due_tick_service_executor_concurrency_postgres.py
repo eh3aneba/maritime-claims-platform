@@ -4,13 +4,14 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 import os
 from threading import Barrier
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import create_engine, select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import create_engine, select, text
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.modules.documents.models import Document
 from app.modules.external_document_sources.change_detection_service import (
     ExactItemMetadataResult,
     register_external_document_source_change_detection_adapter,
@@ -36,8 +37,14 @@ from app.modules.external_document_sources.due_tick_observation_service import (
 from app.modules.external_document_sources.evidence_family_binding_models import (
     ExternalDocumentSourceEvidenceFamilyBinding,
 )
+from app.modules.external_document_sources.family_version_admission_service import (
+    _binding_for_update as _aa_binding_for_update,
+    _establish_next_document_version,
+    _lock_current_family_document as _aa_lock_current_family_document,
+)
 from app.modules.external_document_sources.recurring_observation_schedule_service import (
     authorize_recurring_observation_schedule,
+    disable_recurring_observation_schedule,
 )
 from app.modules.external_document_sources.service import (
     ExternalDocumentSourceConflictError,
@@ -289,5 +296,218 @@ def test_human_ac_vs_service_ae_same_tick_yields_one_observation_and_one_consump
         service_result = next(row for row in results if row[0] == "service")
         assert service_result[1] is not None
         assert adapter.calls == 1
+    finally:
+        engine.dispose()
+
+
+def test_disable_vs_service_consumption_serializes_and_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (
+        engine,
+        SessionLocal,
+        due_now,
+        actor_id,
+        profile_id,
+        organization_id,
+        schedule_id,
+        dispatch_id,
+        adapter,
+    ) = _seed_dispatch(monkeypatch, "disable-service")
+    barrier = Barrier(2)
+    try:
+        def disable():
+            with SessionLocal() as db:
+                barrier.wait(timeout=10)
+                try:
+                    disable_recurring_observation_schedule(
+                        db,
+                        organization_id=organization_id,
+                        profile_id=profile_id,
+                        schedule_id=schedule_id,
+                        actor_id=actor_id,
+                        request_key="phase-ae-pg-disable-service",
+                        reason=(
+                            "Disable the recurring schedule while the Phase AE "
+                            "service executor races to consume the due dispatch."
+                        ),
+                    )
+                    return "disabled"
+                except (ExternalDocumentSourceConflictError, IntegrityError):
+                    db.rollback()
+                    return "conflict"
+
+        def consume():
+            with SessionLocal() as db:
+                barrier.wait(timeout=10)
+                try:
+                    _observation, _consumption, outcome = consume_due_tick_dispatch(
+                        db,
+                        dispatch_id=dispatch_id,
+                        service_executor_id="external-evidence-observer-v1",
+                        now=due_now,
+                    )
+                    return outcome
+                except (ExternalDocumentSourceConflictError, IntegrityError):
+                    db.rollback()
+                    return "conflict"
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            disable_future = pool.submit(disable)
+            consume_future = pool.submit(consume)
+            disable_result = disable_future.result(timeout=30)
+            consume_result = consume_future.result(timeout=30)
+
+        assert disable_result == "disabled"
+        with SessionLocal() as db:
+            observations = list(
+                db.scalars(
+                    select(ExternalDocumentSourceDueTickObservationExecution).where(
+                        ExternalDocumentSourceDueTickObservationExecution.schedule_id
+                        == schedule_id
+                    )
+                ).all()
+            )
+            consumptions = list(
+                db.scalars(select(ExternalDocumentSourceDueTickDispatchConsumption)).all()
+            )
+            assert len(observations) <= 1
+            assert len(consumptions) <= 1
+            if consume_result == "conflict":
+                assert len(observations) == 0
+                assert len(consumptions) == 0
+                assert adapter.calls == 0
+            else:
+                assert len(observations) == 1
+                assert len(consumptions) == 1
+                assert adapter.calls == 1
+    finally:
+        engine.dispose()
+
+
+def test_canonical_version_transition_makes_prior_dispatch_fail_closed_without_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    actor_id, profile_id, _claim_id, initial_execution, binding = _bound_v1(
+        monkeypatch,
+        "version-consume",
+    )
+    adapter = _ChangeAdapter()
+    adapter.result = ExactItemMetadataResult(
+        found=True,
+        item=_baseline_projection(),
+    )
+    register_external_document_source_change_detection_adapter(
+        "sharepoint",
+        "graph_drive_item_metadata_read_v1",
+        adapter,
+    )
+
+    engine, SessionLocal = _session_factory()
+    due_now = datetime.now(UTC)
+    try:
+        with SessionLocal() as db:
+            family = db.get(
+                ExternalDocumentSourceEvidenceFamilyBinding,
+                UUID(binding["id"]),
+            )
+            assert family is not None
+            organization_id = family.organization_id
+            schedule, _ = authorize_recurring_observation_schedule(
+                db,
+                organization_id=organization_id,
+                profile_id=UUID(profile_id),
+                binding_id=UUID(binding["id"]),
+                authorized_by_id=actor_id,
+                request_key="phase-ae-pg-version-consume-schedule",
+                reason=_SCHEDULE_REASON,
+                cadence_class="hourly",
+                effective_at=due_now,
+            )
+            schedule_id = schedule.id
+
+        with SessionLocal() as db:
+            dispatch = dispatch_next_due_tick(
+                db,
+                worker_id="phase-ae-version-consume-scheduler",
+                now=due_now,
+            )
+            assert dispatch is not None
+            dispatch_id = dispatch.id
+            assert dispatch.current_document_id == UUID(initial_execution["document_id"])
+
+        with SessionLocal() as transition_db:
+            family = _aa_binding_for_update(
+                transition_db,
+                organization_id=organization_id,
+                profile_id=UUID(profile_id),
+                binding_id=UUID(binding["id"]),
+            )
+            current = _aa_lock_current_family_document(
+                transition_db,
+                organization_id=organization_id,
+                claim_id=family.claim_id,
+                document_family_id=family.document_family_id,
+                expected_current_document_id=UUID(initial_execution["document_id"]),
+            )
+
+            with SessionLocal() as blocked_db:
+                blocked_db.execute(text("SET LOCAL lock_timeout = '250ms'"))
+                with pytest.raises(OperationalError):
+                    consume_due_tick_dispatch(
+                        blocked_db,
+                        dispatch_id=dispatch_id,
+                        service_executor_id="external-evidence-observer-v1",
+                        now=due_now,
+                    )
+                blocked_db.rollback()
+
+            new_document = _establish_next_document_version(
+                transition_db,
+                prior_document=current,
+                executed_by_id=actor_id,
+                executed_at=due_now,
+                new_document_id=uuid4(),
+                original_filename="phase-ae-version-2.pdf",
+                mime_type="application/pdf",
+                file_size_bytes=4096,
+                file_hash="c" * 64,
+                storage_key=f"phase-ae-version-consume/{uuid4()}.pdf",
+                malware_scanned_at=due_now,
+                replacement_reason=(
+                    "Advance the canonical Document while the prior AD dispatch "
+                    "remains immutable so AE must reject the stale snapshot."
+                ),
+            )
+            new_document_id = new_document.id
+            transition_db.commit()
+
+        with SessionLocal() as db:
+            with pytest.raises(ExternalDocumentSourceConflictError):
+                consume_due_tick_dispatch(
+                    db,
+                    dispatch_id=dispatch_id,
+                    service_executor_id="external-evidence-observer-v1",
+                    now=due_now,
+                )
+            db.rollback()
+
+        with SessionLocal() as db:
+            current = db.scalar(
+                select(Document).where(
+                    Document.organization_id == organization_id,
+                    Document.document_family_id == UUID(binding["document_family_id"]),
+                    Document.is_current.is_(True),
+                    Document.deleted_at.is_(None),
+                )
+            )
+            assert current is not None
+            assert current.id == new_document_id
+            assert current.version_number == 2
+            assert db.query(ExternalDocumentSourceDueTickObservationExecution).count() == 0
+            assert db.query(ExternalDocumentSourceDueTickDispatchConsumption).count() == 0
+            assert db.get(ExternalDocumentSourceDueTickDispatch, dispatch_id) is not None
+
+        assert adapter.calls == 0
     finally:
         engine.dispose()
