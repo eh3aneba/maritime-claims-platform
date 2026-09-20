@@ -41,6 +41,7 @@ class Settings(BaseSettings):
     processing_max_attempts: int = 3
     processing_poll_seconds: float = 2.0
     processing_stale_after_seconds: int = 600
+    external_evidence_scheduler_poll_seconds: float = 5.0
     ocr_enabled: bool = False
     ocr_languages: str = "eng+fas"
     ocr_max_pages: int = 20
