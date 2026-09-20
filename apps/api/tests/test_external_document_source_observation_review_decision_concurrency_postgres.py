@@ -20,7 +20,7 @@ from app.modules.external_document_sources.observation_review_handoff_models imp
     ExternalDocumentSourceObservationReviewHandoff,
 )
 from app.modules.external_document_sources.service import ExternalDocumentSourceConflictError
-from tests.db_harness import TestingSessionLocal, reset_database
+from tests.db_harness import TestingSessionLocal
 from tests.test_external_document_source_evidence_family_binding import (
     setup_function as _phase_y_setup,
     teardown_function as _phase_y_teardown,
@@ -40,7 +40,6 @@ pytestmark = pytest.mark.skipif(
 
 def setup_function() -> None:
     _phase_y_setup()
-    reset_database()
 
 
 def teardown_function() -> None:
