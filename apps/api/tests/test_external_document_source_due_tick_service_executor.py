@@ -29,6 +29,9 @@ from app.modules.external_document_sources.due_tick_observation_models import (
 from app.modules.external_document_sources.due_tick_observation_service import (
     execute_due_tick_observation,
 )
+from app.modules.external_document_sources.service import (
+    ExternalDocumentSourceConflictError,
+)
 from app.modules.processing.models import DocumentProcessingJob
 from app.workers import external_evidence_observation_worker as observation_worker
 from tests.db_harness import TestingSessionLocal, reset_database
@@ -278,3 +281,35 @@ def test_phase_ae_worker_run_once_consumes_at_most_one_dispatch(monkeypatch) -> 
         assert db.query(ExternalDocumentSourceDueTickDispatchConsumption).count() == 1
 
     assert adapter.calls == 1
+
+
+def test_phase_ae_rejects_unconfigured_service_executor_before_provider_read(
+    monkeypatch,
+) -> None:
+    (
+        _actor_id,
+        _profile_id,
+        _schedule_id,
+        _organization_id,
+        _document_id,
+        dispatch_id,
+        adapter,
+    ) = _prepare(monkeypatch, "unauthorized-service")
+
+    with TestingSessionLocal() as db:
+        try:
+            consume_due_tick_dispatch(
+                db,
+                dispatch_id=dispatch_id,
+                service_executor_id="different-internal-observer",
+                now=datetime(2026, 9, 20, 0, 0, tzinfo=UTC),
+            )
+            assert False, "unconfigured service executor must fail closed"
+        except ExternalDocumentSourceConflictError:
+            db.rollback()
+
+    with TestingSessionLocal() as db:
+        assert db.query(ExternalDocumentSourceDueTickObservationExecution).count() == 0
+        assert db.query(ExternalDocumentSourceDueTickDispatchConsumption).count() == 0
+
+    assert adapter.calls == 0
