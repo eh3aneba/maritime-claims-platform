@@ -16,7 +16,7 @@ exist merely because a source profile or Evidence family exists.
 
 Phase AB introduces schedule authority only.
 
-An Admin with current MFA may authorize one recurring exact-item observation schedule revision for one Phase-Y family.
+An Admin with current MFA assurance (required by AB regardless of tenant MFA-policy configuration) may authorize one recurring exact-item observation schedule revision for one Phase-Y family.
 The schedule is bound to organization, Claim, profile, exact family binding, stable source-item hash and Document family.
 
 Allowed cadence classes are deliberately bounded:
@@ -55,3 +55,8 @@ Every lifecycle transition has an immutable content-free receipt chain.
 Recurring synchronization becomes explicitly human-authorized and auditable before any background provider I/O is
 introduced. Later phases can consume due ticks without conflating schedule authority with observation, staging,
 Evidence admission, processing or AI authority.
+
+
+## Replay hardening
+
+Replay identity includes action type and effective-time semantics. An omitted effective time only replays an authorization that originally used the implicit immediate effective time. A request key used for a replacement cannot later be interpreted as a standalone disable replay.
