@@ -1,7 +1,11 @@
 from datetime import UTC, datetime
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
+
+from app.core.security import create_access_token
+from app.modules.auth.models import TotpMfaFactor
+from app.modules.auth.service import create_auth_session
 from sqlalchemy import select
 
 from app.modules.audit.models import AuditLog
@@ -29,7 +33,9 @@ from app.modules.external_document_sources.observation_review_handoff_service im
 from app.modules.external_document_sources.service import (
     ExternalDocumentSourceConflictError,
 )
-from tests.db_harness import TestingSessionLocal, reset_database
+from app.modules.users.models import User, UserRole
+from tests.db_harness import TestingSessionLocal, client, reset_database
+from tests.test_external_document_source_discovery import _headers
 from tests.test_external_document_source_due_tick_service_executor import _prepare
 from tests.test_external_document_source_evidence_family_binding import (
     setup_function as _phase_y_setup,
@@ -47,6 +53,55 @@ def setup_function() -> None:
 
 def teardown_function() -> None:
     _phase_y_teardown()
+
+
+def _mfa_headers(user_id: UUID) -> dict[str, str]:
+    now = datetime.now(UTC)
+    with TestingSessionLocal() as db:
+        user = db.get(User, user_id)
+        assert user is not None
+        factor = (
+            db.query(TotpMfaFactor)
+            .filter(
+                TotpMfaFactor.organization_id == user.organization_id,
+                TotpMfaFactor.user_id == user.id,
+                TotpMfaFactor.revoked_at.is_(None),
+            )
+            .one_or_none()
+        )
+        if factor is None:
+            factor = TotpMfaFactor(
+                organization_id=user.organization_id,
+                user_id=user.id,
+                issuer="MCRI Test",
+                account_label=user.email,
+                algorithm="SHA1",
+                digits=6,
+                period_seconds=30,
+                secret_ciphertext="test-only-ciphertext",
+                secret_nonce="test-only-nonce",
+                secret_fingerprint="a" * 64,
+                confirmed_at=now,
+            )
+            db.add(factor)
+            db.flush()
+        else:
+            factor.confirmed_at = factor.confirmed_at or now
+
+        session = create_auth_session(db, user=user)
+        session.mfa_verified_at = now
+        session.mfa_method = "totp"
+        session.mfa_factor_id = factor.id
+        db.commit()
+        token = create_access_token(
+            user_id=user.id,
+            organization_id=user.organization_id,
+            role=user.role.value,
+            session_id=session.id,
+            identity_source=session.identity_source,
+            auth_method=session.auth_method,
+        )
+    return {"Authorization": f"Bearer {token}"}
 
 
 def _changed_result() -> ExactItemMetadataResult:
@@ -461,5 +516,80 @@ def test_phase_ag_nonhuman_or_unknown_actor_cannot_decide(
             )
         db.rollback()
         assert db.query(ExternalDocumentSourceObservationReviewDecision).count() == 0
+
+    assert adapter.calls == 1
+
+
+def test_phase_ag_decision_endpoint_requires_admin_and_current_mfa(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (
+        actor_id,
+        profile_id,
+        organization_id,
+        _document_id,
+        handoff_id,
+        _result_status,
+        adapter,
+    ) = _prepare_handoff(monkeypatch, "ag-api-mfa-admin", _changed_result())
+
+    endpoint = (
+        f"/api/v1/external-document-sources/profiles/{profile_id}"
+        f"/observation-review-handoffs/{handoff_id}/decisions"
+    )
+    payload = {
+        "request_key": "ag-api-mfa-admin",
+        "decision_kind": "dismiss",
+        "reason": "Human reviewer dismisses the observed change after explicit review.",
+    }
+
+    no_current_mfa = client.post(
+        endpoint,
+        headers=_headers(actor_id),
+        json=payload,
+    )
+    assert no_current_mfa.status_code == 403, no_current_mfa.text
+    assert "mfa" in no_current_mfa.text.lower()
+
+    with TestingSessionLocal() as db:
+        admin = db.get(User, actor_id)
+        assert admin is not None
+        handler = User(
+            organization_id=organization_id,
+            email="phase-ag-handler@example.com",
+            full_name="Phase AG Handler",
+            password_hash="local",
+            role=UserRole.CLAIMS_HANDLER,
+            is_active=True,
+        )
+        db.add(handler)
+        db.commit()
+        handler_id = handler.id
+
+    non_admin = client.post(
+        endpoint,
+        headers=_headers(handler_id),
+        json=payload,
+    )
+    assert non_admin.status_code == 403, non_admin.text
+
+    allowed = client.post(
+        endpoint,
+        headers=_mfa_headers(actor_id),
+        json=payload,
+    )
+    assert allowed.status_code == 201, allowed.text
+    body = allowed.json()
+    assert body["handoff_id"] == str(handoff_id)
+    assert body["decision_kind"] == "dismiss"
+    assert body["status"] == "dismissed"
+    assert body["decided_by_id"] == str(actor_id)
+    assert body["remote_content_read_performed"] is False
+    assert body["evidence_admitted"] is False
+    assert body["ai_executed"] is False
+
+    with TestingSessionLocal() as db:
+        assert db.query(ExternalDocumentSourceObservationReviewDecision).count() == 1
+        assert db.query(ExternalDocumentSourceObservationRefreshAuthorization).count() == 0
 
     assert adapter.calls == 1
