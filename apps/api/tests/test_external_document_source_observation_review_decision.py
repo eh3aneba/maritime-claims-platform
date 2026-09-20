@@ -21,6 +21,7 @@ from app.modules.external_document_sources.observation_review_decision_service i
     decide_observation_review_handoff,
     ensure_observation_review_decision_integrity,
     get_observation_review_decision,
+    list_pending_observation_review_handoffs,
 )
 from app.modules.external_document_sources.observation_review_handoff_service import (
     project_observation_review_handoff,
@@ -380,5 +381,85 @@ def test_phase_ag_historical_decision_survives_later_document_change(
         assert historical.id == decision_id
         assert historical.current_document_id == document_id
         assert historical.status == "dismissed"
+
+    assert adapter.calls == 1
+
+
+def test_phase_ag_pending_list_hides_decided_handoff(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (
+        actor_id,
+        profile_id,
+        organization_id,
+        _document_id,
+        handoff_id,
+        _result_status,
+        adapter,
+    ) = _prepare_handoff(monkeypatch, "ag-pending-list", _changed_result())
+
+    with TestingSessionLocal() as db:
+        pending = list_pending_observation_review_handoffs(
+            db,
+            organization_id=organization_id,
+            profile_id=profile_id,
+        )
+        assert [row.id for row in pending] == [handoff_id]
+
+        decision, authorization, outcome = decide_observation_review_handoff(
+            db,
+            organization_id=organization_id,
+            profile_id=profile_id,
+            handoff_id=handoff_id,
+            decided_by_id=actor_id,
+            request_key="ag-pending-list",
+            decision_kind="dismiss",
+            decision_reason="Human reviewer dismisses this item after review.",
+        )
+        assert outcome == "decided"
+        assert decision.status == "dismissed"
+        assert authorization is None
+
+    with TestingSessionLocal() as db:
+        pending = list_pending_observation_review_handoffs(
+            db,
+            organization_id=organization_id,
+            profile_id=profile_id,
+        )
+        assert pending == []
+
+    assert adapter.calls == 1
+
+
+def test_phase_ag_nonhuman_or_unknown_actor_cannot_decide(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (
+        _actor_id,
+        profile_id,
+        organization_id,
+        _document_id,
+        handoff_id,
+        _result_status,
+        adapter,
+    ) = _prepare_handoff(monkeypatch, "ag-human-required", _changed_result())
+
+    with TestingSessionLocal() as db:
+        with pytest.raises(
+            ExternalDocumentSourceConflictError,
+            match="active organization Admin",
+        ):
+            decide_observation_review_handoff(
+                db,
+                organization_id=organization_id,
+                profile_id=profile_id,
+                handoff_id=handoff_id,
+                decided_by_id=uuid4(),
+                request_key="ag-human-required",
+                decision_kind="dismiss",
+                decision_reason="A non-human identity must not be accepted as reviewer.",
+            )
+        db.rollback()
+        assert db.query(ExternalDocumentSourceObservationReviewDecision).count() == 0
 
     assert adapter.calls == 1
