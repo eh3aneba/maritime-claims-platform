@@ -75,6 +75,11 @@ class ExternalDocumentSourceObservationReviewHandoff(
     __table_args__ = (
         UniqueConstraint("observation_execution_id", name="uq_ext_doc_obs_review_observation"),
         CheckConstraint("result_status IN ('changed','missing')", name="ck_ext_doc_obs_review_result"),
+        CheckConstraint(
+            "(result_status = 'missing' AND observed_projection_hash IS NULL) OR "
+            "(result_status = 'changed' AND observed_projection_hash IS NOT NULL)",
+            name="ck_ext_doc_obs_review_projection",
+        ),
         CheckConstraint("status = 'pending'", name="ck_ext_doc_obs_review_status"),
         CheckConstraint("observed_version_number >= 1", name="ck_ext_doc_obs_review_version"),
         CheckConstraint("provider_kind IN ('sharepoint','google_drive')", name="ck_ext_doc_obs_review_provider"),
