@@ -42,6 +42,10 @@ from app.modules.external_document_sources.due_tick_observation_models import (
     ExternalDocumentSourceDueTickObservationExecution,
     ExternalDocumentSourceDueTickObservationReceipt,
 )
+from app.modules.external_document_sources.observation_review_handoff_models import (
+    ExternalDocumentSourceObservationReviewHandoff,
+    ExternalDocumentSourceObservationReviewHandoffReceipt,
+)
 from app.modules.external_document_sources.due_tick_dispatch_models import (
     ExternalDocumentSourceDueTickDispatch,
     ExternalDocumentSourceDueTickDispatchReceipt,
@@ -170,6 +174,8 @@ __all__ = [
     "ExternalDocumentSourceEvidenceAdmissionExecutionReceipt",
     "ExternalDocumentSourceDueTickObservationExecution",
     "ExternalDocumentSourceDueTickObservationReceipt",
+    "ExternalDocumentSourceObservationReviewHandoff",
+    "ExternalDocumentSourceObservationReviewHandoffReceipt",
     "ExternalDocumentSourceDueTickDispatch",
     "ExternalDocumentSourceDueTickDispatchReceipt",
     "ExternalDocumentSourceDueTickDispatchConsumption",
