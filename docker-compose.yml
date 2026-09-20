@@ -184,6 +184,21 @@ services:
         condition: service_completed_successfully
     restart: unless-stopped
 
+  external-evidence-review-projector-worker:
+    build:
+      context: ./apps/api
+      target: base
+    command: ["python", "-m", "app.workers.external_evidence_review_projector_worker"]
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://maritime:change-me-in-local-env@db:5432/maritime_claims}
+      EXTERNAL_EVIDENCE_REVIEW_PROJECTOR_POLL_SECONDS: ${EXTERNAL_EVIDENCE_REVIEW_PROJECTOR_POLL_SECONDS:-5}
+      EXTERNAL_EVIDENCE_REVIEW_PROJECTOR_ID: ${EXTERNAL_EVIDENCE_REVIEW_PROJECTOR_ID:-external-evidence-review-projector-v1}
+    depends_on:
+      preflight:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
   web:
     build:
       context: ./apps/web

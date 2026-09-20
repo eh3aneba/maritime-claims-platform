@@ -44,6 +44,8 @@ class Settings(BaseSettings):
     external_evidence_scheduler_poll_seconds: float = Field(default=5.0, ge=1.0, le=300.0)
     external_evidence_observer_poll_seconds: float = Field(default=5.0, ge=1.0, le=300.0)
     external_evidence_service_executor_id: str = "external-evidence-observer-v1"
+    external_evidence_review_projector_poll_seconds: float = Field(default=5.0, ge=1.0, le=300.0)
+    external_evidence_review_projector_id: str = "external-evidence-review-projector-v1"
     ocr_enabled: bool = False
     ocr_languages: str = "eng+fas"
     ocr_max_pages: int = 20
