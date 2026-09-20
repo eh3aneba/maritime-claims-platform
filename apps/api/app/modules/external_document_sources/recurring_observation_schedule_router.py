@@ -6,10 +6,12 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.modules.external_document_sources.connection_authorization_router import (
-    ConnectionAuthorizationAdminMfa,
-    router,
+from app.modules.auth.dependencies import (
+    CurrentAuthContext,
+    enforce_current_mfa_for_context,
 )
+from app.modules.external_document_sources.connection_authorization_router import router
+from app.modules.users.models import User, UserRole
 from app.modules.external_document_sources.recurring_observation_schedule_schemas import (
     ExternalDocumentSourceRecurringObservationScheduleDisableRequest,
     ExternalDocumentSourceRecurringObservationScheduleRead,
@@ -29,6 +31,25 @@ from app.modules.external_document_sources.service import (
     ExternalDocumentSourceNotFoundError,
     ExternalDocumentSourceValidationError,
 )
+
+
+def require_recurring_observation_admin_current_mfa(
+    context: CurrentAuthContext,
+    db: Annotated[Session, Depends(get_db)],
+) -> User:
+    if context.user.role != UserRole.ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient permissions",
+        )
+    enforce_current_mfa_for_context(db, context=context)
+    return context.user
+
+
+RecurringObservationAdminMfa = Annotated[
+    User,
+    Depends(require_recurring_observation_admin_current_mfa),
+]
 
 
 def _raise_service_error(exc: Exception) -> None:
@@ -58,7 +79,7 @@ def authorize_recurring_observation_schedule_endpoint(
     binding_id: UUID,
     payload: ExternalDocumentSourceRecurringObservationScheduleRequest,
     db: Annotated[Session, Depends(get_db)],
-    current_user: ConnectionAuthorizationAdminMfa,
+    current_user: RecurringObservationAdminMfa,
 ) -> ExternalDocumentSourceRecurringObservationScheduleRead:
     try:
         schedule, _outcome = authorize_recurring_observation_schedule(
@@ -96,7 +117,7 @@ def replace_recurring_observation_schedule_endpoint(
     schedule_id: UUID,
     payload: ExternalDocumentSourceRecurringObservationScheduleRequest,
     db: Annotated[Session, Depends(get_db)],
-    current_user: ConnectionAuthorizationAdminMfa,
+    current_user: RecurringObservationAdminMfa,
 ) -> ExternalDocumentSourceRecurringObservationScheduleRead:
     try:
         schedule, _outcome = replace_recurring_observation_schedule(
@@ -133,7 +154,7 @@ def disable_recurring_observation_schedule_endpoint(
     schedule_id: UUID,
     payload: ExternalDocumentSourceRecurringObservationScheduleDisableRequest,
     db: Annotated[Session, Depends(get_db)],
-    current_user: ConnectionAuthorizationAdminMfa,
+    current_user: RecurringObservationAdminMfa,
 ) -> ExternalDocumentSourceRecurringObservationScheduleRead:
     try:
         schedule, _outcome = disable_recurring_observation_schedule(
@@ -167,7 +188,7 @@ def get_recurring_observation_schedule_endpoint(
     profile_id: UUID,
     schedule_id: UUID,
     db: Annotated[Session, Depends(get_db)],
-    current_user: ConnectionAuthorizationAdminMfa,
+    current_user: RecurringObservationAdminMfa,
 ) -> ExternalDocumentSourceRecurringObservationScheduleRead:
     try:
         schedule = get_recurring_observation_schedule(
@@ -199,7 +220,7 @@ def get_active_recurring_observation_schedule_endpoint(
     binding_id: UUID,
     response: Response,
     db: Annotated[Session, Depends(get_db)],
-    current_user: ConnectionAuthorizationAdminMfa,
+    current_user: RecurringObservationAdminMfa,
 ) -> ExternalDocumentSourceRecurringObservationScheduleRead | None:
     try:
         schedule = get_active_recurring_observation_schedule(
@@ -233,7 +254,7 @@ def list_recurring_observation_schedule_receipts_endpoint(
     profile_id: UUID,
     schedule_id: UUID,
     db: Annotated[Session, Depends(get_db)],
-    current_user: ConnectionAuthorizationAdminMfa,
+    current_user: RecurringObservationAdminMfa,
 ) -> list[ExternalDocumentSourceRecurringObservationScheduleReceiptRead]:
     try:
         rows = list_recurring_observation_schedule_receipts(
