@@ -42,6 +42,9 @@ from app.modules.external_document_sources.family_version_admission_service impo
     _establish_next_document_version,
     _lock_current_family_document as _aa_lock_current_family_document,
 )
+from app.modules.external_document_sources.recurring_observation_schedule_models import (
+    ExternalDocumentSourceRecurringObservationSchedule,
+)
 from app.modules.external_document_sources.recurring_observation_schedule_service import (
     _binding_for_update as _schedule_binding_for_update,
     authorize_recurring_observation_schedule,
