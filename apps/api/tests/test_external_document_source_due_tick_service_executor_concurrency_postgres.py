@@ -43,6 +43,7 @@ from app.modules.external_document_sources.family_version_admission_service impo
     _lock_current_family_document as _aa_lock_current_family_document,
 )
 from app.modules.external_document_sources.recurring_observation_schedule_service import (
+    _binding_for_update as _schedule_binding_for_update,
     authorize_recurring_observation_schedule,
     disable_recurring_observation_schedule,
 )
@@ -314,76 +315,69 @@ def test_disable_vs_service_consumption_serializes_and_fails_closed(
         dispatch_id,
         adapter,
     ) = _seed_dispatch(monkeypatch, "disable-service")
-    barrier = Barrier(2)
     try:
-        def disable():
-            with SessionLocal() as db:
-                barrier.wait(timeout=10)
-                try:
-                    disable_recurring_observation_schedule(
-                        db,
-                        organization_id=organization_id,
-                        profile_id=profile_id,
-                        schedule_id=schedule_id,
-                        actor_id=actor_id,
-                        request_key="phase-ae-pg-disable-service",
-                        reason=(
-                            "Disable the recurring schedule while the Phase AE "
-                            "service executor races to consume the due dispatch."
-                        ),
-                    )
-                    return "disabled"
-                except (ExternalDocumentSourceConflictError, IntegrityError):
-                    db.rollback()
-                    return "conflict"
+        with SessionLocal() as disable_db:
+            schedule = disable_db.get(
+                ExternalDocumentSourceRecurringObservationSchedule,
+                schedule_id,
+            )
+            assert schedule is not None
+            _schedule_binding_for_update(
+                disable_db,
+                organization_id=organization_id,
+                profile_id=profile_id,
+                binding_id=schedule.binding_id,
+            )
 
-        def consume():
-            with SessionLocal() as db:
-                barrier.wait(timeout=10)
-                try:
-                    _observation, _consumption, outcome = consume_due_tick_dispatch(
-                        db,
+            # While disable authority owns the shared family lock, AE must not
+            # pass the authority boundary or perform a provider metadata read.
+            with SessionLocal() as blocked_db:
+                blocked_db.execute(text("SET LOCAL lock_timeout = '250ms'"))
+                with pytest.raises(OperationalError):
+                    consume_due_tick_dispatch(
+                        blocked_db,
                         dispatch_id=dispatch_id,
                         service_executor_id="external-evidence-observer-v1",
                         now=due_now,
                     )
-                    return outcome
-                except (ExternalDocumentSourceConflictError, IntegrityError):
-                    db.rollback()
-                    return "conflict"
+                blocked_db.rollback()
+            assert adapter.calls == 0
 
-        with ThreadPoolExecutor(max_workers=2) as pool:
-            disable_future = pool.submit(disable)
-            consume_future = pool.submit(consume)
-            disable_result = disable_future.result(timeout=30)
-            consume_result = consume_future.result(timeout=30)
+            disabled, outcome = disable_recurring_observation_schedule(
+                disable_db,
+                organization_id=organization_id,
+                profile_id=profile_id,
+                schedule_id=schedule_id,
+                actor_id=actor_id,
+                request_key="phase-ae-pg-disable-service",
+                reason=(
+                    "Disable the recurring schedule while validating that the "
+                    "Phase AE service executor serializes on family authority."
+                ),
+            )
+            assert outcome == "disabled"
+            assert disabled.status == "disabled"
 
-        assert disable_result == "disabled"
+        # Once disabled, the immutable prior dispatch is stale authority and
+        # must fail closed without reading provider metadata.
         with SessionLocal() as db:
-            observations = list(
-                db.scalars(
-                    select(ExternalDocumentSourceDueTickObservationExecution).where(
-                        ExternalDocumentSourceDueTickObservationExecution.schedule_id
-                        == schedule_id
-                    )
-                ).all()
-            )
-            consumptions = list(
-                db.scalars(select(ExternalDocumentSourceDueTickDispatchConsumption)).all()
-            )
-            assert len(observations) <= 1
-            assert len(consumptions) <= 1
-            if consume_result == "conflict":
-                assert len(observations) == 0
-                assert len(consumptions) == 0
-                assert adapter.calls == 0
-            else:
-                assert len(observations) == 1
-                assert len(consumptions) == 1
-                assert adapter.calls == 1
+            with pytest.raises(ExternalDocumentSourceConflictError):
+                consume_due_tick_dispatch(
+                    db,
+                    dispatch_id=dispatch_id,
+                    service_executor_id="external-evidence-observer-v1",
+                    now=due_now,
+                )
+            db.rollback()
+
+        with SessionLocal() as db:
+            assert db.query(ExternalDocumentSourceDueTickObservationExecution).count() == 0
+            assert db.query(ExternalDocumentSourceDueTickDispatchConsumption).count() == 0
+            assert db.get(ExternalDocumentSourceDueTickDispatch, dispatch_id) is not None
+
+        assert adapter.calls == 0
     finally:
         engine.dispose()
-
 
 def test_canonical_version_transition_makes_prior_dispatch_fail_closed_without_read(
     monkeypatch: pytest.MonkeyPatch,
