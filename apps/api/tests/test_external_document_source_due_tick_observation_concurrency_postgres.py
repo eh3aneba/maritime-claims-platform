@@ -35,6 +35,10 @@ from app.modules.external_document_sources.service import (
     ExternalDocumentSourceConflictError,
 )
 from tests.test_external_document_source_change_detection import _ChangeAdapter
+from tests.test_external_document_source_evidence_family_binding import (
+    setup_function as _phase_y_setup,
+    teardown_function as _phase_y_teardown,
+)
 from tests.test_external_document_source_family_version_admission import _bound_v1
 from tests.test_external_document_source_generation_3_change_detection import (
     _baseline_projection,
@@ -61,6 +65,14 @@ _DISABLE_REASON = (
     "Disable the recurring schedule during PostgreSQL due-tick concurrency "
     "validation and prevent future observations."
 )
+
+
+def setup_function() -> None:
+    _phase_y_setup()
+
+
+def teardown_function() -> None:
+    _phase_y_teardown()
 
 
 def _session_factory():
