@@ -13,7 +13,7 @@ from app.modules.external_document_sources.due_tick_observation_models import (
     ExternalDocumentSourceDueTickObservationReceipt,
 )
 from app.modules.processing.models import DocumentProcessingJob
-from tests.db_harness import TestingSessionLocal, client
+from tests.db_harness import TestingSessionLocal, client, reset_database
 from tests.test_external_document_source_change_detection import _ChangeAdapter
 from tests.test_external_document_source_evidence_family_binding import (
     setup_function as _phase_y_setup,
@@ -40,6 +40,9 @@ from tests.test_external_document_source_recurring_observation_schedule import (
 
 def setup_function() -> None:
     _phase_y_setup()
+    # AC composes a very deep Y→X→V→U helper chain. Make the file boundary
+    # independently deterministic even when sharded with other test modules.
+    reset_database()
 
 
 def teardown_function() -> None:
