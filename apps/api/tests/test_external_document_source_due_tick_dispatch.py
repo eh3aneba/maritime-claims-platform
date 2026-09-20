@@ -49,6 +49,12 @@ def teardown_function() -> None:
     _phase_y_teardown()
 
 
+def _utc_value(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
 def test_phase_ad_dispatches_one_due_tick_db_only_without_human_impersonation(monkeypatch) -> None:
     actor_id, profile_id, _claim_id, initial_execution, binding = _bound_v1(
         monkeypatch,
@@ -86,7 +92,7 @@ def test_phase_ad_dispatches_one_due_tick_db_only_without_human_impersonation(mo
         )
         assert dispatch is not None
         assert dispatch.schedule_id == schedule_id
-        assert dispatch.due_at == datetime(2026, 9, 20, 0, 0, tzinfo=UTC)
+        assert _utc_value(dispatch.due_at) == datetime(2026, 9, 20, 0, 0, tzinfo=UTC)
         assert dispatch.status == "dispatched"
         assert dispatch.worker_id_hash == hashlib.sha256(b"scheduler-node-a").hexdigest()
         ensure_due_tick_dispatch_integrity(db, dispatch)
@@ -195,7 +201,7 @@ def test_phase_ad_follows_completed_ac_tick_without_skipping_overdue_sequence(mo
             now=datetime(2026, 9, 20, 0, 0, tzinfo=UTC),
         )
         assert outcome == "completed"
-        assert first.due_at == datetime(2026, 9, 20, 0, 0, tzinfo=UTC)
+        assert _utc_value(first.due_at) == datetime(2026, 9, 20, 0, 0, tzinfo=UTC)
         assert adapter.calls == 1
 
     with TestingSessionLocal() as db:
@@ -206,7 +212,7 @@ def test_phase_ad_follows_completed_ac_tick_without_skipping_overdue_sequence(mo
         )
         assert dispatch is not None
         assert dispatch.schedule_id == schedule_id
-        assert dispatch.due_at == datetime(2026, 9, 20, 1, 0, tzinfo=UTC)
+        assert _utc_value(dispatch.due_at) == datetime(2026, 9, 20, 1, 0, tzinfo=UTC)
         assert db.query(ExternalDocumentSourceDueTickObservationExecution).count() == 1
         assert db.query(ExternalDocumentSourceDueTickDispatch).count() == 1
         assert adapter.calls == 1
