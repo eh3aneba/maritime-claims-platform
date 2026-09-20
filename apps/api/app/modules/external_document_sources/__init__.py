@@ -42,6 +42,10 @@ from app.modules.external_document_sources.due_tick_observation_models import (
     ExternalDocumentSourceDueTickObservationExecution,
     ExternalDocumentSourceDueTickObservationReceipt,
 )
+from app.modules.external_document_sources.due_tick_dispatch_models import (
+    ExternalDocumentSourceDueTickDispatch,
+    ExternalDocumentSourceDueTickDispatchReceipt,
+)
 from app.modules.external_document_sources.evidence_family_binding_models import (
     ExternalDocumentSourceEvidenceFamilyBinding,
     ExternalDocumentSourceEvidenceFamilyBindingReceipt,
@@ -162,6 +166,8 @@ __all__ = [
     "ExternalDocumentSourceEvidenceAdmissionExecutionReceipt",
     "ExternalDocumentSourceDueTickObservationExecution",
     "ExternalDocumentSourceDueTickObservationReceipt",
+    "ExternalDocumentSourceDueTickDispatch",
+    "ExternalDocumentSourceDueTickDispatchReceipt",
     "ExternalDocumentSourceEvidenceFamilyBinding",
     "ExternalDocumentSourceEvidenceFamilyBindingReceipt",
     "ExternalDocumentSourceFamilyVersionAdmissionAuthorization",
