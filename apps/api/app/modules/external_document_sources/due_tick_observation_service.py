@@ -21,6 +21,9 @@ from app.modules.external_document_sources.due_tick_observation_models import (
     ExternalDocumentSourceDueTickObservationExecution,
     ExternalDocumentSourceDueTickObservationReceipt,
 )
+from app.modules.external_document_sources.due_tick_dispatch_models import (
+    ExternalDocumentSourceDueTickDispatch,
+)
 from app.modules.external_document_sources.evidence_admission_execution_models import (
     ExternalDocumentSourceEvidenceAdmissionExecution,
 )
@@ -339,16 +342,18 @@ def _scope_hash(
 def _request_hash(
     execution: ExternalDocumentSourceDueTickObservationExecution,
 ) -> str:
-    return _canonical_hash(
-        {
-            "execution_id": str(execution.id),
-            "scope_hash": execution.scope_hash,
-            "executed_by_id": str(execution.executed_by_id),
-            "execution_reason": execution.execution_reason,
-            "executed_at": _iso(execution.executed_at),
-            **_safety(),
-        }
-    )
+    payload = {
+        "execution_id": str(execution.id),
+        "scope_hash": execution.scope_hash,
+        "executed_by_id": str(execution.executed_by_id),
+        "execution_reason": execution.execution_reason,
+        "executed_at": _iso(execution.executed_at),
+        **_safety(),
+    }
+    if execution.actor_kind == "service":
+        payload["actor_kind"] = "service"
+        payload["service_executor_id_hash"] = execution.service_executor_id_hash
+    return _canonical_hash(payload)
 
 
 def _completion_hash(
@@ -374,23 +379,25 @@ def _completion_hash(
 
 
 def _receipt_hash(receipt: ExternalDocumentSourceDueTickObservationReceipt) -> str:
-    return _canonical_hash(
-        {
-            "receipt_id": str(receipt.id),
-            "organization_id": str(receipt.organization_id),
-            "execution_id": str(receipt.execution_id),
-            "sequence_number": receipt.sequence_number,
-            "event_type": receipt.event_type,
-            "status_after": receipt.status_after,
-            "actor_id": str(receipt.actor_id),
-            "occurred_at": _iso(receipt.occurred_at),
-            "reason": receipt.reason,
-            "scope_hash": receipt.scope_hash,
-            "decision_hash": receipt.decision_hash,
-            "prior_receipt_hash": receipt.prior_receipt_hash,
-            **_safety(),
-        }
-    )
+    payload = {
+        "receipt_id": str(receipt.id),
+        "organization_id": str(receipt.organization_id),
+        "execution_id": str(receipt.execution_id),
+        "sequence_number": receipt.sequence_number,
+        "event_type": receipt.event_type,
+        "status_after": receipt.status_after,
+        "actor_id": str(receipt.actor_id),
+        "occurred_at": _iso(receipt.occurred_at),
+        "reason": receipt.reason,
+        "scope_hash": receipt.scope_hash,
+        "decision_hash": receipt.decision_hash,
+        "prior_receipt_hash": receipt.prior_receipt_hash,
+        **_safety(),
+    }
+    if receipt.actor_kind == "service":
+        payload["actor_kind"] = "service"
+        payload["service_executor_id_hash"] = receipt.service_executor_id_hash
+    return _canonical_hash(payload)
 
 
 def _receipts(
@@ -590,6 +597,21 @@ def ensure_due_tick_observation_integrity(
             "Due-tick observation timestamps drifted"
         )
 
+    if execution.actor_kind == "human":
+        if execution.executed_by_id is None or execution.service_executor_id_hash is not None:
+            raise ExternalDocumentSourceConflictError(
+                "Due-tick observation human actor identity drifted"
+            )
+    elif execution.actor_kind == "service":
+        if execution.executed_by_id is not None or execution.service_executor_id_hash is None:
+            raise ExternalDocumentSourceConflictError(
+                "Due-tick observation service actor identity drifted"
+            )
+    else:
+        raise ExternalDocumentSourceConflictError(
+            "Due-tick observation actor kind drifted"
+        )
+
     receipts = _receipts(db, execution)
     if len(receipts) != 1:
         raise ExternalDocumentSourceConflictError(
@@ -600,7 +622,9 @@ def ensure_due_tick_observation_integrity(
         receipt.sequence_number != 1
         or receipt.event_type != "completed"
         or receipt.status_after != "completed"
+        or receipt.actor_kind != execution.actor_kind
         or receipt.actor_id != execution.executed_by_id
+        or receipt.service_executor_id_hash != execution.service_executor_id_hash
         or _aware(receipt.occurred_at) != _aware(execution.completed_at)
         or receipt.reason != execution.execution_reason
         or receipt.scope_hash != execution.scope_hash
@@ -624,10 +648,13 @@ def execute_due_tick_observation(
     organization_id: UUID,
     profile_id: UUID,
     schedule_id: UUID,
-    executed_by_id: UUID,
+    executed_by_id: UUID | None,
     request_key: str,
     reason: str,
     now: datetime | None = None,
+    service_executor_id_hash: str | None = None,
+    expected_due_at: datetime | None = None,
+    expected_dispatch: ExternalDocumentSourceDueTickDispatch | None = None,
 ) -> tuple[ExternalDocumentSourceDueTickObservationExecution, str]:
     normalized_key = _normalize_text(
         request_key, field="request_key", minimum=1, maximum=128
@@ -635,6 +662,20 @@ def execute_due_tick_observation(
     normalized_reason = _normalize_text(
         reason, field="reason", minimum=20, maximum=2000
     )
+    actor_kind = "human" if executed_by_id is not None else "service"
+    if actor_kind == "human" and service_executor_id_hash is not None:
+        raise ExternalDocumentSourceValidationError(
+            "Human due-tick execution cannot carry a service-executor identity"
+        )
+    if actor_kind == "service":
+        if (
+            service_executor_id_hash is None
+            or len(service_executor_id_hash) != 64
+            or any(ch not in "0123456789abcdef" for ch in service_executor_id_hash)
+        ):
+            raise ExternalDocumentSourceValidationError(
+                "Service due-tick execution requires a SHA-256 service-executor identity hash"
+            )
 
     existing = db.scalar(
         select(ExternalDocumentSourceDueTickObservationExecution).where(
@@ -650,7 +691,9 @@ def execute_due_tick_observation(
         ensure_due_tick_observation_integrity(db, existing)
         if (
             existing.schedule_id != schedule_id
+            or existing.actor_kind != actor_kind
             or existing.executed_by_id != executed_by_id
+            or existing.service_executor_id_hash != service_executor_id_hash
             or existing.execution_reason != normalized_reason
         ):
             raise ExternalDocumentSourceConflictError(
@@ -711,6 +754,37 @@ def execute_due_tick_observation(
         raise ExternalDocumentSourceConflictError(
             "Recurring observation schedule is not due yet"
         )
+    if expected_due_at is not None and _aware(due_at) != _aware(expected_due_at):
+        raise ExternalDocumentSourceConflictError(
+            "Dispatched due tick was already completed or schedule sequence advanced"
+        )
+    if expected_dispatch is not None:
+        from app.modules.external_document_sources.due_tick_dispatch_service import (
+            ensure_due_tick_dispatch_integrity,
+        )
+
+        ensure_due_tick_dispatch_integrity(db, expected_dispatch)
+        if (
+            expected_dispatch.organization_id != organization_id
+            or expected_dispatch.profile_id != profile_id
+            or expected_dispatch.schedule_id != schedule.id
+            or expected_dispatch.binding_id != binding.id
+            or expected_dispatch.document_family_id != binding.document_family_id
+            or expected_dispatch.current_document_id != current_document.id
+            or expected_dispatch.current_version_number != current_document.version_number
+            or expected_dispatch.schedule_revision_number != schedule.revision_number
+            or expected_dispatch.schedule_authorization_hash != schedule.authorization_hash
+            or expected_dispatch.binding_completion_hash != binding.completion_hash
+            or expected_dispatch.provider_kind != binding.provider_kind
+            or expected_dispatch.profile_hash != binding.profile_hash
+            or expected_dispatch.stable_source_item_hash != binding.stable_source_item_hash
+            or expected_dispatch.cadence_class != schedule.cadence_class
+            or expected_dispatch.cadence_minutes != schedule.cadence_minutes
+            or _aware(expected_dispatch.due_at) != _aware(due_at)
+        ):
+            raise ExternalDocumentSourceConflictError(
+                "Due-tick dispatch authority no longer matches current observation authority"
+            )
 
     observation, checkpoint, profile, locator, policy = _provider_lineage(db, binding)
     adapter = _OBSERVATION_ADAPTERS.get(
@@ -834,7 +908,9 @@ def execute_due_tick_observation(
         scope_hash="",
         request_hash="",
         status="completed",
+        actor_kind=actor_kind,
         executed_by_id=executed_by_id,
+        service_executor_id_hash=service_executor_id_hash,
         execution_reason=normalized_reason,
         executed_at=executed_at,
         completed_at=completed_at,
@@ -866,7 +942,9 @@ def execute_due_tick_observation(
         sequence_number=1,
         event_type="completed",
         status_after="completed",
+        actor_kind=actor_kind,
         actor_id=executed_by_id,
+        service_executor_id_hash=service_executor_id_hash,
         occurred_at=completed_at,
         reason=normalized_reason,
         scope_hash=execution.scope_hash,
@@ -897,6 +975,8 @@ def execute_due_tick_observation(
             "current_version_number": current_document.version_number,
             "due_at": _iso(due_at),
             "result_status": result_status,
+            "actor_kind": actor_kind,
+            "service_executor_id_hash": service_executor_id_hash,
             "remote_content_read_performed": False,
             "document_mutated": False,
             "processing_enqueued": False,
