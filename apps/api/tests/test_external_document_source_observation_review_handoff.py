@@ -149,7 +149,7 @@ def test_phase_af_projects_changed_observation_once_without_external_io(
     assert adapter.calls == 1
 
 
-def test_phase_af_projects_missing_but_ignores_unchanged(
+def test_phase_af_projects_missing_observation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     missing_id, missing_status, missing_adapter = _consume_service_observation(
@@ -173,8 +173,13 @@ def test_phase_af_projects_missing_but_ignores_unchanged(
         assert outcome == "projected"
         assert handoff.result_status == "missing"
         assert handoff.observed_projection_hash is None
+        assert db.query(ExternalDocumentSourceObservationReviewHandoff).count() == 1
     assert missing_adapter.calls == 1
 
+
+def test_phase_af_unchanged_observation_creates_no_handoff(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     unchanged_id, unchanged_status, unchanged_adapter = _consume_service_observation(
         monkeypatch,
         "af-unchanged",
@@ -193,9 +198,7 @@ def test_phase_af_projects_missing_but_ignores_unchanged(
         )
         assert handoff is None
         assert outcome == "ineligible"
-        rows = db.query(ExternalDocumentSourceObservationReviewHandoff).all()
-        assert len(rows) == 1
-        assert rows[0].observation_execution_id == missing_id
+        assert db.query(ExternalDocumentSourceObservationReviewHandoff).count() == 0
     assert unchanged_adapter.calls == 1
 
 
