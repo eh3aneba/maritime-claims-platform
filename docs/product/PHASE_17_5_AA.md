@@ -64,7 +64,7 @@ so two separately authorized candidates cannot both become N+1.
 
 ## CI capacity
 
-The backend suite is distributed across five deterministic shards while retaining the existing 25-minute per-shard
+The backend suite is distributed across eight deterministic shards while retaining the existing 25-minute per-shard
 timeout. This prevents test-suite growth from silently weakening the timeout gate.
 
 ## Non-goals
