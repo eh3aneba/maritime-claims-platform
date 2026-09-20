@@ -314,6 +314,16 @@ def test_phase_ab_authorize_replace_disable_is_authority_only(
     assert replacement_replay.status_code == 201, replacement_replay.text
     assert replacement_replay.json()["id"] == second["id"]
 
+    wrong_action_replay = _disable(
+        profile_id,
+        first["id"],
+        actor_id,
+        key="phase-ab-replace-2",
+        reason=_REPLACE_REASON,
+        headers=mfa_headers,
+    )
+    assert wrong_action_replay.status_code == 409, wrong_action_replay.text
+
     disabled = _disable(
         profile_id,
         second["id"],
