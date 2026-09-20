@@ -1,7 +1,7 @@
 import os
 
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -50,6 +50,32 @@ client = TestClient(app)
 
 
 def reset_database() -> None:
-    Base.metadata.drop_all(bind=engine)
-    Base.metadata.create_all(bind=engine)
+    if _postgres_harness_url:
+        # Dedicated PostgreSQL concurrency jobs arrive with the real Alembic
+        # schema already applied. Preserve that schema (and alembic_version)
+        # while clearing application rows between tests. This also avoids
+        # asking SQLAlchemy metadata to re-emit legacy identifiers whose model
+        # names can exceed PostgreSQL's 63-byte identifier limit even though
+        # the historical migrations created their canonical physical names.
+        with engine.begin() as connection:
+            table_names = list(
+                connection.scalars(
+                    text(
+                        "SELECT tablename FROM pg_tables "
+                        "WHERE schemaname = current_schema() "
+                        "AND tablename <> 'alembic_version' "
+                        "ORDER BY tablename"
+                    )
+                ).all()
+            )
+            if table_names:
+                quoted = ", ".join(
+                    '"' + name.replace('"', '""') + '"' for name in table_names
+                )
+                connection.exec_driver_sql(
+                    f"TRUNCATE TABLE {quoted} RESTART IDENTITY CASCADE"
+                )
+    else:
+        Base.metadata.drop_all(bind=engine)
+        Base.metadata.create_all(bind=engine)
     client.cookies.clear()
