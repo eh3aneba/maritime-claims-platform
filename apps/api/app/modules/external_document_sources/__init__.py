@@ -52,6 +52,10 @@ from app.modules.external_document_sources.processing_release_models import (
     ExternalDocumentSourceProcessingRelease,
     ExternalDocumentSourceProcessingReleaseReceipt,
 )
+from app.modules.external_document_sources.recurring_observation_schedule_models import (
+    ExternalDocumentSourceRecurringObservationSchedule,
+    ExternalDocumentSourceRecurringObservationScheduleReceipt,
+)
 from app.modules.external_document_sources.generation_3_change_detection_models import (
     ExternalDocumentSourceGeneration3ChangeDetectionExecution,
     ExternalDocumentSourceGeneration3ChangeDetectionReceipt,
@@ -123,6 +127,7 @@ from app.modules.external_document_sources import provider_client_health_router 
 from app.modules.external_document_sources import remote_content_staging_router as _remote_content_staging_router  # noqa: F401,E402
 from app.modules.external_document_sources import remote_file_content_read_router as _remote_file_content_read_router  # noqa: F401,E402
 from app.modules.external_document_sources import remote_metadata_listing_router as _remote_metadata_listing_router  # noqa: F401,E402
+from app.modules.external_document_sources import recurring_observation_schedule_router as _recurring_observation_schedule_router  # noqa: F401,E402
 from app.modules.external_document_sources import successor_change_detection_router as _successor_change_detection_router  # noqa: F401,E402
 from app.modules.external_document_sources import successor_versioned_restaging_router as _successor_versioned_restaging_router  # noqa: F401,E402
 from app.modules.external_document_sources import sync_checkpoint_router as _sync_checkpoint_router  # noqa: F401,E402
@@ -158,6 +163,8 @@ __all__ = [
     "ExternalDocumentSourceFamilyVersionAdmissionReceipt",
     "ExternalDocumentSourceProcessingRelease",
     "ExternalDocumentSourceProcessingReleaseReceipt",
+    "ExternalDocumentSourceRecurringObservationSchedule",
+    "ExternalDocumentSourceRecurringObservationScheduleReceipt",
     "ExternalDocumentSourceGeneration3ChangeDetectionExecution",
     "ExternalDocumentSourceGeneration3ChangeDetectionReceipt",
     "ExternalDocumentSourceProviderClientActivationAuthorization",

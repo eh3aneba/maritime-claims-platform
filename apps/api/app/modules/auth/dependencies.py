@@ -154,17 +154,12 @@ def _has_active_webauthn_credential(db: Session, *, user: User) -> bool:
     )
 
 
-def enforce_mfa_policy_for_context(
+def enforce_current_mfa_for_context(
     db: Session,
     *,
     context: AuthContext,
 ) -> None:
-    policy = get_mfa_policy(
-        db,
-        organization_id=context.user.organization_id,
-    )
-    if not mfa_required_for_role(policy, role=context.user.role):
-        return
+    """Require current MFA assurance regardless of tenant policy."""
 
     oidc_external_verified = session_has_verified_oidc_mfa(
         db,
@@ -226,6 +221,20 @@ def enforce_mfa_policy_for_context(
             "message": "MFA verification is required for the current authentication session",
         },
     )
+
+
+def enforce_mfa_policy_for_context(
+    db: Session,
+    *,
+    context: AuthContext,
+) -> None:
+    policy = get_mfa_policy(
+        db,
+        organization_id=context.user.organization_id,
+    )
+    if not mfa_required_for_role(policy, role=context.user.role):
+        return
+    enforce_current_mfa_for_context(db, context=context)
 
 
 def _authorize_roles(context: AuthContext, allowed_roles: tuple[UserRole, ...]) -> User:
