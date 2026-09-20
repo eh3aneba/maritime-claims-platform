@@ -3,12 +3,12 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 import os
-from threading import Barrier, Event
+from threading import Barrier
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import create_engine, select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import create_engine, select, text
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.modules.documents.models import Document
@@ -253,8 +253,6 @@ def test_canonical_version_transition_serializes_before_dispatch_snapshot(
     )
     engine, SessionLocal = _session_factory()
     due_now = datetime.now(UTC)
-    transition_locked = Event()
-    allow_transition_commit = Event()
     try:
         with SessionLocal() as db:
             family = db.get(
@@ -276,70 +274,65 @@ def test_canonical_version_transition_serializes_before_dispatch_snapshot(
             )
             schedule_id = schedule.id
 
-        def transition_version():
-            with SessionLocal() as db:
-                family = _aa_binding_for_update(
-                    db,
-                    organization_id=organization_id,
-                    profile_id=UUID(profile_id),
-                    binding_id=UUID(binding["id"]),
-                )
-                current = _aa_lock_current_family_document(
-                    db,
-                    organization_id=organization_id,
-                    claim_id=family.claim_id,
-                    document_family_id=family.document_family_id,
-                    expected_current_document_id=UUID(initial_execution["document_id"]),
-                )
-                transition_locked.set()
-                assert allow_transition_commit.wait(timeout=10)
-                new_document = _establish_next_document_version(
-                    db,
-                    prior_document=current,
-                    executed_by_id=actor_id,
-                    executed_at=due_now,
-                    new_document_id=uuid4(),
-                    original_filename="phase-ad-version-2.pdf",
-                    mime_type="application/pdf",
-                    file_size_bytes=2048,
-                    file_hash="b" * 64,
-                    storage_key=f"phase-ad-version-race/{uuid4()}.pdf",
-                    malware_scanned_at=due_now,
-                    replacement_reason=(
-                        "Establish a canonical v2 while the scheduler waits on "
-                        "the shared Evidence-family authority lock."
-                    ),
-                )
-                new_id = new_document.id
-                db.commit()
-                return new_id
+        with SessionLocal() as transition_db:
+            family = _aa_binding_for_update(
+                transition_db,
+                organization_id=organization_id,
+                profile_id=UUID(profile_id),
+                binding_id=UUID(binding["id"]),
+            )
+            current = _aa_lock_current_family_document(
+                transition_db,
+                organization_id=organization_id,
+                claim_id=family.claim_id,
+                document_family_id=family.document_family_id,
+                expected_current_document_id=UUID(initial_execution["document_id"]),
+            )
 
-        def dispatch_after_transition_lock():
-            assert transition_locked.wait(timeout=10)
-            with SessionLocal() as db:
-                row = dispatch_next_due_tick(
-                    db,
-                    worker_id="phase-ad-version-race-worker",
-                    now=due_now,
-                )
-                assert row is not None
-                return row.id
+            # A second scheduler transaction must not snapshot the family while
+            # the canonical-version transition owns the shared authority lock.
+            with SessionLocal() as blocked_db:
+                blocked_db.execute(text("SET LOCAL lock_timeout = '250ms'"))
+                with pytest.raises(OperationalError):
+                    dispatch_next_due_tick(
+                        blocked_db,
+                        worker_id="phase-ad-version-race-blocked-worker",
+                        now=due_now,
+                    )
+                blocked_db.rollback()
 
-        with ThreadPoolExecutor(max_workers=2) as pool:
-            transition_future = pool.submit(transition_version)
-            assert transition_locked.wait(timeout=10)
-            dispatch_future = pool.submit(dispatch_after_transition_lock)
-            allow_transition_commit.set()
-            new_document_id = transition_future.result(timeout=20)
-            dispatch_id = dispatch_future.result(timeout=20)
+            new_document = _establish_next_document_version(
+                transition_db,
+                prior_document=current,
+                executed_by_id=actor_id,
+                executed_at=due_now,
+                new_document_id=uuid4(),
+                original_filename="phase-ad-version-2.pdf",
+                mime_type="application/pdf",
+                file_size_bytes=2048,
+                file_hash="b" * 64,
+                storage_key=f"phase-ad-version-race/{uuid4()}.pdf",
+                malware_scanned_at=due_now,
+                replacement_reason=(
+                    "Establish canonical v2 before retrying the scheduler after "
+                    "the shared Evidence-family authority lock is released."
+                ),
+            )
+            new_document_id = new_document.id
+            transition_db.commit()
 
         with SessionLocal() as db:
-            dispatch = db.get(ExternalDocumentSourceDueTickDispatch, dispatch_id)
+            dispatch = dispatch_next_due_tick(
+                db,
+                worker_id="phase-ad-version-race-worker",
+                now=due_now,
+            )
             assert dispatch is not None
             assert dispatch.schedule_id == schedule_id
             assert dispatch.current_document_id == new_document_id
             assert dispatch.current_version_number == 2
 
+        with SessionLocal() as db:
             current = db.scalar(
                 select(Document).where(
                     Document.organization_id == organization_id,
@@ -351,5 +344,15 @@ def test_canonical_version_transition_serializes_before_dispatch_snapshot(
             assert current is not None
             assert current.id == new_document_id
             assert current.version_number == 2
+            dispatches = list(
+                db.scalars(
+                    select(ExternalDocumentSourceDueTickDispatch).where(
+                        ExternalDocumentSourceDueTickDispatch.schedule_id == schedule_id
+                    )
+                ).all()
+            )
+            assert len(dispatches) == 1
+            assert dispatches[0].current_document_id == new_document_id
     finally:
         engine.dispose()
+
