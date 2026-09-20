@@ -728,6 +728,25 @@ def replace_recurring_observation_schedule(
             )
         return existing_request, "replayed"
 
+    snapshot = db.scalar(
+        select(ExternalDocumentSourceRecurringObservationSchedule).where(
+            ExternalDocumentSourceRecurringObservationSchedule.id == schedule_id,
+            ExternalDocumentSourceRecurringObservationSchedule.organization_id
+            == organization_id,
+            ExternalDocumentSourceRecurringObservationSchedule.profile_id
+            == profile_id,
+        )
+    )
+    if snapshot is None:
+        raise ExternalDocumentSourceNotFoundError(
+            "Recurring observation schedule not found"
+        )
+    binding = _binding_for_update(
+        db,
+        organization_id=organization_id,
+        profile_id=profile_id,
+        binding_id=snapshot.binding_id,
+    )
     current = db.scalar(
         select(ExternalDocumentSourceRecurringObservationSchedule)
         .where(
@@ -736,25 +755,20 @@ def replace_recurring_observation_schedule(
             == organization_id,
             ExternalDocumentSourceRecurringObservationSchedule.profile_id
             == profile_id,
+            ExternalDocumentSourceRecurringObservationSchedule.binding_id
+            == binding.id,
         )
         .with_for_update()
     )
     if current is None:
-        raise ExternalDocumentSourceNotFoundError(
-            "Recurring observation schedule not found"
+        raise ExternalDocumentSourceConflictError(
+            "Recurring observation schedule changed while acquiring family authority"
         )
     ensure_recurring_observation_schedule_integrity(db, current)
     if current.status != "active":
         raise ExternalDocumentSourceConflictError(
             "Only an active recurring observation schedule can be replaced"
         )
-
-    binding = _binding_for_update(
-        db,
-        organization_id=organization_id,
-        profile_id=profile_id,
-        binding_id=current.binding_id,
-    )
     _disable_schedule(
         db,
         schedule=current,
@@ -833,6 +847,25 @@ def disable_recurring_observation_schedule(
             )
         return existing_request, "replayed"
 
+    snapshot = db.scalar(
+        select(ExternalDocumentSourceRecurringObservationSchedule).where(
+            ExternalDocumentSourceRecurringObservationSchedule.id == schedule_id,
+            ExternalDocumentSourceRecurringObservationSchedule.organization_id
+            == organization_id,
+            ExternalDocumentSourceRecurringObservationSchedule.profile_id
+            == profile_id,
+        )
+    )
+    if snapshot is None:
+        raise ExternalDocumentSourceNotFoundError(
+            "Recurring observation schedule not found"
+        )
+    binding = _binding_for_update(
+        db,
+        organization_id=organization_id,
+        profile_id=profile_id,
+        binding_id=snapshot.binding_id,
+    )
     schedule = db.scalar(
         select(ExternalDocumentSourceRecurringObservationSchedule)
         .where(
@@ -841,20 +874,16 @@ def disable_recurring_observation_schedule(
             == organization_id,
             ExternalDocumentSourceRecurringObservationSchedule.profile_id
             == profile_id,
+            ExternalDocumentSourceRecurringObservationSchedule.binding_id
+            == binding.id,
         )
         .with_for_update()
     )
     if schedule is None:
-        raise ExternalDocumentSourceNotFoundError(
-            "Recurring observation schedule not found"
+        raise ExternalDocumentSourceConflictError(
+            "Recurring observation schedule changed while acquiring family authority"
         )
     ensure_recurring_observation_schedule_integrity(db, schedule)
-    _binding_for_update(
-        db,
-        organization_id=organization_id,
-        profile_id=profile_id,
-        binding_id=schedule.binding_id,
-    )
     _disable_schedule(
         db,
         schedule=schedule,
