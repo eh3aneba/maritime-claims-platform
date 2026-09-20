@@ -24,8 +24,10 @@ jobs:
       fail-fast: false
       matrix:
         suite:
-          - service-races
-          - authority-races
+          - two-service-workers
+          - human-vs-service
+          - disable-vs-service
+          - canonical-version-transition
     services:
       postgres:
         image: postgres:18.4
@@ -72,13 +74,25 @@ jobs:
       - name: Apply migrations
         run: alembic upgrade head
 
-      - name: Run service-executor concurrency regressions
+      - name: Run service-executor concurrency regression
         shell: bash
         run: |
-          if [ "${{ matrix.suite }}" = "service-races" ]; then
-            pytest -q tests/test_external_document_source_due_tick_service_executor_concurrency_postgres.py \
-              -k "two_service_workers or human_ac_vs_service"
-          else
-            pytest -q tests/test_external_document_source_due_tick_service_executor_concurrency_postgres.py \
-              -k "disable_vs_service or canonical_version_transition"
-          fi
+          case "${{ matrix.suite }}" in
+            two-service-workers)
+              selector="two_service_workers"
+              ;;
+            human-vs-service)
+              selector="human_ac_vs_service"
+              ;;
+            disable-vs-service)
+              selector="disable_vs_service"
+              ;;
+            canonical-version-transition)
+              selector="canonical_version_transition"
+              ;;
+            *)
+              echo "Unknown concurrency suite: ${{ matrix.suite }}" >&2
+              exit 1
+              ;;
+          esac
+          pytest -q tests/test_external_document_source_due_tick_service_executor_concurrency_postgres.py -k "$selector"
