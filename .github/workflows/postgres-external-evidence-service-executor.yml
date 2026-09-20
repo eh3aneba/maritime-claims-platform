@@ -17,9 +17,15 @@ concurrency:
 
 jobs:
   service-executor-concurrency:
-    name: External Evidence service-executor concurrency
+    name: External Evidence service-executor concurrency (${{ matrix.suite }})
     runs-on: ubuntu-latest
     timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        suite:
+          - service-races
+          - authority-races
     services:
       postgres:
         image: postgres:18.4
@@ -67,4 +73,12 @@ jobs:
         run: alembic upgrade head
 
       - name: Run service-executor concurrency regressions
-        run: pytest -q tests/test_external_document_source_due_tick_service_executor_concurrency_postgres.py
+        shell: bash
+        run: |
+          if [ "${{ matrix.suite }}" = "service-races" ]; then
+            pytest -q tests/test_external_document_source_due_tick_service_executor_concurrency_postgres.py \
+              -k "two_service_workers or human_ac_vs_service"
+          else
+            pytest -q tests/test_external_document_source_due_tick_service_executor_concurrency_postgres.py \
+              -k "disable_vs_service or canonical_version_transition"
+          fi
