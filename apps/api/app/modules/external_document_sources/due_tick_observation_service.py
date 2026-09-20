@@ -49,6 +49,7 @@ from app.modules.external_document_sources.recurring_observation_schedule_models
     ExternalDocumentSourceRecurringObservationSchedule,
 )
 from app.modules.external_document_sources.recurring_observation_schedule_service import (
+    _binding_for_update as _schedule_binding_for_update,
     ensure_recurring_observation_schedule_integrity,
 )
 from app.modules.external_document_sources.service import (
@@ -130,6 +131,7 @@ def _schedule_for_update(
     organization_id: UUID,
     profile_id: UUID,
     schedule_id: UUID,
+    expected_binding_id: UUID,
 ) -> ExternalDocumentSourceRecurringObservationSchedule:
     schedule = db.scalar(
         select(ExternalDocumentSourceRecurringObservationSchedule)
@@ -139,6 +141,8 @@ def _schedule_for_update(
             == organization_id,
             ExternalDocumentSourceRecurringObservationSchedule.profile_id
             == profile_id,
+            ExternalDocumentSourceRecurringObservationSchedule.binding_id
+            == expected_binding_id,
         )
         .with_for_update()
     )
@@ -651,13 +655,41 @@ def execute_due_tick_observation(
             )
         return existing, "replayed"
 
+    schedule_snapshot = db.scalar(
+        select(ExternalDocumentSourceRecurringObservationSchedule).where(
+            ExternalDocumentSourceRecurringObservationSchedule.id == schedule_id,
+            ExternalDocumentSourceRecurringObservationSchedule.organization_id
+            == organization_id,
+            ExternalDocumentSourceRecurringObservationSchedule.profile_id
+            == profile_id,
+        )
+    )
+    if schedule_snapshot is None:
+        raise ExternalDocumentSourceNotFoundError(
+            "Recurring observation schedule not found"
+        )
+
+    # Match Phase-AB transition lock ordering exactly: family binding first,
+    # then the exact schedule revision, then the canonical current Document.
+    # This serializes consume-vs-disable/replace without a lock inversion.
+    binding = _schedule_binding_for_update(
+        db,
+        organization_id=organization_id,
+        profile_id=profile_id,
+        binding_id=schedule_snapshot.binding_id,
+    )
     schedule = _schedule_for_update(
         db,
         organization_id=organization_id,
         profile_id=profile_id,
         schedule_id=schedule_id,
+        expected_binding_id=binding.id,
     )
-    binding = _binding(db, schedule)
+    verified_binding = _binding(db, schedule)
+    if verified_binding.id != binding.id:
+        raise ExternalDocumentSourceConflictError(
+            "Recurring observation schedule binding changed while acquiring authority"
+        )
     current_document = _lock_current_family_document(
         db,
         organization_id=organization_id,
