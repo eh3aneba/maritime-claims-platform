@@ -655,6 +655,7 @@ def execute_due_tick_observation(
     service_executor_id_hash: str | None = None,
     expected_due_at: datetime | None = None,
     expected_dispatch: ExternalDocumentSourceDueTickDispatch | None = None,
+    commit_transaction: bool = True,
 ) -> tuple[ExternalDocumentSourceDueTickObservationExecution, str]:
     normalized_key = _normalize_text(
         request_key, field="request_key", minimum=1, maximum=128
@@ -983,8 +984,13 @@ def execute_due_tick_observation(
             "ai_executed": False,
         },
     )
-    db.commit()
-    db.refresh(execution)
+    if commit_transaction:
+        db.commit()
+        db.refresh(execution)
+    else:
+        # AE owns the surrounding transaction so the dispatch, family and
+        # canonical-Document locks remain held until consumption is durable.
+        db.flush()
     return execution, "completed"
 
 
