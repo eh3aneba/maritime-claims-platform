@@ -3,13 +3,15 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 import os
-from threading import Barrier
-from uuid import UUID
+from threading import Barrier, Event
+from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
+
+from app.modules.documents.models import Document
 
 from app.modules.external_document_sources.due_tick_dispatch_models import (
     ExternalDocumentSourceDueTickDispatch,
@@ -19,6 +21,11 @@ from app.modules.external_document_sources.due_tick_dispatch_service import (
 )
 from app.modules.external_document_sources.evidence_family_binding_models import (
     ExternalDocumentSourceEvidenceFamilyBinding,
+)
+from app.modules.external_document_sources.family_version_admission_service import (
+    _binding_for_update as _aa_binding_for_update,
+    _establish_next_document_version,
+    _lock_current_family_document as _aa_lock_current_family_document,
 )
 from app.modules.external_document_sources.recurring_observation_schedule_models import (
     ExternalDocumentSourceRecurringObservationSchedule,
@@ -233,5 +240,116 @@ def test_disable_vs_dispatch_serializes_on_active_schedule_authority(
             assert len(dispatches) <= 1
             if dispatches:
                 assert dispatches[0].due_at == due_now
+    finally:
+        engine.dispose()
+
+
+def test_canonical_version_transition_serializes_before_dispatch_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    actor_id, profile_id, _claim_id, initial_execution, binding = _bound_v1(
+        monkeypatch,
+        "version-race",
+    )
+    engine, SessionLocal = _session_factory()
+    due_now = datetime.now(UTC)
+    transition_locked = Event()
+    allow_transition_commit = Event()
+    try:
+        with SessionLocal() as db:
+            family = db.get(
+                ExternalDocumentSourceEvidenceFamilyBinding,
+                UUID(binding["id"]),
+            )
+            assert family is not None
+            organization_id = family.organization_id
+            schedule, _ = authorize_recurring_observation_schedule(
+                db,
+                organization_id=organization_id,
+                profile_id=UUID(profile_id),
+                binding_id=UUID(binding["id"]),
+                authorized_by_id=actor_id,
+                request_key="phase-ad-pg-version-schedule",
+                reason=_SCHEDULE_REASON,
+                cadence_class="hourly",
+                effective_at=due_now,
+            )
+            schedule_id = schedule.id
+
+        def transition_version():
+            with SessionLocal() as db:
+                family = _aa_binding_for_update(
+                    db,
+                    organization_id=organization_id,
+                    profile_id=UUID(profile_id),
+                    binding_id=UUID(binding["id"]),
+                )
+                current = _aa_lock_current_family_document(
+                    db,
+                    organization_id=organization_id,
+                    claim_id=family.claim_id,
+                    document_family_id=family.document_family_id,
+                    expected_current_document_id=UUID(initial_execution["document_id"]),
+                )
+                transition_locked.set()
+                assert allow_transition_commit.wait(timeout=10)
+                new_document = _establish_next_document_version(
+                    db,
+                    prior_document=current,
+                    executed_by_id=actor_id,
+                    executed_at=due_now,
+                    new_document_id=uuid4(),
+                    original_filename="phase-ad-version-2.pdf",
+                    mime_type="application/pdf",
+                    file_size_bytes=2048,
+                    file_hash="b" * 64,
+                    storage_key=f"phase-ad-version-race/{uuid4()}.pdf",
+                    malware_scanned_at=due_now,
+                    replacement_reason=(
+                        "Establish a canonical v2 while the scheduler waits on "
+                        "the shared Evidence-family authority lock."
+                    ),
+                )
+                new_id = new_document.id
+                db.commit()
+                return new_id
+
+        def dispatch_after_transition_lock():
+            assert transition_locked.wait(timeout=10)
+            with SessionLocal() as db:
+                row = dispatch_next_due_tick(
+                    db,
+                    worker_id="phase-ad-version-race-worker",
+                    now=due_now,
+                )
+                assert row is not None
+                return row.id
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            transition_future = pool.submit(transition_version)
+            assert transition_locked.wait(timeout=10)
+            dispatch_future = pool.submit(dispatch_after_transition_lock)
+            allow_transition_commit.set()
+            new_document_id = transition_future.result(timeout=20)
+            dispatch_id = dispatch_future.result(timeout=20)
+
+        with SessionLocal() as db:
+            dispatch = db.get(ExternalDocumentSourceDueTickDispatch, dispatch_id)
+            assert dispatch is not None
+            assert dispatch.schedule_id == schedule_id
+            assert dispatch.current_document_id == new_document_id
+            assert dispatch.current_version_number == 2
+
+            current = db.scalar(
+                select(Document).where(
+                    Document.organization_id == organization_id,
+                    Document.document_family_id == UUID(binding["document_family_id"]),
+                    Document.is_current.is_(True),
+                    Document.deleted_at.is_(None),
+                )
+            )
+            assert current is not None
+            assert current.id == new_document_id
+            assert current.version_number == 2
     finally:
         engine.dispose()
