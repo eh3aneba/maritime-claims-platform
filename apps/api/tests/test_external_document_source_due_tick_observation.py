@@ -15,6 +15,10 @@ from app.modules.external_document_sources.due_tick_observation_models import (
 from app.modules.processing.models import DocumentProcessingJob
 from tests.db_harness import TestingSessionLocal, client
 from tests.test_external_document_source_change_detection import _ChangeAdapter
+from tests.test_external_document_source_evidence_family_binding import (
+    setup_function as _phase_y_setup,
+    teardown_function as _phase_y_teardown,
+)
 from tests.test_external_document_source_family_version_admission import (
     _V2_BODY,
     _V2_MODIFIED,
@@ -33,6 +37,14 @@ from tests.test_external_document_source_recurring_observation_schedule import (
     _disable as _disable_schedule,
     _mfa_headers,
 )
+
+def setup_function() -> None:
+    _phase_y_setup()
+
+
+def teardown_function() -> None:
+    _phase_y_teardown()
+
 
 _REASON = (
     "Consume exactly one due recurring observation tick using metadata only "
@@ -360,12 +372,13 @@ def test_phase_ac_uses_current_aa_version_as_observation_baseline(
     )
     assert authorization.status_code == 201, authorization.text
     _enable_clean_aa(monkeypatch)
+    admission_request_key = "-".join(("phase", "ac", "v2", "admit"))
     admitted = _aa_admit(
         profile_id,
         binding["id"],
         authorization.json()["id"],
         actor_id,
-        key="phase-ac-v2-admit",
+        key=admission_request_key,
     )
     assert admitted.status_code == 201, admitted.text
     v2 = admitted.json()
