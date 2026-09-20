@@ -5,7 +5,7 @@ import json
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
-from sqlalchemy import select
+from sqlalchemy import exists, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -489,3 +489,46 @@ def consume_due_tick_dispatch(
         consumed_at=_aware(now or _utc_now()),
     )
     return observation, consumption, consumption_outcome
+
+
+def consume_next_due_tick_dispatch(
+    db: Session,
+    *,
+    service_executor_id: str,
+    now: datetime | None = None,
+    candidate_limit: int = 256,
+) -> tuple[
+    ExternalDocumentSourceDueTickObservationExecution,
+    ExternalDocumentSourceDueTickDispatchConsumption,
+    str,
+] | None:
+    if candidate_limit < 1 or candidate_limit > 1000:
+        raise ValueError("candidate_limit must be between 1 and 1000")
+
+    consumed_exists = exists(
+        select(ExternalDocumentSourceDueTickDispatchConsumption.id).where(
+            ExternalDocumentSourceDueTickDispatchConsumption.dispatch_id
+            == ExternalDocumentSourceDueTickDispatch.id
+        )
+    )
+    candidate_ids = list(
+        db.scalars(
+            select(ExternalDocumentSourceDueTickDispatch.id)
+            .where(~consumed_exists)
+            .order_by(
+                ExternalDocumentSourceDueTickDispatch.due_at,
+                ExternalDocumentSourceDueTickDispatch.dispatched_at,
+                ExternalDocumentSourceDueTickDispatch.id,
+            )
+            .limit(candidate_limit)
+        ).all()
+    )
+    for dispatch_id in candidate_ids:
+        return consume_due_tick_dispatch(
+            db,
+            dispatch_id=dispatch_id,
+            service_executor_id=service_executor_id,
+            now=now,
+        )
+    db.rollback()
+    return None
