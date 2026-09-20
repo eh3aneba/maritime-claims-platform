@@ -12,6 +12,39 @@ ObservationReviewDecisionKind = Literal[
 ]
 
 
+class ExternalDocumentSourceObservationReviewHandoffRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    organization_id: UUID
+    claim_id: UUID
+    profile_id: UUID
+    observation_execution_id: UUID
+    schedule_id: UUID
+    binding_id: UUID
+    document_family_id: UUID
+    observed_document_id: UUID
+    observed_version_number: int
+    provider_kind: str
+    profile_hash: str
+    stable_source_item_hash: str
+    observation_completion_hash: str
+    due_at: datetime
+    result_status: str
+    observed_projection_hash: str | None
+    observed_version_token_hash: str | None
+    status: str
+    projected_at: datetime
+    scope_hash: str
+    completion_hash: str
+
+    @field_serializer("due_at", "projected_at")
+    def _utc(self, value: datetime) -> str:
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc).isoformat()
+
+
 class ExternalDocumentSourceObservationReviewDecisionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
