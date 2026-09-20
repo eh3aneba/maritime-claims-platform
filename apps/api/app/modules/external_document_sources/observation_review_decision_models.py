@@ -123,6 +123,7 @@ class ExternalDocumentSourceObservationReviewDecision(
     document_family_id: Mapped[UUID] = mapped_column(nullable=False)
     current_document_id: Mapped[UUID] = mapped_column(ForeignKey("documents.id", ondelete="RESTRICT"), nullable=False)
     current_version_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    current_document_file_hash: Mapped[str] = mapped_column(String(64), nullable=False)
 
     result_status: Mapped[str] = mapped_column(String(24), nullable=False)
     provider_kind: Mapped[str] = mapped_column(String(32), nullable=False)
@@ -209,6 +210,7 @@ class ExternalDocumentSourceObservationRefreshAuthorization(
     document_family_id: Mapped[UUID] = mapped_column(nullable=False)
     current_document_id: Mapped[UUID] = mapped_column(ForeignKey("documents.id", ondelete="RESTRICT"), nullable=False)
     current_version_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    current_document_file_hash: Mapped[str] = mapped_column(String(64), nullable=False)
 
     provider_kind: Mapped[str] = mapped_column(String(32), nullable=False)
     profile_hash: Mapped[str] = mapped_column(String(64), nullable=False)
