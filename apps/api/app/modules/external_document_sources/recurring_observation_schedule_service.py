@@ -74,6 +74,15 @@ def _normalize_text(value: str, *, field: str, minimum: int, maximum: int) -> st
     return normalized
 
 
+def _effective_input_matches(
+    schedule: ExternalDocumentSourceRecurringObservationSchedule,
+    requested_effective_at: datetime | None,
+) -> bool:
+    if requested_effective_at is None:
+        return _aware(schedule.effective_at) == _aware(schedule.authorized_at)
+    return _aware(schedule.effective_at) == _aware(requested_effective_at)
+
+
 def _cadence_minutes(cadence_class: str) -> int:
     minutes = CADENCE_MINUTES.get(cadence_class)
     if minutes is None:
@@ -598,9 +607,9 @@ def authorize_recurring_observation_schedule(
             or existing_request.authorization_reason != normalized_reason
             or existing_request.cadence_class != cadence_class
             or existing_request.cadence_minutes != cadence_minutes
-            or (
-                normalized_effective is not None
-                and _aware(existing_request.effective_at) != normalized_effective
+            or not _effective_input_matches(
+                existing_request,
+                normalized_effective,
             )
         ):
             raise ExternalDocumentSourceConflictError(
