@@ -225,49 +225,64 @@ def test_human_ac_vs_service_ae_same_tick_yields_one_observation_and_one_consump
         dispatch_id,
         adapter,
     ) = _seed_dispatch(monkeypatch, "human-service")
-    barrier = Barrier(2)
     try:
-        def human_execute():
-            with SessionLocal() as db:
-                barrier.wait(timeout=10)
-                try:
-                    observation, outcome = execute_due_tick_observation(
-                        db,
-                        organization_id=organization_id,
-                        profile_id=profile_id,
-                        schedule_id=schedule_id,
-                        executed_by_id=actor_id,
-                        request_key="phase-ae-pg-human-race",
-                        reason=(
-                            "Race the existing human AC due-tick execution against "
-                            "the internal Phase AE service executor."
-                        ),
-                        now=due_now,
-                    )
-                    return ("human", observation.id, outcome)
-                except (ExternalDocumentSourceConflictError, IntegrityError):
-                    db.rollback()
-                    return ("human", None, "conflict")
+        with SessionLocal() as human_db:
+            schedule = human_db.get(
+                ExternalDocumentSourceRecurringObservationSchedule,
+                schedule_id,
+            )
+            assert schedule is not None
+            _schedule_binding_for_update(
+                human_db,
+                organization_id=organization_id,
+                profile_id=profile_id,
+                binding_id=schedule.binding_id,
+            )
 
-        def service_consume():
-            with SessionLocal() as db:
-                barrier.wait(timeout=10)
-                try:
-                    observation, consumption, outcome = consume_due_tick_dispatch(
-                        db,
+            # While human AC owns the exact family authority, the service
+            # executor cannot cross the same boundary or perform metadata I/O.
+            with SessionLocal() as blocked_db:
+                blocked_db.execute(text("SET LOCAL lock_timeout = '250ms'"))
+                with pytest.raises(OperationalError):
+                    consume_due_tick_dispatch(
+                        blocked_db,
                         dispatch_id=dispatch_id,
                         service_executor_id="external-evidence-observer-v1",
                         now=due_now,
                     )
-                    return ("service", observation.id, consumption.id, outcome)
-                except (ExternalDocumentSourceConflictError, IntegrityError):
-                    db.rollback()
-                    return ("service", None, None, "conflict")
+                blocked_db.rollback()
+            assert adapter.calls == 0
 
-        with ThreadPoolExecutor(max_workers=2) as pool:
-            a = pool.submit(human_execute)
-            b = pool.submit(service_consume)
-            results = [a.result(timeout=30), b.result(timeout=30)]
+            human_observation, outcome = execute_due_tick_observation(
+                human_db,
+                organization_id=organization_id,
+                profile_id=profile_id,
+                schedule_id=schedule_id,
+                executed_by_id=actor_id,
+                request_key="phase-ae-pg-human-race",
+                reason=(
+                    "Complete the exact due tick through human AC while the "
+                    "Phase AE service executor is serialized on family authority."
+                ),
+                now=due_now,
+            )
+            assert outcome == "completed"
+            assert human_observation.actor_kind == "human"
+            assert human_observation.executed_by_id == actor_id
+
+        assert adapter.calls == 1
+
+        with SessionLocal() as db:
+            observation, consumption, outcome = consume_due_tick_dispatch(
+                db,
+                dispatch_id=dispatch_id,
+                service_executor_id="external-evidence-observer-v1",
+                now=due_now,
+            )
+            assert outcome == "linked_existing"
+            assert observation.id == human_observation.id
+            assert consumption.observation_execution_id == human_observation.id
+            assert consumption.status == "linked_existing"
 
         with SessionLocal() as db:
             observations = list(
@@ -281,25 +296,14 @@ def test_human_ac_vs_service_ae_same_tick_yields_one_observation_and_one_consump
             consumptions = list(
                 db.scalars(select(ExternalDocumentSourceDueTickDispatchConsumption)).all()
             )
-            dispatches = list(
-                db.scalars(
-                    select(ExternalDocumentSourceDueTickDispatch).where(
-                        ExternalDocumentSourceDueTickDispatch.id == dispatch_id
-                    )
-                ).all()
-            )
-            assert len(dispatches) == 1
             assert len(observations) == 1
             assert len(consumptions) == 1
+            assert observations[0].actor_kind == "human"
             assert consumptions[0].observation_execution_id == observations[0].id
-            assert observations[0].actor_kind in {"human", "service"}
 
-        service_result = next(row for row in results if row[0] == "service")
-        assert service_result[1] is not None
         assert adapter.calls == 1
     finally:
         engine.dispose()
-
 
 def test_disable_vs_service_consumption_serializes_and_fails_closed(
     monkeypatch: pytest.MonkeyPatch,
