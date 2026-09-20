@@ -12,7 +12,7 @@ class _DispatchConsumptionSafetyMixin:
     dispatch_integrity_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=true())
     observation_integrity_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=true())
     service_executor_identity_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=true())
-    exact_item_metadata_read_performed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=true())
+    metadata_observation_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=true())
     human_user_impersonated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
     remote_list_performed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
     remote_content_read_performed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
@@ -34,7 +34,7 @@ def _safety_constraints(prefix: str):
         ("dispatch_integrity_verified", "dispatch"),
         ("observation_integrity_verified", "observation"),
         ("service_executor_identity_verified", "service_identity"),
-        ("exact_item_metadata_read_performed", "metadata"),
+        ("metadata_observation_verified", "metadata"),
     )
     false_fields = (
         ("human_user_impersonated", "human_impersonation"),
