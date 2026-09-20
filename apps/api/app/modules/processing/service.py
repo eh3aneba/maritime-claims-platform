@@ -37,17 +37,37 @@ def _is_admitted_external_evidence(
     *,
     document: Document,
 ) -> bool:
+    # Phase X protects the initially admitted Document immediately, even before
+    # the durable Phase-Y family binding exists. Phase Y then becomes the
+    # generic family anchor so every later AA version remains protected too.
     from app.modules.external_document_sources.evidence_admission_execution_models import (
         ExternalDocumentSourceEvidenceAdmissionExecution,
     )
+    from app.modules.external_document_sources.evidence_family_binding_models import (
+        ExternalDocumentSourceEvidenceFamilyBinding,
+    )
+
+    initial_admission = db.scalar(
+        select(ExternalDocumentSourceEvidenceAdmissionExecution.id)
+        .where(
+            ExternalDocumentSourceEvidenceAdmissionExecution.organization_id
+            == document.organization_id,
+            ExternalDocumentSourceEvidenceAdmissionExecution.document_id == document.id,
+        )
+        .limit(1)
+    )
+    if initial_admission is not None:
+        return True
 
     return (
         db.scalar(
-            select(ExternalDocumentSourceEvidenceAdmissionExecution.id)
+            select(ExternalDocumentSourceEvidenceFamilyBinding.id)
             .where(
-                ExternalDocumentSourceEvidenceAdmissionExecution.organization_id
+                ExternalDocumentSourceEvidenceFamilyBinding.organization_id
                 == document.organization_id,
-                ExternalDocumentSourceEvidenceAdmissionExecution.document_id == document.id,
+                ExternalDocumentSourceEvidenceFamilyBinding.claim_id == document.claim_id,
+                ExternalDocumentSourceEvidenceFamilyBinding.document_family_id
+                == document.document_family_id,
             )
             .limit(1)
         )

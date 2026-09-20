@@ -86,10 +86,22 @@ def _binding_for_document(
     document_id: UUID,
     lock: bool,
 ) -> ExternalDocumentSourceEvidenceFamilyBinding:
+    document = db.scalar(
+        select(Document).where(
+            Document.id == document_id,
+            Document.organization_id == organization_id,
+            Document.claim_id == claim_id,
+            Document.deleted_at.is_(None),
+        )
+    )
+    if document is None:
+        raise ExternalDocumentSourceNotFoundError("Document not found")
+
     stmt = select(ExternalDocumentSourceEvidenceFamilyBinding).where(
         ExternalDocumentSourceEvidenceFamilyBinding.organization_id == organization_id,
         ExternalDocumentSourceEvidenceFamilyBinding.claim_id == claim_id,
-        ExternalDocumentSourceEvidenceFamilyBinding.current_document_id == document_id,
+        ExternalDocumentSourceEvidenceFamilyBinding.document_family_id
+        == document.document_family_id,
     )
     if lock:
         stmt = stmt.with_for_update()
@@ -111,17 +123,23 @@ def _verify_exact_current_document(
     *,
     binding: ExternalDocumentSourceEvidenceFamilyBinding,
     require_uploaded: bool,
+    expected_document_id: UUID | None = None,
 ) -> Document:
-    document = db.get(Document, binding.current_document_id)
+    document = db.scalar(
+        select(Document).where(
+            Document.organization_id == binding.organization_id,
+            Document.claim_id == binding.claim_id,
+            Document.document_family_id == binding.document_family_id,
+            Document.is_current.is_(True),
+            Document.deleted_at.is_(None),
+        )
+    )
     if (
         document is None
-        or document.deleted_at is not None
-        or document.organization_id != binding.organization_id
-        or document.claim_id != binding.claim_id
-        or document.id != binding.current_document_id
-        or document.document_family_id != binding.document_family_id
-        or document.version_number != binding.current_version_number
-        or not document.is_current
+        or (
+            expected_document_id is not None
+            and document.id != expected_document_id
+        )
     ):
         raise ExternalDocumentSourceConflictError(
             "External Evidence processing release requires the exact current Document version"
@@ -251,6 +269,7 @@ def ensure_processing_release_integrity(
         db,
         binding=binding,
         require_uploaded=False,
+        expected_document_id=release.document_id,
     )
     expected = {
         "claim_id": binding.claim_id,
@@ -427,6 +446,7 @@ def grant_processing_release(
         db,
         binding=binding,
         require_uploaded=True,
+        expected_document_id=document_id,
     )
 
     existing = db.scalar(
