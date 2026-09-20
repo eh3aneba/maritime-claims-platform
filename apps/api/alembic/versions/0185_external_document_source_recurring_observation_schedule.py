@@ -110,7 +110,6 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["claim_id"], ["claims.id"], ondelete="RESTRICT"),
         sa.ForeignKeyConstraint(["profile_id"], ["external_document_source_profiles.id"], ondelete="RESTRICT"),
         sa.ForeignKeyConstraint(["binding_id"], ["external_doc_source_evidence_family_bindings.id"], ondelete="RESTRICT"),
-        sa.ForeignKeyConstraint(["document_family_id"], ["documents.id"], ondelete="RESTRICT"),
         sa.ForeignKeyConstraint(["prior_schedule_id"], [SCHEDULE + ".id"], ondelete="RESTRICT"),
         sa.ForeignKeyConstraint(["authorized_by_id"], ["users.id"], ondelete="RESTRICT"),
         sa.ForeignKeyConstraint(["disabled_by_id"], ["users.id"], ondelete="RESTRICT"),
