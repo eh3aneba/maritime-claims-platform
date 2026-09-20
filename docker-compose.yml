@@ -169,6 +169,21 @@ services:
         condition: service_completed_successfully
     restart: unless-stopped
 
+  external-evidence-observation-worker:
+    build:
+      context: ./apps/api
+      target: base
+    command: ["python", "-m", "app.workers.external_evidence_observation_worker"]
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://maritime:change-me-in-local-env@db:5432/maritime_claims}
+      EXTERNAL_EVIDENCE_OBSERVER_POLL_SECONDS: ${EXTERNAL_EVIDENCE_OBSERVER_POLL_SECONDS:-5}
+      EXTERNAL_EVIDENCE_SERVICE_EXECUTOR_ID: ${EXTERNAL_EVIDENCE_SERVICE_EXECUTOR_ID:-external-evidence-observer-v1}
+    depends_on:
+      preflight:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
   web:
     build:
       context: ./apps/web

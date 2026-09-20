@@ -94,6 +94,12 @@ class ExternalDocumentSourceDueTickObservationExecution(
         CheckConstraint("cadence_minutes >= 60", name="ck_ext_doc_due_obs_cadence"),
         CheckConstraint("result_status IN ('unchanged','changed','missing')", name="ck_ext_doc_due_obs_result"),
         CheckConstraint("status = 'completed'", name="ck_ext_doc_due_obs_status"),
+        CheckConstraint("actor_kind IN ('human','service')", name="ck_ext_doc_due_obs_actor_kind"),
+        CheckConstraint(
+            "(actor_kind = 'human' AND executed_by_id IS NOT NULL AND service_executor_id_hash IS NULL) OR "
+            "(actor_kind = 'service' AND executed_by_id IS NULL AND service_executor_id_hash IS NOT NULL)",
+            name="ck_ext_doc_due_obs_actor_identity",
+        ),
         CheckConstraint("observed_byte_size IS NULL OR observed_byte_size >= 0", name="ck_ext_doc_due_obs_size"),
         CheckConstraint(
             "(result_status = 'missing' AND observed_projection_hash IS NULL AND observed_display_name_hash IS NULL) OR "
@@ -145,7 +151,9 @@ class ExternalDocumentSourceDueTickObservationExecution(
     scope_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     status: Mapped[str] = mapped_column(String(24), nullable=False, default="completed", server_default="completed")
-    executed_by_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
+    actor_kind: Mapped[str] = mapped_column(String(16), nullable=False, default="human", server_default="human")
+    executed_by_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=True)
+    service_executor_id_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     execution_reason: Mapped[str] = mapped_column(Text, nullable=False)
     executed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -165,6 +173,12 @@ class ExternalDocumentSourceDueTickObservationReceipt(
         CheckConstraint("event_type = 'completed'", name="ck_ext_doc_due_obs_rcpt_event"),
         CheckConstraint("status_after = 'completed'", name="ck_ext_doc_due_obs_rcpt_status"),
         CheckConstraint("prior_receipt_hash IS NULL", name="ck_ext_doc_due_obs_rcpt_prior"),
+        CheckConstraint("actor_kind IN ('human','service')", name="ck_ext_doc_due_obs_rcpt_actor_kind"),
+        CheckConstraint(
+            "(actor_kind = 'human' AND actor_id IS NOT NULL AND service_executor_id_hash IS NULL) OR "
+            "(actor_kind = 'service' AND actor_id IS NULL AND service_executor_id_hash IS NOT NULL)",
+            name="ck_ext_doc_due_obs_rcpt_actor_identity",
+        ),
         *_safety_constraints("ext_doc_due_obs_rcpt"),
     )
 
@@ -173,7 +187,9 @@ class ExternalDocumentSourceDueTickObservationReceipt(
     sequence_number: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
     event_type: Mapped[str] = mapped_column(String(24), nullable=False, default="completed", server_default="completed")
     status_after: Mapped[str] = mapped_column(String(24), nullable=False, default="completed", server_default="completed")
-    actor_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
+    actor_kind: Mapped[str] = mapped_column(String(16), nullable=False, default="human", server_default="human")
+    actor_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=True)
+    service_executor_id_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     reason: Mapped[str] = mapped_column(Text, nullable=False)
     scope_hash: Mapped[str] = mapped_column(String(64), nullable=False)

@@ -49,7 +49,9 @@ class ExternalDocumentSourceDueTickObservationRead(BaseModel):
     scope_hash: str
     request_hash: str
     status: str
-    executed_by_id: UUID
+    actor_kind: str
+    executed_by_id: UUID | None
+    service_executor_id_hash: str | None
     execution_reason: str
     executed_at: datetime
     completed_at: datetime
@@ -95,7 +97,9 @@ class ExternalDocumentSourceDueTickObservationReceiptRead(BaseModel):
     sequence_number: int
     event_type: str
     status_after: str
-    actor_id: UUID
+    actor_kind: str
+    actor_id: UUID | None
+    service_executor_id_hash: str | None
     occurred_at: datetime
     reason: str
     scope_hash: str
