@@ -451,6 +451,7 @@ def consume_due_tick_dispatch(
             service_executor_id_hash=service_executor_id_hash,
             expected_due_at=dispatch.due_at,
             expected_dispatch=dispatch,
+            commit_transaction=False,
             request_key=f"ae-dispatch-{dispatch.id}",
             reason=(
                 "Consume one immutable scheduler dispatch through the explicit "
@@ -459,7 +460,9 @@ def consume_due_tick_dispatch(
             now=now,
         )
     except ExternalDocumentSourceConflictError:
-        db.rollback()
+        # Application-level authority conflicts do not invalidate the SQL
+        # transaction. Keep the dispatch lock while checking whether a human
+        # AC execution won the same exact tick.
         observation = db.scalar(
             select(ExternalDocumentSourceDueTickObservationExecution).where(
                 ExternalDocumentSourceDueTickObservationExecution.organization_id
@@ -471,6 +474,7 @@ def consume_due_tick_dispatch(
             )
         )
         if observation is None:
+            db.rollback()
             raise
         ensure_due_tick_observation_integrity(db, observation)
         _verify_dispatch_observation_match(dispatch, observation)
