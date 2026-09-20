@@ -1,7 +1,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Query, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -13,6 +13,7 @@ from app.modules.auth.dependencies import (
 from app.modules.external_document_sources.connection_authorization_router import router
 from app.modules.external_document_sources.observation_review_decision_schemas import (
     ExternalDocumentSourceObservationRefreshAuthorizationRead,
+    ExternalDocumentSourceObservationReviewHandoffRead,
     ExternalDocumentSourceObservationReviewDecisionRead,
     ExternalDocumentSourceObservationReviewDecisionReceiptRead,
     ExternalDocumentSourceObservationReviewDecisionRequest,
@@ -20,8 +21,10 @@ from app.modules.external_document_sources.observation_review_decision_schemas i
 from app.modules.external_document_sources.observation_review_decision_service import (
     decide_observation_review_handoff,
     get_observation_refresh_authorization_for_decision,
+    get_observation_review_handoff_for_review,
     get_observation_review_decision,
     list_observation_review_decision_receipts,
+    list_pending_observation_review_handoffs,
 )
 from app.modules.external_document_sources.service import (
     ExternalDocumentSourceConflictError,
@@ -65,6 +68,69 @@ def _raise_service_error(exc: Exception) -> None:
         status_code=status.HTTP_409_CONFLICT,
         detail=str(exc),
     ) from exc
+
+
+@router.get(
+    "/profiles/{profile_id}/observation-review-handoffs/pending",
+    response_model=list[ExternalDocumentSourceObservationReviewHandoffRead],
+)
+def list_pending_observation_review_handoffs_endpoint(
+    profile_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: ObservationReviewAdminMfa,
+    limit: Annotated[int, Query(ge=1, le=200)] = 100,
+) -> list[ExternalDocumentSourceObservationReviewHandoffRead]:
+    try:
+        rows = list_pending_observation_review_handoffs(
+            db,
+            organization_id=current_user.organization_id,
+            profile_id=profile_id,
+            limit=limit,
+        )
+        return [
+            ExternalDocumentSourceObservationReviewHandoffRead.model_validate(row)
+            for row in rows
+        ]
+    except (
+        ExternalDocumentSourceValidationError,
+        ExternalDocumentSourceConflictError,
+        ExternalDocumentSourceNotFoundError,
+        IntegrityError,
+        ValueError,
+    ) as exc:
+        db.rollback()
+        _raise_service_error(exc)
+
+
+@router.get(
+    "/profiles/{profile_id}/observation-review-handoffs/{handoff_id}",
+    response_model=ExternalDocumentSourceObservationReviewHandoffRead,
+)
+def get_observation_review_handoff_endpoint(
+    profile_id: UUID,
+    handoff_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: ObservationReviewAdminMfa,
+) -> ExternalDocumentSourceObservationReviewHandoffRead:
+    try:
+        handoff = get_observation_review_handoff_for_review(
+            db,
+            organization_id=current_user.organization_id,
+            profile_id=profile_id,
+            handoff_id=handoff_id,
+        )
+        return ExternalDocumentSourceObservationReviewHandoffRead.model_validate(
+            handoff
+        )
+    except (
+        ExternalDocumentSourceValidationError,
+        ExternalDocumentSourceConflictError,
+        ExternalDocumentSourceNotFoundError,
+        IntegrityError,
+        ValueError,
+    ) as exc:
+        db.rollback()
+        _raise_service_error(exc)
 
 
 @router.post(
