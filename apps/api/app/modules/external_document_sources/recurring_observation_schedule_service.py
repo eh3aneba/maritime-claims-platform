@@ -326,6 +326,7 @@ def ensure_recurring_observation_schedule_integrity(
             raise ExternalDocumentSourceConflictError(
                 "Recurring observation schedule revision lineage drifted"
             )
+        ensure_recurring_observation_schedule_integrity(db, prior)
 
     expected_scope = _scope_hash(
         binding,
