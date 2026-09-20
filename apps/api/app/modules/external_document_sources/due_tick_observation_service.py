@@ -133,9 +133,13 @@ def _schedule_for_update(
     schedule_id: UUID,
     expected_binding_id: UUID,
 ) -> ExternalDocumentSourceRecurringObservationSchedule:
+    # The Y-family binding row is the single serialization authority.
+    # Phase AB authorize/replace/disable all acquire that binding FOR UPDATE
+    # before mutating schedule state. Holding a second schedule-row lock here
+    # creates a binding<->schedule lock cycle with FK checks during AC insert.
+    # After the binding lock is held, a plain exact-revision read is stable.
     schedule = db.scalar(
-        select(ExternalDocumentSourceRecurringObservationSchedule)
-        .where(
+        select(ExternalDocumentSourceRecurringObservationSchedule).where(
             ExternalDocumentSourceRecurringObservationSchedule.id == schedule_id,
             ExternalDocumentSourceRecurringObservationSchedule.organization_id
             == organization_id,
@@ -144,7 +148,6 @@ def _schedule_for_update(
             ExternalDocumentSourceRecurringObservationSchedule.binding_id
             == expected_binding_id,
         )
-        .with_for_update()
     )
     if schedule is None:
         raise ExternalDocumentSourceNotFoundError(
