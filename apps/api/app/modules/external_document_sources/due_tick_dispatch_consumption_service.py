@@ -524,11 +524,18 @@ def consume_next_due_tick_dispatch(
         ).all()
     )
     for dispatch_id in candidate_ids:
-        return consume_due_tick_dispatch(
-            db,
-            dispatch_id=dispatch_id,
-            service_executor_id=service_executor_id,
-            now=now,
-        )
+        try:
+            return consume_due_tick_dispatch(
+                db,
+                dispatch_id=dispatch_id,
+                service_executor_id=service_executor_id,
+                now=now,
+            )
+        except ExternalDocumentSourceConflictError:
+            # A stale/disabled/replaced/tampered dispatch remains unconsumed and
+            # fail-closed, but must not prevent later independent dispatches
+            # from being considered by the bounded worker.
+            db.rollback()
+            continue
     db.rollback()
     return None
