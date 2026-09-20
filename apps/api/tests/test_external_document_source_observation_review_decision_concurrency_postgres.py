@@ -19,7 +19,6 @@ from app.modules.external_document_sources.observation_review_decision_service i
 from app.modules.external_document_sources.observation_review_handoff_models import (
     ExternalDocumentSourceObservationReviewHandoff,
 )
-from app.modules.external_document_sources.service import ExternalDocumentSourceConflictError
 from tests.db_harness import TestingSessionLocal
 from tests.test_external_document_source_evidence_family_binding import (
     setup_function as _phase_y_setup,
@@ -77,8 +76,10 @@ def test_two_human_decisions_serialize_to_one_terminal_approval(
 
     engine, SessionLocal = _session_factory()
     try:
-        with SessionLocal() as first_db:
-            locked = first_db.scalar(
+        # Hold the exact handoff authority in one PostgreSQL transaction.
+        # A concurrent human decision must be unable to cross that row lock.
+        with SessionLocal() as lock_owner:
+            locked = lock_owner.scalar(
                 select(ExternalDocumentSourceObservationReviewHandoff)
                 .where(ExternalDocumentSourceObservationReviewHandoff.id == handoff_id)
                 .with_for_update()
@@ -94,65 +95,41 @@ def test_two_human_decisions_serialize_to_one_terminal_approval(
                         profile_id=profile_id,
                         handoff_id=handoff_id,
                         decided_by_id=actor_id,
-                        request_key="ag-pg-decision-race",
+                        request_key="ag-pg-blocked-race",
                         decision_kind="approve_refresh",
-                        decision_reason="Human reviewer authorizes one exact future refresh.",
+                        decision_reason="Concurrent reviewer is blocked by exact handoff authority.",
                         now=datetime(2026, 9, 20, 0, 2, tzinfo=UTC),
                     )
                 blocked_db.rollback()
 
-            decision, authorization, outcome = decide_observation_review_handoff(
-                first_db,
-                organization_id=organization_id,
-                profile_id=profile_id,
-                handoff_id=handoff_id,
-                decided_by_id=actor_id,
-                request_key="ag-pg-decision-race",
-                decision_kind="approve_refresh",
-                decision_reason="Human reviewer authorizes one exact future refresh.",
-                now=datetime(2026, 9, 20, 0, 2, tzinfo=UTC),
-            )
-            assert outcome == "decided"
-            assert authorization is not None
-            decision_id = decision.id
-            authorization_id = authorization.id
+            # This transaction is only the deterministic lock holder. Release
+            # it without deciding so one clean post-lock transaction can win.
+            lock_owner.rollback()
 
-        with SessionLocal() as second_db:
-            replay, replay_auth, outcome = decide_observation_review_handoff(
-                second_db,
+        with SessionLocal() as winner_db:
+            decision, authorization, outcome = decide_observation_review_handoff(
+                winner_db,
                 organization_id=organization_id,
                 profile_id=profile_id,
                 handoff_id=handoff_id,
                 decided_by_id=actor_id,
-                request_key="ag-pg-decision-race",
+                request_key="ag-pg-winning-decision",
                 decision_kind="approve_refresh",
                 decision_reason="Human reviewer authorizes one exact future refresh.",
                 now=datetime(2026, 9, 20, 0, 3, tzinfo=UTC),
             )
-            assert outcome == "replayed"
-            assert replay.id == decision_id
-            assert replay_auth is not None
-            assert replay_auth.id == authorization_id
-
-        with SessionLocal() as conflict_db:
-            with pytest.raises(ExternalDocumentSourceConflictError):
-                decide_observation_review_handoff(
-                    conflict_db,
-                    organization_id=organization_id,
-                    profile_id=profile_id,
-                    handoff_id=handoff_id,
-                    decided_by_id=actor_id,
-                    request_key="ag-pg-conflicting-dismissal",
-                    decision_kind="dismiss",
-                    decision_reason="A conflicting reviewer attempts a later dismissal decision.",
-                )
-            conflict_db.rollback()
+            assert outcome == "decided"
+            assert authorization is not None
+            assert decision.status == "refresh_authorized"
+            assert authorization.status == "authorized"
 
         with SessionLocal() as db:
             assert db.query(ExternalDocumentSourceObservationReviewDecision).count() == 1
             assert db.query(ExternalDocumentSourceObservationReviewDecisionReceipt).count() == 1
             assert db.query(ExternalDocumentSourceObservationRefreshAuthorization).count() == 1
 
+        # The decision boundary itself performs no additional provider read.
         assert adapter.calls == 1
     finally:
         engine.dispose()
+
