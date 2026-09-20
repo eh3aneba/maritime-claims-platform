@@ -30,7 +30,8 @@ from app.modules.external_document_sources.service import (
     ExternalDocumentSourceConflictError,
     ExternalDocumentSourceNotFoundError,
     ExternalDocumentSourceValidationError,
-    get_external_document_source_profile,
+    _ensure_profile_integrity,
+    _get_profile,
 )
 from app.modules.users.models import User, UserRole
 
@@ -624,11 +625,13 @@ def decide_observation_review_handoff(
         )
         return existing_handoff, authorization, "replayed"
 
-    profile = get_external_document_source_profile(
+    profile = _get_profile(
         db,
         organization_id=organization_id,
         profile_id=profile_id,
+        for_update=True,
     )
+    _ensure_profile_integrity(db, profile)
     if (
         profile.status != "active"
         or profile.provider_kind != handoff.provider_kind
