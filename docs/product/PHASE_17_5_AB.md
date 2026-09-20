@@ -4,7 +4,7 @@ Phase AB is the authority layer for future background external-source synchroniz
 
 ## What it adds
 
-A current-MFA Admin can authorize a bounded recurring exact-item observation schedule for one durable external Evidence
+A current-MFA Admin can authorize a bounded recurring exact-item observation schedule; AB requires current MFA even when the tenant-wide MFA policy is otherwise disabled for one durable external Evidence
 family.
 
 The schedule records:
@@ -57,3 +57,8 @@ A later phase will consume an authorized due tick into one bounded metadata-only
 
 AB must pass backend, migrations, frontend/E2E regression, supply-chain security, operational performance,
 production-policy and real PostgreSQL concurrency gates before merge.
+
+
+## Replay hardening
+
+Replay identity includes action type and effective-time semantics. An omitted effective time only replays an authorization that originally used the implicit immediate effective time. A request key used for a replacement cannot later be interpreted as a standalone disable replay.
