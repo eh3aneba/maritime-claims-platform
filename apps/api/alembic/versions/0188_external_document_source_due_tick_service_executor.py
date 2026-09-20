@@ -23,7 +23,7 @@ def _safety_columns():
         sa.Column("dispatch_integrity_verified", sa.Boolean(), nullable=False, server_default=sa.true()),
         sa.Column("observation_integrity_verified", sa.Boolean(), nullable=False, server_default=sa.true()),
         sa.Column("service_executor_identity_verified", sa.Boolean(), nullable=False, server_default=sa.true()),
-        sa.Column("exact_item_metadata_read_performed", sa.Boolean(), nullable=False, server_default=sa.true()),
+        sa.Column("metadata_observation_verified", sa.Boolean(), nullable=False, server_default=sa.true()),
         sa.Column("human_user_impersonated", sa.Boolean(), nullable=False, server_default=sa.false()),
         sa.Column("remote_list_performed", sa.Boolean(), nullable=False, server_default=sa.false()),
         sa.Column("remote_content_read_performed", sa.Boolean(), nullable=False, server_default=sa.false()),
@@ -46,7 +46,7 @@ def _safety_constraints(prefix: str):
         ("dispatch_integrity_verified", "dispatch"),
         ("observation_integrity_verified", "observation"),
         ("service_executor_identity_verified", "service_identity"),
-        ("exact_item_metadata_read_performed", "metadata"),
+        ("metadata_observation_verified", "metadata"),
     )
     false_fields = (
         ("human_user_impersonated", "human_impersonation"),
