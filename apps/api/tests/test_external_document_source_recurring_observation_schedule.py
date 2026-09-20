@@ -3,6 +3,7 @@ from uuid import UUID
 
 import pytest
 
+from app.modules.auth.mfa_policy import upsert_mfa_policy
 from app.modules.documents.models import Document
 from app.modules.external_document_sources.evidence_family_binding_models import (
     ExternalDocumentSourceEvidenceFamilyBinding,
@@ -373,6 +374,35 @@ def test_phase_ab_rejects_unsupported_cadence_cross_tenant_and_non_admin(
         key="phase-ab-non-admin",
     )
     assert non_admin.status_code == 403, non_admin.text
+
+
+def test_phase_ab_requires_current_mfa_when_tenant_policy_requires_admin_mfa(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    actor_id, profile_id, _claim_id, _initial_execution, binding = _bound_v1(
+        monkeypatch,
+        "ab-mfa",
+    )
+    with TestingSessionLocal() as db:
+        admin = db.get(User, actor_id)
+        assert admin is not None
+        upsert_mfa_policy(
+            db,
+            organization_id=admin.organization_id,
+            is_enabled=True,
+            required_roles=[UserRole.ADMIN.value],
+            updated_by_id=actor_id,
+        )
+        db.commit()
+
+    denied = _authorize(
+        profile_id,
+        binding["id"],
+        actor_id,
+        key="phase-ab-mfa-required",
+    )
+    assert denied.status_code == 403, denied.text
+    assert "mfa" in denied.text.lower()
 
 
 def test_phase_ab_binding_tamper_fails_closed(
