@@ -47,7 +47,7 @@ def _safety_constraints(prefix: str):
         ("schedule_authority_verified", "schedule"),
         ("family_binding_verified", "family"),
         ("current_document_verified", "current"),
-        ("provider_lineage_verified", "provider"),
+        ("provider_lineage_verified", "lineage"),
         ("due_tick_verified", "tick"),
         ("provider_client_constructed", "client"),
         ("exact_item_metadata_read_performed", "metadata"),
