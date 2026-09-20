@@ -6,7 +6,6 @@ import pytest
 from app.core.security import create_access_token
 from app.modules.auth.models import TotpMfaFactor
 from app.modules.auth.service import create_auth_session
-from app.modules.auth.mfa_policy import upsert_mfa_policy
 from app.modules.documents.models import Document
 from app.modules.external_document_sources.evidence_family_binding_models import (
     ExternalDocumentSourceEvidenceFamilyBinding,
@@ -179,6 +178,7 @@ def test_phase_ab_authorize_replace_disable_is_authority_only(
         "ab-lifecycle",
     )
     document_id = UUID(initial_execution["document_id"])
+    mfa_headers = _mfa_headers(actor_id)
 
     with TestingSessionLocal() as db:
         document = db.get(Document, document_id)
@@ -201,6 +201,7 @@ def test_phase_ab_authorize_replace_disable_is_authority_only(
             "ai_authorized": True,
             "cron": "*/5 * * * *",
         },
+        headers=mfa_headers,
     )
     assert forbidden.status_code == 422, forbidden.text
 
@@ -211,6 +212,7 @@ def test_phase_ab_authorize_replace_disable_is_authority_only(
         key="phase-ab-authorize-1",
         cadence="hourly",
         effective_at="2026-09-21T00:00:00Z",
+        headers=mfa_headers,
     )
     assert authorized.status_code == 201, authorized.text
     first = authorized.json()
@@ -249,6 +251,7 @@ def test_phase_ab_authorize_replace_disable_is_authority_only(
         key="phase-ab-authorize-1",
         cadence="hourly",
         effective_at="2026-09-21T00:00:00Z",
+        headers=mfa_headers,
     )
     assert replay.status_code == 201, replay.text
     assert replay.json()["id"] == first["id"]
@@ -260,6 +263,7 @@ def test_phase_ab_authorize_replace_disable_is_authority_only(
         key="phase-ab-authorize-1",
         cadence="daily",
         effective_at="2026-09-21T00:00:00Z",
+        headers=mfa_headers,
     )
     assert altered.status_code == 409, altered.text
 
@@ -269,6 +273,7 @@ def test_phase_ab_authorize_replace_disable_is_authority_only(
         actor_id,
         key="phase-ab-authorize-duplicate",
         cadence="every_6_hours",
+        headers=mfa_headers,
     )
     assert duplicate_active.status_code == 409, duplicate_active.text
 
@@ -278,7 +283,7 @@ def test_phase_ab_authorize_replace_disable_is_authority_only(
             f"/evidence-family-bindings/{binding['id']}"
             "/recurring-observation-schedules/active"
         ),
-        headers=_headers(actor_id),
+        headers=mfa_headers,
     )
     assert active.status_code == 200, active.text
     assert active.json()["id"] == first["id"]
@@ -289,6 +294,7 @@ def test_phase_ab_authorize_replace_disable_is_authority_only(
         actor_id,
         key="phase-ab-replace-2",
         cadence="every_6_hours",
+        headers=mfa_headers,
     )
     assert replacement.status_code == 201, replacement.text
     second = replacement.json()
@@ -303,6 +309,7 @@ def test_phase_ab_authorize_replace_disable_is_authority_only(
         actor_id,
         key="phase-ab-replace-2",
         cadence="every_6_hours",
+        headers=mfa_headers,
     )
     assert replacement_replay.status_code == 201, replacement_replay.text
     assert replacement_replay.json()["id"] == second["id"]
@@ -312,6 +319,7 @@ def test_phase_ab_authorize_replace_disable_is_authority_only(
         second["id"],
         actor_id,
         key="phase-ab-disable-2",
+        headers=mfa_headers,
     )
     assert disabled.status_code == 200, disabled.text
     terminal = disabled.json()
@@ -324,6 +332,7 @@ def test_phase_ab_authorize_replace_disable_is_authority_only(
         second["id"],
         actor_id,
         key="phase-ab-disable-2",
+        headers=mfa_headers,
     )
     assert disable_replay.status_code == 200, disable_replay.text
     assert disable_replay.json()["id"] == second["id"]
@@ -334,7 +343,7 @@ def test_phase_ab_authorize_replace_disable_is_authority_only(
             f"/evidence-family-bindings/{binding['id']}"
             "/recurring-observation-schedules/active"
         ),
-        headers=_headers(actor_id),
+        headers=mfa_headers,
     )
     assert no_active.status_code == 200, no_active.text
     assert no_active.json() is None
@@ -382,6 +391,7 @@ def test_phase_ab_rejects_unsupported_cadence_cross_tenant_and_non_admin(
         monkeypatch,
         "ab-gates",
     )
+    mfa_headers = _mfa_headers(actor_id)
 
     unsupported = client.post(
         (
@@ -389,7 +399,7 @@ def test_phase_ab_rejects_unsupported_cadence_cross_tenant_and_non_admin(
             f"/evidence-family-bindings/{binding['id']}"
             "/recurring-observation-schedules"
         ),
-        headers=_headers(actor_id),
+        headers=mfa_headers,
         json={
             "request_key": "phase-ab-too-fast",
             "reason": _REASON,
@@ -399,11 +409,13 @@ def test_phase_ab_rejects_unsupported_cadence_cross_tenant_and_non_admin(
     assert unsupported.status_code == 422, unsupported.text
 
     _other_org, other_admin, _other_approver = _seed_tenant("ab-other")
+    other_mfa_headers = _mfa_headers(other_admin)
     cross_tenant = _authorize(
         profile_id,
         binding["id"],
         other_admin,
         key="phase-ab-cross-tenant",
+        headers=other_mfa_headers,
     )
     assert cross_tenant.status_code == 404, cross_tenant.text
 
@@ -431,25 +443,13 @@ def test_phase_ab_rejects_unsupported_cadence_cross_tenant_and_non_admin(
     assert non_admin.status_code == 403, non_admin.text
 
 
-def test_phase_ab_requires_current_mfa_when_tenant_policy_requires_admin_mfa(
+def test_phase_ab_requires_current_mfa_even_without_tenant_policy(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     actor_id, profile_id, _claim_id, _initial_execution, binding = _bound_v1(
         monkeypatch,
         "ab-mfa",
     )
-    with TestingSessionLocal() as db:
-        admin = db.get(User, actor_id)
-        assert admin is not None
-        upsert_mfa_policy(
-            db,
-            organization_id=admin.organization_id,
-            is_enabled=True,
-            required_roles=[UserRole.ADMIN.value],
-            updated_by_id=actor_id,
-        )
-        db.commit()
-
     denied = _authorize(
         profile_id,
         binding["id"],
@@ -467,11 +467,13 @@ def test_phase_ab_binding_tamper_fails_closed(
         monkeypatch,
         "ab-tamper",
     )
+    mfa_headers = _mfa_headers(actor_id)
     authorized = _authorize(
         profile_id,
         binding["id"],
         actor_id,
         key="phase-ab-tamper-auth",
+        headers=mfa_headers,
     )
     assert authorized.status_code == 201, authorized.text
 
@@ -489,7 +491,7 @@ def test_phase_ab_binding_tamper_fails_closed(
             f"/api/v1/external-document-sources/profiles/{profile_id}"
             f"/recurring-observation-schedules/{authorized.json()['id']}"
         ),
-        headers=_headers(actor_id),
+        headers=mfa_headers,
     )
     assert read.status_code == 409, read.text
 
@@ -501,11 +503,13 @@ def test_phase_ab_can_reauthorize_after_terminal_disable_as_next_revision(
         monkeypatch,
         "ab-reauthorize",
     )
+    mfa_headers = _mfa_headers(actor_id)
     first = _authorize(
         profile_id,
         binding["id"],
         actor_id,
         key="phase-ab-reauth-1",
+        headers=mfa_headers,
     )
     assert first.status_code == 201, first.text
     stopped = _disable(
@@ -513,6 +517,7 @@ def test_phase_ab_can_reauthorize_after_terminal_disable_as_next_revision(
         first.json()["id"],
         actor_id,
         key="phase-ab-reauth-disable",
+        headers=mfa_headers,
     )
     assert stopped.status_code == 200, stopped.text
 
@@ -522,6 +527,7 @@ def test_phase_ab_can_reauthorize_after_terminal_disable_as_next_revision(
         actor_id,
         key="phase-ab-reauth-2",
         cadence="daily",
+        headers=mfa_headers,
     )
     assert second.status_code == 201, second.text
     assert second.json()["revision_number"] == 2
