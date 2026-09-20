@@ -32,6 +32,7 @@ from app.modules.external_document_sources.service import (
     ExternalDocumentSourceValidationError,
     get_external_document_source_profile,
 )
+from app.modules.users.models import User, UserRole
 
 
 def _utc_now() -> datetime:
@@ -123,6 +124,27 @@ def _validate_matrix(*, result_status: str, decision_kind: str) -> None:
         raise ExternalDocumentSourceConflictError(
             f"Decision {decision_kind} is not allowed for {result_status} handoff"
         )
+
+
+def _require_human_admin(
+    db: Session,
+    *,
+    organization_id: UUID,
+    user_id: UUID,
+) -> User:
+    user = db.scalar(
+        select(User).where(
+            User.id == user_id,
+            User.organization_id == organization_id,
+            User.is_active.is_(True),
+            User.deleted_at.is_(None),
+        )
+    )
+    if user is None or user.role != UserRole.ADMIN:
+        raise ExternalDocumentSourceConflictError(
+            "Observation review decision requires an active organization Admin"
+        )
+    return user
 
 
 def _scope_hash(
@@ -509,6 +531,11 @@ def decide_observation_review_handoff(
     ExternalDocumentSourceObservationRefreshAuthorization | None,
     str,
 ]:
+    _require_human_admin(
+        db,
+        organization_id=organization_id,
+        user_id=decided_by_id,
+    )
     normalized_key = _normalize_text(
         request_key,
         field="request_key",
@@ -864,3 +891,66 @@ def get_observation_refresh_authorization_for_decision(
     if authorization is not None:
         ensure_observation_refresh_authorization_integrity(db, authorization)
     return authorization
+
+
+def get_observation_review_handoff_for_review(
+    db: Session,
+    *,
+    organization_id: UUID,
+    profile_id: UUID,
+    handoff_id: UUID,
+) -> ExternalDocumentSourceObservationReviewHandoff:
+    handoff = db.scalar(
+        select(ExternalDocumentSourceObservationReviewHandoff).where(
+            ExternalDocumentSourceObservationReviewHandoff.id == handoff_id,
+            ExternalDocumentSourceObservationReviewHandoff.organization_id
+            == organization_id,
+            ExternalDocumentSourceObservationReviewHandoff.profile_id == profile_id,
+        )
+    )
+    if handoff is None:
+        raise ExternalDocumentSourceNotFoundError(
+            "Observation review handoff not found"
+        )
+    ensure_observation_review_handoff_integrity(db, handoff)
+    return handoff
+
+
+def list_pending_observation_review_handoffs(
+    db: Session,
+    *,
+    organization_id: UUID,
+    profile_id: UUID,
+    limit: int = 100,
+) -> list[ExternalDocumentSourceObservationReviewHandoff]:
+    if limit < 1 or limit > 200:
+        raise ExternalDocumentSourceValidationError(
+            "limit must be between 1 and 200"
+        )
+    decided = select(
+        ExternalDocumentSourceObservationReviewDecision.handoff_id
+    ).where(
+        ExternalDocumentSourceObservationReviewDecision.organization_id
+        == organization_id,
+        ExternalDocumentSourceObservationReviewDecision.profile_id == profile_id,
+    )
+    rows = list(
+        db.scalars(
+            select(ExternalDocumentSourceObservationReviewHandoff)
+            .where(
+                ExternalDocumentSourceObservationReviewHandoff.organization_id
+                == organization_id,
+                ExternalDocumentSourceObservationReviewHandoff.profile_id == profile_id,
+                ExternalDocumentSourceObservationReviewHandoff.status == "pending",
+                ExternalDocumentSourceObservationReviewHandoff.id.not_in(decided),
+            )
+            .order_by(
+                ExternalDocumentSourceObservationReviewHandoff.projected_at.asc(),
+                ExternalDocumentSourceObservationReviewHandoff.id.asc(),
+            )
+            .limit(limit)
+        ).all()
+    )
+    for handoff in rows:
+        ensure_observation_review_handoff_integrity(db, handoff)
+    return rows
