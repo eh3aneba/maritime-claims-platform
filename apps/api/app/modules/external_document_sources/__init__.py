@@ -38,6 +38,10 @@ from app.modules.external_document_sources.evidence_admission_execution_models i
     ExternalDocumentSourceEvidenceAdmissionExecution,
     ExternalDocumentSourceEvidenceAdmissionExecutionReceipt,
 )
+from app.modules.external_document_sources.due_tick_observation_models import (
+    ExternalDocumentSourceDueTickObservationExecution,
+    ExternalDocumentSourceDueTickObservationReceipt,
+)
 from app.modules.external_document_sources.evidence_family_binding_models import (
     ExternalDocumentSourceEvidenceFamilyBinding,
     ExternalDocumentSourceEvidenceFamilyBindingReceipt,
@@ -116,6 +120,7 @@ from app.modules.external_document_sources import connection_bootstrap_router as
 from app.modules.external_document_sources import credential_reference_router as _credential_reference_router  # noqa: F401,E402
 from app.modules.external_document_sources import credential_reference_health_router as _credential_reference_health_router  # noqa: F401,E402
 from app.modules.external_document_sources import credential_resolution_execution_router as _credential_resolution_execution_router  # noqa: F401,E402
+from app.modules.external_document_sources import due_tick_observation_router as _due_tick_observation_router  # noqa: F401,E402
 from app.modules.external_document_sources import evidence_admission_authorization_router as _evidence_admission_authorization_router  # noqa: F401,E402
 from app.modules.external_document_sources import evidence_admission_execution_router as _evidence_admission_execution_router  # noqa: F401,E402
 from app.modules.external_document_sources import evidence_family_binding_router as _evidence_family_binding_router  # noqa: F401,E402
@@ -155,6 +160,8 @@ __all__ = [
     "ExternalDocumentSourceEvidenceAdmissionAuthorizationReceipt",
     "ExternalDocumentSourceEvidenceAdmissionExecution",
     "ExternalDocumentSourceEvidenceAdmissionExecutionReceipt",
+    "ExternalDocumentSourceDueTickObservationExecution",
+    "ExternalDocumentSourceDueTickObservationReceipt",
     "ExternalDocumentSourceEvidenceFamilyBinding",
     "ExternalDocumentSourceEvidenceFamilyBindingReceipt",
     "ExternalDocumentSourceFamilyVersionAdmissionAuthorization",
