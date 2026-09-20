@@ -3,6 +3,9 @@ from uuid import UUID
 
 import pytest
 
+from app.core.security import create_access_token
+from app.modules.auth.models import TotpMfaFactor
+from app.modules.auth.service import create_auth_session
 from app.modules.auth.mfa_policy import upsert_mfa_policy
 from app.modules.documents.models import Document
 from app.modules.external_document_sources.evidence_family_binding_models import (
@@ -44,6 +47,55 @@ def teardown_function() -> None:
     _phase_y_teardown()
 
 
+def _mfa_headers(user_id: UUID) -> dict[str, str]:
+    now = datetime.now(UTC)
+    with TestingSessionLocal() as db:
+        user = db.get(User, user_id)
+        assert user is not None
+        factor = (
+            db.query(TotpMfaFactor)
+            .filter(
+                TotpMfaFactor.organization_id == user.organization_id,
+                TotpMfaFactor.user_id == user.id,
+                TotpMfaFactor.revoked_at.is_(None),
+            )
+            .one_or_none()
+        )
+        if factor is None:
+            factor = TotpMfaFactor(
+                organization_id=user.organization_id,
+                user_id=user.id,
+                issuer="MCRI Test",
+                account_label=user.email,
+                algorithm="SHA1",
+                digits=6,
+                period_seconds=30,
+                secret_ciphertext="test-only-ciphertext",
+                secret_nonce="test-only-nonce",
+                secret_fingerprint=("a" * 64),
+                confirmed_at=now,
+            )
+            db.add(factor)
+            db.flush()
+        else:
+            factor.confirmed_at = factor.confirmed_at or now
+
+        session = create_auth_session(db, user=user)
+        session.mfa_verified_at = now
+        session.mfa_method = "totp"
+        session.mfa_factor_id = factor.id
+        db.commit()
+        token = create_access_token(
+            user_id=user.id,
+            organization_id=user.organization_id,
+            role=user.role.value,
+            session_id=session.id,
+            identity_source=session.identity_source,
+            auth_method=session.auth_method,
+        )
+    return {"Authorization": f"Bearer {token}"}
+
+
 def _authorize(
     profile_id: str,
     binding_id: str,
@@ -54,6 +106,7 @@ def _authorize(
     reason: str = _REASON,
     effective_at: str | None = None,
     extra: dict | None = None,
+    headers: dict[str, str] | None = None,
 ):
     payload = {
         "request_key": key,
@@ -70,7 +123,7 @@ def _authorize(
             f"/evidence-family-bindings/{binding_id}"
             "/recurring-observation-schedules"
         ),
-        headers=_headers(actor_id),
+        headers=headers or _headers(actor_id),
         json=payload,
     )
 
@@ -83,13 +136,14 @@ def _replace(
     key: str,
     cadence: str,
     reason: str = _REPLACE_REASON,
+    headers: dict[str, str] | None = None,
 ):
     return client.post(
         (
             f"/api/v1/external-document-sources/profiles/{profile_id}"
             f"/recurring-observation-schedules/{schedule_id}/replace"
         ),
-        headers=_headers(actor_id),
+        headers=headers or _headers(actor_id),
         json={
             "request_key": key,
             "reason": reason,
@@ -105,13 +159,14 @@ def _disable(
     *,
     key: str,
     reason: str = _DISABLE_REASON,
+    headers: dict[str, str] | None = None,
 ):
     return client.post(
         (
             f"/api/v1/external-document-sources/profiles/{profile_id}"
             f"/recurring-observation-schedules/{schedule_id}/disable"
         ),
-        headers=_headers(actor_id),
+        headers=headers or _headers(actor_id),
         json={"request_key": key, "reason": reason},
     )
 
