@@ -1,0 +1,58 @@
+name: PostgreSQL External Evidence Review Decision Concurrency
+
+on:
+  pull_request:
+    paths:
+      - "apps/api/app/modules/external_document_sources/**"
+      - "apps/api/alembic/versions/**"
+      - "apps/api/tests/test_external_document_source_observation_review_decision*"
+      - ".github/workflows/postgres-external-evidence-review-decision.yml"
+
+concurrency:
+  group: postgres-external-evidence-review-decision-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  review-decision-races:
+    name: External Evidence review decision concurrency
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    services:
+      postgres:
+        image: postgres:18.4
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: mcri_review_decision_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d mcri_review_decision_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      APP_ENV: test
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@127.0.0.1:5432/mcri_review_decision_ci
+      MCRI_TEST_DATABASE_URL: postgresql+psycopg://postgres:postgres@127.0.0.1:5432/mcri_review_decision_ci
+      EXTERNAL_EVIDENCE_REVIEW_DECISION_POSTGRES_TEST: "1"
+      SECRET_KEY: ci-only-review-decision-not-a-deployment-secret-2026
+      AI_PROVIDER: disabled
+      OPENAI_API_KEY: ""
+      LOCAL_STORAGE_PATH: /tmp/mcri-review-decision-ci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install backend dependencies
+        working-directory: apps/api
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.lock
+      - name: Apply migrations
+        working-directory: apps/api
+        run: alembic upgrade head
+      - name: Run review decision concurrency regression
+        working-directory: apps/api
+        run: pytest -q tests/test_external_document_source_observation_review_decision_concurrency_postgres.py
