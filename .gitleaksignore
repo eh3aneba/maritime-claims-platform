@@ -1,0 +1,2 @@
+# Phase 17.5-AC false positive: a non-secret test request-key literal in historical PR commit.
+26857e959dd869b57b25467c76afeb7732ba8583:apps/api/tests/test_external_document_source_due_tick_observation.py:generic-api-key:368
