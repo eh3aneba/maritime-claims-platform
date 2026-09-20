@@ -1,17 +1,19 @@
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 import os
-from threading import Barrier
 
 import pytest
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, select, text
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.modules.external_document_sources.change_detection_service import ExactItemMetadataResult
 from app.modules.external_document_sources.due_tick_dispatch_consumption_service import (
     consume_due_tick_dispatch,
+)
+from app.modules.external_document_sources.due_tick_observation_models import (
+    ExternalDocumentSourceDueTickObservationExecution,
 )
 from app.modules.external_document_sources.observation_review_handoff_models import (
     ExternalDocumentSourceObservationReviewHandoff,
@@ -99,28 +101,53 @@ def test_two_projectors_racing_one_changed_observation_create_one_handoff(
     assert adapter.calls == 1
 
     engine, SessionLocal = _session_factory()
-    barrier = Barrier(2)
     try:
-        def project():
-            with SessionLocal() as db:
-                barrier.wait(timeout=10)
-                handoff, outcome = project_observation_review_handoff(
-                    db,
-                    observation_execution_id=observation_id,
-                    projector_id="external-evidence-review-projector-v1",
-                    now=datetime(2026, 9, 20, 0, 1, tzinfo=UTC),
+        with SessionLocal() as first_db:
+            locked = first_db.scalar(
+                select(ExternalDocumentSourceDueTickObservationExecution)
+                .where(
+                    ExternalDocumentSourceDueTickObservationExecution.id
+                    == observation_id
                 )
-                assert handoff is not None
-                return handoff.id, outcome
+                .with_for_update()
+            )
+            assert locked is not None
 
-        with ThreadPoolExecutor(max_workers=2) as pool:
-            first = pool.submit(project)
-            second = pool.submit(project)
-            results = [first.result(timeout=30), second.result(timeout=30)]
+            # A second projector cannot cross the exact observation lock while
+            # the first projector owns projection authority.
+            with SessionLocal() as blocked_db:
+                blocked_db.execute(text("SET LOCAL lock_timeout = '250ms'"))
+                with pytest.raises(OperationalError):
+                    project_observation_review_handoff(
+                        blocked_db,
+                        observation_execution_id=observation_id,
+                        projector_id="external-evidence-review-projector-v1",
+                        now=datetime(2026, 9, 20, 0, 1, tzinfo=UTC),
+                    )
+                blocked_db.rollback()
 
-        ids = {row[0] for row in results}
-        assert len(ids) == 1
-        assert {row[1] for row in results} == {"projected", "replayed"}
+            first_handoff, first_outcome = project_observation_review_handoff(
+                first_db,
+                observation_execution_id=observation_id,
+                projector_id="external-evidence-review-projector-v1",
+                now=datetime(2026, 9, 20, 0, 1, tzinfo=UTC),
+            )
+            assert first_handoff is not None
+            assert first_outcome == "projected"
+            handoff_id = first_handoff.id
+
+        # After the first projector commits, a second projector converges on
+        # the same immutable handoff without creating another row or receipt.
+        with SessionLocal() as second_db:
+            second_handoff, second_outcome = project_observation_review_handoff(
+                second_db,
+                observation_execution_id=observation_id,
+                projector_id="external-evidence-review-projector-v1",
+                now=datetime(2026, 9, 20, 0, 2, tzinfo=UTC),
+            )
+            assert second_handoff is not None
+            assert second_handoff.id == handoff_id
+            assert second_outcome == "replayed"
 
         with SessionLocal() as db:
             handoffs = list(
