@@ -118,7 +118,7 @@ class ExternalDocumentSourceRecurringObservationSchedule(
     claim_id: Mapped[UUID] = mapped_column(ForeignKey("claims.id", ondelete="RESTRICT"), nullable=False)
     profile_id: Mapped[UUID] = mapped_column(ForeignKey("external_document_source_profiles.id", ondelete="RESTRICT"), nullable=False)
     binding_id: Mapped[UUID] = mapped_column(ForeignKey("external_doc_source_evidence_family_bindings.id", ondelete="RESTRICT"), nullable=False)
-    document_family_id: Mapped[UUID] = mapped_column(ForeignKey("documents.id", ondelete="RESTRICT"), nullable=False)
+    document_family_id: Mapped[UUID] = mapped_column(nullable=False)
     prior_schedule_id: Mapped[UUID | None] = mapped_column(ForeignKey("external_doc_source_recurring_observation_schedules.id", ondelete="RESTRICT"), nullable=True)
     revision_number: Mapped[int] = mapped_column(Integer, nullable=False)
 
