@@ -9,6 +9,7 @@ from sqlalchemy import exists, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.modules.audit.service import write_audit_log
 from app.modules.external_document_sources.due_tick_dispatch_consumption_models import (
     ExternalDocumentSourceDueTickDispatchConsumption,
@@ -59,8 +60,8 @@ def _canonical_hash(value) -> str:
     ).hexdigest()
 
 
-def _service_executor_hash(service_executor_id: str) -> str:
-    normalized = " ".join(service_executor_id.strip().lower().split())
+def _normalize_service_executor_id(value: str) -> str:
+    normalized = " ".join(value.strip().lower().split())
     if len(normalized) < 3 or len(normalized) > 128:
         raise ExternalDocumentSourceValidationError(
             "service_executor_id must contain between 3 and 128 characters"
@@ -69,6 +70,18 @@ def _service_executor_hash(service_executor_id: str) -> str:
     if any(ch not in allowed for ch in normalized):
         raise ExternalDocumentSourceValidationError(
             "service_executor_id contains unsupported characters"
+        )
+    return normalized
+
+
+def _service_executor_hash(service_executor_id: str) -> str:
+    normalized = _normalize_service_executor_id(service_executor_id)
+    configured = _normalize_service_executor_id(
+        get_settings().external_evidence_service_executor_id
+    )
+    if normalized != configured:
+        raise ExternalDocumentSourceConflictError(
+            "Internal service executor is not authorized for due-tick dispatch consumption"
         )
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
