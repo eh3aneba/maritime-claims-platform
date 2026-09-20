@@ -846,6 +846,22 @@ def disable_recurring_observation_schedule(
     )
     if existing_request is not None:
         ensure_recurring_observation_schedule_integrity(db, existing_request)
+        replacement = db.scalar(
+            select(ExternalDocumentSourceRecurringObservationSchedule).where(
+                ExternalDocumentSourceRecurringObservationSchedule.organization_id
+                == organization_id,
+                ExternalDocumentSourceRecurringObservationSchedule.profile_id
+                == profile_id,
+                ExternalDocumentSourceRecurringObservationSchedule.prior_schedule_id
+                == existing_request.id,
+                ExternalDocumentSourceRecurringObservationSchedule.request_key
+                == normalized_key,
+            )
+        )
+        if replacement is not None:
+            raise ExternalDocumentSourceConflictError(
+                "Recurring observation request key belongs to a schedule replacement, not a disable action"
+            )
         if (
             existing_request.id != schedule_id
             or existing_request.disabled_by_id != actor_id
