@@ -23,6 +23,7 @@ from app.modules.external_document_sources.due_tick_observation_service import (
     execute_due_tick_observation,
 )
 from app.modules.processing.models import DocumentProcessingJob
+from app.workers import external_evidence_scheduler_worker as scheduler_worker
 from tests.db_harness import TestingSessionLocal, reset_database
 from tests.test_external_document_source_evidence_family_binding import (
     setup_function as _phase_y_setup,
@@ -209,3 +210,43 @@ def test_phase_ad_follows_completed_ac_tick_without_skipping_overdue_sequence(mo
         assert db.query(ExternalDocumentSourceDueTickObservationExecution).count() == 1
         assert db.query(ExternalDocumentSourceDueTickDispatch).count() == 1
         assert adapter.calls == 1
+
+
+def test_phase_ad_worker_run_once_creates_at_most_one_dispatch(monkeypatch) -> None:
+    actor_id, profile_id, _claim_id, _initial_execution, binding = _bound_v1(
+        monkeypatch,
+        "ad-worker-once",
+    )
+    response = _authorize_schedule(
+        profile_id,
+        binding["id"],
+        actor_id,
+        key="phase-ad-worker-once-schedule",
+        cadence="hourly",
+        effective_at="2026-09-20T00:00:00Z",
+        headers=_mfa_headers(actor_id),
+    )
+    assert response.status_code == 201, response.text
+
+    monkeypatch.setattr(
+        scheduler_worker,
+        "create_session",
+        TestingSessionLocal,
+    )
+    monkeypatch.setattr(
+        scheduler_worker,
+        "dispatch_next_due_tick",
+        lambda db, *, worker_id: dispatch_next_due_tick(
+            db,
+            worker_id=worker_id,
+            now=datetime(2026, 9, 20, 0, 0, tzinfo=UTC),
+        ),
+    )
+
+    assert scheduler_worker.run_once("scheduler-worker-once") is True
+    with TestingSessionLocal() as db:
+        assert db.query(ExternalDocumentSourceDueTickDispatch).count() == 1
+
+    assert scheduler_worker.run_once("scheduler-worker-once") is False
+    with TestingSessionLocal() as db:
+        assert db.query(ExternalDocumentSourceDueTickDispatch).count() == 1
