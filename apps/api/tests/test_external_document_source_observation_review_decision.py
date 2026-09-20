@@ -34,7 +34,7 @@ from app.modules.external_document_sources.service import (
     ExternalDocumentSourceConflictError,
 )
 from app.modules.users.models import User, UserRole
-from tests.db_harness import TestingSessionLocal, client, reset_database
+from tests.db_harness import TestingSessionLocal, client
 from tests.test_external_document_source_discovery import _headers
 from tests.test_external_document_source_due_tick_service_executor import _prepare
 from tests.test_external_document_source_evidence_family_binding import (
@@ -48,7 +48,6 @@ from tests.test_external_document_source_generation_3_change_detection import (
 
 def setup_function() -> None:
     _phase_y_setup()
-    reset_database()
 
 
 def teardown_function() -> None:
