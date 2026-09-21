@@ -211,7 +211,7 @@ def test_phase_ah_stale_current_document_fails_before_provider_read(
     with TestingSessionLocal() as db:
         with pytest.raises(
             ExternalDocumentSourceConflictError,
-            match="canonical Evidence changed",
+            match="current Document changed after authorization",
         ):
             execute_observation_refresh_authorization(
                 db,
