@@ -24,11 +24,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Thirty shards keep the growing backend suite below the bounded
+        # Fifty shards keep the growing backend suite below the bounded
         # 25-minute per-shard timeout while preserving deterministic sorted-file
         # distribution and full test coverage. Do not raise the timeout to
         # accommodate suite growth; increase parallelism instead.
-        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29]
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49]
     defaults:
       run:
         working-directory: apps/api
@@ -65,7 +65,7 @@ jobs:
           mapfile -t test_files < <(find tests -type f -name 'test_*.py' | sort)
           shard_files=()
           for index in "${!test_files[@]}"; do
-            if (( index % 30 == ${{ matrix.shard }} )); then
+            if (( index % 50 == ${{ matrix.shard }} )); then
               shard_files+=("${test_files[$index]}")
             fi
           done
