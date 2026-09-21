@@ -315,27 +315,6 @@ def _originating_observation(
         or observation.stable_source_item_hash != authorization.stable_source_item_hash
         or observation.observed_projection_hash != authorization.observed_projection_hash
         or observation.observed_version_token_hash != authorization.observed_version_token_hash
-        or observation.completion_hash != decision.handoff_completion_hash
-    ):
-        # The handoff completion hash is not the observation completion hash; the
-        # explicit checks above bind the observation facts. Keep the completion
-        # check outside this matrix and verify against the handoff below.
-        pass
-    if (
-        observation.status != "completed"
-        or observation.result_status != "changed"
-        or observation.organization_id != authorization.organization_id
-        or observation.profile_id != authorization.profile_id
-        or observation.claim_id != authorization.claim_id
-        or observation.binding_id != authorization.binding_id
-        or observation.document_family_id != authorization.document_family_id
-        or observation.current_document_id != authorization.current_document_id
-        or observation.current_version_number != authorization.current_version_number
-        or observation.provider_kind != authorization.provider_kind
-        or observation.profile_hash != authorization.profile_hash
-        or observation.stable_source_item_hash != authorization.stable_source_item_hash
-        or observation.observed_projection_hash != authorization.observed_projection_hash
-        or observation.observed_version_token_hash != authorization.observed_version_token_hash
     ):
         raise ExternalDocumentSourceConflictError(
             "Observation refresh originating changed observation drifted"
@@ -593,7 +572,7 @@ def ensure_observation_refresh_execution_integrity(
         execution.status != "completed"
         or execution.result_status != "staged_refresh_verified"
         or execution.content_byte_count < 0
-        or execution.completed_at < execution.requested_at
+        or _aware(execution.completed_at) < _aware(execution.requested_at)
         or execution.content_proof_hash
         != _content_proof_hash(
             authorization_hash=execution.authorization_hash,
