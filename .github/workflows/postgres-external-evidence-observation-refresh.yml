@@ -19,7 +19,10 @@ jobs:
   observation-refresh-concurrency:
     name: External Evidence observation refresh concurrency
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    # This PostgreSQL serialization proof replays the governed external-Evidence
+    # lineage before exercising the exact authorization row lock. Keep a bounded
+    # gate, but leave enough margin for slower hosted-runner PostgreSQL I/O.
+    timeout-minutes: 20
     services:
       postgres:
         image: postgres:18.4
