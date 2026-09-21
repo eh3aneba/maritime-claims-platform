@@ -568,8 +568,40 @@ def ensure_observation_refresh_execution_integrity(
             raise ExternalDocumentSourceConflictError(
                 f"Observation refresh execution snapshot drifted at {field}"
             )
+    expected_execution_id = uuid5(
+        NAMESPACE_URL,
+        f"mcri:observation-refresh:{authorization.id}",
+    )
+    expected_storage_key = _storage_key(authorization.id, expected_execution_id)
+    expected_storage_key_hash = hashlib.sha256(
+        expected_storage_key.encode("utf-8")
+    ).hexdigest()
+    expected_scope_hash = _scope_hash(
+        authorization,
+        observation=observation,
+        current_document_id=execution.current_document_id,
+        current_version_number=execution.current_version_number,
+        current_document_file_hash=execution.current_document_file_hash,
+        read_operation_kind=execution.read_operation_kind,
+        read_adapter_kind=execution.read_adapter_kind,
+        endpoint_policy_hash=execution.endpoint_policy_hash,
+        storage_backend_kind=execution.storage_backend_kind,
+        storage_object_key_hash=execution.storage_object_key_hash,
+        request_key=execution.request_key,
+    )
+    expected_request_hash = _request_hash(
+        scope_hash=expected_scope_hash,
+        requested_by_id=execution.requested_by_id,
+        reason=execution.request_reason,
+        requested_at=execution.requested_at,
+    )
     if (
-        execution.status != "completed"
+        execution.id != expected_execution_id
+        or execution.storage_object_key != expected_storage_key
+        or execution.storage_object_key_hash != expected_storage_key_hash
+        or execution.scope_hash != expected_scope_hash
+        or execution.request_hash != expected_request_hash
+        or execution.status != "completed"
         or execution.result_status != "staged_refresh_verified"
         or execution.content_byte_count < 0
         or _aware(execution.completed_at) < _aware(execution.requested_at)
