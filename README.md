@@ -34,8 +34,9 @@ The MVP now includes the full H&M Machinery / Turbocharger design-partner workfl
 - Bounded real-document private AI pilot with independent data-owner approval, quotas, mandatory human review and incident rollback
 - Measured private-pilot exit gate with workflow scorecards, cost/incident trends and three independent reviews
 - Separately authorized limited-production AI evaluation with deterministic rollout, live monitors, expiry and rollback
+- Governed SharePoint / Google Drive external-Evidence control plane through recurring observation, human review and exact changed-item refresh staging
 
-**Current phase: Sprint 11E — Limited-Production AI Evaluation.** A positive 11D recommendation may now anchor a new, separately approved Production evaluation for the exact model bundle and a deterministic 1–10% cohort. Four independent reviews, document-level eligibility, mandatory different-human review, fixed caps, live monitoring, expiry, pause/rollback and Admin recovery are enforced. Production-wide use and Restricted documents remain blocked.
+**Current phase: Phase 17.5-AI — Refreshed Evidence Admission Authorization.** Protected `main` includes Phase 17.5-AH, which completes the governed path from recurring exact-item observation through human-approved changed-item refresh and verified quarantine staging. The next boundary will separately authorize one exact AH refresh for canonical N+1 Evidence admission; AH itself does not mutate the canonical Document, enqueue processing, run AI or advance checkpoints.
 
 ## Prerequisites
 
@@ -103,7 +104,7 @@ The Python lockfiles include package hashes, and CI rejects stale lockfiles. Edi
 
 ## Supply-chain security
 
-The independent supply-chain workflow audits Python and web production dependencies, scans complete Git history for committed secrets, and scans final API/web Docker images for high or critical vulnerabilities on every pull request and weekly. It also publishes a seven-day SPDX JSON SBOM artifact for each run.
+The independent supply-chain workflow audits Python and web production dependencies, scans complete Git history for committed secrets, and scans final API/web/worker Docker images for high or critical vulnerabilities on every pull request and weekly. It also publishes a seven-day SPDX JSON SBOM artifact for each run.
 
 See `docs/security/DEPENDENCY_SECURITY.md` for the enforcement policy, finding-handling rules and local commands.
 
@@ -200,9 +201,14 @@ Engine-log event fields are intentionally not promoted into scalar `claim_facts`
 
 ## Current milestone
 
-Sprint 11A adds the separately authorized provider control plane; Sprint 11B requires measured synthetic/de-identified promotion evidence; Sprint 11C adds the organization/data-owner decision for a small real non-restricted cohort; Sprint 11D freezes measured cohort outcomes and independent exit reviews; Sprint 11E adds a separately authorized, expiring 1–10% Production evaluation with fixed monitoring and rollback controls. These stages remain content-minimizing, and none provisions a provider key or grants Production-wide authorization.
+Phase 17.5-A through 17.5-AH now provide the governed SharePoint / Google Drive external-Evidence chain from source-profile authority and bounded provider access through initial Evidence admission, family binding, later-version admission, recurring exact-item observation, internal dispatch, human review, human approval and one-time verified changed-item refresh staging.
 
-Next, Sprint 11F will measure the completed limited-production cohort and record a separate stop, extend or consider-graduation recommendation. It will not widen the rollout automatically. Production-wide and Restricted-document AI remain unauthorized. Full English/Persian UI localization remains deferred until the product reaches a stable post-evaluation stage.
+The current production sequence is intentionally split into separate authorities:
+- **17.5-AI** — authorize one exact completed AH refresh for canonical N+1 Evidence admission without mutating the Document family.
+- **17.5-AJ** — consume that admission authority, revalidate the current family and staged-content proof, perform authoritative file-signature/malware verification, and create exactly one canonical N+1 Document.
+- **17.5-AK / integration closure** — prove the full recurring-sync loop end-to-end and close production provider wiring/operator UX before marking SharePoint / Google Drive live document integration complete.
+
+The earlier Sprint 11A–11E AI-governance controls remain part of the platform, including human review, bounded rollout, monitoring and rollback. They are no longer the repository's current implementation sequence, and Production-wide or Restricted-document external-AI use remains separately governed.
 
 ## Design-partner pilot
 
