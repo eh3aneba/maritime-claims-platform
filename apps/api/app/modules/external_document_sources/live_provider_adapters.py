@@ -44,6 +44,7 @@ from app.modules.external_document_sources.token_acquisition_execution_service i
 _MAX_SECRET_BYTES = 65536
 _AZURE_VAULT_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-]{1,22}[A-Za-z0-9]$")
 _SAFE_GCP_PROJECT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,126}[A-Za-z0-9]$|^[A-Za-z0-9]$")
+_SAFE_TENANT_DOMAIN = re.compile(r"^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 _SHAREPOINT_REDIRECT_SUFFIXES = (
     ".sharepoint.com",
     ".sharepoint-df.com",
@@ -297,20 +298,51 @@ class LiveExternalEvidenceRuntime:
             credentials.clear()
         return result
 
+    @staticmethod
+    def _token_limits(policy) -> tuple[float, int]:
+        timeout = getattr(policy, "total_timeout_seconds", 8.0)
+        max_bytes = getattr(policy, "max_response_bytes", 65536)
+        if not isinstance(timeout, (int, float)) or timeout <= 0:
+            timeout = 8.0
+        if not isinstance(max_bytes, int) or max_bytes <= 0:
+            max_bytes = 65536
+        return float(timeout), min(max_bytes, 65536)
+
     def _sharepoint_token(self, credentials: dict, policy) -> _ProviderToken:
         client_id = credentials.get("client_id")
         client_secret = credentials.get("client_secret")
+        tenant_domain = credentials.get("tenant_domain")
         if not isinstance(client_id, str) or not client_id.strip():
             raise _RuntimeFailure("invalid_client")
         if not isinstance(client_secret, str) or not client_secret:
             raise _RuntimeFailure("invalid_client")
+        if (
+            not isinstance(tenant_domain, str)
+            or not _SAFE_TENANT_DOMAIN.fullmatch(tenant_domain.strip().lower())
+        ):
+            raise _RuntimeFailure("invalid_client")
+
+        tenant = tenant_domain.strip().lower()
+        governed_hint = getattr(policy, "tenant_hint", None)
+        if isinstance(governed_hint, str) and governed_hint and governed_hint.strip().lower() != tenant:
+            raise _RuntimeFailure("invalid_client")
+
+        governed_endpoint = getattr(policy, "token_endpoint_url", None)
+        derived_endpoint = (
+            "https://login.microsoftonline.com/"
+            f"{quote(tenant, safe='')}/oauth2/v2.0/token"
+        )
+        if governed_endpoint is not None and governed_endpoint != derived_endpoint:
+            raise _RuntimeFailure("invalid_client")
+        endpoint = governed_endpoint or derived_endpoint
+        timeout, max_bytes = self._token_limits(policy)
         form = {
             "client_id": client_id.strip(),
             "client_secret": client_secret,
             "grant_type": "client_credentials",
             "scope": "https://graph.microsoft.com/.default",
         }
-        return self._post_token(policy, form)
+        return self._post_token(endpoint, timeout, max_bytes, form)
 
     def _google_token(self, credentials: dict, policy) -> _ProviderToken:
         client_email = credentials.get("client_email")
@@ -320,11 +352,15 @@ class LiveExternalEvidenceRuntime:
             raise _RuntimeFailure("invalid_client")
         if not isinstance(private_key, str) or "PRIVATE KEY" not in private_key:
             raise _RuntimeFailure("invalid_client")
+        endpoint = getattr(policy, "token_endpoint_url", None) or "https://oauth2.googleapis.com/token"
+        if endpoint != "https://oauth2.googleapis.com/token":
+            raise _RuntimeFailure("invalid_client")
+        timeout, max_bytes = self._token_limits(policy)
         now = int(time.time())
         claims = {
             "iss": client_email.strip(),
             "scope": "https://www.googleapis.com/auth/drive.readonly",
-            "aud": policy.token_endpoint_url,
+            "aud": endpoint,
             "iat": now,
             "exp": now + 3300,
         }
@@ -339,15 +375,21 @@ class LiveExternalEvidenceRuntime:
             "assertion": assertion,
         }
         try:
-            return self._post_token(policy, form)
+            return self._post_token(endpoint, timeout, max_bytes, form)
         finally:
             assertion = ""
 
-    def _post_token(self, policy, form: dict[str, str]) -> _ProviderToken:
+    def _post_token(
+        self,
+        endpoint: str,
+        timeout_seconds: float,
+        max_response_bytes: int,
+        form: dict[str, str],
+    ) -> _ProviderToken:
         try:
-            with self._client(policy.total_timeout_seconds) as client:
+            with self._client(timeout_seconds) as client:
                 response = client.post(
-                    policy.token_endpoint_url,
+                    endpoint,
                     data=form,
                     headers={"Accept": "application/json"},
                 )
@@ -355,7 +397,7 @@ class LiveExternalEvidenceRuntime:
             raise _RuntimeFailure("timeout") from None
         except httpx.HTTPError:
             raise _RuntimeFailure("endpoint_unavailable") from None
-        if len(response.content) > policy.max_response_bytes:
+        if len(response.content) > max_response_bytes:
             raise _RuntimeFailure("oversized_response")
         if response.status_code != 200:
             code = "provider_rejected"
@@ -373,7 +415,7 @@ class LiveExternalEvidenceRuntime:
             elif response.status_code == 429 or response.status_code >= 500:
                 code = "endpoint_unavailable"
             raise _RuntimeFailure(code)
-        payload = self._json(response, max_bytes=policy.max_response_bytes)
+        payload = self._json(response, max_bytes=max_response_bytes)
         token = payload.get("access_token")
         expires = payload.get("expires_in")
         if not isinstance(token, str) or not token:
