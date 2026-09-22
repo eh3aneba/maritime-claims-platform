@@ -54,6 +54,7 @@ type Family = {
   latest_decided_at: string | null;
   refresh_authorization_id: string | null;
   refresh_authorization_status: string | null;
+  refresh_execution_required: boolean;
   latest_refresh_execution_id: string | null;
   latest_refresh_status: string | null;
   latest_refresh_completed_at: string | null;
@@ -61,7 +62,9 @@ type Family = {
   latest_refresh_failed_at: string | null;
   latest_admission_authorization_id: string | null;
   latest_admission_authorization_status: string | null;
+  admission_authorization_required: boolean;
   latest_admission_execution_id: string | null;
+  admission_execution_required: boolean;
   latest_admission_status: string | null;
   latest_admission_executed_at: string | null;
   processing_release_status: string | null;
@@ -331,9 +334,9 @@ export default function ExternalEvidencePage() {
               {families.map((row) => {
                 const isChanged = row.pending_handoff_kind === "changed";
                 const isMissing = row.pending_handoff_kind === "missing";
-                const hasRefreshToRun = Boolean(row.refresh_authorization_id && !row.latest_refresh_execution_id);
-                const hasAdmissionToAuthorize = Boolean(row.latest_refresh_execution_id && !row.latest_admission_authorization_id);
-                const hasAdmissionToRun = Boolean(row.latest_admission_authorization_id && !row.latest_admission_execution_id);
+                const hasRefreshToRun = row.refresh_execution_required;
+                const hasAdmissionToAuthorize = row.admission_authorization_required;
+                const hasAdmissionToRun = row.admission_execution_required;
                 const actionDisabled = busy !== null || !noteReady(row);
 
                 return (

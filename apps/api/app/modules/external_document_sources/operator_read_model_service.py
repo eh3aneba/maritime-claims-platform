@@ -279,6 +279,35 @@ def build_external_document_source_operator_overview(
         admission = latest_admission.get(binding.id)
         refresh_failure = latest_failure_by_binding.get(binding.id)
 
+        refresh_matches_current_authorization = (
+            refresh_authorization is not None
+            and refresh is not None
+            and refresh.authorization_id == refresh_authorization.id
+        )
+        refresh_execution_required = (
+            refresh_authorization is not None
+            and not refresh_matches_current_authorization
+        )
+        admission_authorization_required = (
+            refresh_matches_current_authorization
+            and (
+                admission_auth is None
+                or admission_auth.refresh_execution_id != refresh.id
+            )
+        )
+        admission_auth_matches_current_refresh = (
+            refresh_matches_current_authorization
+            and admission_auth is not None
+            and admission_auth.refresh_execution_id == refresh.id
+        )
+        admission_execution_required = (
+            admission_auth_matches_current_refresh
+            and (
+                admission is None
+                or admission.authorization_id != admission_auth.id
+            )
+        )
+
         family_documents = documents_by_family.get(binding.document_family_id, [])
         current_candidates = [row for row in family_documents if row.is_current]
         if len(current_candidates) == 1:
@@ -378,6 +407,7 @@ def build_external_document_source_operator_overview(
                     if refresh_authorization is not None
                     else None
                 ),
+                refresh_execution_required=refresh_execution_required,
                 latest_refresh_execution_id=refresh.id if refresh is not None else None,
                 latest_refresh_status=(
                     refresh.result_status if refresh is not None else None
@@ -395,9 +425,11 @@ def build_external_document_source_operator_overview(
                 latest_admission_authorization_status=(
                     admission_auth.status if admission_auth is not None else None
                 ),
+                admission_authorization_required=admission_authorization_required,
                 latest_admission_execution_id=(
                     admission.id if admission is not None else None
                 ),
+                admission_execution_required=admission_execution_required,
                 latest_admission_status=(
                     admission.status if admission is not None else None
                 ),

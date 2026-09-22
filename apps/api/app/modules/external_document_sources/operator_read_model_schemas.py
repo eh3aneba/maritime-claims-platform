@@ -48,6 +48,7 @@ class ExternalDocumentSourceOperatorFamilyRead(BaseModel):
 
     refresh_authorization_id: UUID | None = None
     refresh_authorization_status: str | None = None
+    refresh_execution_required: bool
     latest_refresh_execution_id: UUID | None = None
     latest_refresh_status: str | None = None
     latest_refresh_completed_at: datetime | None = None
@@ -56,7 +57,9 @@ class ExternalDocumentSourceOperatorFamilyRead(BaseModel):
 
     latest_admission_authorization_id: UUID | None = None
     latest_admission_authorization_status: str | None = None
+    admission_authorization_required: bool
     latest_admission_execution_id: UUID | None = None
+    admission_execution_required: bool
     latest_admission_status: str | None = None
     latest_admission_executed_at: datetime | None = None
 

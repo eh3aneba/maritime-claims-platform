@@ -84,6 +84,7 @@ def main() -> None:
                 "latest_decided_at": None,
                 "refresh_authorization_id": None,
                 "refresh_authorization_status": None,
+                "refresh_execution_required": False,
                 "latest_refresh_execution_id": None,
                 "latest_refresh_status": None,
                 "latest_refresh_completed_at": None,
@@ -91,7 +92,9 @@ def main() -> None:
                 "latest_refresh_failed_at": None,
                 "latest_admission_authorization_id": None,
                 "latest_admission_authorization_status": None,
+                "admission_authorization_required": False,
                 "latest_admission_execution_id": None,
+                "admission_execution_required": False,
                 "latest_admission_status": None,
                 "latest_admission_executed_at": None,
                 "processing_release_status": None,
@@ -142,6 +145,9 @@ def main() -> None:
                 row["latest_decided_at"] = now
                 row["refresh_authorization_id"] = REFRESH_AUTH_ID
                 row["refresh_authorization_status"] = "authorized"
+                row["refresh_execution_required"] = True
+                row["admission_authorization_required"] = False
+                row["admission_execution_required"] = False
                 state["profiles"][0]["pending_handoff_count"] = 0
                 route.fulfill(status=201, content_type="application/json", body="{}")
                 return
@@ -150,12 +156,16 @@ def main() -> None:
                 row["latest_refresh_execution_id"] = REFRESH_EXEC_ID
                 row["latest_refresh_status"] = "staged_refresh_verified"
                 row["latest_refresh_completed_at"] = now
+                row["refresh_execution_required"] = False
+                row["admission_authorization_required"] = True
                 route.fulfill(status=201, content_type="application/json", body="{}")
                 return
 
             if url.endswith(f"/observation-refresh-executions/{REFRESH_EXEC_ID}/admission-authorizations"):
                 row["latest_admission_authorization_id"] = ADMISSION_AUTH_ID
                 row["latest_admission_authorization_status"] = "authorized"
+                row["admission_authorization_required"] = False
+                row["admission_execution_required"] = True
                 route.fulfill(status=201, content_type="application/json", body="{}")
                 return
 
@@ -165,6 +175,7 @@ def main() -> None:
                 row["latest_admission_execution_id"] = ADMISSION_EXEC_ID
                 row["latest_admission_status"] = "admitted"
                 row["latest_admission_executed_at"] = now
+                row["admission_execution_required"] = False
                 row["current_document_id"] = DOC_V2
                 row["current_version_number"] = 2
                 row["version_history"] = [
