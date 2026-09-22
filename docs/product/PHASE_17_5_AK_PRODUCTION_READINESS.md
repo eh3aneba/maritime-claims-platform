@@ -13,11 +13,11 @@
 - [ ] No provider write/delete operation exists in the adapter bundle.
 - [ ] Changed observation requires AG review.
 - [ ] Missing observation never deletes canonical Evidence.
-- [ ] Refresh, AH, AJ and Phase-Z remain independent.
+- [ ] AG, AH, AI, AJ and Phase-Z remain independent.
 - [ ] AJ N+1 preserves N as historical and establishes exactly one current version.
 - [ ] N+1 requires a fresh exact-document Phase-Z release.
 - [ ] External AI is not executed or implicitly authorized.
-- [ ] Operator read model is Admin + current MFA and non-authoritative.
+- [ ] Operator read model is Admin + current MFA and non-authoritative.\n- [ ] Operator UI exposes separate AG/AH/AI/AJ controls, requires an explicit human audit reason, and renders current + historical version lineage.\n- [ ] Browser E2E proves four separate governed mutations from changed handoff through canonical N+1 and confirms the new version remains Phase-Z-required.
 - [ ] No secret/token/private-key/pre-authenticated URL appears in API/audit/log output.
 - [ ] SharePoint and Google Drive provider-specific contract tests pass.
 - [ ] Unchanged/changed/missing E2E tests pass.
