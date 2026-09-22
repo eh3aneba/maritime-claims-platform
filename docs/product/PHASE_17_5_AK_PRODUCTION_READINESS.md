@@ -1,0 +1,26 @@
+# Phase 17.5-AK Production Readiness Checklist
+
+- [ ] Live adapters enabled only in intended environment.
+- [ ] Secret references use Azure Key Vault or GCP Secret Manager.
+- [ ] Secret-manager workload identity is least-privilege.
+- [ ] SharePoint/Graph application is read-only for the governed site/library.
+- [ ] Google Drive service account is read-only for the governed drive/folder.
+- [ ] Provider health succeeds without exposing raw response data.
+- [ ] Metadata listing is bounded to one page / 100 items.
+- [ ] Exact metadata and content reads preserve stable provider identity.
+- [ ] SharePoint redirect is HTTPS, one hop and provider-owned.
+- [ ] Google Drive content path does not follow redirects.
+- [ ] No provider write/delete operation exists in the adapter bundle.
+- [ ] Changed observation requires AG review.
+- [ ] Missing observation never deletes canonical Evidence.
+- [ ] Refresh, AH, AJ and Phase-Z remain independent.
+- [ ] AJ N+1 preserves N as historical and establishes exactly one current version.
+- [ ] N+1 requires a fresh exact-document Phase-Z release.
+- [ ] External AI is not executed or implicitly authorized.
+- [ ] Operator read model is Admin + current MFA and non-authoritative.
+- [ ] No secret/token/private-key/pre-authenticated URL appears in API/audit/log output.
+- [ ] SharePoint and Google Drive provider-specific contract tests pass.
+- [ ] Unchanged/changed/missing E2E tests pass.
+- [ ] Restart/replay/duplicate-dispatch tests pass.
+- [ ] Backend/frontend/Compose/MT ORION/performance/deployment/security/Postgres gates pass on exact PR head.
+- [ ] PR remains unmerged until fresh explicit user authorization is given for that exact validated head.
