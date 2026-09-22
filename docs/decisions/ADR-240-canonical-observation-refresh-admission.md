@@ -59,7 +59,7 @@ AJ reuses the existing family-version transition helper introduced by Phase AA:
 - vN+1.supersedes_document_id = vN.id;
 - exactly one non-deleted current Document exists after the transition.
 
-The AI authorization is one-use. PostgreSQL row locking on the exact authorization plus family/current-Document locking prevents concurrent consumers from producing competing N+1 versions.
+The AI authorization is one-use. The immutable AI authorization row is not rewritten into a consumed status: consumption is represented by exactly one immutable AJ execution whose authorization_id is unique. PostgreSQL row locking on the exact authorization plus family/current-Document locking prevents concurrent consumers from producing competing N+1 versions. This preserves Phase-AI authorization history while still proving single consumption.
 
 ## Security verification
 
