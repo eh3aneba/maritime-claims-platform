@@ -169,7 +169,7 @@ def upgrade() -> None:
         sa.CheckConstraint("new_version_number = prior_version_number + 1", name="ck_ext_doc_obs_refresh_adm_exec_next_ver"),
         sa.CheckConstraint("refreshed_content_byte_count >= 0", name="ck_ext_doc_obs_refresh_adm_exec_size"),
         sa.CheckConstraint("new_document_file_size_bytes >= 0", name="ck_ext_doc_obs_refresh_adm_exec_doc_size"),
-        sa.CheckConstraint("malware_scan_verdict = 'clean'", name="ck_ext_doc_obs_refresh_adm_exec_malware"),
+        sa.CheckConstraint("malware_scan_verdict = 'clean'", name="ck_ext_doc_obs_refresh_adm_exec_malware_verdict"),
         *_safety_constraints("ext_doc_obs_refresh_adm_exec"),
     )
     op.create_index("ix_ext_doc_obs_refresh_adm_exec_org_claim", EXECUTION, ["organization_id", "claim_id"])
