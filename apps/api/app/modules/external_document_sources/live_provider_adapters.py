@@ -13,6 +13,10 @@ from urllib.parse import quote, urlencode, urlparse
 import httpx
 import jwt
 
+from app.modules.external_document_sources.change_detection_service import (
+    ExactItemMetadataResult,
+    register_external_document_source_change_detection_adapter,
+)
 from app.modules.external_document_sources.credential_reference_health_service import (
     CredentialReferenceHealthProbeResult,
     CredentialReferenceLocator,
@@ -427,7 +431,15 @@ class LiveExternalEvidenceRuntime:
                 expires = None
         return _ProviderToken(value=token, expires_in=expires)
 
-    def provider_get(self, locator: CredentialReferenceLocator, policy, url: str, *, max_bytes: int) -> tuple[dict, str]:
+    def provider_get(
+        self,
+        locator: CredentialReferenceLocator,
+        policy,
+        url: str,
+        *,
+        max_bytes: int,
+        allow_not_found: bool = False,
+    ) -> tuple[dict, str]:
         token = self.provider_token(locator, policy)
         started = time.monotonic()
         try:
@@ -443,7 +455,12 @@ class LiveExternalEvidenceRuntime:
         finally:
             token = None
         if response.status_code != 200:
-            raise _RuntimeFailure(self._status_failure(response.status_code))
+            raise _RuntimeFailure(
+                self._status_failure(
+                    response.status_code,
+                    allow_not_found=allow_not_found,
+                )
+            )
         return self._json(response, max_bytes=max_bytes), self._latency_class(started)
 
     @staticmethod
@@ -474,7 +491,62 @@ class LiveExternalEvidenceRuntime:
             parsed = parsed.replace(tzinfo=timezone.utc)
         return parsed.astimezone(timezone.utc)
 
-    def list_metadata(self, locator: CredentialReferenceLocator, policy) -> RemoteMetadataListResult:
+    def _project_metadata_item(
+        self,
+        provider_kind: str,
+        raw: dict,
+    ) -> RemoteMetadataItemProjection:
+        if provider_kind == "sharepoint":
+            provider_item_id = raw.get("id")
+            display_name = raw.get("name")
+            folder = raw.get("folder")
+            file_info = raw.get("file")
+            item_kind = "folder" if isinstance(folder, dict) else "file"
+            mime = file_info.get("mimeType") if isinstance(file_info, dict) else None
+            parent = raw.get("parentReference")
+            parent_id = parent.get("id") if isinstance(parent, dict) else None
+            byte_size = raw.get("size")
+            modified = raw.get("lastModifiedDateTime")
+        else:
+            provider_item_id = raw.get("id")
+            display_name = raw.get("name")
+            mime = raw.get("mimeType")
+            item_kind = (
+                "folder"
+                if mime == "application/vnd.google-apps.folder"
+                else "file"
+            )
+            parents = raw.get("parents")
+            parent_id = parents[0] if isinstance(parents, list) and parents else None
+            byte_size = raw.get("size")
+            modified = raw.get("modifiedTime")
+
+        if not isinstance(provider_item_id, str) or not provider_item_id:
+            raise _RuntimeFailure("malformed_response")
+        if not isinstance(display_name, str) or not display_name:
+            raise _RuntimeFailure("malformed_response")
+        if byte_size is not None:
+            try:
+                byte_size = int(byte_size)
+            except (TypeError, ValueError):
+                raise _RuntimeFailure("malformed_response") from None
+
+        return RemoteMetadataItemProjection(
+            provider_item_id=provider_item_id,
+            item_kind=item_kind,
+            display_name=display_name,
+            parent_item_id=parent_id if isinstance(parent_id, str) else None,
+            mime_type_class=mime if isinstance(mime, str) else None,
+            byte_size=byte_size,
+            modified_at=self._parse_datetime(modified),
+            version_token_hash=self._version_hash(provider_kind, raw),
+        )
+
+    def list_metadata(
+        self,
+        locator: CredentialReferenceLocator,
+        policy,
+    ) -> RemoteMetadataListResult:
         payload, _latency = self.provider_get(
             locator,
             policy,
@@ -496,52 +568,38 @@ class LiveExternalEvidenceRuntime:
         for raw in raw_items:
             if not isinstance(raw, dict):
                 raise _RuntimeFailure("malformed_response")
-            if policy.provider_kind == "sharepoint":
-                provider_item_id = raw.get("id")
-                display_name = raw.get("name")
-                folder = raw.get("folder")
-                file_info = raw.get("file")
-                item_kind = "folder" if isinstance(folder, dict) else "file"
-                mime = file_info.get("mimeType") if isinstance(file_info, dict) else None
-                parent = raw.get("parentReference")
-                parent_id = parent.get("id") if isinstance(parent, dict) else None
-                byte_size = raw.get("size")
-                modified = raw.get("lastModifiedDateTime")
-            else:
-                provider_item_id = raw.get("id")
-                display_name = raw.get("name")
-                mime = raw.get("mimeType")
-                item_kind = "folder" if mime == "application/vnd.google-apps.folder" else "file"
-                parents = raw.get("parents")
-                parent_id = parents[0] if isinstance(parents, list) and parents else None
-                byte_size = raw.get("size")
-                modified = raw.get("modifiedTime")
-            if not isinstance(provider_item_id, str) or not provider_item_id:
-                raise _RuntimeFailure("malformed_response")
-            if not isinstance(display_name, str) or not display_name:
-                raise _RuntimeFailure("malformed_response")
-            if byte_size is not None:
-                try:
-                    byte_size = int(byte_size)
-                except (TypeError, ValueError):
-                    raise _RuntimeFailure("malformed_response") from None
-            items.append(
-                RemoteMetadataItemProjection(
-                    provider_item_id=provider_item_id,
-                    item_kind=item_kind,
-                    display_name=display_name,
-                    parent_item_id=parent_id if isinstance(parent_id, str) else None,
-                    mime_type_class=mime if isinstance(mime, str) else None,
-                    byte_size=byte_size,
-                    modified_at=self._parse_datetime(modified),
-                    version_token_hash=self._version_hash(policy.provider_kind, raw),
-                )
-            )
+            items.append(self._project_metadata_item(policy.provider_kind, raw))
         return RemoteMetadataListResult(
             listed=True,
             items=tuple(items),
             truncated=bool(next_token),
             page_count=1,
+        )
+
+    def read_exact_metadata(
+        self,
+        locator: CredentialReferenceLocator,
+        policy,
+    ) -> ExactItemMetadataResult:
+        try:
+            payload, _latency = self.provider_get(
+                locator,
+                policy,
+                policy.metadata_endpoint_url,
+                max_bytes=policy.max_response_bytes,
+                allow_not_found=True,
+            )
+        except _RuntimeFailure as exc:
+            if exc.code == "not_found":
+                return ExactItemMetadataResult(
+                    found=False,
+                    item=None,
+                    failure_code="not_found",
+                )
+            raise
+        return ExactItemMetadataResult(
+            found=True,
+            item=self._project_metadata_item(policy.provider_kind, payload),
         )
 
     def _exact_metadata(self, locator: CredentialReferenceLocator, policy) -> dict:
@@ -560,7 +618,13 @@ class LiveExternalEvidenceRuntime:
                 }
             )
             url = f"{policy.provider_origin}{path}?{query}"
-        payload, _ = self.provider_get(locator, policy, url, max_bytes=65536)
+        payload, _ = self.provider_get(
+            locator,
+            policy,
+            url,
+            max_bytes=65536,
+            allow_not_found=True,
+        )
         return payload
 
     @staticmethod
@@ -803,6 +867,48 @@ class _MetadataListAdapter:
             )
 
 
+class _ExactMetadataAdapter:
+    def __init__(self, runtime: LiveExternalEvidenceRuntime, provider: str):
+        self._runtime = runtime
+        self.provider_kind = provider
+        if provider == "sharepoint":
+            self.adapter_kind = "microsoft_graph_live_exact_metadata_v1"
+            self.client_kind = "microsoft_graph_transient_v1"
+            self.observation_operation_kind = "graph_drive_item_metadata_read_v1"
+            self.provider_origin = "https://graph.microsoft.com"
+        else:
+            self.adapter_kind = "google_drive_live_exact_metadata_v1"
+            self.client_kind = "google_drive_transient_v3"
+            self.observation_operation_kind = "drive_file_metadata_read_v1"
+            self.provider_origin = "https://www.googleapis.com"
+
+    def read_item_metadata(
+        self,
+        locator: CredentialReferenceLocator,
+        policy,
+    ) -> ExactItemMetadataResult:
+        try:
+            return self._runtime.read_exact_metadata(locator, policy)
+        except _RuntimeFailure as exc:
+            allowed = {
+                "unauthorized",
+                "permission_denied",
+                "not_found",
+                "endpoint_unavailable",
+                "timeout",
+                "malformed_response",
+                "oversized_response",
+                "provider_rejected",
+            }
+            return ExactItemMetadataResult(
+                found=False,
+                item=None,
+                failure_code=(
+                    exc.code if exc.code in allowed else "provider_rejected"
+                ),
+            )
+
+
 class _ContentReadAdapter:
     def __init__(self, runtime: LiveExternalEvidenceRuntime, provider: str):
         self._runtime = runtime
@@ -868,6 +974,12 @@ def register_live_external_document_source_adapters(
         listing = _MetadataListAdapter(runtime, provider)
         register_external_document_source_remote_metadata_list_adapter(
             provider, listing.listing_operation_kind, listing
+        )
+        exact_metadata = _ExactMetadataAdapter(runtime, provider)
+        register_external_document_source_change_detection_adapter(
+            provider,
+            exact_metadata.observation_operation_kind,
+            exact_metadata,
         )
         reading = _ContentReadAdapter(runtime, provider)
         register_external_document_source_remote_file_content_read_adapter(
