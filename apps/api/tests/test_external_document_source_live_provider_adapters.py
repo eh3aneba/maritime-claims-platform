@@ -8,12 +8,16 @@ import httpx
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
+from app.modules.external_document_sources.change_detection_service import (
+    ExactItemMetadataPolicy,
+)
 from app.modules.external_document_sources.credential_reference_health_service import (
     CredentialReferenceLocator,
 )
 from app.modules.external_document_sources.live_provider_adapters import (
     LiveExternalEvidenceRuntime,
     _ContentReadAdapter,
+    _ExactMetadataAdapter,
     _MetadataListAdapter,
     _ProviderHealthAdapter,
     _SecretHealthResolver,
@@ -91,8 +95,11 @@ def test_live_sharepoint_contract_is_read_only_and_version_stable(monkeypatch) -
                 200,
                 json={
                     "id": "item-1",
+                    "name": "Chief Engineer Report.pdf",
                     "size": 11,
+                    "lastModifiedDateTime": "2026-09-22T07:30:00Z",
                     "file": {"mimeType": "application/pdf"},
+                    "parentReference": {"id": "root"},
                     "eTag": '"etag-v7"',
                 },
             )
@@ -170,6 +177,33 @@ def test_live_sharepoint_contract_is_read_only_and_version_stable(monkeypatch) -
     assert item.modified_at == datetime(2026, 9, 22, 7, 30, tzinfo=timezone.utc)
     assert item.version_token_hash is not None
 
+    exact_policy = ExactItemMetadataPolicy(
+        provider_kind="sharepoint",
+        client_kind="microsoft_graph_transient_v1",
+        observation_operation_kind="graph_drive_item_metadata_read_v1",
+        provider_origin="https://graph.microsoft.com",
+        metadata_endpoint_url=(
+            "https://graph.microsoft.com/v1.0/sites/site-1/drives/lib-1/items/item-1"
+            "?%24select=id%2Cname%2Csize%2ClastModifiedDateTime%2Cfile%2Cfolder"
+            "%2CparentReference%2CeTag"
+        ),
+        field_projection=(
+            "id,name,size,lastModifiedDateTime,file,folder,parentReference,eTag"
+        ),
+    )
+    exact = _ExactMetadataAdapter(runtime, "sharepoint").read_item_metadata(
+        locator,
+        exact_policy,
+    )
+    assert exact.found is True
+    assert exact.failure_code is None
+    assert exact.item is not None
+    assert exact.item.provider_item_id == item.provider_item_id
+    assert exact.item.parent_item_id == item.parent_item_id
+    assert exact.item.mime_type_class == item.mime_type_class
+    assert exact.item.byte_size == item.byte_size
+    assert exact.item.version_token_hash == item.version_token_hash
+
     read_policy = RemoteFileContentReadPolicy(
         provider_kind="sharepoint",
         client_kind="microsoft_graph_transient_v1",
@@ -243,9 +277,11 @@ def test_live_google_drive_contract_is_read_only_and_version_stable(monkeypatch)
                 200,
                 json={
                     "id": "drive-item-1",
+                    "name": "Engine Log.pdf",
                     "mimeType": "application/pdf",
                     "size": "12",
                     "modifiedTime": "2026-09-22T08:00:00Z",
+                    "parents": ["folder-1"],
                     "md5Checksum": "abc123",
                     "version": "42",
                 },
@@ -309,6 +345,33 @@ def test_live_google_drive_contract_is_read_only_and_version_stable(monkeypatch)
     assert item.provider_item_id == "drive-item-1"
     assert item.byte_size == 12
     assert item.version_token_hash is not None
+
+    exact_policy = ExactItemMetadataPolicy(
+        provider_kind="google_drive",
+        client_kind="google_drive_transient_v3",
+        observation_operation_kind="drive_file_metadata_read_v1",
+        provider_origin="https://www.googleapis.com",
+        metadata_endpoint_url=(
+            "https://www.googleapis.com/drive/v3/files/drive-item-1"
+            "?supportsAllDrives=true&fields=id%2Cname%2CmimeType%2Csize"
+            "%2CmodifiedTime%2Cparents%2Cmd5Checksum%2Cversion"
+        ),
+        field_projection=(
+            "id,name,mimeType,size,modifiedTime,parents,md5Checksum,version"
+        ),
+    )
+    exact = _ExactMetadataAdapter(runtime, "google_drive").read_item_metadata(
+        locator,
+        exact_policy,
+    )
+    assert exact.found is True
+    assert exact.failure_code is None
+    assert exact.item is not None
+    assert exact.item.provider_item_id == item.provider_item_id
+    assert exact.item.parent_item_id == item.parent_item_id
+    assert exact.item.mime_type_class == item.mime_type_class
+    assert exact.item.byte_size == item.byte_size
+    assert exact.item.version_token_hash == item.version_token_hash
 
     read_policy = RemoteFileContentReadPolicy(
         provider_kind="google_drive",
@@ -399,6 +462,27 @@ def test_live_sharepoint_failure_mapping_is_bounded(monkeypatch) -> None:
     assert listed.listed is False
     assert listed.failure_code == "endpoint_unavailable"
 
+    exact_policy = ExactItemMetadataPolicy(
+        provider_kind="sharepoint",
+        client_kind="microsoft_graph_transient_v1",
+        observation_operation_kind="graph_drive_item_metadata_read_v1",
+        provider_origin="https://graph.microsoft.com",
+        metadata_endpoint_url=(
+            "https://graph.microsoft.com/v1.0/sites/site-1/drives/lib-1/items/missing-item"
+            "?%24select=id%2Cname%2Csize%2ClastModifiedDateTime%2Cfile%2Cfolder"
+            "%2CparentReference%2CeTag"
+        ),
+        field_projection=(
+            "id,name,size,lastModifiedDateTime,file,folder,parentReference,eTag"
+        ),
+    )
+    exact = _ExactMetadataAdapter(runtime, "sharepoint").read_item_metadata(
+        locator,
+        exact_policy,
+    )
+    assert exact.found is False
+    assert exact.failure_code == "not_found"
+
     read_policy = RemoteFileContentReadPolicy(
         provider_kind="sharepoint",
         client_kind="microsoft_graph_transient_v1",
@@ -485,6 +569,27 @@ def test_live_google_drive_failure_mapping_is_bounded(monkeypatch) -> None:
     listed = _MetadataListAdapter(runtime, "google_drive").list_metadata(locator, list_policy)
     assert listed.listed is False
     assert listed.failure_code == "endpoint_unavailable"
+
+    exact_policy = ExactItemMetadataPolicy(
+        provider_kind="google_drive",
+        client_kind="google_drive_transient_v3",
+        observation_operation_kind="drive_file_metadata_read_v1",
+        provider_origin="https://www.googleapis.com",
+        metadata_endpoint_url=(
+            "https://www.googleapis.com/drive/v3/files/missing-item"
+            "?supportsAllDrives=true&fields=id%2Cname%2CmimeType%2Csize"
+            "%2CmodifiedTime%2Cparents%2Cmd5Checksum%2Cversion"
+        ),
+        field_projection=(
+            "id,name,mimeType,size,modifiedTime,parents,md5Checksum,version"
+        ),
+    )
+    exact = _ExactMetadataAdapter(runtime, "google_drive").read_item_metadata(
+        locator,
+        exact_policy,
+    )
+    assert exact.found is False
+    assert exact.failure_code == "not_found"
 
     read_policy = RemoteFileContentReadPolicy(
         provider_kind="google_drive",
