@@ -5,6 +5,7 @@ import pytest
 from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import SQLAlchemyError
 
 import app.modules.external_document_sources.observation_refresh_admission_execution_service as aj_service
 from app.modules.documents.malware import (
@@ -984,3 +985,106 @@ def test_phase_aj_tampered_ai_authorization_fails_before_storage_read(
             == 0
         )
     assert (store.head_calls, store.get_calls) == staged_calls_before
+
+
+def test_phase_aj_database_failure_rolls_back_document_and_canonical_storage(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (
+        actor_id,
+        profile_id,
+        organization_id,
+        _claim_id,
+        prior_document_id,
+        _refresh_id,
+        authorization_id,
+        binding_id,
+        _metadata_adapter,
+        _read_adapter,
+        _store,
+    ) = _authorized_refresh(monkeypatch, "aj-db-rollback")
+
+    class _LocalStore:
+        def __init__(self):
+            self.objects: dict[str, bytes] = {}
+            self.deleted: list[str] = []
+
+        def save_bytes(self, payload: bytes, storage_key: str):
+            self.objects[storage_key] = bytes(payload)
+
+            class _Stored:
+                file_hash = __import__("hashlib").sha256(payload).hexdigest()
+                file_size_bytes = len(payload)
+
+            return _Stored()
+
+        def path_for(self, storage_key: str):
+            return storage_key
+
+        def promote(self, source_key: str, destination_key: str):
+            self.objects[destination_key] = self.objects.pop(source_key)
+
+        def delete_physical(self, storage_key: str):
+            self.deleted.append(storage_key)
+            self.objects.pop(storage_key, None)
+
+    local_store = _LocalStore()
+    monkeypatch.setattr(aj_service, "_storage", lambda: local_store)
+    monkeypatch.setattr(aj_service.settings, "malware_scan_enabled", True)
+    monkeypatch.setattr(
+        aj_service,
+        "validate_file_signature",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        aj_service,
+        "scan_file",
+        lambda *_args, **_kwargs: MalwareScanResult(
+            verdict=MalwareScanVerdict.CLEAN
+        ),
+    )
+
+    real_transition = aj_service._establish_next_document_version
+
+    def _fail_after_transition(*args, **kwargs):
+        real_transition(*args, **kwargs)
+        raise SQLAlchemyError("forced post-transition database failure")
+
+    monkeypatch.setattr(
+        aj_service,
+        "_establish_next_document_version",
+        _fail_after_transition,
+    )
+
+    with TestingSessionLocal() as db:
+        with pytest.raises(
+            ExternalDocumentSourceConflictError,
+            match="could not be committed safely",
+        ):
+            execute_observation_refresh_admission(
+                db,
+                organization_id=organization_id,
+                profile_id=profile_id,
+                binding_id=binding_id,
+                authorization_id=authorization_id,
+                executed_by_id=actor_id,
+                request_key="aj-db-rollback-exec",
+                execution_reason=_EXEC_REASON,
+            )
+        db.rollback()
+
+        prior = db.get(Document, prior_document_id)
+        assert prior is not None
+        assert prior.is_current is True
+        assert prior.superseded_at is None
+        assert prior.superseded_by_id is None
+        assert db.query(Document).count() == 1
+        assert (
+            db.query(
+                ExternalDocumentSourceObservationRefreshAdmissionExecution
+            ).count()
+            == 0
+        )
+
+    assert local_store.objects == {}
+    assert len(local_store.deleted) == 1
