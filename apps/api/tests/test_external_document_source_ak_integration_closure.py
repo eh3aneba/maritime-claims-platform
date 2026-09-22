@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from uuid import UUID
-
 import pytest
 
 from app.modules.documents.models import Document
