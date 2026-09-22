@@ -817,3 +817,170 @@ def test_phase_aj_database_failure_rolls_back_prior_and_cleans_promoted_object(
             ).count()
             == 0
         )
+
+
+def test_phase_aj_signature_mismatch_rolls_back_before_canonical_admission(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (
+        actor_id,
+        profile_id,
+        organization_id,
+        _claim_id,
+        prior_document_id,
+        _refresh_id,
+        authorization_id,
+        binding_id,
+        _metadata_adapter,
+        _read_adapter,
+        _store,
+    ) = _authorized_refresh(monkeypatch, "aj-signature")
+
+    monkeypatch.setattr(aj_service.settings, "malware_scan_enabled", True)
+
+    def _reject_signature(*_args, **_kwargs):
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="signature mismatch",
+        )
+
+    monkeypatch.setattr(aj_service, "validate_file_signature", _reject_signature)
+
+    with TestingSessionLocal() as db:
+        with pytest.raises(
+            ExternalDocumentSourceConflictError,
+            match="do not match the validated file type",
+        ):
+            execute_observation_refresh_admission(
+                db,
+                organization_id=organization_id,
+                profile_id=profile_id,
+                binding_id=binding_id,
+                authorization_id=authorization_id,
+                executed_by_id=actor_id,
+                request_key="aj-signature-exec",
+                execution_reason=_EXEC_REASON,
+            )
+        db.rollback()
+        prior = db.get(Document, prior_document_id)
+        assert prior is not None and prior.is_current is True
+        assert db.query(Document).count() == 1
+        assert (
+            db.query(
+                ExternalDocumentSourceObservationRefreshAdmissionExecution
+            ).count()
+            == 0
+        )
+
+
+def test_phase_aj_malware_scanner_error_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (
+        actor_id,
+        profile_id,
+        organization_id,
+        _claim_id,
+        prior_document_id,
+        _refresh_id,
+        authorization_id,
+        binding_id,
+        _metadata_adapter,
+        _read_adapter,
+        _store,
+    ) = _authorized_refresh(monkeypatch, "aj-scanner-error")
+
+    monkeypatch.setattr(aj_service.settings, "malware_scan_enabled", True)
+    monkeypatch.setattr(
+        aj_service,
+        "validate_file_signature",
+        lambda *_args, **_kwargs: None,
+    )
+
+    from app.modules.documents.malware import MalwareScannerError
+
+    def _scanner_error(*_args, **_kwargs):
+        raise MalwareScannerError("test scanner unavailable")
+
+    monkeypatch.setattr(aj_service, "scan_file", _scanner_error)
+
+    with TestingSessionLocal() as db:
+        with pytest.raises(
+            ExternalDocumentSourceConflictError,
+            match="could not return an authoritative verdict",
+        ):
+            execute_observation_refresh_admission(
+                db,
+                organization_id=organization_id,
+                profile_id=profile_id,
+                binding_id=binding_id,
+                authorization_id=authorization_id,
+                executed_by_id=actor_id,
+                request_key="aj-scanner-error-exec",
+                execution_reason=_EXEC_REASON,
+            )
+        db.rollback()
+        prior = db.get(Document, prior_document_id)
+        assert prior is not None and prior.is_current is True
+        assert db.query(Document).count() == 1
+        assert (
+            db.query(
+                ExternalDocumentSourceObservationRefreshAdmissionExecution
+            ).count()
+            == 0
+        )
+
+
+def test_phase_aj_tampered_ai_authorization_fails_before_storage_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (
+        actor_id,
+        profile_id,
+        organization_id,
+        _claim_id,
+        prior_document_id,
+        _refresh_id,
+        authorization_id,
+        binding_id,
+        _metadata_adapter,
+        _read_adapter,
+        store,
+    ) = _authorized_refresh(monkeypatch, "aj-auth-tamper")
+    _enable_clean_aj(monkeypatch)
+
+    with TestingSessionLocal() as db:
+        authorization = db.get(
+            ExternalDocumentSourceObservationRefreshAdmissionAuthorization,
+            authorization_id,
+        )
+        assert authorization is not None
+        authorization.authorization_hash = "0" * 64
+        db.commit()
+
+    staged_calls_before = (store.head_calls, store.get_calls)
+    with TestingSessionLocal() as db:
+        with pytest.raises(
+            ExternalDocumentSourceConflictError,
+            match="cryptographic integrity failed",
+        ):
+            execute_observation_refresh_admission(
+                db,
+                organization_id=organization_id,
+                profile_id=profile_id,
+                binding_id=binding_id,
+                authorization_id=authorization_id,
+                executed_by_id=actor_id,
+                request_key="aj-auth-tamper-exec",
+                execution_reason=_EXEC_REASON,
+            )
+        db.rollback()
+        prior = db.get(Document, prior_document_id)
+        assert prior is not None and prior.is_current is True
+        assert (
+            db.query(
+                ExternalDocumentSourceObservationRefreshAdmissionExecution
+            ).count()
+            == 0
+        )
+    assert (store.head_calls, store.get_calls) == staged_calls_before
