@@ -61,6 +61,8 @@ from app.modules.external_document_sources.service import (
     ExternalDocumentSourceConflictError,
     ExternalDocumentSourceNotFoundError,
     ExternalDocumentSourceValidationError,
+    _ensure_profile_integrity,
+    _get_profile,
 )
 
 
@@ -666,6 +668,22 @@ def execute_observation_refresh_admission(
             "request_key is already bound to another observation refresh admission"
         )
 
+    profile = _get_profile(
+        db,
+        organization_id=organization_id,
+        profile_id=profile_id,
+        for_update=False,
+    )
+    _ensure_profile_integrity(db, profile)
+    if (
+        profile.status != "active"
+        or profile.provider_kind != authorization.provider_kind
+        or profile.profile_hash != authorization.profile_hash
+    ):
+        raise ExternalDocumentSourceConflictError(
+            "Observation refresh admission source profile authority drifted"
+        )
+
     binding = _binding_for_update(
         db,
         organization_id=organization_id,
@@ -680,7 +698,8 @@ def execute_observation_refresh_admission(
         expected_current_document_id=authorization.expected_prior_document_id,
     )
     if (
-        binding.claim_id != authorization.claim_id
+        binding.status != "active"
+        or binding.claim_id != authorization.claim_id
         or binding.document_family_id != authorization.document_family_id
         or binding.provider_kind != authorization.provider_kind
         or binding.profile_hash != authorization.profile_hash
