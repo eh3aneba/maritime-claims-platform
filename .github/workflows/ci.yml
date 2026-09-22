@@ -347,6 +347,7 @@ jobs:
           python tests/browser/technical_real_acceptance_e2e.py
           python tests/browser/recovery_decision_lineage_e2e.py
           python tests/browser/recovery_claim_pack_reporting_e2e.py
+          python tests/browser/external_evidence_operator_e2e.py
           python tests/browser/assessment_real_acceptance_e2e.py
           python tests/browser/correspondence_integrity_e2e.py
           python tests/browser/correspondence_claim_pack_final_acceptance_e2e.py
