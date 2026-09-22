@@ -32,6 +32,9 @@ from app.modules.external_document_sources.due_tick_dispatch_service import (
 from app.modules.external_document_sources.due_tick_observation_models import (
     ExternalDocumentSourceDueTickObservationExecution,
 )
+from app.modules.external_document_sources.evidence_family_binding_models import (
+    ExternalDocumentSourceEvidenceFamilyBinding,
+)
 from app.modules.external_document_sources.models import ExternalDocumentSourceProfile
 from app.modules.external_document_sources.observation_refresh_admission_authorization_models import (
     ExternalDocumentSourceObservationRefreshAdmissionAuthorization,
@@ -383,13 +386,7 @@ def test_phase_ak_google_drive_changed_recurring_loop_reaches_exact_n_plus_one(
     prior_document_id = UUID(initial_execution["document_id"])
 
     with TestingSessionLocal() as db:
-        binding = db.get(
-            __import__(
-                "app.modules.external_document_sources.evidence_family_binding_models",
-                fromlist=["ExternalDocumentSourceEvidenceFamilyBinding"],
-            ).ExternalDocumentSourceEvidenceFamilyBinding,
-            binding_id,
-        )
+        binding = db.get(ExternalDocumentSourceEvidenceFamilyBinding, binding_id)
         assert binding is not None
         assert hashlib.sha256(_RAW_ITEM_ID.encode("utf-8")).hexdigest() == binding.stable_source_item_hash
 
@@ -441,13 +438,7 @@ def test_phase_ak_google_drive_changed_recurring_loop_reaches_exact_n_plus_one(
         google_profile = db.get(ExternalDocumentSourceProfile, google_profile_id)
         assert google_profile is not None
         assert google_profile.status == "active"
-        binding = db.get(
-            __import__(
-                "app.modules.external_document_sources.evidence_family_binding_models",
-                fromlist=["ExternalDocumentSourceEvidenceFamilyBinding"],
-            ).ExternalDocumentSourceEvidenceFamilyBinding,
-            binding_id,
-        )
+        binding = db.get(ExternalDocumentSourceEvidenceFamilyBinding, binding_id)
         assert binding is not None
         binding.profile_id = google_profile_id
         binding.provider_kind = "google_drive"
