@@ -332,3 +332,178 @@ def test_live_google_drive_contract_is_read_only_and_version_stable(monkeypatch)
     assert secret_marker not in rendered
     assert access_token not in rendered
     assert all(method == "GET" for method, url in calls if "www.googleapis.com/drive/" in url)
+
+
+
+def test_live_sharepoint_failure_mapping_is_bounded(monkeypatch) -> None:
+    secret_marker = "ak-sharepoint-failure-secret"
+    access_token = "ak-sharepoint-failure-token"
+    secret = json.dumps(
+        {
+            "tenant_domain": "contoso.onmicrosoft.com",
+            "client_id": "11111111-1111-1111-1111-111111111111",
+            "client_secret": secret_marker,
+        }
+    )
+    calls: list[tuple[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append((request.method, str(request.url)))
+        url = str(request.url)
+        if "vault.azure.net/secrets/graph-reader" in url:
+            return httpx.Response(200, json={"value": secret})
+        if "login.microsoftonline.com/contoso.onmicrosoft.com/oauth2/v2.0/token" in url:
+            return httpx.Response(200, json={"access_token": access_token, "expires_in": 3600})
+        if request.url.path == "/v1.0/organization":
+            return httpx.Response(401, json={"error": {"code": "InvalidAuthenticationToken"}})
+        if "/root/children?" in url:
+            return httpx.Response(429, headers={"retry-after": "30"})
+        if url.startswith("https://graph.microsoft.com/v1.0/sites/site-1/drives/lib-1/items/missing-item?"):
+            return httpx.Response(404, json={"error": {"code": "itemNotFound"}})
+        raise AssertionError(f"unexpected request: {request.method} {url}")
+
+    monkeypatch.setenv("AZURE_KEY_VAULT_ACCESS_TOKEN", "azure-workload-token")
+    runtime = LiveExternalEvidenceRuntime(transport=httpx.MockTransport(handler))
+    locator = CredentialReferenceLocator(
+        backend="azure_key_vault",
+        namespace="mcrivault",
+        name="graph-reader",
+        version="7",
+    )
+
+    health_policy = ProviderClientHealthPolicy(
+        provider_kind="sharepoint",
+        token_flow_kind="client_credentials",
+        client_kind="microsoft_graph_transient_v1",
+        health_operation_kind="graph_organization_health",
+        provider_origin="https://graph.microsoft.com",
+        health_endpoint_url="https://graph.microsoft.com/v1.0/organization?$select=id",
+        audience_kind="microsoft_graph_default",
+    )
+    health = _ProviderHealthAdapter(runtime, "sharepoint").qualify(locator, health_policy)
+    assert health.healthy is False
+    assert health.failure_code == "unauthorized"
+
+    list_policy = RemoteMetadataListingPolicy(
+        provider_kind="sharepoint",
+        client_kind="microsoft_graph_transient_v1",
+        listing_operation_kind="graph_drive_children_metadata_v1",
+        provider_origin="https://graph.microsoft.com",
+        listing_endpoint_url=(
+            "https://graph.microsoft.com/v1.0/sites/site-1/drives/lib-1/root/children"
+            "?%24select=id%2Cname%2Csize&%24top=100"
+        ),
+        field_projection="id,name,size",
+    )
+    listed = _MetadataListAdapter(runtime, "sharepoint").list_metadata(locator, list_policy)
+    assert listed.listed is False
+    assert listed.failure_code == "endpoint_unavailable"
+
+    read_policy = RemoteFileContentReadPolicy(
+        provider_kind="sharepoint",
+        client_kind="microsoft_graph_transient_v1",
+        read_operation_kind="graph_drive_item_content_read_v1",
+        provider_origin="https://graph.microsoft.com",
+        content_endpoint_url=(
+            "https://graph.microsoft.com/v1.0/sites/site-1/drives/lib-1/items/missing-item/content"
+        ),
+        redirect_policy_kind="provider_internal_https_one_hop_v1",
+        max_redirects=1,
+    )
+    read = _ContentReadAdapter(runtime, "sharepoint").read_content(locator, read_policy)
+    assert read.read is False
+    assert read.failure_code == "not_found"
+
+    rendered = repr((health, listed, read))
+    assert secret_marker not in rendered
+    assert access_token not in rendered
+    assert all(method == "GET" for method, url in calls if "graph.microsoft.com" in url)
+
+
+def test_live_google_drive_failure_mapping_is_bounded(monkeypatch) -> None:
+    private_key = _private_key()
+    secret_marker = "ak-google-failure-key-id"
+    service_account = json.dumps(
+        {
+            "client_email": "mcri-reader@example-project.iam.gserviceaccount.com",
+            "private_key": private_key,
+            "private_key_id": secret_marker,
+        }
+    )
+    encoded_secret = base64.b64encode(service_account.encode()).decode()
+    access_token = "ak-google-failure-token"
+    calls: list[tuple[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append((request.method, str(request.url)))
+        url = str(request.url)
+        if "secretmanager.googleapis.com" in url:
+            return httpx.Response(200, json={"payload": {"data": encoded_secret}})
+        if url == "https://oauth2.googleapis.com/token":
+            return httpx.Response(200, json={"access_token": access_token, "expires_in": 3600})
+        if request.url.path == "/drive/v3/about":
+            return httpx.Response(401, json={"error": {"code": 401}})
+        if url.startswith("https://www.googleapis.com/drive/v3/files?") and "q=" in url:
+            return httpx.Response(503, json={"error": {"code": 503}})
+        if url.startswith("https://www.googleapis.com/drive/v3/files/missing-item?fields="):
+            return httpx.Response(404, json={"error": {"code": 404}})
+        raise AssertionError(f"unexpected request: {request.method} {url}")
+
+    monkeypatch.setenv("GOOGLE_CLOUD_ACCESS_TOKEN", "gcp-workload-token")
+    runtime = LiveExternalEvidenceRuntime(transport=httpx.MockTransport(handler))
+    locator = CredentialReferenceLocator(
+        backend="gcp_secret_manager",
+        namespace="example-project",
+        name="drive-reader",
+        version="3",
+    )
+
+    health_policy = ProviderClientHealthPolicy(
+        provider_kind="google_drive",
+        token_flow_kind="jwt_bearer",
+        client_kind="google_drive_transient_v3",
+        health_operation_kind="drive_about_health",
+        provider_origin="https://www.googleapis.com",
+        health_endpoint_url="https://www.googleapis.com/drive/v3/about?fields=user(permissionId)",
+        audience_kind="google_drive_readonly",
+    )
+    health = _ProviderHealthAdapter(runtime, "google_drive").qualify(locator, health_policy)
+    assert health.healthy is False
+    assert health.failure_code == "unauthorized"
+
+    list_policy = RemoteMetadataListingPolicy(
+        provider_kind="google_drive",
+        client_kind="google_drive_transient_v3",
+        listing_operation_kind="drive_files_list_metadata_v1",
+        provider_origin="https://www.googleapis.com",
+        listing_endpoint_url=(
+            "https://www.googleapis.com/drive/v3/files?"
+            "q=%27folder-1%27+in+parents&fields=files"
+        ),
+        field_projection="files(id,name,mimeType,size,modifiedTime,parents,md5Checksum,version)",
+    )
+    listed = _MetadataListAdapter(runtime, "google_drive").list_metadata(locator, list_policy)
+    assert listed.listed is False
+    assert listed.failure_code == "endpoint_unavailable"
+
+    read_policy = RemoteFileContentReadPolicy(
+        provider_kind="google_drive",
+        client_kind="google_drive_transient_v3",
+        read_operation_kind="drive_file_media_read_v1",
+        provider_origin="https://www.googleapis.com",
+        content_endpoint_url=(
+            "https://www.googleapis.com/drive/v3/files/missing-item"
+            "?alt=media&supportsAllDrives=true"
+        ),
+        redirect_policy_kind="no_redirects_v1",
+        max_redirects=0,
+    )
+    read = _ContentReadAdapter(runtime, "google_drive").read_content(locator, read_policy)
+    assert read.read is False
+    assert read.failure_code == "not_found"
+
+    rendered = repr((health, listed, read))
+    assert private_key not in rendered
+    assert secret_marker not in rendered
+    assert access_token not in rendered
+    assert all(method == "GET" for method, url in calls if "www.googleapis.com/drive/" in url)
