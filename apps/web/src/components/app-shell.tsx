@@ -146,7 +146,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   function navLinks(onNavigate?: () => void) {
-    return nav.map((item) => {
+    return nav.filter((item) => item.href !== "/external-evidence" || user.role === "admin").map((item) => {
       const active = isActive(item.href);
       return (
         <Link
