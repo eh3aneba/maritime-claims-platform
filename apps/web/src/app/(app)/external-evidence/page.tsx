@@ -104,6 +104,10 @@ function badge(value: string | null, fallback = "not recorded") {
   return (value ?? fallback).replaceAll("_", " ");
 }
 
+function processingReleaseLabel(value: string | null) {
+  return value === "active" ? "released" : badge(value, "released");
+}
+
 function requestKey(prefix: string) {
   return `ak-${prefix}-${crypto.randomUUID()}`;
 }
@@ -352,7 +356,7 @@ export default function ExternalEvidencePage() {
                         {row.version_history.length ? row.version_history.map((version) => (
                           <div key={version.document_id} className="text-xs text-slate-600">
                             v{version.version_number} · {version.is_current ? "current" : "historical"} ·
-                            {" "}{version.processing_release_required ? "Phase-Z required" : badge(version.processing_release_status, "released")}
+                            {" "}{version.processing_release_required ? "Phase-Z required" : processingReleaseLabel(version.processing_release_status)}
                           </div>
                         )) : <div className="text-xs text-slate-400">No lineage rows loaded.</div>}
                       </div>
