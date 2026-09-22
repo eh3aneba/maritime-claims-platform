@@ -31,6 +31,9 @@ from app.modules.external_document_sources.observation_review_decision_models im
 from app.modules.external_document_sources.observation_review_handoff_models import (
     ExternalDocumentSourceObservationReviewHandoff,
 )
+from app.modules.external_document_sources.operator_read_model_service import (
+    build_external_document_source_operator_overview,
+)
 from app.modules.external_document_sources.recurring_observation_schedule_models import (
     ExternalDocumentSourceRecurringObservationSchedule,
 )
@@ -132,6 +135,17 @@ def test_phase_ak_changed_recurring_loop_closes_through_exact_n_plus_one(
         assert admission_authorizations[0].remote_delete_performed is False
         assert admission_authorizations[0].ai_executed is False
 
+        before_admission = build_external_document_source_operator_overview(
+            db,
+            organization_id=organization_id,
+        )
+        family_before_admission = next(
+            row for row in before_admission.families if row.binding_id == binding_id
+        )
+        assert family_before_admission.refresh_execution_required is False
+        assert family_before_admission.admission_authorization_required is False
+        assert family_before_admission.admission_execution_required is True
+
         execution, outcome = execute_observation_refresh_admission(
             db,
             organization_id=organization_id,
@@ -174,6 +188,21 @@ def test_phase_ak_changed_recurring_loop_closes_through_exact_n_plus_one(
             == 1
         )
         assert db.query(DocumentProcessingJob).count() == 0
+
+        after_admission = build_external_document_source_operator_overview(
+            db,
+            organization_id=organization_id,
+        )
+        family_after_admission = next(
+            row for row in after_admission.families if row.binding_id == binding_id
+        )
+        assert family_after_admission.current_document_id == execution.new_document_id
+        assert family_after_admission.current_version_number == 2
+        assert family_after_admission.refresh_execution_required is False
+        assert family_after_admission.admission_authorization_required is False
+        assert family_after_admission.admission_execution_required is False
+        assert family_after_admission.processing_release_required is True
+
         execution_id = execution.id
         new_document_id = execution.new_document_id
 
