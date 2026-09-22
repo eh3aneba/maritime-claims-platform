@@ -220,7 +220,7 @@ def main() -> None:
 
         page.get_by_role("button", name="AH · Read & stage exact refresh").click()
         expect(page.get_by_role("button", name="AI · Authorize exact admission")).to_be_visible()
-        expect(page.get_by_text("No external AI was run.", exact=False)).to_be_visible()
+        expect(page.get_by_text("does not execute external artificial intelligence.", exact=False)).to_be_visible()
 
         page.get_by_role("button", name="AI · Authorize exact admission").click()
         expect(page.get_by_role("button", name="AJ · Admit canonical N+1")).to_be_visible()
