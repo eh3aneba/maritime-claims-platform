@@ -131,6 +131,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
   if (!user) return null;
 
+  const canViewExternalEvidence = user.role === "admin";
   const roleKey = roleKeys[user.role];
   const roleLabel = roleKey ? t(roleKey) : user.role.replaceAll("_", " ");
   const sidebarSide = direction === "rtl" ? "right-0 border-l" : "left-0 border-r";
@@ -146,7 +147,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   function navLinks(onNavigate?: () => void) {
-    return nav.filter((item) => item.href !== "/external-evidence" || user.role === "admin").map((item) => {
+    return nav.filter((item) => item.href !== "/external-evidence" || canViewExternalEvidence).map((item) => {
       const active = isActive(item.href);
       return (
         <Link
