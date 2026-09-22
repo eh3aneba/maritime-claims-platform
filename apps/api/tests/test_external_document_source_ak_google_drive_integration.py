@@ -5,6 +5,7 @@ from uuid import UUID
 
 import pytest
 
+from app.core.config import get_settings
 from app.modules.documents.models import Document
 from app.modules.external_document_sources.change_detection_service import (
     ExactItemMetadataResult,
@@ -806,7 +807,7 @@ def test_phase_ak_google_drive_changed_recurring_loop_reaches_exact_n_plus_one(
         handoff, projected = project_observation_review_handoff(
             db,
             observation_execution_id=observation.id,
-            projector_id="ak-google-review-projector-v1",
+            projector_id=get_settings().external_evidence_review_projector_id,
             now=datetime(2026, 9, 22, 2, 1, tzinfo=UTC),
         )
         assert handoff is not None

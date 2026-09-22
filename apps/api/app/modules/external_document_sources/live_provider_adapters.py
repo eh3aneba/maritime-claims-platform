@@ -48,7 +48,7 @@ from app.modules.external_document_sources.token_acquisition_execution_service i
 _MAX_SECRET_BYTES = 65536
 _AZURE_VAULT_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-]{1,22}[A-Za-z0-9]$")
 _SAFE_GCP_PROJECT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,126}[A-Za-z0-9]$|^[A-Za-z0-9]$")
-_SAFE_TENANT_DOMAIN = re.compile(r"^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
+_SAFE_TENANT_DOMAIN = re.compile(r"^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 _SHAREPOINT_REDIRECT_SUFFIXES = (
     ".sharepoint.com",
     ".sharepoint-df.com",
