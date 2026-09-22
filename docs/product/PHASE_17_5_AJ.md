@@ -56,7 +56,7 @@ AJ reuses the Phase-AA canonical family transition rules:
 - exactly one current non-deleted Document;
 - vN remains historical and immutable.
 
-Concurrent consumers serialize on the exact AI authorization and the canonical family/current Document boundary.
+Concurrent consumers serialize on the exact AI authorization and the canonical family/current Document boundary. AJ does not mutate the historical AI authorization row; its unique immutable execution row is the durable single-consumption proof.
 
 ## Replay
 
