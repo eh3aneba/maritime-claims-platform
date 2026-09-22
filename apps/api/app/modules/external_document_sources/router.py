@@ -14,6 +14,12 @@ from app.modules.external_document_sources.discovery_service import (
     list_external_document_source_discovery_items,
     list_external_document_source_discovery_receipts,
 )
+from app.modules.external_document_sources.operator_read_model_schemas import (
+    ExternalDocumentSourceOperatorOverviewRead,
+)
+from app.modules.external_document_sources.operator_read_model_service import (
+    build_external_document_source_operator_overview,
+)
 from app.modules.external_document_sources.schemas import (
     ExternalDocumentSourceDiscoveryItemRead,
     ExternalDocumentSourceDiscoveryReceiptRead,
@@ -359,6 +365,21 @@ def list_discovery_receipts_endpoint(
     except (ExternalDocumentSourceValidationError, ExternalDocumentSourceConflictError, ExternalDocumentSourceNotFoundError) as exc:
         _raise_service_error(exc)
     return [ExternalDocumentSourceDiscoveryReceiptRead.model_validate(receipt) for receipt in receipts]
+
+
+
+@router.get(
+    "/operator-overview",
+    response_model=ExternalDocumentSourceOperatorOverviewRead,
+)
+def get_operator_overview_endpoint(
+    db: Annotated[Session, Depends(get_db)],
+    current_user: ExternalDocumentSourceAdminMfa,
+) -> ExternalDocumentSourceOperatorOverviewRead:
+    return build_external_document_source_operator_overview(
+        db,
+        organization_id=current_user.organization_id,
+    )
 
 
 from app.modules.external_document_sources.connection_authorization_router import router as connection_authorization_router
