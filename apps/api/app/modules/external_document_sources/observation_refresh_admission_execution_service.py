@@ -787,7 +787,6 @@ def execute_observation_refresh_admission(
         try:
             validate_file_signature(local_storage, quarantine_key, suffix)
         except HTTPException as exc:
-            temp_exists = False
             raise ExternalDocumentSourceConflictError(
                 "Authorized refreshed bytes do not match the validated file type"
             ) from exc

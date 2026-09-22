@@ -838,6 +838,14 @@ def test_phase_aj_signature_mismatch_rolls_back_before_canonical_admission(
     ) = _authorized_refresh(monkeypatch, "aj-signature")
 
     monkeypatch.setattr(aj_service.settings, "malware_scan_enabled", True)
+    original_cleanup = aj_service._cleanup_local_storage
+    cleanup_calls: list[dict] = []
+
+    def _cleanup_spy(**kwargs):
+        cleanup_calls.append(dict(kwargs))
+        return original_cleanup(**kwargs)
+
+    monkeypatch.setattr(aj_service, "_cleanup_local_storage", _cleanup_spy)
 
     def _reject_signature(*_args, **_kwargs):
         raise HTTPException(
@@ -872,6 +880,10 @@ def test_phase_aj_signature_mismatch_rolls_back_before_canonical_admission(
             ).count()
             == 0
         )
+
+    assert len(cleanup_calls) == 1
+    assert cleanup_calls[0]["promoted"] is False
+    assert cleanup_calls[0]["temp_exists"] is True
 
 
 def test_phase_aj_malware_scanner_error_fails_closed(
