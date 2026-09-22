@@ -279,17 +279,25 @@ def build_external_document_source_operator_overview(
         admission = latest_admission.get(binding.id)
         refresh_failure = latest_failure_by_binding.get(binding.id)
 
+        refresh_authorization_is_current = (
+            decision is not None
+            and decision.decision_kind == "approve_refresh"
+            and refresh_authorization is not None
+            and refresh_authorization.decision_id == decision.id
+        )
         refresh_matches_current_authorization = (
-            refresh_authorization is not None
+            refresh_authorization_is_current
+            and refresh_authorization is not None
             and refresh is not None
             and refresh.authorization_id == refresh_authorization.id
         )
         refresh_execution_required = (
-            refresh_authorization is not None
+            refresh_authorization_is_current
             and not refresh_matches_current_authorization
         )
         admission_authorization_required = (
             refresh_matches_current_authorization
+            and refresh is not None
             and (
                 admission_auth is None
                 or admission_auth.refresh_execution_id != refresh.id
@@ -297,11 +305,13 @@ def build_external_document_source_operator_overview(
         )
         admission_auth_matches_current_refresh = (
             refresh_matches_current_authorization
+            and refresh is not None
             and admission_auth is not None
             and admission_auth.refresh_execution_id == refresh.id
         )
         admission_execution_required = (
             admission_auth_matches_current_refresh
+            and admission_auth is not None
             and (
                 admission is None
                 or admission.authorization_id != admission_auth.id
