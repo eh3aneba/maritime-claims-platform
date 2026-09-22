@@ -65,7 +65,7 @@ def test_live_sharepoint_contract_is_read_only_and_version_stable(monkeypatch) -
             body = request.content.decode()
             assert "client_secret=" in body
             return httpx.Response(200, json={"access_token": access_token, "expires_in": 3600})
-        if url == "https://graph.microsoft.com/v1.0/organization?%24select=id":
+        if request.url.path == "/v1.0/organization":
             assert request.headers["authorization"] == f"Bearer {access_token}"
             return httpx.Response(200, json={"value": [{"id": "org-1"}]})
         if "/root/children?" in url:
@@ -217,7 +217,7 @@ def test_live_google_drive_contract_is_read_only_and_version_stable(monkeypatch)
             body = request.content.decode()
             assert "assertion=" in body
             return httpx.Response(200, json={"access_token": access_token, "expires_in": 3600})
-        if url == "https://www.googleapis.com/drive/v3/about?fields=user(permissionId)":
+        if request.url.path == "/drive/v3/about":
             assert request.headers["authorization"] == f"Bearer {access_token}"
             return httpx.Response(200, json={"user": {"permissionId": "permission-1"}})
         if url.startswith("https://www.googleapis.com/drive/v3/files?"):
