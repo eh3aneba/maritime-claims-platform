@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.modules.audit.service import write_audit_log
-from app.modules.auth.dependencies import CurrentAuthContext, enforce_mfa_policy_for_context, require_roles
+from app.modules.auth.dependencies import CurrentAuthContext, enforce_current_mfa_for_context, enforce_mfa_policy_for_context, require_roles
 from app.modules.external_document_sources.discovery_service import (
     execute_external_document_source_discovery,
     get_external_document_source_discovery,
@@ -59,6 +59,22 @@ def require_external_document_source_admin_mfa(
 
 ExternalDocumentSourceAdminMfa = Annotated[User, Depends(require_external_document_source_admin_mfa)]
 ExternalDocumentSourceReader = Annotated[User, Depends(require_roles(UserRole.ADMIN))]
+
+
+def require_external_document_source_operator_admin_current_mfa(
+    context: CurrentAuthContext,
+    db: Annotated[Session, Depends(get_db)],
+) -> User:
+    if context.user.role != UserRole.ADMIN:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+    enforce_current_mfa_for_context(db, context=context)
+    return context.user
+
+
+ExternalDocumentSourceOperatorAdminCurrentMfa = Annotated[
+    User,
+    Depends(require_external_document_source_operator_admin_current_mfa),
+]
 
 
 def _raise_service_error(exc: Exception) -> None:
@@ -374,7 +390,7 @@ def list_discovery_receipts_endpoint(
 )
 def get_operator_overview_endpoint(
     db: Annotated[Session, Depends(get_db)],
-    current_user: ExternalDocumentSourceAdminMfa,
+    current_user: ExternalDocumentSourceOperatorAdminCurrentMfa,
 ) -> ExternalDocumentSourceOperatorOverviewRead:
     return build_external_document_source_operator_overview(
         db,
