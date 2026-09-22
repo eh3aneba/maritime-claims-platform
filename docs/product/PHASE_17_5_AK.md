@@ -31,21 +31,21 @@ Admin + current MFA only. The response composes existing durable facts:
 - latest unchanged/changed/missing observation;
 - unresolved changed/missing handoff;
 - latest human review decision;
-- refresh/AH/AJ state;
+- AG review, AH exact refresh/staging, AI admission-authorization and AJ admission state;
 - canonical current N/N+1 version;
 - exact-current-document Phase-Z release requirement.
 
 The read model is non-authoritative and performs no mutation.
 
 ## Operator UI
-`/external-evidence` presents the same state in the protected application shell and exposes filters for human review and Phase-Z-required families.
+`/external-evidence` presents the same state in the protected application shell, renders current + historical version lineage, exposes filters for human review and Phase-Z-required families, and provides separate governed controls for AG review, AH exact refresh/staging, AI admission authorization and AJ canonical N+1 admission. Each mutation requires an explicit human audit reason of at least 20 characters and its own request key; there is deliberately no one-click sync/admit path.
 
 ## Security invariants
 - provider writes/deletes: prohibited;
 - raw credentials/tokens/provider response bodies: transient only;
 - changed provider content: never automatically admitted;
 - missing provider content: never automatically deletes canonical Evidence;
-- AG, refresh, AH, AJ and Phase-Z: separate;
+- AG, AH, AI, AJ and Phase-Z: separate;
 - AJ: no processing release inheritance;
 - external AI: independently governed;
 - tenant isolation + current MFA: preserved.
@@ -70,5 +70,5 @@ AK uses existing durable tables. The operator surface is derived at request time
 - zero provider write/delete;
 - zero secret/token leakage;
 - zero external-AI execution from this chain;
-- frontend build/lint/tests;
+- browser E2E proves AG → AH → AI → AJ as four distinct mutations and preserves N/N+1 lineage;\n- frontend build/lint/tests;
 - full backend, Postgres concurrency, deployment-policy, performance and supply-chain gates on exact PR head.
