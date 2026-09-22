@@ -59,6 +59,10 @@ from app.modules.external_document_sources.observation_refresh_admission_authori
     ExternalDocumentSourceObservationRefreshAdmissionAuthorization,
     ExternalDocumentSourceObservationRefreshAdmissionAuthorizationReceipt,
 )
+from app.modules.external_document_sources.observation_refresh_admission_execution_models import (
+    ExternalDocumentSourceObservationRefreshAdmissionExecution,
+    ExternalDocumentSourceObservationRefreshAdmissionReceipt,
+)
 from app.modules.external_document_sources.due_tick_dispatch_models import (
     ExternalDocumentSourceDueTickDispatch,
     ExternalDocumentSourceDueTickDispatchReceipt,
@@ -161,6 +165,7 @@ from app.modules.external_document_sources import recurring_observation_schedule
 from app.modules.external_document_sources import observation_review_decision_router as _observation_review_decision_router  # noqa: F401,E402
 from app.modules.external_document_sources import observation_refresh_execution_router as _observation_refresh_execution_router  # noqa: F401,E402
 from app.modules.external_document_sources import observation_refresh_admission_authorization_router as _observation_refresh_admission_authorization_router  # noqa: F401,E402
+from app.modules.external_document_sources import observation_refresh_admission_execution_router as _observation_refresh_admission_execution_router  # noqa: F401,E402
 from app.modules.external_document_sources import successor_change_detection_router as _successor_change_detection_router  # noqa: F401,E402
 from app.modules.external_document_sources import successor_versioned_restaging_router as _successor_versioned_restaging_router  # noqa: F401,E402
 from app.modules.external_document_sources import sync_checkpoint_router as _sync_checkpoint_router  # noqa: F401,E402
@@ -199,6 +204,8 @@ __all__ = [
     "ExternalDocumentSourceObservationRefreshReceipt",
     "ExternalDocumentSourceObservationRefreshAdmissionAuthorization",
     "ExternalDocumentSourceObservationRefreshAdmissionAuthorizationReceipt",
+    "ExternalDocumentSourceObservationRefreshAdmissionExecution",
+    "ExternalDocumentSourceObservationRefreshAdmissionReceipt",
     "ExternalDocumentSourceDueTickDispatch",
     "ExternalDocumentSourceDueTickDispatchReceipt",
     "ExternalDocumentSourceDueTickDispatchConsumption",
