@@ -272,7 +272,10 @@ def test_live_google_drive_contract_is_read_only_and_version_stable(monkeypatch)
                     ]
                 },
             )
-        if url.startswith("https://www.googleapis.com/drive/v3/files/drive-item-1?fields="):
+        if (
+            url.startswith("https://www.googleapis.com/drive/v3/files/drive-item-1?")
+            and "alt=media" not in url
+        ):
             return httpx.Response(
                 200,
                 json={
@@ -529,7 +532,7 @@ def test_live_google_drive_failure_mapping_is_bounded(monkeypatch) -> None:
             return httpx.Response(401, json={"error": {"code": 401}})
         if url.startswith("https://www.googleapis.com/drive/v3/files?") and "q=" in url:
             return httpx.Response(503, json={"error": {"code": 503}})
-        if url.startswith("https://www.googleapis.com/drive/v3/files/missing-item?fields="):
+        if url.startswith("https://www.googleapis.com/drive/v3/files/missing-item?"):
             return httpx.Response(404, json={"error": {"code": 404}})
         raise AssertionError(f"unexpected request: {request.method} {url}")
 
