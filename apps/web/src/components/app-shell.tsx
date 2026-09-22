@@ -14,6 +14,7 @@ const nav: Array<{ href: string; labelKey: TranslationKey; mark: string }> = [
   { href: "/dashboard", labelKey: "nav.dashboard", mark: "D" },
   { href: "/claims", labelKey: "nav.claims", mark: "C" },
   { href: "/claims-workbench", labelKey: "nav.claimsWorkbench", mark: "12J" },
+  { href: "/external-evidence", labelKey: "nav.externalEvidence", mark: "EX" },
   { href: "/ai-review", labelKey: "nav.aiReview", mark: "AI" },
   { href: "/ai-governance", labelKey: "nav.aiGovernance", mark: "G" },
   { href: "/ai-evaluation", labelKey: "nav.aiEvaluation", mark: "E" },
