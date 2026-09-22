@@ -422,7 +422,12 @@ def _review_run(db, run: AIRun, reviewer: User):
 def test_mt_orion_full_pilot_workflow(tmp_path):
     settings = get_settings()
     previous_storage = settings.local_storage_path
+    previous_malware_scan_enabled = settings.malware_scan_enabled
     settings.local_storage_path = str(tmp_path / "evidence-store")
+    # This synthetic pilot validates the claims workflow, not the ClamAV
+    # transport. Keep it independent of test-order mutations of the cached
+    # settings singleton; dedicated malware tests cover scan enforcement.
+    settings.malware_scan_enabled = False
     try:
         with TestingSessionLocal() as db:
             org = Organization(name="Pilot Marine Insurer", slug="pilot")
@@ -594,3 +599,4 @@ def test_mt_orion_full_pilot_workflow(tmp_path):
             assert len(list(db.scalars(select(EvidenceConflict).where(EvidenceConflict.claim_id == claim.id, EvidenceConflict.is_active.is_(True))))) >= 1
     finally:
         settings.local_storage_path = previous_storage
+        settings.malware_scan_enabled = previous_malware_scan_enabled
