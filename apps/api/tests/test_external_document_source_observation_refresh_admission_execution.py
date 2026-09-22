@@ -40,7 +40,7 @@ from app.modules.external_document_sources.service import (
 )
 from app.modules.processing.models import DocumentProcessingJob
 from tests.db_harness import TestingSessionLocal, client
-from tests.test_external_document_source_discovery import _seed_tenant
+from tests.test_external_document_source_discovery import _headers, _seed_tenant
 from tests.test_external_document_source_observation_refresh_admission_authorization import (
     _AUTH_REASON as _AI_AUTH_REASON,
     _completed_refresh,
@@ -571,9 +571,7 @@ def test_phase_aj_endpoint_requires_current_mfa_and_rejects_caller_authority(
 
     no_mfa = client.post(
         endpoint,
-        headers={
-            "X-Test-User-Id": str(actor_id),
-        },
+        headers=_headers(actor_id),
         json=payload,
     )
     assert no_mfa.status_code == 403, no_mfa.text
