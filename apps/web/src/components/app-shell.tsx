@@ -14,6 +14,7 @@ const nav: Array<{ href: string; labelKey: TranslationKey; mark: string }> = [
   { href: "/dashboard", labelKey: "nav.dashboard", mark: "D" },
   { href: "/claims", labelKey: "nav.claims", mark: "C" },
   { href: "/claims-workbench", labelKey: "nav.claimsWorkbench", mark: "12J" },
+  { href: "/external-evidence", labelKey: "nav.externalEvidence", mark: "EX" },
   { href: "/ai-review", labelKey: "nav.aiReview", mark: "AI" },
   { href: "/ai-governance", labelKey: "nav.aiGovernance", mark: "G" },
   { href: "/ai-evaluation", labelKey: "nav.aiEvaluation", mark: "E" },
@@ -130,6 +131,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
   if (!user) return null;
 
+  const canViewExternalEvidence = user.role === "admin";
   const roleKey = roleKeys[user.role];
   const roleLabel = roleKey ? t(roleKey) : user.role.replaceAll("_", " ");
   const sidebarSide = direction === "rtl" ? "right-0 border-l" : "left-0 border-r";
@@ -145,7 +147,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   function navLinks(onNavigate?: () => void) {
-    return nav.map((item) => {
+    return nav.filter((item) => item.href !== "/external-evidence" || canViewExternalEvidence).map((item) => {
       const active = isActive(item.href);
       return (
         <Link

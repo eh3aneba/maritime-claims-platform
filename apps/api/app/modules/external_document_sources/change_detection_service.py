@@ -63,7 +63,7 @@ _PROVIDER_POLICIES = {
         "client_kind": "google_drive_transient_v3",
         "operation_kind": "drive_file_metadata_read_v1",
         "provider_origin": "https://www.googleapis.com",
-        "field_projection": "id,name,mimeType,size,modifiedTime,parents,md5Checksum",
+        "field_projection": "id,name,mimeType,size,modifiedTime,parents,md5Checksum,version",
     },
 }
 

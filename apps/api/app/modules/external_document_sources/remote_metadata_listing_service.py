@@ -72,7 +72,7 @@ _PROVIDER_LIST_POLICIES = {
         "client_kind": "google_drive_transient_v3",
         "listing_operation_kind": "drive_files_list_metadata_v1",
         "provider_origin": "https://www.googleapis.com",
-        "field_projection": "files(id,name,mimeType,size,modifiedTime,parents,md5Checksum),nextPageToken",
+        "field_projection": "files(id,name,mimeType,size,modifiedTime,parents,md5Checksum,version),nextPageToken",
     },
 }
 
