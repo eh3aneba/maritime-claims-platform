@@ -142,8 +142,27 @@ jobs:
           PAYMENT_SETTLEMENT_POSTGRES_TEST: "1"
         run: pytest -q tests/test_payment_settlement_concurrency_postgres.py
 
+      - name: Admission execution — tune PostgreSQL test durability
+        if: ${{ matrix.group == 'admission-execution' }}
+        run: |
+          python - <<'PY'
+          import os
+          import psycopg
+
+          database_url = os.environ["DATABASE_URL"].replace(
+              "postgresql+psycopg://", "postgresql://", 1
+          )
+          with psycopg.connect(database_url, autocommit=True) as connection:
+              connection.execute(
+                  "ALTER DATABASE mcri_concurrency_ci SET synchronous_commit TO off"
+              )
+              connection.execute("ALTER SYSTEM SET checkpoint_timeout = '30min'")
+              connection.execute("ALTER SYSTEM SET max_wal_size = '2GB'")
+              connection.execute("SELECT pg_reload_conf()")
+          PY
+
       - name: Admission execution — refresh admission execution
         if: ${{ matrix.group == 'admission-execution' }}
         env:
           EXTERNAL_EVIDENCE_REFRESH_ADMISSION_EXEC_POSTGRES_TEST: "1"
-        run: pytest -q tests/test_external_document_source_observation_refresh_admission_execution_concurrency_postgres.py
+        run: pytest -q --durations=10 tests/test_external_document_source_observation_refresh_admission_execution_concurrency_postgres.py
