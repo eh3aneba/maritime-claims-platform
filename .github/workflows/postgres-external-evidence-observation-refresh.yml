@@ -4,9 +4,9 @@ on:
   pull_request:
     branches:
       - main
-  push:
-    branches:
-      - main
+    paths:
+      - "apps/api/**"
+      - ".github/workflows/postgres-external-evidence-observation-refresh.yml"
 
 permissions:
   contents: read

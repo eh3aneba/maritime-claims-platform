@@ -1,12 +1,15 @@
 name: Operational Performance Smoke
 
 on:
-  push:
-    branches:
-      - main
   pull_request:
     branches:
       - main
+    paths:
+      - "apps/api/**"
+      - "apps/web/**"
+      - "scripts/**"
+      - "docker-compose*.yml"
+      - ".github/workflows/performance-smoke.yml"
   workflow_dispatch:
 
 permissions:
