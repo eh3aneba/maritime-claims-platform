@@ -2,7 +2,10 @@ from uuid import UUID
 
 import pytest
 
-from app.modules.external_document_sources.models import ExternalDocumentSourceProfile
+from app.modules.external_document_sources.models import (
+    ExternalDocumentSourceDiscoveryRun,
+    ExternalDocumentSourceProfile,
+)
 from tests.db_harness import TestingSessionLocal, client, reset_database
 from tests.test_external_document_source_profiles import _headers, _seed_tenant
 
@@ -196,3 +199,32 @@ def test_sftp_profile_rejects_any_write_intent() -> None:
     )
     assert response.status_code == 422, response.text
     assert "read_only" in response.text
+
+
+def test_sftp_profile_cannot_enter_metadata_discovery_before_a_dedicated_sftp_adapter_exists() -> None:
+    _, requester_id, approver_id, _ = _seed_tenant("sftp-no-discovery")
+    requester_headers = _headers(requester_id)
+    approver_headers = _headers(approver_id)
+
+    requested = _request_sftp(requester_headers)
+    assert requested.status_code == 201, requested.text
+    profile_id = requested.json()["id"]
+
+    approved = client.post(
+        f"/api/v1/external-document-sources/profiles/{profile_id}/approve",
+        headers=approver_headers,
+        json={"reason": "Approve only the configuration profile; no SFTP network authority is granted."},
+    )
+    assert approved.status_code == 200, approved.text
+
+    discovery = client.post(
+        f"/api/v1/external-document-sources/profiles/{profile_id}/discoveries",
+        headers=requester_headers,
+        json={"request_key": "sftp-must-stay-offline", "max_results": 10},
+    )
+    assert discovery.status_code == 409, discovery.text
+    assert "adapter is not enabled" in discovery.text.lower()
+
+    with TestingSessionLocal() as db:
+        assert db.query(ExternalDocumentSourceDiscoveryRun).count() == 0
+
