@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+from datetime import UTC, datetime
+from time import perf_counter
 
 import pytest
 from sqlalchemy import create_engine, select, text
@@ -8,6 +10,11 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, sessionmaker
 
 import app.modules.external_document_sources.observation_refresh_admission_execution_service as aj_service
+from app.modules.external_document_sources.due_tick_dispatch_consumption_service import consume_due_tick_dispatch
+from app.modules.external_document_sources.observation_refresh_admission_authorization_service import authorize_observation_refresh_admission
+from app.modules.external_document_sources.observation_refresh_execution_service import execute_observation_refresh_authorization
+from app.modules.external_document_sources.observation_review_decision_service import decide_observation_review_handoff
+from app.modules.external_document_sources.observation_review_handoff_service import project_observation_review_handoff
 from app.modules.documents.malware import MalwareScanResult, MalwareScanVerdict
 from app.modules.documents.models import Document
 from app.modules.external_document_sources.observation_refresh_admission_authorization_models import (
@@ -19,12 +26,18 @@ from app.modules.external_document_sources.observation_refresh_admission_executi
 from app.modules.external_document_sources.observation_refresh_admission_execution_service import (
     execute_observation_refresh_admission,
 )
+from tests.db_harness import TestingSessionLocal
+from tests.test_external_document_source_due_tick_service_executor import _prepare
+from tests.test_external_document_source_observation_refresh_admission_authorization import (
+    _AUTH_REASON as _AI_AUTH_REASON,
+)
 from tests.test_external_document_source_observation_refresh_admission_execution import (
     _EXEC_REASON,
-    _authorized_refresh,
     setup_function as _aj_setup,
     teardown_function as _aj_teardown,
 )
+from tests.test_external_document_source_observation_refresh_execution import _refresh_io
+from tests.test_external_document_source_observation_review_decision import _changed_result
 
 
 pytestmark = pytest.mark.skipif(
@@ -42,6 +55,122 @@ def setup_function() -> None:
 
 def teardown_function() -> None:
     _aj_teardown()
+
+
+def _profiled_authorized_refresh(monkeypatch: pytest.MonkeyPatch, suffix: str):
+    timings: dict[str, float] = {}
+
+    started = perf_counter()
+    (
+        actor_id,
+        profile_id,
+        _schedule_id,
+        organization_id,
+        document_id,
+        dispatch_id,
+        metadata_adapter,
+    ) = _prepare(monkeypatch, suffix)
+    timings["prepare"] = perf_counter() - started
+
+    metadata_adapter.result = _changed_result()
+    started = perf_counter()
+    with TestingSessionLocal() as db:
+        observation, _consumption, outcome = consume_due_tick_dispatch(
+            db,
+            dispatch_id=dispatch_id,
+            service_executor_id="external-evidence-observer-v1",
+            now=datetime(2026, 9, 20, 0, 0, tzinfo=UTC),
+        )
+        assert outcome == "consumed"
+        handoff, projected = project_observation_review_handoff(
+            db,
+            observation_execution_id=observation.id,
+            projector_id="external-evidence-review-projector-v1",
+            now=datetime(2026, 9, 20, 0, 1, tzinfo=UTC),
+        )
+        assert handoff is not None
+        assert projected == "projected"
+        assert handoff.result_status == "changed"
+        handoff_id = handoff.id
+    timings["observe_and_handoff"] = perf_counter() - started
+
+    started = perf_counter()
+    with TestingSessionLocal() as db:
+        decision, refresh_authorization, outcome = decide_observation_review_handoff(
+            db,
+            organization_id=organization_id,
+            profile_id=profile_id,
+            handoff_id=handoff_id,
+            decided_by_id=actor_id,
+            request_key=f"{suffix}-approve",
+            decision_kind="approve_refresh",
+            decision_reason="Human reviewer authorizes one exact changed-item content refresh.",
+            now=datetime(2026, 9, 21, 0, 2, tzinfo=UTC),
+        )
+        assert outcome == "decided"
+        assert refresh_authorization is not None
+        refresh_authorization_id = refresh_authorization.id
+        _decision_id = decision.id
+    timings["review_decision"] = perf_counter() - started
+
+    started = perf_counter()
+    _body, read_adapter, store = _refresh_io()
+    timings["refresh_io_registration"] = perf_counter() - started
+
+    started = perf_counter()
+    with TestingSessionLocal() as db:
+        refresh, outcome = execute_observation_refresh_authorization(
+            db,
+            organization_id=organization_id,
+            profile_id=profile_id,
+            authorization_id=refresh_authorization_id,
+            requested_by_id=actor_id,
+            request_key=f"{suffix}-refresh",
+            request_reason=(
+                "Consume the approved changed-item refresh and stage the exact "
+                "remote content before any Evidence admission authority exists."
+            ),
+            now=datetime(2026, 9, 21, 1, 0, tzinfo=UTC),
+        )
+        assert outcome == "completed"
+        refresh_id = refresh.id
+    timings["refresh_execution"] = perf_counter() - started
+
+    started = perf_counter()
+    with TestingSessionLocal() as db:
+        authorization, outcome = authorize_observation_refresh_admission(
+            db,
+            organization_id=organization_id,
+            profile_id=profile_id,
+            refresh_execution_id=refresh_id,
+            authorized_by_id=actor_id,
+            request_key=f"{suffix}-ai-auth",
+            authorization_reason=_AI_AUTH_REASON,
+            now=datetime(2026, 9, 22, 1, 0, tzinfo=UTC),
+        )
+        assert outcome == "authorized"
+        authorization_id = authorization.id
+        binding_id = authorization.binding_id
+        claim_id = authorization.claim_id
+    timings["admission_authorization"] = perf_counter() - started
+
+    total = sum(timings.values())
+    timing_text = ", ".join(f"{name}={seconds:.3f}s" for name, seconds in timings.items())
+    print(f"AJ fixture timing: {timing_text}, total={total:.3f}s")
+
+    return (
+        actor_id,
+        profile_id,
+        organization_id,
+        claim_id,
+        document_id,
+        refresh_id,
+        authorization_id,
+        binding_id,
+        metadata_adapter,
+        read_adapter,
+        store,
+    )
 
 
 def _session_factory():
@@ -73,7 +202,7 @@ def test_concurrent_aj_consumers_serialize_on_exact_ai_authorization(
         _metadata_adapter,
         _read_adapter,
         _store,
-    ) = _authorized_refresh(monkeypatch, "aj-pg-race")
+    ) = _profiled_authorized_refresh(monkeypatch, "aj-pg-race")
 
     monkeypatch.setattr(aj_service.settings, "malware_scan_enabled", True)
     monkeypatch.setattr(
