@@ -60,7 +60,7 @@ class ExternalDocumentSourceProfile(UUIDPrimaryKeyMixin, TimestampMixin, _Extern
     __tablename__ = "external_document_source_profiles"
     __table_args__ = (
         UniqueConstraint("organization_id", "provider_kind", "config_hash", name="uq_ext_doc_source_scope"),
-        CheckConstraint("provider_kind IN ('sharepoint','google_drive')", name="ck_ext_doc_source_provider"),
+        CheckConstraint("provider_kind IN ('sharepoint','google_drive','sftp')", name="ck_ext_doc_source_provider"),
         CheckConstraint("status IN ('pending_second_approval','active','rejected','disabled')", name="ck_ext_doc_source_status"),
         CheckConstraint("requested_by_id <> approved_by_id OR approved_by_id IS NULL", name="ck_ext_doc_source_four_eyes"),
         CheckConstraint(

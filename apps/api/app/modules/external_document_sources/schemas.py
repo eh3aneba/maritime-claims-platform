@@ -5,7 +5,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
 
-ProviderKind = Literal["sharepoint", "google_drive"]
+ProviderKind = Literal["sharepoint", "google_drive", "sftp"]
 
 
 class ExternalDocumentSourceProfileRequest(BaseModel):
