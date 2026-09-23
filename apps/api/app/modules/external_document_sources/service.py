@@ -1,6 +1,8 @@
 import hashlib
 import json
+import re
 from datetime import datetime, timezone
+from ipaddress import ip_address
 from uuid import UUID
 
 from sqlalchemy import select
@@ -12,11 +14,17 @@ from app.modules.external_document_sources.models import (
 )
 
 
-SUPPORTED_PROVIDERS = frozenset({"sharepoint", "google_drive"})
+SUPPORTED_PROVIDERS = frozenset({"sharepoint", "google_drive", "sftp"})
 _PROVIDER_FIELDS = {
     "sharepoint": (frozenset({"tenant_domain", "site_id", "library_id"}), frozenset({"tenant_domain", "site_id", "library_id"})),
     "google_drive": (frozenset({"shared_drive_id", "folder_id"}), frozenset({"shared_drive_id"})),
+    "sftp": (
+        frozenset({"hostname", "port", "remote_root_path", "username", "host_key_fingerprint", "access_mode"}),
+        frozenset({"hostname", "port", "remote_root_path", "username", "host_key_fingerprint", "access_mode"}),
+    ),
 }
+_SFTP_DNS_LABEL = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
+_SFTP_HOST_KEY_FINGERPRINT = re.compile(r"^SHA256:[A-Za-z0-9+/]{43}$")
 _SAFETY_FIELDS = (
     "credential_stored",
     "oauth_token_exchanged",
@@ -73,7 +81,73 @@ def _normalize_text(value: str, *, field: str, minimum: int, maximum: int) -> st
     return normalized
 
 
-def normalize_provider_config(provider_kind: str, raw_config: dict) -> dict[str, str]:
+def _normalize_sftp_hostname(value) -> str:
+    if not isinstance(value, str):
+        raise ExternalDocumentSourceValidationError("Provider configuration field hostname must be a string")
+    hostname = value.strip().lower().rstrip(".")
+    if not hostname or len(hostname) > 253:
+        raise ExternalDocumentSourceValidationError("Provider configuration field hostname is invalid")
+    if any(ord(char) < 33 for char in hostname):
+        raise ExternalDocumentSourceValidationError("Provider configuration field hostname is invalid")
+    try:
+        return str(ip_address(hostname))
+    except ValueError:
+        labels = hostname.split(".")
+        if not labels or any(not _SFTP_DNS_LABEL.fullmatch(label) for label in labels):
+            raise ExternalDocumentSourceValidationError("Provider configuration field hostname is invalid")
+        return hostname
+
+
+def _normalize_sftp_port(value) -> int:
+    if isinstance(value, bool):
+        raise ExternalDocumentSourceValidationError("Provider configuration field port must be an integer")
+    if isinstance(value, str):
+        if not value.strip().isdigit():
+            raise ExternalDocumentSourceValidationError("Provider configuration field port must be an integer")
+        port = int(value.strip())
+    elif isinstance(value, int):
+        port = value
+    else:
+        raise ExternalDocumentSourceValidationError("Provider configuration field port must be an integer")
+    if port < 1 or port > 65535:
+        raise ExternalDocumentSourceValidationError("Provider configuration field port must be between 1 and 65535")
+    return port
+
+
+def _normalize_sftp_remote_root(value) -> str:
+    if not isinstance(value, str):
+        raise ExternalDocumentSourceValidationError("Provider configuration field remote_root_path must be a string")
+    raw = value.strip()
+    if not raw or len(raw) > 512 or not raw.startswith("/") or any(ord(char) < 32 for char in raw):
+        raise ExternalDocumentSourceValidationError("Provider configuration field remote_root_path must be an absolute POSIX path")
+    segments = raw.split("/")
+    if any(segment == ".." for segment in segments):
+        raise ExternalDocumentSourceValidationError("Provider configuration field remote_root_path must not contain parent traversal")
+    normalized_segments = [segment for segment in segments if segment not in {"", "."}]
+    return "/" + "/".join(normalized_segments)
+
+
+def _normalize_sftp_username(value) -> str:
+    if not isinstance(value, str):
+        raise ExternalDocumentSourceValidationError("Provider configuration field username must be a string")
+    username = value.strip()
+    if not username or len(username) > 128 or any(ord(char) < 32 for char in username):
+        raise ExternalDocumentSourceValidationError("Provider configuration field username is invalid")
+    return username
+
+
+def _normalize_sftp_fingerprint(value) -> str:
+    if not isinstance(value, str):
+        raise ExternalDocumentSourceValidationError("Provider configuration field host_key_fingerprint must be a string")
+    fingerprint = value.strip()
+    if not _SFTP_HOST_KEY_FINGERPRINT.fullmatch(fingerprint):
+        raise ExternalDocumentSourceValidationError(
+            "Provider configuration field host_key_fingerprint must be an OpenSSH SHA256 fingerprint"
+        )
+    return fingerprint
+
+
+def normalize_provider_config(provider_kind: str, raw_config: dict) -> dict:
     if provider_kind not in SUPPORTED_PROVIDERS:
         raise ExternalDocumentSourceValidationError("Unsupported external document source provider")
     if not isinstance(raw_config, dict):
@@ -88,6 +162,21 @@ def normalize_provider_config(provider_kind: str, raw_config: dict) -> dict[str,
     missing = required - supplied
     if missing:
         raise ExternalDocumentSourceValidationError("Provider configuration is missing required fields: " + ", ".join(sorted(missing)))
+
+    if provider_kind == "sftp":
+        access_mode = raw_config["access_mode"]
+        if not isinstance(access_mode, str) or access_mode.strip().lower() != "read_only":
+            raise ExternalDocumentSourceValidationError(
+                "Provider configuration field access_mode must be read_only"
+            )
+        return {
+            "access_mode": "read_only",
+            "host_key_fingerprint": _normalize_sftp_fingerprint(raw_config["host_key_fingerprint"]),
+            "hostname": _normalize_sftp_hostname(raw_config["hostname"]),
+            "port": _normalize_sftp_port(raw_config["port"]),
+            "remote_root_path": _normalize_sftp_remote_root(raw_config["remote_root_path"]),
+            "username": _normalize_sftp_username(raw_config["username"]),
+        }
 
     normalized: dict[str, str] = {}
     for key in sorted(allowed):
