@@ -14,6 +14,64 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    name: Classify general CI changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      dependency_required: ${{ steps.scope.outputs.dependency_required }}
+      e2e_required: ${{ steps.scope.outputs.e2e_required }}
+    steps:
+      - name: Check out repository history
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Classify exact-head general CI scope
+        id: scope
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "dependency_required=true" >> "$GITHUB_OUTPUT"
+            echo "e2e_required=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ -z "$BASE_SHA" ] || [ -z "$HEAD_SHA" ]; then
+            echo "dependency_required=true" >> "$GITHUB_OUTPUT"
+            echo "e2e_required=true" >> "$GITHUB_OUTPUT"
+            echo "::warning::Missing PR SHA metadata; failing closed to full general CI."
+            exit 0
+          fi
+
+          dependency_required=false
+          e2e_required=false
+
+          while IFS= read -r changed_path; do
+            case "$changed_path" in
+              apps/api/requirements.txt|apps/api/requirements.lock|apps/api/requirements-dev.in|apps/api/requirements-dev.lock|apps/web/package.json|apps/web/package-lock.json|tests/browser/requirements.txt|tests/browser/requirements.lock|.github/workflows/ci.yml)
+                dependency_required=true
+                ;;
+            esac
+
+            case "$changed_path" in
+              apps/api/*|apps/web/*|tests/browser/*|docker-compose*.yml|scripts/design_partner_preflight.sh|.github/workflows/ci.yml)
+                e2e_required=true
+                ;;
+            esac
+          done < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+
+          echo "dependency_required=$dependency_required" >> "$GITHUB_OUTPUT"
+          echo "e2e_required=$e2e_required" >> "$GITHUB_OUTPUT"
+          echo "Dependency lock job required: $dependency_required"
+          echo "Design partner E2E required: $e2e_required"
+
   migrations:
     name: PostgreSQL migration chain
     runs-on: ubuntu-latest
@@ -121,6 +179,8 @@ jobs:
 
   dependency-locks:
     name: Dependency lock consistency
+    needs: changes
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.dependency_required == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -182,6 +242,8 @@ jobs:
 
   design-partner-e2e:
     name: Design partner browser E2E
+    needs: changes
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.e2e_required == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
