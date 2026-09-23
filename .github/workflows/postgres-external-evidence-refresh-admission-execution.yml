@@ -19,7 +19,9 @@ jobs:
   refresh-admission-execution-concurrency:
     name: External Evidence refresh admission execution concurrency
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # The regression itself can consume ~19 minutes on hosted PostgreSQL runners.
+    # Keep a bounded gate while leaving enough margin for setup and post-job cleanup.
+    timeout-minutes: 25
     services:
       postgres:
         image: postgres:18.4
