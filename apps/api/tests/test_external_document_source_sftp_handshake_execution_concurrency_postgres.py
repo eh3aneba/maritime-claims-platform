@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from uuid import UUID
 
 import pytest
 from sqlalchemy import create_engine, select, text
@@ -75,7 +76,7 @@ def _seed_authorized_handshake(seed: str):
     with TestingSessionLocal() as db:
         authorization = db.get(
             ExternalDocumentSourceSftpHandshakeAuthorization,
-            authorization_id,
+            UUID(authorization_id),
         )
         assert authorization is not None
         organization_id = authorization.organization_id
