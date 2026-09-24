@@ -65,28 +65,30 @@ def _session_factory():
     )
 
 
-def test_concurrent_schedule_authorizations_create_only_one_active_authority(
+def test_schedule_authorization_and_transition_races_reuse_one_evidence_family(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     actor_id, profile_id, _claim_id, _initial_execution, binding = _bound_v1(
         monkeypatch,
-        "ab-pg-authorize-race",
+        "ab-pg-shared-races",
     )
-    organization_id = None
     engine, SessionLocal = _session_factory()
-    barrier = Barrier(2)
     try:
         with SessionLocal() as db:
             from app.modules.external_document_sources.evidence_family_binding_models import (
                 ExternalDocumentSourceEvidenceFamilyBinding,
             )
 
-            row = db.get(
+            family = db.get(
                 ExternalDocumentSourceEvidenceFamilyBinding,
                 UUID(binding["id"]),
             )
-            assert row is not None
-            organization_id = row.organization_id
+            assert family is not None
+            organization_id = family.organization_id
+
+        # Scenario 1: concurrent initial authorizations create exactly one
+        # active schedule authority for the Evidence family.
+        barrier = Barrier(2)
 
         def authorize_one(label: str):
             with SessionLocal() as db:
@@ -109,70 +111,34 @@ def test_concurrent_schedule_authorizations_create_only_one_active_authority(
                     return ("conflict", None, None)
 
         with ThreadPoolExecutor(max_workers=2) as pool:
-            results = list(pool.map(authorize_one, ("a", "b")))
+            authorization_results = list(pool.map(authorize_one, ("a", "b")))
 
-        assert sorted(result[0] for result in results) == ["conflict", "ok"]
+        assert sorted(result[0] for result in authorization_results) == [
+            "conflict",
+            "ok",
+        ]
 
         with SessionLocal() as db:
-            active = list(
+            rows = list(
                 db.scalars(
-                    select(ExternalDocumentSourceRecurringObservationSchedule).where(
-                        ExternalDocumentSourceRecurringObservationSchedule.binding_id
-                        == UUID(binding["id"]),
-                        ExternalDocumentSourceRecurringObservationSchedule.status
-                        == "active",
-                    )
-                ).all()
-            )
-            all_rows = list(
-                db.scalars(
-                    select(ExternalDocumentSourceRecurringObservationSchedule).where(
+                    select(ExternalDocumentSourceRecurringObservationSchedule)
+                    .where(
                         ExternalDocumentSourceRecurringObservationSchedule.binding_id
                         == UUID(binding["id"])
                     )
+                    .order_by(
+                        ExternalDocumentSourceRecurringObservationSchedule.revision_number.asc()
+                    )
                 ).all()
             )
-            assert len(active) == 1
-            assert len(all_rows) == 1
-            assert active[0].revision_number == 1
-            assert active[0].active_binding_guard == UUID(binding["id"])
-    finally:
-        engine.dispose()
+            assert len(rows) == 1
+            assert rows[0].status == "active"
+            assert rows[0].revision_number == 1
+            assert rows[0].active_binding_guard == UUID(binding["id"])
+            initial_id = rows[0].id
 
-
-def test_replace_disable_race_never_leaves_multiple_active_schedules(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    actor_id, profile_id, _claim_id, _initial_execution, binding = _bound_v1(
-        monkeypatch,
-        "ab-pg-transition-race",
-    )
-    engine, SessionLocal = _session_factory()
-    try:
-        with SessionLocal() as db:
-            from app.modules.external_document_sources.evidence_family_binding_models import (
-                ExternalDocumentSourceEvidenceFamilyBinding,
-            )
-
-            family = db.get(
-                ExternalDocumentSourceEvidenceFamilyBinding,
-                UUID(binding["id"]),
-            )
-            assert family is not None
-            organization_id = family.organization_id
-            initial, _ = authorize_recurring_observation_schedule(
-                db,
-                organization_id=organization_id,
-                profile_id=UUID(profile_id),
-                binding_id=UUID(binding["id"]),
-                authorized_by_id=actor_id,
-                request_key="phase-ab-pg-transition-initial",
-                reason=_REASON,
-                cadence_class="hourly",
-                effective_at=None,
-            )
-            initial_id = initial.id
-
+        # Scenario 2: reuse the exact winning active authority for the
+        # replace-vs-disable race instead of rebuilding the prerequisite family.
         barrier = Barrier(2)
 
         def replace_one():
@@ -222,9 +188,12 @@ def test_replace_disable_race_never_leaves_multiple_active_schedules(
         with ThreadPoolExecutor(max_workers=2) as pool:
             first = pool.submit(replace_one)
             second = pool.submit(disable_one)
-            results = [first.result(), second.result()]
+            transition_results = [first.result(), second.result()]
 
-        assert sorted(result[1] for result in results) == ["conflict", "ok"]
+        assert sorted(result[1] for result in transition_results) == [
+            "conflict",
+            "ok",
+        ]
 
         with SessionLocal() as db:
             rows = list(
@@ -252,3 +221,4 @@ def test_replace_disable_race_never_leaves_multiple_active_schedules(
                 assert rows[0].status == "disabled"
     finally:
         engine.dispose()
+
