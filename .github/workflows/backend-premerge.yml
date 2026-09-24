@@ -57,22 +57,33 @@ jobs:
           backend_required=false
           while IFS= read -r path; do
             case "$path" in
-              apps/api/tests/test_external_document_source_recurring_observation_schedule_concurrency_postgres.py|\
-              apps/api/tests/test_external_document_source_due_tick_dispatch_concurrency_postgres.py|\
-              apps/api/tests/test_external_document_source_due_tick_observation_concurrency_postgres.py|\
-              apps/api/tests/test_external_document_source_observation_refresh_execution_concurrency_postgres.py|\
-              apps/api/tests/test_external_document_source_observation_review_handoff_concurrency_postgres.py|\
-              apps/api/tests/test_external_document_source_observation_review_decision_concurrency_postgres.py|\
-              apps/api/tests/test_external_document_source_due_tick_service_executor_concurrency_postgres.py|\
-              apps/api/tests/test_external_document_source_observation_refresh_admission_authorization_concurrency_postgres.py|\
-              apps/api/tests/test_external_document_source_family_version_concurrency_postgres.py|\
-              apps/api/tests/test_processing_lease_postgres.py|\
-              apps/api/tests/test_payment_settlement_concurrency_postgres.py|\
-              apps/api/tests/test_external_document_source_observation_refresh_admission_execution_concurrency_postgres.py|\
-              apps/api/tests/test_external_document_source_sftp_handshake_execution_concurrency_postgres.py|\
+              apps/api/tests/test_external_document_source_recurring_observation_schedule_concurrency_postgres.py)
+                ;;
+              apps/api/tests/test_external_document_source_due_tick_dispatch_concurrency_postgres.py)
+                ;;
+              apps/api/tests/test_external_document_source_due_tick_observation_concurrency_postgres.py)
+                ;;
+              apps/api/tests/test_external_document_source_observation_refresh_execution_concurrency_postgres.py)
+                ;;
+              apps/api/tests/test_external_document_source_observation_review_handoff_concurrency_postgres.py)
+                ;;
+              apps/api/tests/test_external_document_source_observation_review_decision_concurrency_postgres.py)
+                ;;
+              apps/api/tests/test_external_document_source_due_tick_service_executor_concurrency_postgres.py)
+                ;;
+              apps/api/tests/test_external_document_source_observation_refresh_admission_authorization_concurrency_postgres.py)
+                ;;
+              apps/api/tests/test_external_document_source_family_version_concurrency_postgres.py)
+                ;;
+              apps/api/tests/test_processing_lease_postgres.py)
+                ;;
+              apps/api/tests/test_payment_settlement_concurrency_postgres.py)
+                ;;
+              apps/api/tests/test_external_document_source_observation_refresh_admission_execution_concurrency_postgres.py)
+                ;;
+              apps/api/tests/test_external_document_source_sftp_handshake_execution_concurrency_postgres.py)
+                ;;
               .github/workflows/postgres-concurrency-regressions.yml)
-                # These exact tests are skipped in ordinary Full Backend and are
-                # exercised by the dedicated PostgreSQL concurrency suite.
                 ;;
               apps/api/*|.github/workflows/backend-premerge.yml)
                 backend_required=true
