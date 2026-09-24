@@ -1,4 +1,5 @@
 from datetime import timedelta
+from uuid import UUID
 
 from app.modules.claims.models import Claim
 from app.modules.documents.models import Document
@@ -237,7 +238,7 @@ def test_sftp_handshake_authorization_expiry_rejection_and_tamper_fail_closed() 
 
         qualification = db.get(
             ExternalDocumentSourceSftpCredentialHealthQualification,
-            qualification_id,
+            UUID(qualification_id),
         )
         assert qualification is not None
         base_time = qualification.checked_at + timedelta(seconds=1)
@@ -321,7 +322,7 @@ def test_sftp_handshake_authorization_expiry_rejection_and_tamper_fail_closed() 
             db.query(ExternalDocumentSourceSftpHandshakeAuthorizationReceipt)
             .filter(
                 ExternalDocumentSourceSftpHandshakeAuthorizationReceipt.authorization_id
-                == authorization_id
+                == UUID(authorization_id)
             )
             .order_by(
                 ExternalDocumentSourceSftpHandshakeAuthorizationReceipt.sequence_number
