@@ -38,6 +38,10 @@ from app.modules.external_document_sources.sftp_handshake_execution_models impor
     ExternalDocumentSourceSftpHandshakeExecution,
     ExternalDocumentSourceSftpHandshakeExecutionReceipt,
 )
+from app.modules.external_document_sources.sftp_transport_verification_models import (
+    ExternalDocumentSourceSftpTransportVerification,
+    ExternalDocumentSourceSftpTransportVerificationReceipt,
+)
 from app.modules.external_document_sources.credential_reference_health_models import (
     ExternalDocumentSourceCredentialReferenceHealthQualification,
     ExternalDocumentSourceCredentialReferenceHealthReceipt,
@@ -167,6 +171,7 @@ from app.modules.external_document_sources import sftp_credential_reference_rout
 from app.modules.external_document_sources import sftp_credential_health_router as _sftp_credential_health_router  # noqa: F401,E402
 from app.modules.external_document_sources import sftp_handshake_authorization_router as _sftp_handshake_authorization_router  # noqa: F401,E402
 from app.modules.external_document_sources import sftp_handshake_execution_router as _sftp_handshake_execution_router  # noqa: F401,E402
+from app.modules.external_document_sources import sftp_transport_verification_router as _sftp_transport_verification_router  # noqa: F401,E402
 from app.modules.external_document_sources import credential_reference_health_router as _credential_reference_health_router  # noqa: F401,E402
 from app.modules.external_document_sources import credential_resolution_execution_router as _credential_resolution_execution_router  # noqa: F401,E402
 from app.modules.external_document_sources import due_tick_observation_router as _due_tick_observation_router  # noqa: F401,E402
@@ -213,6 +218,8 @@ __all__ = [
     "ExternalDocumentSourceSftpHandshakeAuthorizationReceipt",
     "ExternalDocumentSourceSftpHandshakeExecution",
     "ExternalDocumentSourceSftpHandshakeExecutionReceipt",
+    "ExternalDocumentSourceSftpTransportVerification",
+    "ExternalDocumentSourceSftpTransportVerificationReceipt",
     "ExternalDocumentSourceCredentialReferenceHealthQualification",
     "ExternalDocumentSourceCredentialReferenceHealthReceipt",
     "ExternalDocumentSourceCredentialResolutionExecution",
