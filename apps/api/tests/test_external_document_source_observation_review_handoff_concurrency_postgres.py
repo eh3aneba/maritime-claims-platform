@@ -15,6 +15,14 @@ from app.modules.external_document_sources.due_tick_dispatch_consumption_service
 from app.modules.external_document_sources.due_tick_observation_models import (
     ExternalDocumentSourceDueTickObservationExecution,
 )
+from app.modules.external_document_sources.observation_review_decision_models import (
+    ExternalDocumentSourceObservationRefreshAuthorization,
+    ExternalDocumentSourceObservationReviewDecision,
+    ExternalDocumentSourceObservationReviewDecisionReceipt,
+)
+from app.modules.external_document_sources.observation_review_decision_service import (
+    decide_observation_review_handoff,
+)
 from app.modules.external_document_sources.observation_review_handoff_models import (
     ExternalDocumentSourceObservationReviewHandoff,
     ExternalDocumentSourceObservationReviewHandoffReceipt,
@@ -61,14 +69,14 @@ def _session_factory():
     )
 
 
-def test_two_projectors_racing_one_changed_observation_create_one_handoff(
+def test_projector_and_human_decision_races_share_one_changed_observation_lineage(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     (
-        _actor_id,
-        _profile_id,
+        actor_id,
+        profile_id,
         _schedule_id,
-        _organization_id,
+        organization_id,
         _document_id,
         dispatch_id,
         adapter,
@@ -163,6 +171,64 @@ def test_two_projectors_racing_one_changed_observation_create_one_handoff(
             assert handoffs[0].observation_execution_id == observation_id
             assert receipts[0].handoff_id == handoffs[0].id
 
+        # Reuse the exact projected handoff for the downstream human
+        # decision race instead of rebuilding the entire external-source
+        # prerequisite chain in a second PostgreSQL test process.
+        with SessionLocal() as lock_owner:
+            locked_handoff = lock_owner.scalar(
+                select(ExternalDocumentSourceObservationReviewHandoff)
+                .where(ExternalDocumentSourceObservationReviewHandoff.id == handoff_id)
+                .with_for_update()
+            )
+            assert locked_handoff is not None
+
+            with SessionLocal() as blocked_db:
+                blocked_db.execute(text("SET LOCAL lock_timeout = '250ms'"))
+                with pytest.raises(OperationalError):
+                    decide_observation_review_handoff(
+                        blocked_db,
+                        organization_id=organization_id,
+                        profile_id=profile_id,
+                        handoff_id=handoff_id,
+                        decided_by_id=actor_id,
+                        request_key="ag-pg-blocked-race",
+                        decision_kind="approve_refresh",
+                        decision_reason=(
+                            "Concurrent reviewer is blocked by exact handoff authority."
+                        ),
+                        now=datetime(2026, 9, 20, 0, 3, tzinfo=UTC),
+                    )
+                blocked_db.rollback()
+
+            # This transaction is only the deterministic lock holder.
+            lock_owner.rollback()
+
+        with SessionLocal() as winner_db:
+            decision, authorization, outcome = decide_observation_review_handoff(
+                winner_db,
+                organization_id=organization_id,
+                profile_id=profile_id,
+                handoff_id=handoff_id,
+                decided_by_id=actor_id,
+                request_key="ag-pg-winning-decision",
+                decision_kind="approve_refresh",
+                decision_reason="Human reviewer authorizes one exact future refresh.",
+                now=datetime(2026, 9, 20, 0, 4, tzinfo=UTC),
+            )
+            assert outcome == "decided"
+            assert authorization is not None
+            assert decision.status == "refresh_authorized"
+            assert authorization.status == "authorized"
+
+        with SessionLocal() as db:
+            assert db.query(ExternalDocumentSourceObservationReviewDecision).count() == 1
+            assert (
+                db.query(ExternalDocumentSourceObservationReviewDecisionReceipt).count()
+                == 1
+            )
+            assert db.query(ExternalDocumentSourceObservationRefreshAuthorization).count() == 1
+
+        # Neither review boundary performs a second provider read.
         assert adapter.calls == 1
     finally:
         engine.dispose()
