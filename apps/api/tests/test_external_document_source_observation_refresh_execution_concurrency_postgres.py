@@ -17,8 +17,10 @@ from app.modules.external_document_sources.observation_refresh_execution_service
 from app.modules.external_document_sources.observation_review_decision_models import (
     ExternalDocumentSourceObservationRefreshAuthorization,
 )
+from tests.test_external_document_source_observation_refresh_admission_execution_concurrency_postgres import (
+    _seed_authorized_refresh,
+)
 from tests.test_external_document_source_observation_refresh_execution import (
-    _approved_refresh,
     _refresh_io,
     setup_function as _ah_setup,
     teardown_function as _ah_teardown,
@@ -63,9 +65,12 @@ def test_two_refresh_consumers_serialize_on_exact_authorization(
         organization_id,
         _document_id,
         authorization_id,
-        _decision_id,
         _metadata_adapter,
-    ) = _approved_refresh(monkeypatch, "ah-pg-race")
+    ) = _seed_authorized_refresh(
+        monkeypatch,
+        "ah-pg-race",
+        include_refresh_execution=False,
+    )
     _body, read_adapter, store = _refresh_io()
 
     engine, SessionLocal = _session_factory()
