@@ -90,6 +90,8 @@ def teardown_function() -> None:
 def _seed_authorized_refresh(
     monkeypatch: pytest.MonkeyPatch,
     suffix: str,
+    *,
+    include_admission_authorization: bool = True,
 ):
     (
         actor_id,
@@ -435,6 +437,22 @@ def _seed_authorized_refresh(
         refresh_receipt.receipt_hash = ah_service._receipt_hash(refresh_receipt)
         db.add(refresh_receipt)
         db.flush()
+
+        if not include_admission_authorization:
+            db.commit()
+            return (
+                actor_id,
+                profile_id,
+                organization_id,
+                current.claim_id,
+                document_id,
+                refresh_execution.id,
+                None,
+                binding.id,
+                metadata_adapter,
+                read_adapter,
+                store,
+            )
 
         authorized_at = datetime(2026, 9, 22, 1, 0, tzinfo=UTC)
         authorization = ExternalDocumentSourceObservationRefreshAdmissionAuthorization(
