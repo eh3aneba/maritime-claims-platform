@@ -85,7 +85,7 @@ def _seed_authorized_handshake(seed: str):
         requester_id,
         profile_id,
         organization_id,
-        authorization_id,
+        UUID(authorization_id),
     )
 
 
