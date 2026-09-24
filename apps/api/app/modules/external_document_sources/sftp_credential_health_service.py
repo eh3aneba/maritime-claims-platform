@@ -647,10 +647,11 @@ def qualify_external_document_source_sftp_credential_health(
     )
     try:
         probe = resolver.check(locator)
-    except Exception as exc:
-        raise ExternalDocumentSourceConflictError(
-            "SFTP credential reference health check failed"
-        ) from exc
+    except Exception:
+        probe = SftpCredentialHealthProbeResult(
+            resolved=False,
+            failure_code="resolver_rejected",
+        )
 
     (
         result_status,
