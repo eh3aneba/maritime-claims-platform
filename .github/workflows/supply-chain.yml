@@ -152,8 +152,46 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Classify production-image scan scope
+        id: image-scope
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          if [ "$EVENT_NAME" != "pull_request" ]; then
+            echo "image_scan_required=true" >> "$GITHUB_OUTPUT"
+            echo "Non-PR security run: production image scan required."
+            exit 0
+          fi
+
+          if [ -z "$BASE_SHA" ] || [ -z "$HEAD_SHA" ]; then
+            echo "image_scan_required=true" >> "$GITHUB_OUTPUT"
+            echo "::warning::Missing PR SHA metadata; failing closed to production image scan."
+            exit 0
+          fi
+
+          image_scan_required=false
+          while IFS= read -r changed_path; do
+            case "$changed_path" in
+              apps/api/*|apps/web/*|.grype.yaml|.github/workflows/supply-chain.yml)
+                image_scan_required=true
+                break
+                ;;
+            esac
+          done < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+
+          echo "image_scan_required=$image_scan_required" >> "$GITHUB_OUTPUT"
+          echo "Production image scan required: $image_scan_required"
 
       - name: Build production images
+        if: ${{ steps.image-scope.outputs.image_scan_required == 'true' }}
         run: |
           docker build --pull --tag maritime-claims-api:ci apps/api
           docker build --pull --target worker --tag maritime-claims-worker:ci apps/api
@@ -162,6 +200,7 @@ jobs:
             --tag maritime-claims-web:ci apps/web
 
       - name: Scan API image
+        if: ${{ steps.image-scope.outputs.image_scan_required == 'true' }}
         id: scan-api
         continue-on-error: true
         uses: anchore/scan-action@e1165082ffb1fe366ebaf02d8526e7c4989ea9d2 # v7
@@ -174,6 +213,7 @@ jobs:
           cache-db: true
 
       - name: Scan web image
+        if: ${{ steps.image-scope.outputs.image_scan_required == 'true' }}
         id: scan-web
         continue-on-error: true
         uses: anchore/scan-action@e1165082ffb1fe366ebaf02d8526e7c4989ea9d2 # v7
@@ -186,6 +226,7 @@ jobs:
           cache-db: true
 
       - name: Scan worker image
+        if: ${{ steps.image-scope.outputs.image_scan_required == 'true' }}
         id: scan-worker
         continue-on-error: true
         uses: anchore/scan-action@e1165082ffb1fe366ebaf02d8526e7c4989ea9d2 # v7
@@ -198,7 +239,7 @@ jobs:
           cache-db: true
 
       - name: Enforce image scan results
-        if: always()
+        if: ${{ always() && steps.image-scope.outputs.image_scan_required == 'true' }}
         env:
           API_SCAN_OUTCOME: ${{ steps.scan-api.outcome }}
           WEB_SCAN_OUTCOME: ${{ steps.scan-web.outcome }}
@@ -210,3 +251,9 @@ jobs:
           test "${API_SCAN_OUTCOME}" = "success"
           test "${WEB_SCAN_OUTCOME}" = "success"
           test "${WORKER_SCAN_OUTCOME}" = "success"
+
+      - name: Record exact-head image-scan bypass
+        if: ${{ steps.image-scope.outputs.image_scan_required != 'true' }}
+        run: |
+          echo "The exact PR diff cannot affect the API or web production image build contexts."
+          echo "Skipping production image build/scan while preserving this check context."
