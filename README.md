@@ -36,7 +36,7 @@ The MVP now includes the full H&M Machinery / Turbocharger design-partner workfl
 - Separately authorized limited-production AI evaluation with deterministic rollout, live monitors, expiry and rollback
 - Governed SharePoint / Google Drive external-Evidence control plane through recurring observation, human review and exact changed-item refresh staging
 
-**Current phase: Phase 17.6-C — SFTP credential-reference health qualification.** Protected `main` includes Phase 17.6-B, which adds governed non-secret SFTP credential-reference custody without opening any remote SFTP session. Phase 17.6-C is the active product slice: qualify whether the approved external credential reference can be resolved and whether its material class matches the approved authentication kind, while still forbidding SSH/SFTP login, remote listing/content reads, Evidence admission, processing and AI execution.
+**Current phase: Phase 17.6-F — bounded SSH transport and pinned host-key verification.** Protected `main` includes Phase 17.6-E, which consumes one approved SFTP handshake authorization into a durable one-use local execution record while still performing zero network I/O. Phase 17.6-F is the active product slice: make one tightly bounded SSH transport attempt to the exact approved destination and verify the observed server host key against the pinned fingerprint, then close the transport. User authentication, SFTP subsystem activation, directory listing, remote-file reads, Evidence admission, processing and AI execution remain outside this phase.
 
 ## Prerequisites
 
@@ -201,14 +201,20 @@ Engine-log event fields are intentionally not promoted into scalar `claim_facts`
 
 ## Current milestone
 
-Phase 17.5-A through 17.5-AH now provide the governed SharePoint / Google Drive external-Evidence chain from source-profile authority and bounded provider access through initial Evidence admission, family binding, later-version admission, recurring exact-item observation, internal dispatch, human review, human approval and one-time verified changed-item refresh staging.
+SharePoint / Google Drive live document integration is complete through Phase 17.5-AK, including governed recurring observation, human review, exact changed-item refresh staging and canonical N+1 Evidence admission.
 
-The current production sequence is intentionally split into separate authorities:
-- **17.5-AI** — authorize one exact completed AH refresh for canonical N+1 Evidence admission without mutating the Document family.
-- **17.5-AJ** — consume that admission authority, revalidate the current family and staged-content proof, perform authoritative file-signature/malware verification, and create exactly one canonical N+1 Document.
-- **17.5-AK / integration closure** — prove the full recurring-sync loop end-to-end and close production provider wiring/operator UX before marking SharePoint / Google Drive live document integration complete.
+SFTP integration is complete through Phase 17.6-E:
+- **17.6-A** — governed read-only SFTP source profile and destination boundary.
+- **17.6-B** — non-secret credential-reference custody.
+- **17.6-C** — credential-reference health qualification.
+- **17.6-D** — short-lived independently approved authorization for one future bounded handshake attempt.
+- **17.6-E** — one-use local consumption of that authorization into a durable execution record, still with zero DNS/network, SSH/SFTP session or remote-file authority.
 
-The earlier Sprint 11A–11E AI-governance controls remain part of the platform, including human review, bounded rollout, monitoring and rollback. They are no longer the repository's current implementation sequence, and Production-wide or Restricted-document external-AI use remains separately governed.
+The active production slice is **17.6-F**: perform one transient SSH transport connection to the exact approved destination, verify the observed server host key against the pinned fingerprint, immediately close the transport, and persist only bounded sanitized result metadata. This phase must stop before user authentication and before SFTP subsystem activation.
+
+A later separately reviewed phase should govern SSH user authentication and SFTP subsystem activation. Directory listing, remote-file reads, content staging/checkpointing and Evidence admission remain later independent authority increments.
+
+Repository hardening continues in parallel through the CI-optimization train and Issue #461 branch-protection enforcement work. The earlier Sprint 11A–11E AI-governance controls remain part of the platform, including human review, bounded rollout, monitoring and rollback; Production-wide or Restricted-document external-AI use remains separately governed.
 
 ## Design-partner pilot
 
