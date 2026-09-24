@@ -36,7 +36,7 @@ The MVP now includes the full H&M Machinery / Turbocharger design-partner workfl
 - Separately authorized limited-production AI evaluation with deterministic rollout, live monitors, expiry and rollback
 - Governed SharePoint / Google Drive external-Evidence control plane through recurring observation, human review and exact changed-item refresh staging
 
-**Current phase: Phase 17.6 — SFTP integration.** Protected `main` includes Phase 17.6-A, which adds governed SFTP source profiles and a read-only connection-policy boundary without opening a remote SFTP session. SharePoint / Google Drive live document integration is already closed end-to-end through Phase 17.5-AK. The next product slice is Phase 17.6-B: non-secret credential-reference custody for SFTP authentication material, still without remote session establishment, remote listing, content reads, Evidence admission, processing or AI execution.
+**Current phase: Phase 17.6-C — SFTP credential-reference health qualification.** Protected `main` includes Phase 17.6-B, which adds governed non-secret SFTP credential-reference custody without opening any remote SFTP session. Phase 17.6-C is the active product slice: qualify whether the approved external credential reference can be resolved and whether its material class matches the approved authentication kind, while still forbidding SSH/SFTP login, remote listing/content reads, Evidence admission, processing and AI execution.
 
 ## Prerequisites
 
