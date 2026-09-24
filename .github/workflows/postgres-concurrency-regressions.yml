@@ -147,3 +147,9 @@ jobs:
         env:
           EXTERNAL_EVIDENCE_REFRESH_ADMISSION_EXEC_POSTGRES_TEST: "1"
         run: pytest -q --durations=10 tests/test_external_document_source_observation_refresh_admission_execution_concurrency_postgres.py
+
+      - name: Admission execution — SFTP handshake authorization consumption
+        if: ${{ matrix.group == 'admission-execution' }}
+        env:
+          SFTP_HANDSHAKE_EXECUTION_POSTGRES_TEST: "1"
+        run: pytest -q tests/test_external_document_source_sftp_handshake_execution_concurrency_postgres.py
