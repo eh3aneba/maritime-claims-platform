@@ -29,6 +29,9 @@ from tests.test_external_document_source_evidence_family_binding import (
     teardown_function as _phase_y_teardown,
 )
 from tests.test_external_document_source_generation_3_change_detection import _baseline_projection
+from tests.test_external_document_source_observation_review_decision_concurrency_postgres import (
+    assert_two_human_decisions_serialize_to_one_terminal_approval,
+)
 
 
 pytestmark = pytest.mark.skipif(
@@ -65,10 +68,10 @@ def test_two_projectors_racing_one_changed_observation_create_one_handoff(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     (
-        _actor_id,
-        _profile_id,
+        actor_id,
+        profile_id,
         _schedule_id,
-        _organization_id,
+        organization_id,
         _document_id,
         dispatch_id,
         adapter,
@@ -163,6 +166,18 @@ def test_two_projectors_racing_one_changed_observation_create_one_handoff(
             assert handoffs[0].observation_execution_id == observation_id
             assert receipts[0].handoff_id == handoffs[0].id
 
+        assert adapter.calls == 1
+
+        # Reuse the exact projected handoff for the AG decision-lock race
+        # instead of rebuilding the full external-Evidence prerequisite chain.
+        assert_two_human_decisions_serialize_to_one_terminal_approval(
+            actor_id=actor_id,
+            profile_id=profile_id,
+            organization_id=organization_id,
+            handoff_id=handoff_id,
+        )
+
+        # The decision boundary performs no additional provider read.
         assert adapter.calls == 1
     finally:
         engine.dispose()
