@@ -107,26 +107,46 @@ def _seed_due_schedule(monkeypatch: pytest.MonkeyPatch, suffix: str):
             cadence_class="hourly",
             effective_at=due_now,
         )
-        return engine, SessionLocal, due_now, schedule.id
+        return (
+            engine,
+            SessionLocal,
+            due_now,
+            actor_id,
+            UUID(profile_id),
+            UUID(binding["id"]),
+            family.organization_id,
+            schedule.id,
+        )
 
 
-def test_two_scheduler_workers_dispatch_same_due_tick_at_most_once(
+def test_scheduler_dispatch_and_disable_races_reuse_one_evidence_family(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    engine, SessionLocal, due_now, schedule_id = _seed_due_schedule(
+    (
+        engine,
+        SessionLocal,
+        first_due,
+        actor_id,
+        profile_id,
+        binding_id,
+        organization_id,
+        first_schedule_id,
+    ) = _seed_due_schedule(
         monkeypatch,
-        "same-tick",
+        "shared-races",
     )
-    barrier = Barrier(2)
     try:
-        def dispatch(label: str):
+        # Scenario 1: two scheduler workers race the same due tick.
+        barrier = Barrier(2)
+
+        def first_dispatch(label: str):
             with SessionLocal() as db:
                 barrier.wait(timeout=10)
                 try:
                     row = dispatch_next_due_tick(
                         db,
                         worker_id=f"phase-ad-worker-{label}",
-                        now=due_now,
+                        now=first_due,
                     )
                     return row.id if row is not None else None
                 except (ExternalDocumentSourceConflictError, IntegrityError):
@@ -134,63 +154,65 @@ def test_two_scheduler_workers_dispatch_same_due_tick_at_most_once(
                     return None
 
         with ThreadPoolExecutor(max_workers=2) as pool:
-            results = list(pool.map(dispatch, ("a", "b")))
+            results = list(pool.map(first_dispatch, ("a", "b")))
 
         assert sum(value is not None for value in results) == 1
         with SessionLocal() as db:
-            rows = list(
+            first_dispatches = list(
                 db.scalars(
                     select(ExternalDocumentSourceDueTickDispatch).where(
-                        ExternalDocumentSourceDueTickDispatch.schedule_id == schedule_id
+                        ExternalDocumentSourceDueTickDispatch.schedule_id
+                        == first_schedule_id
                     )
                 ).all()
             )
-            assert len(rows) == 1
-            assert rows[0].due_at == due_now
-    finally:
-        engine.dispose()
+            assert len(first_dispatches) == 1
+            assert first_dispatches[0].due_at == first_due
 
-
-def test_disable_vs_dispatch_serializes_on_active_schedule_authority(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    actor_id, profile_id, _claim_id, _initial_execution, binding = _bound_v1(
-        monkeypatch,
-        "disable-race",
-    )
-    engine, SessionLocal = _session_factory()
-    due_now = datetime.now(UTC)
-    try:
+        # Retire revision 1, then create a fresh due revision on the same
+        # integrity-valid Evidence family for the disable-vs-dispatch race.
         with SessionLocal() as db:
-            family = db.get(
-                ExternalDocumentSourceEvidenceFamilyBinding,
-                UUID(binding["id"]),
-            )
-            assert family is not None
-            organization_id = family.organization_id
-            schedule, _ = authorize_recurring_observation_schedule(
+            disabled, _ = disable_recurring_observation_schedule(
                 db,
                 organization_id=organization_id,
-                profile_id=UUID(profile_id),
-                binding_id=UUID(binding["id"]),
+                profile_id=profile_id,
+                schedule_id=first_schedule_id,
+                actor_id=actor_id,
+                request_key="phase-ad-pg-between-races-disable",
+                reason=(
+                    "Retire the first scheduler-dispatch concurrency revision "
+                    "before reusing the same Evidence family for the next race."
+                ),
+            )
+            assert disabled.status == "disabled"
+
+            second_due = datetime.now(UTC)
+            second_schedule, _ = authorize_recurring_observation_schedule(
+                db,
+                organization_id=organization_id,
+                profile_id=profile_id,
+                binding_id=binding_id,
                 authorized_by_id=actor_id,
                 request_key="phase-ad-pg-disable-schedule",
                 reason=_SCHEDULE_REASON,
                 cadence_class="hourly",
-                effective_at=due_now,
+                effective_at=second_due,
             )
-            schedule_id = schedule.id
+            second_schedule_id = second_schedule.id
+            assert second_schedule.revision_number == 2
+            assert second_schedule.prior_schedule_id == first_schedule_id
 
+        # Scenario 2: disabling the fresh revision races one scheduler dispatch.
         barrier = Barrier(2)
 
-        def dispatch():
+        def second_dispatch():
             with SessionLocal() as db:
                 barrier.wait(timeout=10)
                 try:
                     row = dispatch_next_due_tick(
                         db,
                         worker_id="phase-ad-worker-dispatch",
-                        now=due_now,
+                        now=second_due,
                     )
                     return ("dispatch", "ok" if row is not None else "none")
                 except (ExternalDocumentSourceConflictError, IntegrityError):
@@ -204,8 +226,8 @@ def test_disable_vs_dispatch_serializes_on_active_schedule_authority(
                     disable_recurring_observation_schedule(
                         db,
                         organization_id=organization_id,
-                        profile_id=UUID(profile_id),
-                        schedule_id=schedule_id,
+                        profile_id=profile_id,
+                        schedule_id=second_schedule_id,
                         actor_id=actor_id,
                         request_key="phase-ad-pg-disable",
                         reason=_DISABLE_REASON,
@@ -216,7 +238,7 @@ def test_disable_vs_dispatch_serializes_on_active_schedule_authority(
                     return ("disable", "conflict")
 
         with ThreadPoolExecutor(max_workers=2) as pool:
-            a = pool.submit(dispatch)
+            a = pool.submit(second_dispatch)
             b = pool.submit(disable)
             results = [a.result(), b.result()]
 
@@ -226,20 +248,21 @@ def test_disable_vs_dispatch_serializes_on_active_schedule_authority(
         with SessionLocal() as db:
             schedule = db.get(
                 ExternalDocumentSourceRecurringObservationSchedule,
-                schedule_id,
+                second_schedule_id,
             )
             assert schedule is not None
             assert schedule.status == "disabled"
             dispatches = list(
                 db.scalars(
                     select(ExternalDocumentSourceDueTickDispatch).where(
-                        ExternalDocumentSourceDueTickDispatch.schedule_id == schedule_id
+                        ExternalDocumentSourceDueTickDispatch.schedule_id
+                        == second_schedule_id
                     )
                 ).all()
             )
             assert len(dispatches) <= 1
             if dispatches:
-                assert dispatches[0].due_at == due_now
+                assert dispatches[0].due_at == second_due
     finally:
         engine.dispose()
 
