@@ -83,43 +83,104 @@ def _session_factory():
     )
 
 
-def _seed_due_schedule(monkeypatch: pytest.MonkeyPatch, suffix: str):
+def _seed_bound_family(monkeypatch: pytest.MonkeyPatch, suffix: str):
     actor_id, profile_id, _claim_id, _initial_execution, binding = _bound_v1(
         monkeypatch,
         suffix,
     )
     engine, SessionLocal = _session_factory()
-    due_now = datetime.now(UTC)
     with SessionLocal() as db:
         family = db.get(
             ExternalDocumentSourceEvidenceFamilyBinding,
             UUID(binding["id"]),
         )
         assert family is not None
+        organization_id = family.organization_id
+
+    return (
+        engine,
+        SessionLocal,
+        actor_id,
+        UUID(profile_id),
+        organization_id,
+        UUID(binding["id"]),
+    )
+
+
+def _authorize_due_schedule_revision(
+    SessionLocal,
+    *,
+    actor_id,
+    profile_id,
+    organization_id,
+    binding_id,
+    suffix: str,
+):
+    due_now = datetime.now(UTC)
+    with SessionLocal() as db:
         schedule, _ = authorize_recurring_observation_schedule(
             db,
-            organization_id=family.organization_id,
-            profile_id=UUID(profile_id),
-            binding_id=UUID(binding["id"]),
+            organization_id=organization_id,
+            profile_id=profile_id,
+            binding_id=binding_id,
             authorized_by_id=actor_id,
             request_key=f"phase-ad-pg-schedule-{suffix}",
             reason=_SCHEDULE_REASON,
             cadence_class="hourly",
             effective_at=due_now,
         )
-        return engine, SessionLocal, due_now, schedule.id
+        schedule_id = schedule.id
+    return due_now, schedule_id
 
 
-def test_two_scheduler_workers_dispatch_same_due_tick_at_most_once(
+def _disable_schedule_revision(
+    SessionLocal,
+    *,
+    actor_id,
+    profile_id,
+    organization_id,
+    schedule_id,
+    request_key: str,
+) -> None:
+    with SessionLocal() as db:
+        disabled, outcome = disable_recurring_observation_schedule(
+            db,
+            organization_id=organization_id,
+            profile_id=profile_id,
+            schedule_id=schedule_id,
+            actor_id=actor_id,
+            request_key=request_key,
+            reason=_DISABLE_REASON,
+        )
+        assert outcome == "disabled"
+        assert disabled.status == "disabled"
+
+
+def test_scheduler_dispatch_races_reuse_one_integrity_valid_evidence_family(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    engine, SessionLocal, due_now, schedule_id = _seed_due_schedule(
-        monkeypatch,
-        "same-tick",
-    )
-    barrier = Barrier(2)
+    (
+        engine,
+        SessionLocal,
+        actor_id,
+        profile_id,
+        organization_id,
+        binding_id,
+    ) = _seed_bound_family(monkeypatch, "shared-dispatch-races")
+
     try:
-        def dispatch(label: str):
+        # Scenario 1: two scheduler workers race the same due tick.
+        due_now, schedule_id = _authorize_due_schedule_revision(
+            SessionLocal,
+            actor_id=actor_id,
+            profile_id=profile_id,
+            organization_id=organization_id,
+            binding_id=binding_id,
+            suffix="same-tick",
+        )
+        barrier = Barrier(2)
+
+        def dispatch_same_tick(label: str):
             with SessionLocal() as db:
                 barrier.wait(timeout=10)
                 try:
@@ -134,7 +195,7 @@ def test_two_scheduler_workers_dispatch_same_due_tick_at_most_once(
                     return None
 
         with ThreadPoolExecutor(max_workers=2) as pool:
-            results = list(pool.map(dispatch, ("a", "b")))
+            results = list(pool.map(dispatch_same_tick, ("a", "b")))
 
         assert sum(value is not None for value in results) == 1
         with SessionLocal() as db:
@@ -147,43 +208,28 @@ def test_two_scheduler_workers_dispatch_same_due_tick_at_most_once(
             )
             assert len(rows) == 1
             assert rows[0].due_at == due_now
-    finally:
-        engine.dispose()
 
+        _disable_schedule_revision(
+            SessionLocal,
+            actor_id=actor_id,
+            profile_id=profile_id,
+            organization_id=organization_id,
+            schedule_id=schedule_id,
+            request_key="phase-ad-pg-disable-after-same-tick",
+        )
 
-def test_disable_vs_dispatch_serializes_on_active_schedule_authority(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    actor_id, profile_id, _claim_id, _initial_execution, binding = _bound_v1(
-        monkeypatch,
-        "disable-race",
-    )
-    engine, SessionLocal = _session_factory()
-    due_now = datetime.now(UTC)
-    try:
-        with SessionLocal() as db:
-            family = db.get(
-                ExternalDocumentSourceEvidenceFamilyBinding,
-                UUID(binding["id"]),
-            )
-            assert family is not None
-            organization_id = family.organization_id
-            schedule, _ = authorize_recurring_observation_schedule(
-                db,
-                organization_id=organization_id,
-                profile_id=UUID(profile_id),
-                binding_id=UUID(binding["id"]),
-                authorized_by_id=actor_id,
-                request_key="phase-ad-pg-disable-schedule",
-                reason=_SCHEDULE_REASON,
-                cadence_class="hourly",
-                effective_at=due_now,
-            )
-            schedule_id = schedule.id
-
+        # Scenario 2: a fresh schedule revision races disable vs dispatch.
+        due_now, schedule_id = _authorize_due_schedule_revision(
+            SessionLocal,
+            actor_id=actor_id,
+            profile_id=profile_id,
+            organization_id=organization_id,
+            binding_id=binding_id,
+            suffix="disable-race",
+        )
         barrier = Barrier(2)
 
-        def dispatch():
+        def dispatch_vs_disable():
             with SessionLocal() as db:
                 barrier.wait(timeout=10)
                 try:
@@ -197,14 +243,14 @@ def test_disable_vs_dispatch_serializes_on_active_schedule_authority(
                     db.rollback()
                     return ("dispatch", "conflict")
 
-        def disable():
+        def disable_vs_dispatch():
             with SessionLocal() as db:
                 barrier.wait(timeout=10)
                 try:
                     disable_recurring_observation_schedule(
                         db,
                         organization_id=organization_id,
-                        profile_id=UUID(profile_id),
+                        profile_id=profile_id,
                         schedule_id=schedule_id,
                         actor_id=actor_id,
                         request_key="phase-ad-pg-disable",
@@ -216,8 +262,8 @@ def test_disable_vs_dispatch_serializes_on_active_schedule_authority(
                     return ("disable", "conflict")
 
         with ThreadPoolExecutor(max_workers=2) as pool:
-            a = pool.submit(dispatch)
-            b = pool.submit(disable)
+            a = pool.submit(dispatch_vs_disable)
+            b = pool.submit(disable_vs_dispatch)
             results = [a.result(), b.result()]
 
         disable_result = next(row for row in results if row[0] == "disable")
