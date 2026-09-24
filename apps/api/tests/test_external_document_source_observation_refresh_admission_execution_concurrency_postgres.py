@@ -91,6 +91,7 @@ def _seed_authorized_refresh(
     monkeypatch: pytest.MonkeyPatch,
     suffix: str,
     *,
+    include_refresh_execution: bool = True,
     include_admission_authorization: bool = True,
 ):
     (
@@ -292,6 +293,17 @@ def _seed_authorized_refresh(
         )
         db.add(refresh_authorization)
         db.flush()
+
+        if not include_refresh_execution:
+            db.commit()
+            return (
+                actor_id,
+                profile_id,
+                organization_id,
+                document_id,
+                refresh_authorization.id,
+                metadata_adapter,
+            )
 
         profile = db.get(ExternalDocumentSourceProfile, profile_id)
         lineage = db.get(
