@@ -77,50 +77,44 @@ jobs:
       fail-fast: false
       matrix:
         # Keep the existing deterministic 64-way node partition as the atomic
-        # coverage unit, but bundle those legacy buckets into 20 runner-aligned
-        # execution groups. The grouping is balanced from the worst observed
-        # per-shard runtime across Full Backend runs #38 and #40.
+        # coverage unit, but bundle those legacy buckets into 17 runner-aligned
+        # execution groups. The grouping is balanced from measured isolated legacy-shard runtimes
+        # from Full Backend run #45, with #40 fallback for shards cut by timeout.
         include:
           - group: 0
-            legacy_shards: "42 60"
+            legacy_shards: "17 53 60"
           - group: 1
-            legacy_shards: "43 11 62"
+            legacy_shards: "13 33 3"
           - group: 2
-            legacy_shards: "12 45"
+            legacy_shards: "42 38 51"
           - group: 3
-            legacy_shards: "17 44"
+            legacy_shards: "19 52 48 58"
           - group: 4
-            legacy_shards: "13 35 27"
+            legacy_shards: "23 46 59 61"
           - group: 5
-            legacy_shards: "19 52 41"
+            legacy_shards: "12 34 50 32"
           - group: 6
-            legacy_shards: "23 46 3 58"
+            legacy_shards: "4 36 29 1"
           - group: 7
-            legacy_shards: "18 29 47 61"
+            legacy_shards: "16 35 44"
           - group: 8
-            legacy_shards: "25 37 56 63"
+            legacy_shards: "25 10 37 0"
           - group: 9
-            legacy_shards: "4 34 50"
+            legacy_shards: "20 5 40 11"
           - group: 10
-            legacy_shards: "24 39 51"
+            legacy_shards: "26 21 49 63"
           - group: 11
-            legacy_shards: "16 36 53"
+            legacy_shards: "15 18 45 57"
           - group: 12
-            legacy_shards: "21 31 48 1"
+            legacy_shards: "43 9 2 41"
           - group: 13
-            legacy_shards: "15 30 54 0"
+            legacy_shards: "7 8 54 56"
           - group: 14
-            legacy_shards: "10 33 40"
+            legacy_shards: "14 22 55 47"
           - group: 15
-            legacy_shards: "7 9 2 57"
+            legacy_shards: "28 30 39 62"
           - group: 16
-            legacy_shards: "5 22"
-          - group: 17
-            legacy_shards: "26 8 38"
-          - group: 18
-            legacy_shards: "20 6 55 59 32"
-          - group: 19
-            legacy_shards: "28 14 49"
+            legacy_shards: "24 6 31 27"
     defaults:
       run:
         working-directory: apps/api
