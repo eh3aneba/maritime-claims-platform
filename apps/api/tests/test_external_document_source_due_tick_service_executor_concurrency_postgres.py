@@ -99,7 +99,7 @@ def _session_factory():
     )
 
 
-def _seed_dispatch(monkeypatch: pytest.MonkeyPatch, suffix: str):
+def _seed_bound_family(monkeypatch: pytest.MonkeyPatch, suffix: str):
     actor_id, profile_id, _claim_id, _initial_execution, binding = _bound_v1(
         monkeypatch,
         suffix,
@@ -116,7 +116,6 @@ def _seed_dispatch(monkeypatch: pytest.MonkeyPatch, suffix: str):
     )
 
     engine, SessionLocal = _session_factory()
-    due_now = datetime.now(UTC)
     with SessionLocal() as db:
         family = db.get(
             ExternalDocumentSourceEvidenceFamilyBinding,
@@ -124,11 +123,34 @@ def _seed_dispatch(monkeypatch: pytest.MonkeyPatch, suffix: str):
         )
         assert family is not None
         organization_id = family.organization_id
+
+    return (
+        engine,
+        SessionLocal,
+        actor_id,
+        UUID(profile_id),
+        organization_id,
+        UUID(binding["id"]),
+        adapter,
+    )
+
+
+def _seed_dispatch_revision(
+    SessionLocal,
+    *,
+    actor_id,
+    profile_id,
+    organization_id,
+    binding_id,
+    suffix: str,
+):
+    due_now = datetime.now(UTC)
+    with SessionLocal() as db:
         schedule, _ = authorize_recurring_observation_schedule(
             db,
             organization_id=organization_id,
-            profile_id=UUID(profile_id),
-            binding_id=UUID(binding["id"]),
+            profile_id=profile_id,
+            binding_id=binding_id,
             authorized_by_id=actor_id,
             request_key=f"phase-ae-pg-schedule-{suffix}",
             reason=_SCHEDULE_REASON,
@@ -144,37 +166,61 @@ def _seed_dispatch(monkeypatch: pytest.MonkeyPatch, suffix: str):
             now=due_now,
         )
         assert dispatch is not None
+        assert dispatch.schedule_id == schedule_id
         dispatch_id = dispatch.id
 
-    return (
-        engine,
-        SessionLocal,
-        due_now,
-        actor_id,
-        UUID(profile_id),
-        organization_id,
-        schedule_id,
-        dispatch_id,
-        adapter,
-    )
+    return due_now, schedule_id, dispatch_id
 
 
-def test_two_service_workers_consume_one_dispatch_with_one_provider_read(
+def _disable_schedule_revision(
+    SessionLocal,
+    *,
+    organization_id,
+    profile_id,
+    schedule_id,
+    actor_id,
+    request_key: str,
+    reason: str,
+) -> None:
+    with SessionLocal() as db:
+        disabled, outcome = disable_recurring_observation_schedule(
+            db,
+            organization_id=organization_id,
+            profile_id=profile_id,
+            schedule_id=schedule_id,
+            actor_id=actor_id,
+            request_key=request_key,
+            reason=reason,
+        )
+        assert outcome == "disabled"
+        assert disabled.status == "disabled"
+
+
+def test_service_executor_races_reuse_one_integrity_valid_evidence_family(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     (
         engine,
         SessionLocal,
-        due_now,
-        _actor_id,
-        _profile_id,
-        _organization_id,
-        _schedule_id,
-        dispatch_id,
+        actor_id,
+        profile_id,
+        organization_id,
+        binding_id,
         adapter,
-    ) = _seed_dispatch(monkeypatch, "two-service")
-    barrier = Barrier(2)
+    ) = _seed_bound_family(monkeypatch, "shared-service-races")
+
     try:
+        # Scenario 1: two service workers race for one immutable dispatch.
+        due_now, schedule_id, dispatch_id = _seed_dispatch_revision(
+            SessionLocal,
+            actor_id=actor_id,
+            profile_id=profile_id,
+            organization_id=organization_id,
+            binding_id=binding_id,
+            suffix="two-service",
+        )
+        barrier = Barrier(2)
+
         def consume(label: str):
             with SessionLocal() as db:
                 barrier.wait(timeout=10)
@@ -197,38 +243,50 @@ def test_two_service_workers_consume_one_dispatch_with_one_provider_read(
         assert successful
         with SessionLocal() as db:
             observations = list(
-                db.scalars(select(ExternalDocumentSourceDueTickObservationExecution)).all()
+                db.scalars(
+                    select(ExternalDocumentSourceDueTickObservationExecution).where(
+                        ExternalDocumentSourceDueTickObservationExecution.schedule_id
+                        == schedule_id
+                    )
+                ).all()
             )
             consumptions = list(
-                db.scalars(select(ExternalDocumentSourceDueTickDispatchConsumption)).all()
+                db.scalars(
+                    select(ExternalDocumentSourceDueTickDispatchConsumption).where(
+                        ExternalDocumentSourceDueTickDispatchConsumption.dispatch_id
+                        == dispatch_id
+                    )
+                ).all()
             )
             assert len(observations) == 1
             assert len(consumptions) == 1
-            assert consumptions[0].dispatch_id == dispatch_id
             assert consumptions[0].observation_execution_id == observations[0].id
             assert observations[0].actor_kind == "service"
             assert observations[0].executed_by_id is None
-
         assert adapter.calls == 1
-    finally:
-        engine.dispose()
 
+        _disable_schedule_revision(
+            SessionLocal,
+            organization_id=organization_id,
+            profile_id=profile_id,
+            schedule_id=schedule_id,
+            actor_id=actor_id,
+            request_key="phase-ae-pg-disable-after-two-service",
+            reason=(
+                "Disable the completed first schedule revision so the same "
+                "immutable Evidence family can host the next concurrency scenario."
+            ),
+        )
 
-def test_human_ac_vs_service_ae_same_tick_yields_one_observation_and_one_consumption(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    (
-        engine,
-        SessionLocal,
-        due_now,
-        actor_id,
-        profile_id,
-        organization_id,
-        schedule_id,
-        dispatch_id,
-        adapter,
-    ) = _seed_dispatch(monkeypatch, "human-service")
-    try:
+        # Scenario 2: human AC and service AE serialize on the same family authority.
+        due_now, schedule_id, dispatch_id = _seed_dispatch_revision(
+            SessionLocal,
+            actor_id=actor_id,
+            profile_id=profile_id,
+            organization_id=organization_id,
+            binding_id=binding_id,
+            suffix="human-service",
+        )
         with SessionLocal() as human_db:
             schedule = human_db.get(
                 ExternalDocumentSourceRecurringObservationSchedule,
@@ -242,8 +300,6 @@ def test_human_ac_vs_service_ae_same_tick_yields_one_observation_and_one_consump
                 binding_id=schedule.binding_id,
             )
 
-            # While human AC owns the exact family authority, the service
-            # executor cannot cross the same boundary or perform metadata I/O.
             with SessionLocal() as blocked_db:
                 blocked_db.execute(text("SET LOCAL lock_timeout = '250ms'"))
                 with pytest.raises(OperationalError):
@@ -254,7 +310,7 @@ def test_human_ac_vs_service_ae_same_tick_yields_one_observation_and_one_consump
                         now=due_now,
                     )
                 blocked_db.rollback()
-            assert adapter.calls == 0
+            assert adapter.calls == 1
 
             human_observation, outcome = execute_due_tick_observation(
                 human_db,
@@ -273,7 +329,7 @@ def test_human_ac_vs_service_ae_same_tick_yields_one_observation_and_one_consump
             assert human_observation.actor_kind == "human"
             assert human_observation.executed_by_id == actor_id
 
-        assert adapter.calls == 1
+        assert adapter.calls == 2
 
         with SessionLocal() as db:
             observation, consumption, outcome = consume_due_tick_dispatch(
@@ -287,7 +343,6 @@ def test_human_ac_vs_service_ae_same_tick_yields_one_observation_and_one_consump
             assert consumption.observation_execution_id == human_observation.id
             assert consumption.status == "linked_existing"
 
-        with SessionLocal() as db:
             observations = list(
                 db.scalars(
                     select(ExternalDocumentSourceDueTickObservationExecution).where(
@@ -297,32 +352,41 @@ def test_human_ac_vs_service_ae_same_tick_yields_one_observation_and_one_consump
                 ).all()
             )
             consumptions = list(
-                db.scalars(select(ExternalDocumentSourceDueTickDispatchConsumption)).all()
+                db.scalars(
+                    select(ExternalDocumentSourceDueTickDispatchConsumption).where(
+                        ExternalDocumentSourceDueTickDispatchConsumption.dispatch_id
+                        == dispatch_id
+                    )
+                ).all()
             )
             assert len(observations) == 1
             assert len(consumptions) == 1
             assert observations[0].actor_kind == "human"
             assert consumptions[0].observation_execution_id == observations[0].id
+        assert adapter.calls == 2
 
-        assert adapter.calls == 1
-    finally:
-        engine.dispose()
+        _disable_schedule_revision(
+            SessionLocal,
+            organization_id=organization_id,
+            profile_id=profile_id,
+            schedule_id=schedule_id,
+            actor_id=actor_id,
+            request_key="phase-ae-pg-disable-after-human-service",
+            reason=(
+                "Disable the completed second schedule revision so the same "
+                "immutable Evidence family can host the disable concurrency scenario."
+            ),
+        )
 
-def test_disable_vs_service_consumption_serializes_and_fails_closed(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    (
-        engine,
-        SessionLocal,
-        due_now,
-        actor_id,
-        profile_id,
-        organization_id,
-        schedule_id,
-        dispatch_id,
-        adapter,
-    ) = _seed_dispatch(monkeypatch, "disable-service")
-    try:
+        # Scenario 3: disabling the active schedule wins authority and stale AE fails closed.
+        due_now, schedule_id, dispatch_id = _seed_dispatch_revision(
+            SessionLocal,
+            actor_id=actor_id,
+            profile_id=profile_id,
+            organization_id=organization_id,
+            binding_id=binding_id,
+            suffix="disable-service",
+        )
         with SessionLocal() as disable_db:
             schedule = disable_db.get(
                 ExternalDocumentSourceRecurringObservationSchedule,
@@ -336,8 +400,6 @@ def test_disable_vs_service_consumption_serializes_and_fails_closed(
                 binding_id=schedule.binding_id,
             )
 
-            # While disable authority owns the shared family lock, AE must not
-            # pass the authority boundary or perform a provider metadata read.
             with SessionLocal() as blocked_db:
                 blocked_db.execute(text("SET LOCAL lock_timeout = '250ms'"))
                 with pytest.raises(OperationalError):
@@ -348,7 +410,7 @@ def test_disable_vs_service_consumption_serializes_and_fails_closed(
                         now=due_now,
                     )
                 blocked_db.rollback()
-            assert adapter.calls == 0
+            assert adapter.calls == 2
 
             disabled, outcome = disable_recurring_observation_schedule(
                 disable_db,
@@ -365,8 +427,6 @@ def test_disable_vs_service_consumption_serializes_and_fails_closed(
             assert outcome == "disabled"
             assert disabled.status == "disabled"
 
-        # Once disabled, the immutable prior dispatch is stale authority and
-        # must fail closed without reading provider metadata.
         with SessionLocal() as db:
             with pytest.raises(ExternalDocumentSourceConflictError):
                 consume_due_tick_dispatch(
@@ -378,13 +438,30 @@ def test_disable_vs_service_consumption_serializes_and_fails_closed(
             db.rollback()
 
         with SessionLocal() as db:
-            assert db.query(ExternalDocumentSourceDueTickObservationExecution).count() == 0
-            assert db.query(ExternalDocumentSourceDueTickDispatchConsumption).count() == 0
+            observations = list(
+                db.scalars(
+                    select(ExternalDocumentSourceDueTickObservationExecution).where(
+                        ExternalDocumentSourceDueTickObservationExecution.schedule_id
+                        == schedule_id
+                    )
+                ).all()
+            )
+            consumptions = list(
+                db.scalars(
+                    select(ExternalDocumentSourceDueTickDispatchConsumption).where(
+                        ExternalDocumentSourceDueTickDispatchConsumption.dispatch_id
+                        == dispatch_id
+                    )
+                ).all()
+            )
+            assert observations == []
+            assert consumptions == []
             assert db.get(ExternalDocumentSourceDueTickDispatch, dispatch_id) is not None
 
-        assert adapter.calls == 0
+        assert adapter.calls == 2
     finally:
         engine.dispose()
+
 
 def test_canonical_version_transition_makes_prior_dispatch_fail_closed_without_read(
     monkeypatch: pytest.MonkeyPatch,
