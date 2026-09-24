@@ -180,7 +180,7 @@ jobs:
           image_scan_required=false
           while IFS= read -r changed_path; do
             case "$changed_path" in
-              apps/api/*|apps/web/*|.github/workflows/supply-chain.yml)
+              apps/api/*|apps/web/*|.grype.yaml|.github/workflows/supply-chain.yml)
                 image_scan_required=true
                 break
                 ;;
