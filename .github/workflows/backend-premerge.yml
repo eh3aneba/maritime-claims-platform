@@ -114,11 +114,11 @@ jobs:
           - group: 15
             legacy_shards: "7 9 2 57"
           - group: 16
-            legacy_shards: "5 22 59 32"
+            legacy_shards: "5 22"
           - group: 17
             legacy_shards: "26 8 38"
           - group: 18
-            legacy_shards: "20 6 55"
+            legacy_shards: "20 6 55 59 32"
           - group: 19
             legacy_shards: "28 14 49"
     defaults:
@@ -166,25 +166,32 @@ jobs:
               sort
           )
 
-          group_nodes=()
-          for index in "${!test_nodes[@]}"; do
-            legacy_shard=$(( index % 64 ))
-            for allowed_shard in "${allowed_legacy_shards[@]}"; do
-              if (( legacy_shard == allowed_shard )); then
-                group_nodes+=("${test_nodes[$index]}")
-                break
+          total_nodes=0
+          for legacy_shard in "${allowed_legacy_shards[@]}"; do
+            shard_nodes=()
+            for index in "${!test_nodes[@]}"; do
+              if (( index % 64 == legacy_shard )); then
+                shard_nodes+=("${test_nodes[$index]}")
               fi
             done
+
+            if (( ${#shard_nodes[@]} == 0 )); then
+              echo "No backend test nodes selected for legacy shard $legacy_shard" >&2
+              exit 1
+            fi
+
+            total_nodes=$(( total_nodes + ${#shard_nodes[@]} ))
+            printf 'Running %s backend test nodes for legacy shard %s inside group %s\n' \
+              "${#shard_nodes[@]}" "$legacy_shard" "${{ matrix.group }}"
+
+            # Keep each legacy shard in its own pytest process. This preserves
+            # the isolation semantics of the proven 64-shard workflow while
+            # sharing runner checkout/Python/dependency setup across the group.
+            pytest -q "${shard_nodes[@]}"
           done
 
-          if (( ${#group_nodes[@]} == 0 )); then
-            echo "No backend test nodes selected for group ${{ matrix.group }}" >&2
-            exit 1
-          fi
-
-          printf 'Running %s backend test nodes in group %s from legacy shards: %s\n' \
-            "${#group_nodes[@]}" "${{ matrix.group }}" "$LEGACY_SHARDS"
-          pytest -q "${group_nodes[@]}"
+          printf 'Completed %s backend test nodes in group %s from legacy shards: %s\n' \
+            "$total_nodes" "${{ matrix.group }}" "$LEGACY_SHARDS"
 
   backend:
     name: Backend tests
