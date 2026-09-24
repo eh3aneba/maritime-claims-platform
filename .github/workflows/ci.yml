@@ -348,3 +348,58 @@ jobs:
       - name: Remove CI containers and volumes
         if: always()
         run: docker compose --env-file .env.ci down -v --remove-orphans || true
+
+  scoped-ci-gate:
+    name: Scoped CI gate
+    needs:
+      - changes
+      - dependency-locks
+      - design-partner-e2e
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Enforce classified CI scope
+        shell: bash
+        env:
+          CLASSIFIER_RESULT: ${{ needs.changes.result }}
+          DEPENDENCY_REQUIRED: ${{ needs.changes.outputs.dependency_required }}
+          DEPENDENCY_RESULT: ${{ needs.dependency-locks.result }}
+          E2E_REQUIRED: ${{ needs.changes.outputs.e2e_required }}
+          E2E_RESULT: ${{ needs.design-partner-e2e.result }}
+        run: |
+          set -euo pipefail
+
+          if [ "$CLASSIFIER_RESULT" != "success" ]; then
+            echo "::error::General CI scope classification did not succeed: $CLASSIFIER_RESULT"
+            exit 1
+          fi
+
+          require_selected_job() {
+            local required="$1"
+            local result="$2"
+            local label="$3"
+
+            if [ "$required" = "true" ]; then
+              if [ "$result" != "success" ]; then
+                echo "::error::$label was required but finished with result: $result"
+                exit 1
+              fi
+              return
+            fi
+
+            case "$result" in
+              skipped|success)
+                ;;
+              *)
+                echo "::error::$label was not required but finished unexpectedly with result: $result"
+                exit 1
+                ;;
+            esac
+          }
+
+          require_selected_job "$DEPENDENCY_REQUIRED" "$DEPENDENCY_RESULT" "Dependency lock consistency"
+          require_selected_job "$E2E_REQUIRED" "$E2E_RESULT" "Design partner browser E2E"
+
+          echo "Scoped CI gate passed."
+

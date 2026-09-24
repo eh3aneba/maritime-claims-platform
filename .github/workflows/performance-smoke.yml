@@ -4,12 +4,6 @@ on:
   pull_request:
     branches:
       - main
-    paths:
-      - "apps/api/**"
-      - "apps/web/**"
-      - "scripts/**"
-      - "docker-compose*.yml"
-      - ".github/workflows/performance-smoke.yml"
   workflow_dispatch:
 
 permissions:
@@ -20,8 +14,57 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  classify:
+    name: Classify operational performance scope
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      performance_required: ${{ steps.scope.outputs.performance_required }}
+    steps:
+      - name: Check out repository history
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Classify exact-head performance scope
+        id: scope
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "performance_required=true" >> "$GITHUB_OUTPUT"
+            echo "Manual dispatch: operational performance validation required."
+            exit 0
+          fi
+
+          if [ -z "$BASE_SHA" ] || [ -z "$HEAD_SHA" ]; then
+            echo "performance_required=true" >> "$GITHUB_OUTPUT"
+            echo "::warning::Missing PR SHA metadata; failing closed to operational performance validation."
+            exit 0
+          fi
+
+          performance_required=false
+          while IFS= read -r changed_path; do
+            case "$changed_path" in
+              apps/api/*|apps/web/*|scripts/*|docker-compose*.yml|.github/workflows/performance-smoke.yml)
+                performance_required=true
+                break
+                ;;
+            esac
+          done < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+
+          echo "performance_required=$performance_required" >> "$GITHUB_OUTPUT"
+          echo "Operational performance validation required: $performance_required"
+
   performance-smoke:
     name: Live-stack performance smoke
+    needs: classify
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.classify.outputs.performance_required == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -111,3 +154,45 @@ jobs:
       - name: Remove performance containers and volumes
         if: always()
         run: docker compose --env-file .env.performance down -v --remove-orphans || true
+
+  performance-gate:
+    name: Operational performance gate
+    needs:
+      - classify
+      - performance-smoke
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Enforce classified operational performance scope
+        shell: bash
+        env:
+          CLASSIFIER_RESULT: ${{ needs.classify.result }}
+          PERFORMANCE_REQUIRED: ${{ needs.classify.outputs.performance_required }}
+          PERFORMANCE_RESULT: ${{ needs.performance-smoke.result }}
+        run: |
+          set -euo pipefail
+
+          if [ "$CLASSIFIER_RESULT" != "success" ]; then
+            echo "::error::Operational performance scope classification did not succeed: $CLASSIFIER_RESULT"
+            exit 1
+          fi
+
+          if [ "$PERFORMANCE_REQUIRED" = "true" ]; then
+            if [ "$PERFORMANCE_RESULT" != "success" ]; then
+              echo "::error::Live-stack performance smoke was required but finished with result: $PERFORMANCE_RESULT"
+              exit 1
+            fi
+          else
+            case "$PERFORMANCE_RESULT" in
+              skipped|success)
+                ;;
+              *)
+                echo "::error::Live-stack performance smoke was not required but finished unexpectedly with result: $PERFORMANCE_RESULT"
+                exit 1
+                ;;
+            esac
+          fi
+
+          echo "Operational performance gate passed."
+
