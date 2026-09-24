@@ -20,6 +20,29 @@ from app.modules.external_document_sources.observation_review_decision_service i
 from app.modules.external_document_sources.observation_review_handoff_models import (
     ExternalDocumentSourceObservationReviewHandoff,
 )
+from tests.test_external_document_source_evidence_family_binding import (
+    setup_function as _phase_y_setup,
+    teardown_function as _phase_y_teardown,
+)
+from tests.test_external_document_source_observation_review_decision import (
+    _changed_result,
+    _prepare_handoff,
+)
+
+
+pytestmark = pytest.mark.skipif(
+    os.environ.get("EXTERNAL_EVIDENCE_REVIEW_DECISION_POSTGRES_TEST") != "1"
+    or not os.environ.get("DATABASE_URL", "").startswith("postgresql"),
+    reason="Phase AG concurrency regression runs only in the dedicated PostgreSQL CI job",
+)
+
+
+def setup_function() -> None:
+    _phase_y_setup()
+
+
+def teardown_function() -> None:
+    _phase_y_teardown()
 
 
 def _session_factory():
@@ -98,3 +121,28 @@ def assert_two_human_decisions_serialize_to_one_terminal_approval(
             assert db.query(ExternalDocumentSourceObservationRefreshAuthorization).count() == 1
     finally:
         engine.dispose()
+
+
+def test_two_human_decisions_serialize_to_one_terminal_approval(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (
+        actor_id,
+        profile_id,
+        organization_id,
+        _document_id,
+        handoff_id,
+        result_status,
+        adapter,
+    ) = _prepare_handoff(monkeypatch, "ag-pg-decision-race", _changed_result())
+    assert result_status == "changed"
+    assert adapter.calls == 1
+
+    assert_two_human_decisions_serialize_to_one_terminal_approval(
+        actor_id=actor_id,
+        profile_id=profile_id,
+        organization_id=organization_id,
+        handoff_id=handoff_id,
+    )
+
+    assert adapter.calls == 1
