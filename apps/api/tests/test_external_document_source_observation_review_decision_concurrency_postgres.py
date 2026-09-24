@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 import os
+from uuid import UUID
 
 import pytest
 from sqlalchemy import create_engine, select, text
@@ -19,30 +20,6 @@ from app.modules.external_document_sources.observation_review_decision_service i
 from app.modules.external_document_sources.observation_review_handoff_models import (
     ExternalDocumentSourceObservationReviewHandoff,
 )
-from tests.db_harness import TestingSessionLocal
-from tests.test_external_document_source_evidence_family_binding import (
-    setup_function as _phase_y_setup,
-    teardown_function as _phase_y_teardown,
-)
-from tests.test_external_document_source_observation_review_decision import (
-    _changed_result,
-    _prepare_handoff,
-)
-
-
-pytestmark = pytest.mark.skipif(
-    os.environ.get("EXTERNAL_EVIDENCE_REVIEW_DECISION_POSTGRES_TEST") != "1"
-    or not os.environ.get("DATABASE_URL", "").startswith("postgresql"),
-    reason="Phase AG concurrency regression runs only in the dedicated PostgreSQL CI job",
-)
-
-
-def setup_function() -> None:
-    _phase_y_setup()
-
-
-def teardown_function() -> None:
-    _phase_y_teardown()
 
 
 def _session_factory():
@@ -59,21 +36,13 @@ def _session_factory():
     )
 
 
-def test_two_human_decisions_serialize_to_one_terminal_approval(
-    monkeypatch: pytest.MonkeyPatch,
+def assert_two_human_decisions_serialize_to_one_terminal_approval(
+    *,
+    actor_id: UUID,
+    profile_id: UUID,
+    organization_id: UUID,
+    handoff_id: UUID,
 ) -> None:
-    (
-        actor_id,
-        profile_id,
-        organization_id,
-        _document_id,
-        handoff_id,
-        result_status,
-        adapter,
-    ) = _prepare_handoff(monkeypatch, "ag-pg-decision-race", _changed_result())
-    assert result_status == "changed"
-    assert adapter.calls == 1
-
     engine, SessionLocal = _session_factory()
     try:
         # Hold the exact handoff authority in one PostgreSQL transaction.
@@ -127,9 +96,5 @@ def test_two_human_decisions_serialize_to_one_terminal_approval(
             assert db.query(ExternalDocumentSourceObservationReviewDecision).count() == 1
             assert db.query(ExternalDocumentSourceObservationReviewDecisionReceipt).count() == 1
             assert db.query(ExternalDocumentSourceObservationRefreshAuthorization).count() == 1
-
-        # The decision boundary itself performs no additional provider read.
-        assert adapter.calls == 1
     finally:
         engine.dispose()
-
