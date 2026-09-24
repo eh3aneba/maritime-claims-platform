@@ -19,9 +19,11 @@ from app.modules.external_document_sources.observation_refresh_execution_models 
 )
 from tests.test_external_document_source_observation_refresh_admission_authorization import (
     _AUTH_REASON,
-    _completed_refresh,
     setup_function as _ai_setup,
     teardown_function as _ai_teardown,
+)
+from tests.test_external_document_source_observation_refresh_admission_execution_concurrency_postgres import (
+    _seed_authorized_refresh,
 )
 
 
@@ -61,12 +63,20 @@ def test_concurrent_refresh_admission_authorizers_serialize_on_exact_ah_executio
         actor_id,
         profile_id,
         organization_id,
+        _claim_id,
         _document_id,
         refresh_id,
+        existing_authorization_id,
+        _binding_id,
         _metadata_adapter,
         _read_adapter,
         _store,
-    ) = _completed_refresh(monkeypatch, "ai-pg-race")
+    ) = _seed_authorized_refresh(
+        monkeypatch,
+        "ai-pg-race",
+        include_admission_authorization=False,
+    )
+    assert existing_authorization_id is None
 
     engine, SessionLocal = _session_factory()
     try:
