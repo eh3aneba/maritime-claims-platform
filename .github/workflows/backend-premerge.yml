@@ -68,7 +68,7 @@ jobs:
           echo "Full Backend required: $backend_required"
 
   backend-shard:
-    name: Backend tests shard ${{ matrix.shard }}
+    name: Backend tests group ${{ matrix.group }}
     needs: classify
     if: ${{ (github.event_name == 'workflow_dispatch' || github.event.pull_request.draft == false) && needs.classify.outputs.backend_required == 'true' }}
     runs-on: ubuntu-latest
@@ -76,10 +76,51 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Full backend validation is deferred until a PR is Ready for review.
-        # Workflow-only ready PRs receive the required Backend tests status without
-        # allocating the 64-shard product matrix. Mixed changes fail closed to full.
-        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63]
+        # Keep the existing deterministic 64-way node partition as the atomic
+        # coverage unit, but bundle those legacy buckets into 20 runner-aligned
+        # execution groups. The grouping is balanced from the worst observed
+        # per-shard runtime across Full Backend runs #38 and #40.
+        include:
+          - group: 0
+            legacy_shards: "42 60"
+          - group: 1
+            legacy_shards: "43 11 62"
+          - group: 2
+            legacy_shards: "12 45"
+          - group: 3
+            legacy_shards: "17 44"
+          - group: 4
+            legacy_shards: "13 35 27"
+          - group: 5
+            legacy_shards: "19 52 41"
+          - group: 6
+            legacy_shards: "23 46 3 58"
+          - group: 7
+            legacy_shards: "18 29 47 61"
+          - group: 8
+            legacy_shards: "25 37 56 63"
+          - group: 9
+            legacy_shards: "4 34 50"
+          - group: 10
+            legacy_shards: "24 39 51"
+          - group: 11
+            legacy_shards: "16 36 53"
+          - group: 12
+            legacy_shards: "21 31 48 1"
+          - group: 13
+            legacy_shards: "15 30 54 0"
+          - group: 14
+            legacy_shards: "10 33 40"
+          - group: 15
+            legacy_shards: "7 9 2 57"
+          - group: 16
+            legacy_shards: "5 22 59 32"
+          - group: 17
+            legacy_shards: "26 8 38"
+          - group: 18
+            legacy_shards: "20 6 55"
+          - group: 19
+            legacy_shards: "28 14 49"
     defaults:
       run:
         working-directory: apps/api
@@ -110,26 +151,40 @@ jobs:
       - name: Compile backend
         run: python -m compileall app alembic
 
-      - name: Run backend test shard
+      - name: Run balanced backend test group
         shell: bash
+        env:
+          LEGACY_SHARDS: ${{ matrix.legacy_shards }}
         run: |
+          set -euo pipefail
+
+          read -r -a allowed_legacy_shards <<< "$LEGACY_SHARDS"
+
           mapfile -t test_nodes < <(
             pytest --collect-only -q tests |
               grep -E '^tests/.*::' |
               sort
           )
-          shard_nodes=()
+
+          group_nodes=()
           for index in "${!test_nodes[@]}"; do
-            if (( index % 64 == ${{ matrix.shard }} )); then
-              shard_nodes+=("${test_nodes[$index]}")
-            fi
+            legacy_shard=$(( index % 64 ))
+            for allowed_shard in "${allowed_legacy_shards[@]}"; do
+              if (( legacy_shard == allowed_shard )); then
+                group_nodes+=("${test_nodes[$index]}")
+                break
+              fi
+            done
           done
-          if (( ${#shard_nodes[@]} == 0 )); then
-            echo "No backend test nodes selected for shard ${{ matrix.shard }}" >&2
+
+          if (( ${#group_nodes[@]} == 0 )); then
+            echo "No backend test nodes selected for group ${{ matrix.group }}" >&2
             exit 1
           fi
-          printf 'Running %s backend test nodes in shard %s\n' "${#shard_nodes[@]}" "${{ matrix.shard }}"
-          pytest -q "${shard_nodes[@]}"
+
+          printf 'Running %s backend test nodes in group %s from legacy shards: %s\n' \
+            "${#group_nodes[@]}" "${{ matrix.group }}" "$LEGACY_SHARDS"
+          pytest -q "${group_nodes[@]}"
 
   backend:
     name: Backend tests
@@ -149,10 +204,10 @@ jobs:
             echo "Backend shard matrix result: $SHARD_RESULT" >&2
             exit 1
           fi
-          echo "All backend test shards succeeded for the exact pre-merge head."
+          echo "All balanced backend test groups succeeded for the exact pre-merge head."
 
       - name: Record workflow-only backend bypass
         if: ${{ needs.classify.outputs.backend_required != 'true' }}
         run: |
-          echo "No backend-relevant files changed; 64-shard Full Backend was not required."
+          echo "No backend-relevant files changed; balanced Full Backend was not required."
           echo "Required Backend tests status is satisfied by exact-head scope classification."
