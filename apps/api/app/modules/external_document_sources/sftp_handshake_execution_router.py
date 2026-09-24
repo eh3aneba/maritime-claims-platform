@@ -77,7 +77,7 @@ def _execution_audit_values(execution) -> dict:
 
 
 @router.post(
-    "/profiles/{profile_id}/sftp-handshake-authorizations/{authorization_id}/activation-executions",
+    "/profiles/{profile_id}/sftp-handshake-authorizations/{authorization_id}/handshake-executions",
     response_model=ExternalDocumentSourceSftpHandshakeExecutionRead,
     status_code=status.HTTP_201_CREATED,
 )
@@ -120,7 +120,7 @@ def execute_sftp_handshake_authorization_endpoint(
                     "status": authorization.status,
                     "terminal_hash": authorization.terminal_hash,
                     "sftp_handshake_authorized": False,
-                    "oauth_token_exchanged": False,
+                    "secret_resolution_performed": False,
                     "provider_network_performed": False,
                     "remote_read_performed": False,
                     "evidence_admitted": False,
@@ -143,7 +143,7 @@ def execute_sftp_handshake_authorization_endpoint(
                 entity_type="external_document_source_sftp_handshake_execution",
                 entity_id=execution.id,
                 new_values=_execution_audit_values(execution),
-                details="Phase 17.6-E consumed one bounded activation authorization locally; no credential resolution, OAuth/token exchange, provider network, remote document, Evidence, Document or claim authority was exercised.",
+                details="Phase 17.6-E consumed one bounded SFTP handshake authorization locally; no credential resolution, DNS/network, SSH/SFTP session, remote file, Evidence, Document, processing, AI or claim authority was exercised.",
             )
             db.commit()
             db.refresh(execution)
