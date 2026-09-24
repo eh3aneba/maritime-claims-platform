@@ -4,9 +4,6 @@ on:
   pull_request:
     branches:
       - main
-    paths:
-      - "apps/api/**"
-      - ".github/workflows/postgres-*.yml"
   workflow_dispatch:
 
 permissions:
@@ -23,6 +20,7 @@ jobs:
     timeout-minutes: 2
     outputs:
       groups: ${{ steps.scope.outputs.groups }}
+      postgres_required: ${{ steps.scope.outputs.postgres_required }}
     steps:
       - name: Check out repository history
         uses: actions/checkout@v6
@@ -40,20 +38,24 @@ jobs:
           set -euo pipefail
 
           all_groups='["scheduling","observation","review","service-executor","authorization-foundation","admission-execution"]'
+          placeholder_groups='["scheduling"]'
 
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "postgres_required=true" >> "$GITHUB_OUTPUT"
             echo "groups=$all_groups" >> "$GITHUB_OUTPUT"
             echo "Manual dispatch: all PostgreSQL concurrency groups required."
             exit 0
           fi
 
           if [ -z "$BASE_SHA" ] || [ -z "$HEAD_SHA" ]; then
+            echo "postgres_required=true" >> "$GITHUB_OUTPUT"
             echo "groups=$all_groups" >> "$GITHUB_OUTPUT"
             echo "::warning::Missing PR SHA metadata; failing closed to all PostgreSQL concurrency groups."
             exit 0
           fi
 
           groups=""
+          postgres_required=false
           fail_closed=false
 
           add_group() {
@@ -67,33 +69,49 @@ jobs:
           while IFS= read -r path; do
             case "$path" in
               apps/api/tests/test_external_document_source_recurring_observation_schedule_concurrency_postgres.py|apps/api/tests/test_external_document_source_due_tick_dispatch_concurrency_postgres.py)
+                postgres_required=true
                 add_group scheduling
                 ;;
               apps/api/tests/test_external_document_source_due_tick_observation_concurrency_postgres.py|apps/api/tests/test_external_document_source_observation_refresh_execution_concurrency_postgres.py)
+                postgres_required=true
                 add_group observation
                 ;;
               apps/api/tests/test_external_document_source_observation_review_handoff_concurrency_postgres.py|apps/api/tests/test_external_document_source_observation_review_decision_concurrency_postgres.py)
+                postgres_required=true
                 add_group review
                 ;;
               apps/api/tests/test_external_document_source_due_tick_service_executor_concurrency_postgres.py)
+                postgres_required=true
                 add_group service-executor
                 ;;
               apps/api/tests/test_external_document_source_observation_refresh_admission_authorization_concurrency_postgres.py|apps/api/tests/test_external_document_source_family_version_concurrency_postgres.py|apps/api/tests/test_processing_lease_postgres.py|apps/api/tests/test_payment_settlement_concurrency_postgres.py)
+                postgres_required=true
                 add_group authorization-foundation
                 ;;
               apps/api/tests/test_external_document_source_observation_refresh_admission_execution_concurrency_postgres.py|apps/api/tests/test_external_document_source_sftp_handshake_execution_concurrency_postgres.py)
+                postgres_required=true
                 add_group admission-execution
                 ;;
               .github/workflows/postgres-*.yml|apps/api/*)
+                postgres_required=true
                 fail_closed=true
                 break
                 ;;
             esac
           done < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
 
+          if [ "$postgres_required" != "true" ]; then
+            echo "postgres_required=false" >> "$GITHUB_OUTPUT"
+            echo "groups=$placeholder_groups" >> "$GITHUB_OUTPUT"
+            echo "No PostgreSQL concurrency validation required for this exact-head diff."
+            exit 0
+          fi
+
+          echo "postgres_required=true" >> "$GITHUB_OUTPUT"
+
           if [ "$fail_closed" = true ] || [ -z "$groups" ]; then
             echo "groups=$all_groups" >> "$GITHUB_OUTPUT"
-            echo "Shared, runtime, workflow, or ambiguous change: all PostgreSQL concurrency groups required."
+            echo "Shared, runtime, workflow, or ambiguous backend change: all PostgreSQL concurrency groups required."
             exit 0
           fi
 
@@ -104,6 +122,7 @@ jobs:
   postgres-concurrency:
     name: PostgreSQL concurrency (${{ matrix.group }})
     needs: classify
+    if: ${{ needs.classify.outputs.postgres_required == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     strategy:
@@ -226,3 +245,45 @@ jobs:
         env:
           SFTP_HANDSHAKE_EXECUTION_POSTGRES_TEST: "1"
         run: pytest -q tests/test_external_document_source_sftp_handshake_execution_concurrency_postgres.py
+
+  postgres-concurrency-gate:
+    name: PostgreSQL concurrency gate
+    needs:
+      - classify
+      - postgres-concurrency
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Enforce classified PostgreSQL concurrency scope
+        shell: bash
+        env:
+          CLASSIFIER_RESULT: ${{ needs.classify.result }}
+          POSTGRES_REQUIRED: ${{ needs.classify.outputs.postgres_required }}
+          POSTGRES_RESULT: ${{ needs.postgres-concurrency.result }}
+        run: |
+          set -euo pipefail
+
+          if [ "$CLASSIFIER_RESULT" != "success" ]; then
+            echo "::error::PostgreSQL concurrency scope classification did not succeed: $CLASSIFIER_RESULT"
+            exit 1
+          fi
+
+          if [ "$POSTGRES_REQUIRED" = "true" ]; then
+            if [ "$POSTGRES_RESULT" != "success" ]; then
+              echo "::error::Selected PostgreSQL concurrency validation was required but finished with result: $POSTGRES_RESULT"
+              exit 1
+            fi
+          else
+            case "$POSTGRES_RESULT" in
+              skipped|success)
+                ;;
+              *)
+                echo "::error::PostgreSQL concurrency validation was not required but finished unexpectedly with result: $POSTGRES_RESULT"
+                exit 1
+                ;;
+            esac
+          fi
+
+          echo "PostgreSQL concurrency gate passed."
+
