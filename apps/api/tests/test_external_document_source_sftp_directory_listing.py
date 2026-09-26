@@ -17,6 +17,7 @@ from app.modules.external_document_sources.sftp_directory_listing_service import
     register_external_document_source_sftp_directory_listing_adapter,
 )
 from app.modules.external_document_sources.sftp_session_activation_service import (
+    SftpSessionActivationResult,
     register_external_document_source_sftp_session_activation_adapter,
 )
 from tests.db_harness import TestingSessionLocal, client
@@ -246,7 +247,7 @@ def test_sftp_directory_listing_is_bounded_metadata_only_and_replay_safe() -> No
 
 
 def test_sftp_directory_listing_path_policy_and_nonrecursive_boundary() -> None:
-    for index, unsafe in enumerate(("../escape", "/absolute", "folder\\escape", "folder/../../escape")):
+    for index, unsafe in enumerate(("../escape", "/absolute", "folder\\escape", "folder/../../escape", "folder\u0000escape")):
         chain = _activated_chain(f"sftp-dir-unsafe-{index}")
         adapter = _DirectoryListingAdapter()
         register_external_document_source_sftp_directory_listing_adapter(adapter)
@@ -372,3 +373,66 @@ def test_sftp_directory_listing_sanitizes_adapter_errors_and_is_tenant_isolated(
         payload = json.dumps(audit.new_values, sort_keys=True) + (audit.details or "")
         assert _SECRET_MARKER not in payload
         assert _RAW_RESPONSE_MARKER not in payload
+
+
+def test_sftp_directory_listing_requires_exact_activated_g_and_registered_adapter() -> None:
+    chain = _activated_chain("sftp-dir-missing-adapter")
+    missing = _list(chain, key="missing-listing-adapter")
+    assert missing.status_code == 409, missing.text
+    assert "adapter is unavailable" in missing.text
+    with TestingSessionLocal() as db:
+        assert db.query(ExternalDocumentSourceSftpDirectoryListing).filter(
+            ExternalDocumentSourceSftpDirectoryListing.session_activation_id == UUID(chain["activation_id"])
+        ).count() == 0
+
+    chain = _verified_transport("sftp-dir-failed-g")
+    failed_activation = _DeterministicSessionActivationAdapter(
+        SftpSessionActivationResult(
+            failure_code="authentication_failed",
+            authentication_method="public_key",
+            latency_class="fast",
+            secret_resolution_performed=True,
+            provider_network_performed=True,
+            ssh_transport_performed=True,
+            host_key_verification_performed=True,
+            host_key_verified=True,
+            authentication_performed=True,
+            authentication_succeeded=False,
+        )
+    )
+    register_external_document_source_sftp_session_activation_adapter(failed_activation)
+    failed = _activate(chain, key="sftp-dir-failed-g-activation")
+    assert failed.status_code == 201, failed.text
+    assert failed.json()["result_status"] == "failed"
+    chain["activation_id"] = failed.json()["id"]
+
+    listing_adapter = _DirectoryListingAdapter()
+    register_external_document_source_sftp_directory_listing_adapter(listing_adapter)
+    blocked = _list(chain, key="must-not-list-after-failed-g")
+    assert blocked.status_code == 409, blocked.text
+    assert "requires an exact activated Phase 17.6-G" in blocked.text
+    assert listing_adapter.calls == []
+
+
+def test_sftp_directory_listing_detects_persisted_entry_tampering() -> None:
+    chain = _activated_chain("sftp-dir-tamper")
+    adapter = _DirectoryListingAdapter()
+    register_external_document_source_sftp_directory_listing_adapter(adapter)
+    response = _list(chain, key="tamper-entry")
+    assert response.status_code == 201, response.text
+    listing_id = UUID(response.json()["id"])
+
+    with TestingSessionLocal() as db:
+        entry = db.query(ExternalDocumentSourceSftpDirectoryListingEntry).filter(
+            ExternalDocumentSourceSftpDirectoryListingEntry.listing_id == listing_id,
+            ExternalDocumentSourceSftpDirectoryListingEntry.entry_index == 0,
+        ).one()
+        entry.entry_name = "Tampered Report.pdf"
+        db.commit()
+
+    tampered = client.get(
+        f"/api/v1/external-document-sources/profiles/{chain['profile_id']}/sftp-directory-listings/{listing_id}",
+        headers=_headers(chain["requester_id"]),
+    )
+    assert tampered.status_code == 409, tampered.text
+    assert "entry integrity failed" in tampered.text
