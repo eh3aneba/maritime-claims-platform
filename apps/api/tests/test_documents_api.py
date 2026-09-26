@@ -32,6 +32,10 @@ def setup_function() -> None:
     reset_database()
 
 
+def teardown_function() -> None:
+    document_service.settings.malware_scan_enabled = False
+
+
 def seed_claim() -> dict[str, str]:
     with TestingSessionLocal() as db:
         alpha = Organization(name="Alpha Marine", slug="alpha")
