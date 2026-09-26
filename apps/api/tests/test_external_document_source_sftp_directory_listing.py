@@ -356,7 +356,7 @@ def test_sftp_directory_listing_sanitizes_adapter_errors_and_is_tenant_isolated(
     adapter = _DirectoryListingAdapter(raise_error=True)
     register_external_document_source_sftp_directory_listing_adapter(adapter)
 
-    _, other_requester, _ = _seed_tenant("sftp-dir-other-tenant")
+    _, other_requester, _, _ = _seed_tenant("sftp-dir-other-tenant")
     wrong_tenant = _list(chain, key="wrong-tenant", actor_id=other_requester)
     assert wrong_tenant.status_code == 404, wrong_tenant.text
     assert adapter.calls == []
