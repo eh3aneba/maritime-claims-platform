@@ -88,7 +88,7 @@ jobs:
                 postgres_required=true
                 add_group authorization-foundation
                 ;;
-              apps/api/tests/test_external_document_source_observation_refresh_admission_execution_concurrency_postgres.py|apps/api/tests/test_external_document_source_sftp_handshake_execution_concurrency_postgres.py|apps/api/tests/test_external_document_source_sftp_transport_verification_concurrency_postgres.py|apps/api/tests/test_external_document_source_sftp_session_activation_concurrency_postgres.py|apps/api/tests/test_external_document_source_sftp_directory_listing_concurrency_postgres.py|apps/api/tests/test_external_document_source_sftp_file_content_proof_concurrency_postgres.py|apps/api/tests/test_external_document_source_sftp_quarantine_staging_concurrency_postgres.py)
+              apps/api/tests/test_external_document_source_observation_refresh_admission_execution_concurrency_postgres.py|apps/api/tests/test_external_document_source_sftp_handshake_execution_concurrency_postgres.py|apps/api/tests/test_external_document_source_sftp_transport_verification_concurrency_postgres.py|apps/api/tests/test_external_document_source_sftp_session_activation_concurrency_postgres.py|apps/api/tests/test_external_document_source_sftp_directory_listing_concurrency_postgres.py|apps/api/tests/test_external_document_source_sftp_file_content_proof_concurrency_postgres.py|apps/api/tests/test_external_document_source_sftp_quarantine_staging_concurrency_postgres.py|apps/api/tests/test_external_document_source_sftp_checkpoint_concurrency_postgres.py)
                 postgres_required=true
                 add_group admission-execution
                 ;;
@@ -275,6 +275,12 @@ jobs:
         env:
           SFTP_QUARANTINE_STAGING_POSTGRES_TEST: "1"
         run: pytest -q --durations=10 tests/test_external_document_source_sftp_quarantine_staging_concurrency_postgres.py
+
+      - name: Admission execution — SFTP initial quarantine checkpoint
+        if: ${{ matrix.group == 'admission-execution' }}
+        env:
+          SFTP_CHECKPOINT_POSTGRES_TEST: "1"
+        run: pytest -q --durations=10 tests/test_external_document_source_sftp_checkpoint_concurrency_postgres.py
 
   postgres-concurrency-gate:
     name: PostgreSQL concurrency gate
