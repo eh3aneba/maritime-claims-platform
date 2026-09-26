@@ -46,6 +46,11 @@ from app.modules.external_document_sources.sftp_session_activation_models import
     ExternalDocumentSourceSftpSessionActivation,
     ExternalDocumentSourceSftpSessionActivationReceipt,
 )
+from app.modules.external_document_sources.sftp_directory_listing_models import (
+    ExternalDocumentSourceSftpDirectoryListing,
+    ExternalDocumentSourceSftpDirectoryListingEntry,
+    ExternalDocumentSourceSftpDirectoryListingReceipt,
+)
 from app.modules.external_document_sources.credential_reference_health_models import (
     ExternalDocumentSourceCredentialReferenceHealthQualification,
     ExternalDocumentSourceCredentialReferenceHealthReceipt,
@@ -177,6 +182,7 @@ from app.modules.external_document_sources import sftp_handshake_authorization_r
 from app.modules.external_document_sources import sftp_handshake_execution_router as _sftp_handshake_execution_router  # noqa: F401,E402
 from app.modules.external_document_sources import sftp_transport_verification_router as _sftp_transport_verification_router  # noqa: F401,E402
 from app.modules.external_document_sources import sftp_session_activation_router as _sftp_session_activation_router  # noqa: F401,E402
+from app.modules.external_document_sources import sftp_directory_listing_router as _sftp_directory_listing_router  # noqa: F401,E402
 from app.modules.external_document_sources import credential_reference_health_router as _credential_reference_health_router  # noqa: F401,E402
 from app.modules.external_document_sources import credential_resolution_execution_router as _credential_resolution_execution_router  # noqa: F401,E402
 from app.modules.external_document_sources import due_tick_observation_router as _due_tick_observation_router  # noqa: F401,E402
