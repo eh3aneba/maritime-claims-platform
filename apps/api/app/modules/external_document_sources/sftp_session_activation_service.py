@@ -485,7 +485,11 @@ def _ensure_integrity(db: Session, row: ExternalDocumentSourceSftpSessionActivat
             raise ExternalDocumentSourceConflictError("SFTP session activation failure facts drifted")
     else:
         raise ExternalDocumentSourceConflictError("SFTP session activation result status is invalid")
-    if row.credential_stored or any(bool(getattr(row, field)) for field in _FALSE_SAFETY_FIELDS):
+    if (
+        not row.credential_reference_stored
+        or row.credential_stored
+        or any(bool(getattr(row, field)) for field in _FALSE_SAFETY_FIELDS)
+    ):
         raise ExternalDocumentSourceConflictError("SFTP session activation safety boundary drifted")
     receipts = _receipts(db, row)
     if len(receipts) != 2 or [r.event_type for r in receipts] != ["requested", "completed"]:
@@ -579,7 +583,6 @@ def activate_external_document_source_sftp_session(
     except Exception:
         adapter_result = SftpSessionActivationResult(
             failure_code="adapter_error",
-            secret_resolution_performed=True,
         )
 
     if isinstance(adapter_result, SftpSessionActivationResult) and adapter_result.failure_code == "adapter_error":
