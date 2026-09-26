@@ -145,6 +145,10 @@ class ExternalDocumentSourceSftpDirectoryListingReceiptRead(BaseModel):
     remote_write_performed: bool
     remote_rename_performed: bool
     remote_delete_performed: bool
+    remote_mkdir_performed: bool
+    remote_chmod_performed: bool
+    remote_chown_performed: bool
+    remote_touch_performed: bool
     command_executed: bool
     checkpoint_created: bool
     evidence_admitted: bool
