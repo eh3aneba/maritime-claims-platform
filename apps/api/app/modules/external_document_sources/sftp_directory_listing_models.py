@@ -26,6 +26,10 @@ class _SftpDirectoryListingSafetyMixin:
     remote_write_performed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
     remote_rename_performed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
     remote_delete_performed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    remote_mkdir_performed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    remote_chmod_performed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    remote_chown_performed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    remote_touch_performed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
     command_executed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
     checkpoint_created: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
     evidence_admitted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
@@ -43,6 +47,10 @@ def _safety_constraints(prefix: str):
         ("remote_write_performed", "write"),
         ("remote_rename_performed", "rename"),
         ("remote_delete_performed", "delete"),
+        ("remote_mkdir_performed", "mkdir"),
+        ("remote_chmod_performed", "chmod"),
+        ("remote_chown_performed", "chown"),
+        ("remote_touch_performed", "touch"),
         ("command_executed", "command"),
         ("checkpoint_created", "checkpoint"),
         ("evidence_admitted", "evidence"),
