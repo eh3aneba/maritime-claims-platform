@@ -6,7 +6,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Protocol
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -666,6 +666,7 @@ def create_external_document_source_sftp_file_content_proof(
     completed_at = max(requested_at, _utc_now())
     scope_hash = _scope_hash(listing=listing, entry=entry, adapter_kind=adapter_kind, request_key=normalized_key)
     row = ExternalDocumentSourceSftpFileContentProof(
+        id=uuid4(),
         organization_id=organization_id,
         profile_id=profile_id,
         directory_listing_id=listing.id,
