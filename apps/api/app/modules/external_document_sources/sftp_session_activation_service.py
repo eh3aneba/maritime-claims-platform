@@ -645,7 +645,6 @@ def activate_external_document_source_sftp_session(
         result_hash="0" * 64,
         credential_reference_stored=True,
         secret_resolution_performed=outcome.get("secret_resolution_performed", False),
-        credential_stored=False,
         provider_network_performed=outcome.get("provider_network_performed", False),
         ssh_transport_performed=outcome.get("ssh_transport_performed", False),
         host_key_verification_performed=outcome.get("host_key_verification_performed", False),
