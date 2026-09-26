@@ -103,24 +103,43 @@ def activate_sftp_session_endpoint(
             request_reason=payload.reason,
         )
         if outcome == "completed":
+            activated = row.result_status == "activated"
             write_audit_log(
                 db,
                 organization_id=current_user.organization_id,
-                actor_id=current_user.id,
-                action="external_document_source.sftp_session_activation.completed",
-                resource_type="external_document_source_sftp_session_activation",
-                resource_id=row.id,
+                user_id=current_user.id,
+                action=(
+                    "EXTERNAL_DOCUMENT_SOURCE_SFTP_SESSION_ACTIVATED"
+                    if activated
+                    else "EXTERNAL_DOCUMENT_SOURCE_SFTP_SESSION_ACTIVATION_FAILED"
+                ),
+                entity_type="external_document_source_sftp_session_activation",
+                entity_id=row.id,
                 new_values=_audit_values(row),
+                details=(
+                    "Phase 17.6-G transiently resolved the approved credential reference, "
+                    "revalidated the pinned SSH host key, authenticated exactly once, proved "
+                    "SFTP subsystem activation and immediately closed the session without "
+                    "listing, stat, remote-file access, commands or downstream claim authority."
+                    if activated
+                    else
+                    "Phase 17.6-G failed closed with a bounded sanitized authentication/session "
+                    "activation result and exercised no remote-file, command, Evidence, Document, "
+                    "processing, AI or Claim authority."
+                ),
             )
         db.commit()
         db.refresh(row)
-        return row
-    except (ExternalDocumentSourceNotFoundError, ExternalDocumentSourceValidationError, ExternalDocumentSourceConflictError) as exc:
+        return ExternalDocumentSourceSftpSessionActivationRead.model_validate(row)
+    except (
+        ExternalDocumentSourceNotFoundError,
+        ExternalDocumentSourceValidationError,
+        ExternalDocumentSourceConflictError,
+        IntegrityError,
+        ValueError,
+    ) as exc:
         db.rollback()
         _raise_service_error(exc)
-    except IntegrityError as exc:
-        db.rollback()
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="SFTP session activation conflict") from exc
 
 
 @router.get(
