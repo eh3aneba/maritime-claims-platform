@@ -89,6 +89,7 @@ class ExternalDocumentSourceSftpDirectoryListing(
             ")",
             name="ck_ext_doc_sftp_dir_listing_failure",
         ),
+        CheckConstraint("authentication_method IS NULL OR authentication_method IN ('password','public_key')", name="ck_ext_doc_sftp_dir_listing_auth_method"),
         CheckConstraint("latency_class IS NULL OR latency_class IN ('fast','normal','slow')", name="ck_ext_doc_sftp_dir_listing_latency"),
         CheckConstraint(
             "(result_status = 'listed' AND failure_code IS NULL AND page_count = 1 AND items_hash IS NOT NULL "
@@ -139,6 +140,7 @@ class ExternalDocumentSourceSftpDirectoryListing(
     completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     result_status: Mapped[str] = mapped_column(String(24), nullable=False)
     failure_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    authentication_method: Mapped[str | None] = mapped_column(String(32), nullable=True)
     latency_class: Mapped[str | None] = mapped_column(String(24), nullable=True)
     entry_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     page_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
