@@ -629,6 +629,7 @@ def create_external_document_source_sftp_file_content_proof(
         raise ExternalDocumentSourceConflictError("SFTP file content read adapter is unavailable")
     adapter_kind = _normalize_adapter_kind(adapter.adapter_kind)
 
+    requested_at = _aware(now or _utc_now())
     request = SftpFileContentReadRequest(
         hostname=listing.destination_hostname,
         port=listing.destination_port,
@@ -655,14 +656,14 @@ def create_external_document_source_sftp_file_content_proof(
         )
         content_sha256 = hashlib.sha256(content).hexdigest()
         content_byte_count = len(content)
+        del content
     finally:
         try:
             del transient_result
         except UnboundLocalError:
             pass
 
-    current = _aware(now or _utc_now())
-    completed_at = max(current, _utc_now())
+    completed_at = max(requested_at, _utc_now())
     scope_hash = _scope_hash(listing=listing, entry=entry, adapter_kind=adapter_kind, request_key=normalized_key)
     row = ExternalDocumentSourceSftpFileContentProof(
         organization_id=organization_id,
@@ -694,7 +695,7 @@ def create_external_document_source_sftp_file_content_proof(
         request_hash="0" * 64,
         requested_by_id=requested_by_id,
         request_reason=normalized_reason,
-        requested_at=current,
+        requested_at=requested_at,
         completed_at=completed_at,
         result_status="read_verified",
         authentication_method=authentication_method,
