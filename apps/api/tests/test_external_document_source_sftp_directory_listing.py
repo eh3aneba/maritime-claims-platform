@@ -170,6 +170,10 @@ def test_sftp_directory_listing_is_bounded_metadata_only_and_replay_safe() -> No
     assert body["remote_write_performed"] is False
     assert body["remote_rename_performed"] is False
     assert body["remote_delete_performed"] is False
+    assert body["remote_mkdir_performed"] is False
+    assert body["remote_chmod_performed"] is False
+    assert body["remote_chown_performed"] is False
+    assert body["remote_touch_performed"] is False
     assert body["command_executed"] is False
     assert body["checkpoint_created"] is False
     assert body["evidence_admitted"] is False
