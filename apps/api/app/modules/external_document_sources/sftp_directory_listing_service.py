@@ -65,6 +65,10 @@ _FALSE_SAFETY_FIELDS = (
     "remote_write_performed",
     "remote_rename_performed",
     "remote_delete_performed",
+    "remote_mkdir_performed",
+    "remote_chmod_performed",
+    "remote_chown_performed",
+    "remote_touch_performed",
     "command_executed",
     "checkpoint_created",
     "evidence_admitted",
@@ -141,6 +145,10 @@ class SftpDirectoryListingResult:
     remote_write_performed: bool = False
     remote_rename_performed: bool = False
     remote_delete_performed: bool = False
+    remote_mkdir_performed: bool = False
+    remote_chmod_performed: bool = False
+    remote_chown_performed: bool = False
+    remote_touch_performed: bool = False
     command_executed: bool = False
     symlink_escape_detected: bool = False
 
@@ -505,6 +513,10 @@ def _validated_result(result: SftpDirectoryListingResult, *, expected_auth_kind:
         or result.remote_write_performed
         or result.remote_rename_performed
         or result.remote_delete_performed
+        or result.remote_mkdir_performed
+        or result.remote_chmod_performed
+        or result.remote_chown_performed
+        or result.remote_touch_performed
         or result.command_executed
     ):
         raise ExternalDocumentSourceConflictError("SFTP directory listing adapter violated the read-only metadata boundary")
