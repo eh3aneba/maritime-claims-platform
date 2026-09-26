@@ -157,6 +157,15 @@ def clear_external_document_source_sftp_file_content_read_adapter() -> None:
     _READ_ADAPTER = None
 
 
+def get_external_document_source_sftp_file_content_read_adapter() -> SftpFileContentReadAdapter | None:
+    """Return the currently registered bounded SFTP content-read adapter.
+
+    Phase 17.6-J reuses the exact Phase I adapter contract for its separately
+    authorized digest-verified reread. Secret material remains adapter-internal.
+    """
+    return _READ_ADAPTER
+
+
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
