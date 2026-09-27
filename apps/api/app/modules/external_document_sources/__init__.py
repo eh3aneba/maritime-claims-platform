@@ -75,6 +75,10 @@ from app.modules.external_document_sources.sftp_checkpoint_advancement_models im
     ExternalDocumentSourceSftpCheckpointAdvancement,
     ExternalDocumentSourceSftpCheckpointAdvancementReceipt,
 )
+from app.modules.external_document_sources.sftp_successor_change_detection_models import (
+    ExternalDocumentSourceSftpSuccessorChangeDetection,
+    ExternalDocumentSourceSftpSuccessorChangeDetectionReceipt,
+)
 from app.modules.external_document_sources.credential_reference_health_models import (
     ExternalDocumentSourceCredentialReferenceHealthQualification,
     ExternalDocumentSourceCredentialReferenceHealthReceipt,
@@ -213,6 +217,7 @@ from app.modules.external_document_sources import sftp_checkpoint_router as _sft
 from app.modules.external_document_sources import sftp_change_detection_router as _sftp_change_detection_router  # noqa: F401,E402
 from app.modules.external_document_sources import sftp_successor_restaging_router as _sftp_successor_restaging_router  # noqa: F401,E402
 from app.modules.external_document_sources import sftp_checkpoint_advancement_router as _sftp_checkpoint_advancement_router  # noqa: F401,E402
+from app.modules.external_document_sources import sftp_successor_change_detection_router as _sftp_successor_change_detection_router  # noqa: F401,E402
 from app.modules.external_document_sources import credential_reference_health_router as _credential_reference_health_router  # noqa: F401,E402
 from app.modules.external_document_sources import credential_resolution_execution_router as _credential_resolution_execution_router  # noqa: F401,E402
 from app.modules.external_document_sources import due_tick_observation_router as _due_tick_observation_router  # noqa: F401,E402
@@ -265,6 +270,8 @@ __all__ = [
     "ExternalDocumentSourceSftpSessionActivationReceipt",
     "ExternalDocumentSourceSftpCheckpointAdvancement",
     "ExternalDocumentSourceSftpCheckpointAdvancementReceipt",
+    "ExternalDocumentSourceSftpSuccessorChangeDetection",
+    "ExternalDocumentSourceSftpSuccessorChangeDetectionReceipt",
     "ExternalDocumentSourceCredentialReferenceHealthQualification",
     "ExternalDocumentSourceCredentialReferenceHealthReceipt",
     "ExternalDocumentSourceCredentialResolutionExecution",
