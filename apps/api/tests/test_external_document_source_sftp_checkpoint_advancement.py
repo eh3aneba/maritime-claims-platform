@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 from uuid import UUID
 
@@ -99,6 +98,8 @@ def test_sftp_checkpoint_advancement_is_control_plane_only_and_idempotent() -> N
     chain = _completed_phase_m("sftp-cp-advance")
     read_calls_before = len(chain["read_adapter"].calls)
     put_calls_before = chain["store"].put_calls
+    head_calls_before = chain["store"].head_calls
+    get_calls_before = chain["store"].get_calls
 
     with TestingSessionLocal() as db:
         predecessor = db.get(
@@ -148,12 +149,16 @@ def test_sftp_checkpoint_advancement_is_control_plane_only_and_idempotent() -> N
 
     assert len(chain["read_adapter"].calls) == read_calls_before
     assert chain["store"].put_calls == put_calls_before
+    assert chain["store"].head_calls == head_calls_before
+    assert chain["store"].get_calls == get_calls_before
 
     replay = _advance(chain, key="n2")
     assert replay.status_code == 201, replay.text
     assert replay.json()["id"] == body["id"]
     assert len(chain["read_adapter"].calls) == read_calls_before
     assert chain["store"].put_calls == put_calls_before
+    assert chain["store"].head_calls == head_calls_before
+    assert chain["store"].get_calls == get_calls_before
 
     conflict = _advance(chain, key="n3")
     assert conflict.status_code == 409, conflict.text
@@ -245,6 +250,44 @@ def test_sftp_checkpoint_advancement_rejects_caller_authority_tenant_drift_and_t
     created = _advance(chain, key="ok")
     assert created.status_code == 201, created.text
     advancement_id = UUID(created.json()["id"])
+
+    with TestingSessionLocal() as db:
+        receipt = (
+            db.query(ExternalDocumentSourceSftpCheckpointAdvancementReceipt)
+            .filter(
+                ExternalDocumentSourceSftpCheckpointAdvancementReceipt.advancement_id
+                == advancement_id,
+                ExternalDocumentSourceSftpCheckpointAdvancementReceipt.sequence_number
+                == 1,
+            )
+            .one()
+        )
+        original_receipt_hash = receipt.receipt_hash
+        receipt.receipt_hash = "0" * 64
+        db.commit()
+
+    tampered_receipt = client.get(
+        (
+            f"/api/v1/external-document-sources/profiles/{chain['profile_id']}/"
+            f"sftp-checkpoint-advancements/{advancement_id}"
+        ),
+        headers=_headers(chain["requester_id"]),
+    )
+    assert tampered_receipt.status_code == 409, tampered_receipt.text
+
+    with TestingSessionLocal() as db:
+        receipt = (
+            db.query(ExternalDocumentSourceSftpCheckpointAdvancementReceipt)
+            .filter(
+                ExternalDocumentSourceSftpCheckpointAdvancementReceipt.advancement_id
+                == advancement_id,
+                ExternalDocumentSourceSftpCheckpointAdvancementReceipt.sequence_number
+                == 1,
+            )
+            .one()
+        )
+        receipt.receipt_hash = original_receipt_hash
+        db.commit()
 
     with TestingSessionLocal() as db:
         row = db.get(ExternalDocumentSourceSftpCheckpointAdvancement, advancement_id)
