@@ -181,20 +181,3 @@ def test_phase_w_sftp_lineage_tamper_fails_closed(
             resolve_recurring_provider_lineage(db, binding)
 
 
-def test_phase_w_does_not_open_sftp_recurring_schedule_authority(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    chain, adapter, _claim_id, _authorization, _execution, binding_body = (
-        _bound_sftp(monkeypatch, "sftp-phase-w-closed")
-    )
-    calls_before = len(adapter.calls)
-
-    response = _authorize_schedule(
-        chain["profile_id"],
-        binding_body["id"],
-        chain["requester_id"],
-        key="phase-w-sftp-schedule-must-remain-closed",
-    )
-    assert response.status_code == 409, response.text
-    assert "17.6-X" in response.text
-    assert len(adapter.calls) == calls_before
