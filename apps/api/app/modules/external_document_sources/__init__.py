@@ -95,6 +95,10 @@ from app.modules.external_document_sources.sftp_evidence_admission_authorization
     ExternalDocumentSourceSftpEvidenceAdmissionAuthorization,
     ExternalDocumentSourceSftpEvidenceAdmissionAuthorizationReceipt,
 )
+from app.modules.external_document_sources.sftp_evidence_admission_execution_models import (
+    ExternalDocumentSourceSftpEvidenceAdmissionExecution,
+    ExternalDocumentSourceSftpEvidenceAdmissionExecutionReceipt,
+)
 from app.modules.external_document_sources.credential_reference_health_models import (
     ExternalDocumentSourceCredentialReferenceHealthQualification,
     ExternalDocumentSourceCredentialReferenceHealthReceipt,
@@ -238,6 +242,7 @@ from app.modules.external_document_sources import sftp_generation3_restaging_rou
 from app.modules.external_document_sources import sftp_generation3_checkpoint_advancement_router as _sftp_generation3_checkpoint_advancement_router  # noqa: F401,E402
 from app.modules.external_document_sources import sftp_generation3_change_detection_router as _sftp_generation3_change_detection_router  # noqa: F401,E402
 from app.modules.external_document_sources import sftp_evidence_admission_authorization_router as _sftp_evidence_admission_authorization_router  # noqa: F401,E402
+from app.modules.external_document_sources import sftp_evidence_admission_execution_router as _sftp_evidence_admission_execution_router  # noqa: F401,E402
 from app.modules.external_document_sources import credential_reference_health_router as _credential_reference_health_router  # noqa: F401,E402
 from app.modules.external_document_sources import credential_resolution_execution_router as _credential_resolution_execution_router  # noqa: F401,E402
 from app.modules.external_document_sources import due_tick_observation_router as _due_tick_observation_router  # noqa: F401,E402
@@ -300,6 +305,8 @@ __all__ = [
     "ExternalDocumentSourceSftpGeneration3ChangeDetectionReceipt",
     "ExternalDocumentSourceSftpEvidenceAdmissionAuthorization",
     "ExternalDocumentSourceSftpEvidenceAdmissionAuthorizationReceipt",
+    "ExternalDocumentSourceSftpEvidenceAdmissionExecution",
+    "ExternalDocumentSourceSftpEvidenceAdmissionExecutionReceipt",
     "ExternalDocumentSourceCredentialReferenceHealthQualification",
     "ExternalDocumentSourceCredentialReferenceHealthReceipt",
     "ExternalDocumentSourceCredentialResolutionExecution",
