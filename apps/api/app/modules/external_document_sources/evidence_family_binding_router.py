@@ -69,6 +69,40 @@ def bind_evidence_family_endpoint(
         _raise_service_error(exc)
 
 
+@router.post(
+    "/profiles/{profile_id}/sftp-evidence-admission-executions/{execution_id}/family-binding",
+    response_model=ExternalDocumentSourceEvidenceFamilyBindingRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def bind_sftp_evidence_family_endpoint(
+    profile_id: UUID,
+    execution_id: UUID,
+    payload: ExternalDocumentSourceEvidenceFamilyBindingRequest,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: ConnectionAuthorizationAdminMfa,
+) -> ExternalDocumentSourceEvidenceFamilyBindingRead:
+    try:
+        binding, _outcome = bind_external_document_source_evidence_family(
+            db,
+            organization_id=current_user.organization_id,
+            profile_id=profile_id,
+            sftp_admission_execution_id=execution_id,
+            bound_by_id=current_user.id,
+            request_key=payload.request_key,
+            binding_reason=payload.reason,
+        )
+        return ExternalDocumentSourceEvidenceFamilyBindingRead.model_validate(binding)
+    except (
+        ExternalDocumentSourceValidationError,
+        ExternalDocumentSourceConflictError,
+        ExternalDocumentSourceNotFoundError,
+        IntegrityError,
+        ValueError,
+    ) as exc:
+        db.rollback()
+        _raise_service_error(exc)
+
+
 @router.get(
     "/profiles/{profile_id}/evidence-family-bindings/{binding_id}",
     response_model=ExternalDocumentSourceEvidenceFamilyBindingRead,
