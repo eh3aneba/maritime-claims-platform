@@ -46,6 +46,9 @@ def _is_admitted_external_evidence(
     from app.modules.external_document_sources.evidence_family_binding_models import (
         ExternalDocumentSourceEvidenceFamilyBinding,
     )
+    from app.modules.external_document_sources.sftp_evidence_admission_execution_models import (
+        ExternalDocumentSourceSftpEvidenceAdmissionExecution,
+    )
 
     initial_admission = db.scalar(
         select(ExternalDocumentSourceEvidenceAdmissionExecution.id)
@@ -57,6 +60,19 @@ def _is_admitted_external_evidence(
         .limit(1)
     )
     if initial_admission is not None:
+        return True
+
+    sftp_initial_admission = db.scalar(
+        select(ExternalDocumentSourceSftpEvidenceAdmissionExecution.id)
+        .where(
+            ExternalDocumentSourceSftpEvidenceAdmissionExecution.organization_id
+            == document.organization_id,
+            ExternalDocumentSourceSftpEvidenceAdmissionExecution.document_id
+            == document.id,
+        )
+        .limit(1)
+    )
+    if sftp_initial_admission is not None:
         return True
 
     return (
