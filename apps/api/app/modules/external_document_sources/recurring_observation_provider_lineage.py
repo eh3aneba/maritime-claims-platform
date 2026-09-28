@@ -298,7 +298,6 @@ def _resolve_sftp(
         or observation.id != authorization.generation3_change_detection_id
         or checkpoint.id != authorization.generation3_checkpoint_advancement_id
         or observation.generation3_checkpoint_advancement_id != checkpoint.id
-        or observation.status != "completed"
         or observation.result_status != "unchanged"
         or observation.provider_kind != "sftp"
         or observation.profile_hash != binding.profile_hash
