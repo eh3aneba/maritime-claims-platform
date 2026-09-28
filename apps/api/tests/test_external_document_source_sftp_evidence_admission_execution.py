@@ -218,6 +218,15 @@ def test_phase_t_consumes_one_authorization_and_creates_one_document_without_pro
         "stored_etag",
     ):
         assert forbidden_marker not in body
+    for forbidden_marker in (
+        "remote_path",
+        "remote_root_path",
+        "reference_name",
+        "reference_namespace",
+        "content",
+        "credential",
+        "stored_etag",
+    ):
         assert forbidden_marker not in serialized
 
     with TestingSessionLocal() as db:
