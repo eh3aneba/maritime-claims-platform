@@ -595,45 +595,34 @@ def _ensure_binding_integrity(
         organization_id=binding.organization_id,
         claim_id=binding.claim_id,
     )
-    execution = db.scalar(
-        select(ExternalDocumentSourceEvidenceAdmissionExecution).where(
-            ExternalDocumentSourceEvidenceAdmissionExecution.id
-            == binding.admission_execution_id,
-            ExternalDocumentSourceEvidenceAdmissionExecution.organization_id
-            == binding.organization_id,
-            ExternalDocumentSourceEvidenceAdmissionExecution.profile_id
-            == binding.profile_id,
-        )
-    )
-    if execution is None:
-        raise ExternalDocumentSourceConflictError(
-            "Evidence family binding admission lineage is missing"
-        )
-    _ensure_execution_integrity(db, execution)
-    document = _verify_document_baseline(
+    lineage = _resolve_binding_lineage(
         db,
-        execution,
+        binding,
         require_uploaded=False,
         require_current=False,
     )
-    observation = _generation_3_observation(db, execution)
+    document = lineage.document
 
     expected = {
-        "claim_id": execution.claim_id,
+        "claim_id": lineage.claim_id,
+        "admission_execution_id": lineage.legacy_execution_id,
+        "sftp_admission_execution_id": lineage.sftp_execution_id,
         "initial_document_id": document.id,
         "document_family_id": document.document_family_id,
         "current_document_id": document.id,
-        "provider_kind": execution.provider_kind,
-        "profile_hash": execution.profile_hash,
-        "stable_source_item_hash": observation.observed_provider_item_id_hash,
-        "source_projection_hash": execution.fresh_projection_hash,
-        "source_observation_completion_hash": execution.observation_completion_hash,
-        "admission_completion_hash": execution.completion_hash,
+        "provider_kind": lineage.provider_kind,
+        "profile_hash": lineage.profile_hash,
+        "stable_source_item_hash": lineage.stable_source_item_hash,
+        "source_projection_hash": lineage.source_projection_hash,
+        "source_observation_completion_hash": (
+            lineage.source_observation_completion_hash
+        ),
+        "admission_completion_hash": lineage.admission_completion_hash,
         "current_version_number": 1,
-        "admitted_content_sha256": execution.document_file_hash,
-        "admitted_byte_count": execution.document_file_size_bytes,
-        "admitted_mime_type_class": execution.fresh_mime_type_class,
-        "admitted_provider_version_hash": execution.fresh_version_token_hash,
+        "admitted_content_sha256": lineage.admitted_content_sha256,
+        "admitted_byte_count": lineage.admitted_byte_count,
+        "admitted_mime_type_class": lineage.admitted_mime_type_class,
+        "admitted_provider_version_hash": lineage.admitted_provider_version_hash,
         "status": "active",
     }
     for field, expected_value in expected.items():
@@ -643,8 +632,8 @@ def _ensure_binding_integrity(
             )
 
     expected_scope = _scope_hash(
-        execution,
-        stable_source_item_hash=observation.observed_provider_item_id_hash,
+        lineage,
+        stable_source_item_hash=lineage.stable_source_item_hash,
         document_family_id=document.document_family_id,
         request_key=binding.request_key,
     )
@@ -699,11 +688,17 @@ def bind_external_document_source_evidence_family(
     *,
     organization_id: UUID,
     profile_id: UUID,
-    admission_execution_id: UUID,
     bound_by_id: UUID,
     request_key: str,
     binding_reason: str,
+    admission_execution_id: UUID | None = None,
+    sftp_admission_execution_id: UUID | None = None,
 ) -> tuple[ExternalDocumentSourceEvidenceFamilyBinding, str]:
+    if (admission_execution_id is None) == (sftp_admission_execution_id is None):
+        raise ExternalDocumentSourceValidationError(
+            "Exactly one Evidence admission execution lineage must be supplied"
+        )
+
     normalized_key = _normalize_text(
         request_key,
         field="request_key",
@@ -729,6 +724,8 @@ def bind_external_document_source_evidence_family(
         _ensure_binding_integrity(db, existing_request)
         if (
             existing_request.admission_execution_id != admission_execution_id
+            or existing_request.sftp_admission_execution_id
+            != sftp_admission_execution_id
             or existing_request.bound_by_id != bound_by_id
             or existing_request.binding_reason != normalized_reason
         ):
@@ -737,46 +734,56 @@ def bind_external_document_source_evidence_family(
             )
         return existing_request, "replayed"
 
-    execution = db.scalar(
-        select(ExternalDocumentSourceEvidenceAdmissionExecution)
-        .where(
-            ExternalDocumentSourceEvidenceAdmissionExecution.id
-            == admission_execution_id,
-            ExternalDocumentSourceEvidenceAdmissionExecution.organization_id
-            == organization_id,
-            ExternalDocumentSourceEvidenceAdmissionExecution.profile_id == profile_id,
+    if sftp_admission_execution_id is not None:
+        lineage = _resolve_sftp_admission_lineage(
+            db,
+            organization_id=organization_id,
+            profile_id=profile_id,
+            execution_id=sftp_admission_execution_id,
+            require_uploaded=True,
+            require_current=True,
+            for_update=True,
+            missing_is_conflict=False,
         )
+        execution_field = (
+            ExternalDocumentSourceEvidenceFamilyBinding.sftp_admission_execution_id
+        )
+        execution_value = sftp_admission_execution_id
+    else:
+        assert admission_execution_id is not None
+        lineage = _resolve_legacy_admission_lineage(
+            db,
+            organization_id=organization_id,
+            profile_id=profile_id,
+            execution_id=admission_execution_id,
+            require_uploaded=True,
+            require_current=True,
+            for_update=True,
+            missing_is_conflict=False,
+        )
+        execution_field = ExternalDocumentSourceEvidenceFamilyBinding.admission_execution_id
+        execution_value = admission_execution_id
+
+    existing_execution = db.scalar(
+        select(ExternalDocumentSourceEvidenceFamilyBinding)
+        .where(execution_field == execution_value)
         .with_for_update()
     )
-    if execution is None:
-        raise ExternalDocumentSourceNotFoundError(
-            "Evidence admission execution not found"
-        )
-    _ensure_execution_integrity(db, execution)
-    _active_claim(
-        db,
-        organization_id=organization_id,
-        claim_id=execution.claim_id,
-    )
-    document = _verify_document_baseline(
-        db,
-        execution,
-        require_uploaded=True,
-        require_current=True,
-    )
-    observation = _generation_3_observation(db, execution)
-    stable_source_item_hash = observation.observed_provider_item_id_hash
-    if stable_source_item_hash is None:
+    if existing_execution is not None:
+        _ensure_binding_integrity(db, existing_execution)
         raise ExternalDocumentSourceConflictError(
-            "Stable external source-item identity is unavailable"
+            "Evidence admission execution is already bound to an Evidence family"
         )
+
+    document = lineage.document
+    stable_source_item_hash = lineage.stable_source_item_hash
 
     existing_source = db.scalar(
         select(ExternalDocumentSourceEvidenceFamilyBinding)
         .where(
             ExternalDocumentSourceEvidenceFamilyBinding.organization_id
             == organization_id,
-            ExternalDocumentSourceEvidenceFamilyBinding.claim_id == execution.claim_id,
+            ExternalDocumentSourceEvidenceFamilyBinding.claim_id == lineage.claim_id,
             ExternalDocumentSourceEvidenceFamilyBinding.profile_id == profile_id,
             ExternalDocumentSourceEvidenceFamilyBinding.stable_source_item_hash
             == stable_source_item_hash,
@@ -794,7 +801,7 @@ def bind_external_document_source_evidence_family(
         .where(
             ExternalDocumentSourceEvidenceFamilyBinding.organization_id
             == organization_id,
-            ExternalDocumentSourceEvidenceFamilyBinding.claim_id == execution.claim_id,
+            ExternalDocumentSourceEvidenceFamilyBinding.claim_id == lineage.claim_id,
             ExternalDocumentSourceEvidenceFamilyBinding.document_family_id
             == document.document_family_id,
         )
@@ -810,23 +817,26 @@ def bind_external_document_source_evidence_family(
     binding = ExternalDocumentSourceEvidenceFamilyBinding(
         id=uuid4(),
         organization_id=organization_id,
-        claim_id=execution.claim_id,
+        claim_id=lineage.claim_id,
         profile_id=profile_id,
-        admission_execution_id=execution.id,
+        admission_execution_id=lineage.legacy_execution_id,
+        sftp_admission_execution_id=lineage.sftp_execution_id,
         initial_document_id=document.id,
         document_family_id=document.document_family_id,
         current_document_id=document.id,
-        provider_kind=execution.provider_kind,
-        profile_hash=execution.profile_hash,
+        provider_kind=lineage.provider_kind,
+        profile_hash=lineage.profile_hash,
         stable_source_item_hash=stable_source_item_hash,
-        source_projection_hash=execution.fresh_projection_hash,
-        source_observation_completion_hash=execution.observation_completion_hash,
-        admission_completion_hash=execution.completion_hash,
+        source_projection_hash=lineage.source_projection_hash,
+        source_observation_completion_hash=(
+            lineage.source_observation_completion_hash
+        ),
+        admission_completion_hash=lineage.admission_completion_hash,
         current_version_number=1,
-        admitted_content_sha256=execution.document_file_hash,
-        admitted_byte_count=execution.document_file_size_bytes,
-        admitted_mime_type_class=execution.fresh_mime_type_class,
-        admitted_provider_version_hash=execution.fresh_version_token_hash,
+        admitted_content_sha256=lineage.admitted_content_sha256,
+        admitted_byte_count=lineage.admitted_byte_count,
+        admitted_mime_type_class=lineage.admitted_mime_type_class,
+        admitted_provider_version_hash=lineage.admitted_provider_version_hash,
         request_key=normalized_key,
         scope_hash="",
         request_hash="",
@@ -838,7 +848,7 @@ def bind_external_document_source_evidence_family(
         **_safety(),
     )
     binding.scope_hash = _scope_hash(
-        execution,
+        lineage,
         stable_source_item_hash=stable_source_item_hash,
         document_family_id=document.document_family_id,
         request_key=normalized_key,
@@ -869,6 +879,16 @@ def bind_external_document_source_evidence_family(
     db.flush()
     _ensure_binding_integrity(db, binding)
 
+    admission_lineage_audit = {}
+    if lineage.legacy_execution_id is not None:
+        admission_lineage_audit["admission_execution_id"] = str(
+            lineage.legacy_execution_id
+        )
+    if lineage.sftp_execution_id is not None:
+        admission_lineage_audit["sftp_admission_execution_id"] = str(
+            lineage.sftp_execution_id
+        )
+
     write_audit_log(
         db,
         organization_id=organization_id,
@@ -877,23 +897,24 @@ def bind_external_document_source_evidence_family(
         entity_type="document",
         entity_id=document.id,
         new_values={
-            "claim_id": str(execution.claim_id),
+            "claim_id": str(lineage.claim_id),
             "profile_id": str(profile_id),
             "evidence_family_binding_id": str(binding.id),
-            "admission_execution_id": str(execution.id),
+            **admission_lineage_audit,
             "document_id": str(document.id),
             "document_family_id": str(document.document_family_id),
             "current_version_number": 1,
-            "provider_kind": execution.provider_kind,
+            "provider_kind": lineage.provider_kind,
             "stable_source_item_hash": stable_source_item_hash,
-            "admitted_content_sha256": execution.document_file_hash,
-            "admitted_byte_count": execution.document_file_size_bytes,
+            "admitted_content_sha256": lineage.admitted_content_sha256,
+            "admitted_byte_count": lineage.admitted_byte_count,
             "processing_enqueued": False,
         },
         details=(
-            "A verified Phase-X external Evidence admission was bound to a durable "
-            "source-item/Document-family baseline. No provider, storage, Document, "
-            "processing, OCR, AI, Claim or checkpoint mutation authority was exercised."
+            "A verified external Evidence admission was bound to a durable "
+            "provider-neutral source-item/Document-family baseline. No provider, "
+            "storage, Document, processing, OCR, AI, Claim or checkpoint mutation "
+            "authority was exercised."
         ),
     )
 
