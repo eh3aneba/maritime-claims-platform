@@ -453,29 +453,49 @@ def _verify_document_baseline(
 
 
 def _scope_hash(
-    execution: ExternalDocumentSourceEvidenceAdmissionExecution,
+    lineage: _ResolvedAdmissionLineage,
     *,
     stable_source_item_hash: str,
     document_family_id: UUID,
     request_key: str,
 ) -> str:
-    return _canonical_hash(
-        {
-            "organization_id": str(execution.organization_id),
-            "claim_id": str(execution.claim_id),
-            "profile_id": str(execution.profile_id),
-            "admission_execution_id": str(execution.id),
-            "admission_completion_hash": execution.completion_hash,
-            "document_id": str(execution.document_id),
+    if lineage.legacy_execution_id is not None:
+        payload = {
+            "organization_id": str(lineage.organization_id),
+            "claim_id": str(lineage.claim_id),
+            "profile_id": str(lineage.profile_id),
+            "admission_execution_id": str(lineage.legacy_execution_id),
+            "admission_completion_hash": lineage.admission_completion_hash,
+            "document_id": str(lineage.document.id),
             "document_family_id": str(document_family_id),
-            "provider_kind": execution.provider_kind,
-            "profile_hash": execution.profile_hash,
+            "provider_kind": lineage.provider_kind,
+            "profile_hash": lineage.profile_hash,
             "stable_source_item_hash": stable_source_item_hash,
-            "source_projection_hash": execution.fresh_projection_hash,
-            "source_observation_completion_hash": execution.observation_completion_hash,
+            "source_projection_hash": lineage.source_projection_hash,
+            "source_observation_completion_hash": (
+                lineage.source_observation_completion_hash
+            ),
             "request_key": request_key,
         }
-    )
+    else:
+        payload = {
+            "organization_id": str(lineage.organization_id),
+            "claim_id": str(lineage.claim_id),
+            "profile_id": str(lineage.profile_id),
+            "sftp_admission_execution_id": str(lineage.sftp_execution_id),
+            "admission_completion_hash": lineage.admission_completion_hash,
+            "document_id": str(lineage.document.id),
+            "document_family_id": str(document_family_id),
+            "provider_kind": lineage.provider_kind,
+            "profile_hash": lineage.profile_hash,
+            "stable_source_item_hash": stable_source_item_hash,
+            "source_projection_hash": lineage.source_projection_hash,
+            "source_observation_completion_hash": (
+                lineage.source_observation_completion_hash
+            ),
+            "request_key": request_key,
+        }
+    return _canonical_hash(payload)
 
 
 def _request_hash(binding: ExternalDocumentSourceEvidenceFamilyBinding) -> str:
@@ -492,13 +512,23 @@ def _request_hash(binding: ExternalDocumentSourceEvidenceFamilyBinding) -> str:
 
 
 def _completion_hash(binding: ExternalDocumentSourceEvidenceFamilyBinding) -> str:
+    if binding.provider_kind == "sftp":
+        admission_lineage = {
+            "sftp_admission_execution_id": str(
+                binding.sftp_admission_execution_id
+            )
+        }
+    else:
+        admission_lineage = {
+            "admission_execution_id": str(binding.admission_execution_id)
+        }
     return _canonical_hash(
         {
             "binding_id": str(binding.id),
             "scope_hash": binding.scope_hash,
             "request_hash": binding.request_hash,
             "status": binding.status,
-            "admission_execution_id": str(binding.admission_execution_id),
+            **admission_lineage,
             "initial_document_id": str(binding.initial_document_id),
             "document_family_id": str(binding.document_family_id),
             "current_document_id": str(binding.current_document_id),
