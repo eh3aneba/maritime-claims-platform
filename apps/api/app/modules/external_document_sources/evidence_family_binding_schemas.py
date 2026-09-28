@@ -18,7 +18,8 @@ class ExternalDocumentSourceEvidenceFamilyBindingRead(BaseModel):
     organization_id: UUID
     claim_id: UUID
     profile_id: UUID
-    admission_execution_id: UUID
+    admission_execution_id: UUID | None
+    sftp_admission_execution_id: UUID | None
     initial_document_id: UUID
     document_family_id: UUID
     current_document_id: UUID
