@@ -207,7 +207,7 @@ def test_phase_t_consumes_one_authorization_and_creates_one_document_without_pro
     assert len(chain["p_read_adapter"].calls) == remote_reads_before
 
     serialized = json.dumps(body, sort_keys=True)
-    for forbidden_marker in (
+    for forbidden_field in (
         "storage_object_key",
         "remote_path",
         "remote_root_path",
@@ -217,17 +217,15 @@ def test_phase_t_consumes_one_authorization_and_creates_one_document_without_pro
         "credential",
         "stored_etag",
     ):
-        assert forbidden_marker not in body
-    for forbidden_marker in (
-        "remote_path",
-        "remote_root_path",
-        "reference_name",
-        "reference_namespace",
-        "content",
-        "credential",
-        "stored_etag",
+        assert forbidden_field not in body
+    for forbidden_value in (
+        "caller.invalid",
+        "/caller/path",
+        "caller/storage",
+        "caller-content",
+        "caller-secret",
     ):
-        assert forbidden_marker not in serialized
+        assert forbidden_value not in serialized
 
     with TestingSessionLocal() as db:
         assert db.query(Document).count() == documents_before + 1
@@ -253,8 +251,19 @@ def test_phase_t_consumes_one_authorization_and_creates_one_document_without_pro
             [{"new": row.new_values, "details": row.details} for row in audits],
             sort_keys=True,
         )
-        assert "storage_object_key" not in audit_text
-        assert "remote_path" not in audit_text
+        for row in audits:
+            assert "storage_object_key" not in (row.new_values or {})
+            assert "remote_path" not in (row.new_values or {})
+            assert "storage_object_key" not in (row.details or {})
+            assert "remote_path" not in (row.details or {})
+        for forbidden_value in (
+            "caller.invalid",
+            "/caller/path",
+            "caller/storage",
+            "caller-content",
+            "caller-secret",
+        ):
+            assert forbidden_value not in audit_text
 
     receipts = client.get(
         (
