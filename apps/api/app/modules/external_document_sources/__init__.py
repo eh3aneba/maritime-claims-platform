@@ -87,6 +87,10 @@ from app.modules.external_document_sources.sftp_generation3_checkpoint_advanceme
     ExternalDocumentSourceSftpGeneration3CheckpointAdvancement,
     ExternalDocumentSourceSftpGeneration3CheckpointAdvancementReceipt,
 )
+from app.modules.external_document_sources.sftp_generation3_change_detection_models import (
+    ExternalDocumentSourceSftpGeneration3ChangeDetection,
+    ExternalDocumentSourceSftpGeneration3ChangeDetectionReceipt,
+)
 from app.modules.external_document_sources.credential_reference_health_models import (
     ExternalDocumentSourceCredentialReferenceHealthQualification,
     ExternalDocumentSourceCredentialReferenceHealthReceipt,
@@ -228,6 +232,7 @@ from app.modules.external_document_sources import sftp_checkpoint_advancement_ro
 from app.modules.external_document_sources import sftp_successor_change_detection_router as _sftp_successor_change_detection_router  # noqa: F401,E402
 from app.modules.external_document_sources import sftp_generation3_restaging_router as _sftp_generation3_restaging_router  # noqa: F401,E402
 from app.modules.external_document_sources import sftp_generation3_checkpoint_advancement_router as _sftp_generation3_checkpoint_advancement_router  # noqa: F401,E402
+from app.modules.external_document_sources import sftp_generation3_change_detection_router as _sftp_generation3_change_detection_router  # noqa: F401,E402
 from app.modules.external_document_sources import credential_reference_health_router as _credential_reference_health_router  # noqa: F401,E402
 from app.modules.external_document_sources import credential_resolution_execution_router as _credential_resolution_execution_router  # noqa: F401,E402
 from app.modules.external_document_sources import due_tick_observation_router as _due_tick_observation_router  # noqa: F401,E402
@@ -286,6 +291,8 @@ __all__ = [
     "ExternalDocumentSourceSftpGeneration3RestagingReceipt",
     "ExternalDocumentSourceSftpGeneration3CheckpointAdvancement",
     "ExternalDocumentSourceSftpGeneration3CheckpointAdvancementReceipt",
+    "ExternalDocumentSourceSftpGeneration3ChangeDetection",
+    "ExternalDocumentSourceSftpGeneration3ChangeDetectionReceipt",
     "ExternalDocumentSourceCredentialReferenceHealthQualification",
     "ExternalDocumentSourceCredentialReferenceHealthReceipt",
     "ExternalDocumentSourceCredentialResolutionExecution",
