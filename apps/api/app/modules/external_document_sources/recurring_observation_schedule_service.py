@@ -623,6 +623,10 @@ def authorize_recurring_observation_schedule(
         profile_id=profile_id,
         binding_id=binding_id,
     )
+    if binding.provider_kind == "sftp":
+        raise ExternalDocumentSourceConflictError(
+            "SFTP recurring observation schedule authorization is not enabled until Phase 17.6-X"
+        )
     active = db.scalar(
         select(ExternalDocumentSourceRecurringObservationSchedule)
         .where(

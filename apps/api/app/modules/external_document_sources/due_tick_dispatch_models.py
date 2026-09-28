@@ -68,7 +68,7 @@ class ExternalDocumentSourceDueTickDispatch(UUIDPrimaryKeyMixin, TimestampMixin,
     __tablename__ = "external_doc_source_due_tick_dispatches"
     __table_args__ = (
         UniqueConstraint("schedule_id", "due_at", name="uq_ext_doc_due_disp_tick"),
-        CheckConstraint("provider_kind IN ('sharepoint','google_drive')", name="ck_ext_doc_due_disp_provider"),
+        CheckConstraint("provider_kind IN ('sharepoint','google_drive','sftp')", name="ck_ext_doc_due_disp_provider"),
         CheckConstraint("current_version_number >= 1", name="ck_ext_doc_due_disp_version"),
         CheckConstraint("schedule_revision_number >= 1", name="ck_ext_doc_due_disp_revision"),
         CheckConstraint("cadence_minutes >= 60", name="ck_ext_doc_due_disp_cadence"),
