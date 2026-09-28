@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
@@ -10,7 +11,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.modules.audit.service import write_audit_log
-from app.modules.documents.models import DocumentProcessingStatus
+from app.modules.documents.models import Document, DocumentProcessingStatus
 from app.modules.external_document_sources.evidence_admission_authorization_service import (
     _active_claim,
 )
@@ -32,6 +33,19 @@ from app.modules.external_document_sources.service import (
     ExternalDocumentSourceConflictError,
     ExternalDocumentSourceNotFoundError,
     ExternalDocumentSourceValidationError,
+)
+from app.modules.external_document_sources.sftp_evidence_admission_authorization_models import (
+    ExternalDocumentSourceSftpEvidenceAdmissionAuthorization,
+)
+from app.modules.external_document_sources.sftp_evidence_admission_authorization_service import (
+    _ensure_integrity as _ensure_sftp_authorization_integrity,
+)
+from app.modules.external_document_sources.sftp_evidence_admission_execution_models import (
+    ExternalDocumentSourceSftpEvidenceAdmissionExecution,
+)
+from app.modules.external_document_sources.sftp_evidence_admission_execution_service import (
+    _ensure_execution_integrity as _ensure_sftp_execution_integrity,
+    _get_document as _get_sftp_document,
 )
 
 
@@ -94,6 +108,279 @@ def _safety() -> dict[str, bool]:
         "checkpoint_advanced": False,
         "background_sync_started": False,
     }
+
+
+@dataclass(frozen=True)
+class _ResolvedAdmissionLineage:
+    legacy_execution_id: UUID | None
+    sftp_execution_id: UUID | None
+    organization_id: UUID
+    claim_id: UUID
+    profile_id: UUID
+    document: Document
+    provider_kind: str
+    profile_hash: str
+    stable_source_item_hash: str
+    source_projection_hash: str
+    source_observation_completion_hash: str
+    admission_completion_hash: str
+    admitted_content_sha256: str
+    admitted_byte_count: int
+    admitted_mime_type_class: str | None
+    admitted_provider_version_hash: str | None
+
+
+def _stable_sftp_source_item_hash(
+    *,
+    profile_id: UUID,
+    relative_path_hash: str,
+) -> str:
+    return _canonical_hash(
+        {
+            "provider_kind": "sftp",
+            "profile_id": str(profile_id),
+            "relative_path_hash": relative_path_hash,
+        }
+    )
+
+
+def _verify_sftp_document_baseline(
+    db: Session,
+    execution: ExternalDocumentSourceSftpEvidenceAdmissionExecution,
+    *,
+    require_uploaded: bool,
+    require_current: bool,
+) -> Document:
+    document = _get_sftp_document(db, execution)
+    if (
+        document.id != execution.document_id
+        or document.document_family_id != document.id
+        or document.version_number != 1
+        or document.supersedes_document_id is not None
+        or document.file_hash != execution.document_file_hash
+        or document.file_size_bytes != execution.document_file_size_bytes
+    ):
+        raise ExternalDocumentSourceConflictError(
+            "Admitted SFTP Document is not a valid initial Evidence-family baseline"
+        )
+    if require_current and not document.is_current:
+        raise ExternalDocumentSourceConflictError(
+            "Initial SFTP Evidence-family baseline must still be current when binding is created"
+        )
+    if require_uploaded and document.processing_status != DocumentProcessingStatus.UPLOADED:
+        raise ExternalDocumentSourceConflictError(
+            "Admitted SFTP Document baseline was already processed before family binding"
+        )
+    return document
+
+
+def _resolve_legacy_admission_lineage(
+    db: Session,
+    *,
+    organization_id: UUID,
+    profile_id: UUID,
+    execution_id: UUID,
+    require_uploaded: bool,
+    require_current: bool,
+    for_update: bool,
+    missing_is_conflict: bool,
+) -> _ResolvedAdmissionLineage:
+    stmt = select(ExternalDocumentSourceEvidenceAdmissionExecution).where(
+        ExternalDocumentSourceEvidenceAdmissionExecution.id == execution_id,
+        ExternalDocumentSourceEvidenceAdmissionExecution.organization_id
+        == organization_id,
+        ExternalDocumentSourceEvidenceAdmissionExecution.profile_id == profile_id,
+    )
+    if for_update:
+        stmt = stmt.with_for_update()
+    execution = db.scalar(stmt)
+    if execution is None:
+        if missing_is_conflict:
+            raise ExternalDocumentSourceConflictError(
+                "Evidence family binding admission lineage is missing"
+            )
+        raise ExternalDocumentSourceNotFoundError("Evidence admission execution not found")
+
+    _ensure_execution_integrity(db, execution)
+    _active_claim(
+        db,
+        organization_id=organization_id,
+        claim_id=execution.claim_id,
+    )
+    document = _verify_document_baseline(
+        db,
+        execution,
+        require_uploaded=require_uploaded,
+        require_current=require_current,
+    )
+    observation = _generation_3_observation(db, execution)
+    stable_source_item_hash = observation.observed_provider_item_id_hash
+    if stable_source_item_hash is None:
+        raise ExternalDocumentSourceConflictError(
+            "Stable external source-item identity is unavailable"
+        )
+    return _ResolvedAdmissionLineage(
+        legacy_execution_id=execution.id,
+        sftp_execution_id=None,
+        organization_id=execution.organization_id,
+        claim_id=execution.claim_id,
+        profile_id=execution.profile_id,
+        document=document,
+        provider_kind=execution.provider_kind,
+        profile_hash=execution.profile_hash,
+        stable_source_item_hash=stable_source_item_hash,
+        source_projection_hash=execution.fresh_projection_hash,
+        source_observation_completion_hash=execution.observation_completion_hash,
+        admission_completion_hash=execution.completion_hash,
+        admitted_content_sha256=execution.document_file_hash,
+        admitted_byte_count=execution.document_file_size_bytes,
+        admitted_mime_type_class=execution.fresh_mime_type_class,
+        admitted_provider_version_hash=execution.fresh_version_token_hash,
+    )
+
+
+def _resolve_sftp_admission_lineage(
+    db: Session,
+    *,
+    organization_id: UUID,
+    profile_id: UUID,
+    execution_id: UUID,
+    require_uploaded: bool,
+    require_current: bool,
+    for_update: bool,
+    missing_is_conflict: bool,
+) -> _ResolvedAdmissionLineage:
+    stmt = select(ExternalDocumentSourceSftpEvidenceAdmissionExecution).where(
+        ExternalDocumentSourceSftpEvidenceAdmissionExecution.id == execution_id,
+        ExternalDocumentSourceSftpEvidenceAdmissionExecution.organization_id
+        == organization_id,
+        ExternalDocumentSourceSftpEvidenceAdmissionExecution.profile_id == profile_id,
+    )
+    if for_update:
+        stmt = stmt.with_for_update()
+    execution = db.scalar(stmt)
+    if execution is None:
+        if missing_is_conflict:
+            raise ExternalDocumentSourceConflictError(
+                "SFTP Evidence family binding admission lineage is missing"
+            )
+        raise ExternalDocumentSourceNotFoundError(
+            "SFTP Evidence admission execution not found"
+        )
+
+    _ensure_sftp_execution_integrity(db, execution)
+    _active_claim(
+        db,
+        organization_id=organization_id,
+        claim_id=execution.claim_id,
+    )
+    document = _verify_sftp_document_baseline(
+        db,
+        execution,
+        require_uploaded=require_uploaded,
+        require_current=require_current,
+    )
+    authorization = db.scalar(
+        select(ExternalDocumentSourceSftpEvidenceAdmissionAuthorization).where(
+            ExternalDocumentSourceSftpEvidenceAdmissionAuthorization.id
+            == execution.authorization_id,
+            ExternalDocumentSourceSftpEvidenceAdmissionAuthorization.organization_id
+            == organization_id,
+            ExternalDocumentSourceSftpEvidenceAdmissionAuthorization.profile_id
+            == profile_id,
+        )
+    )
+    if authorization is None:
+        raise ExternalDocumentSourceConflictError(
+            "SFTP Evidence family binding authorization lineage is missing"
+        )
+    _ensure_sftp_authorization_integrity(db, authorization)
+    if (
+        authorization.claim_id != execution.claim_id
+        or authorization.profile_hash != execution.profile_hash
+        or authorization.authorized_projection_hash
+        != execution.fresh_projection_hash
+        or authorization.observation_completion_hash
+        != execution.observation_completion_hash
+        or not authorization.authorized_relative_path_hash
+    ):
+        raise ExternalDocumentSourceConflictError(
+            "SFTP Evidence family binding trusted lineage drifted"
+        )
+
+    stable_source_item_hash = _stable_sftp_source_item_hash(
+        profile_id=profile_id,
+        relative_path_hash=authorization.authorized_relative_path_hash,
+    )
+    mime_type = document.mime_type[:128] if document.mime_type else None
+    return _ResolvedAdmissionLineage(
+        legacy_execution_id=None,
+        sftp_execution_id=execution.id,
+        organization_id=execution.organization_id,
+        claim_id=execution.claim_id,
+        profile_id=execution.profile_id,
+        document=document,
+        provider_kind="sftp",
+        profile_hash=execution.profile_hash,
+        stable_source_item_hash=stable_source_item_hash,
+        source_projection_hash=execution.fresh_projection_hash,
+        source_observation_completion_hash=execution.observation_completion_hash,
+        admission_completion_hash=execution.completion_hash,
+        admitted_content_sha256=execution.document_file_hash,
+        admitted_byte_count=execution.document_file_size_bytes,
+        admitted_mime_type_class=mime_type,
+        admitted_provider_version_hash=None,
+    )
+
+
+def _resolve_binding_lineage(
+    db: Session,
+    binding: ExternalDocumentSourceEvidenceFamilyBinding,
+    *,
+    require_uploaded: bool,
+    require_current: bool,
+    for_update: bool = False,
+) -> _ResolvedAdmissionLineage:
+    if binding.provider_kind == "sftp":
+        if (
+            binding.admission_execution_id is not None
+            or binding.sftp_admission_execution_id is None
+        ):
+            raise ExternalDocumentSourceConflictError(
+                "SFTP Evidence family binding admission-lineage selector drifted"
+            )
+        return _resolve_sftp_admission_lineage(
+            db,
+            organization_id=binding.organization_id,
+            profile_id=binding.profile_id,
+            execution_id=binding.sftp_admission_execution_id,
+            require_uploaded=require_uploaded,
+            require_current=require_current,
+            for_update=for_update,
+            missing_is_conflict=True,
+        )
+
+    if binding.provider_kind not in {"sharepoint", "google_drive"}:
+        raise ExternalDocumentSourceConflictError(
+            "Evidence family binding provider kind is unsupported"
+        )
+    if (
+        binding.admission_execution_id is None
+        or binding.sftp_admission_execution_id is not None
+    ):
+        raise ExternalDocumentSourceConflictError(
+            "Evidence family binding admission-lineage selector drifted"
+        )
+    return _resolve_legacy_admission_lineage(
+        db,
+        organization_id=binding.organization_id,
+        profile_id=binding.profile_id,
+        execution_id=binding.admission_execution_id,
+        require_uploaded=require_uploaded,
+        require_current=require_current,
+        for_update=for_update,
+        missing_is_conflict=True,
+    )
 
 
 def _generation_3_observation(
