@@ -131,6 +131,9 @@ class ExternalDocumentSourceEvidenceFamilyBinding(
     __tablename__ = "external_doc_source_evidence_family_bindings"
     __table_args__ = (
         UniqueConstraint("admission_execution_id", name="uq_ext_doc_efb_admission"),
+        UniqueConstraint(
+            "sftp_admission_execution_id", name="uq_ext_doc_efb_sftp_admission"
+        ),
         UniqueConstraint("initial_document_id", name="uq_ext_doc_efb_initial_doc"),
         UniqueConstraint(
             "organization_id",
@@ -152,8 +155,20 @@ class ExternalDocumentSourceEvidenceFamilyBinding(
             name="uq_ext_doc_efb_request",
         ),
         CheckConstraint(
-            "provider_kind IN ('sharepoint','google_drive')",
+            "provider_kind IN ('sharepoint','google_drive','sftp')",
             name="ck_ext_doc_efb_provider",
+        ),
+        CheckConstraint(
+            "("
+            "(provider_kind IN ('sharepoint','google_drive') "
+            "AND admission_execution_id IS NOT NULL "
+            "AND sftp_admission_execution_id IS NULL) "
+            "OR "
+            "(provider_kind = 'sftp' "
+            "AND admission_execution_id IS NULL "
+            "AND sftp_admission_execution_id IS NOT NULL)"
+            ")",
+            name="ck_ext_doc_efb_admission_lineage",
         ),
         CheckConstraint("status = 'active'", name="ck_ext_doc_efb_status"),
         CheckConstraint("current_version_number = 1", name="ck_ext_doc_efb_version"),
@@ -162,6 +177,7 @@ class ExternalDocumentSourceEvidenceFamilyBinding(
         Index("ix_ext_doc_efb_org_profile", "organization_id", "profile_id"),
         Index("ix_ext_doc_efb_source", "stable_source_item_hash"),
         Index("ix_ext_doc_efb_family", "document_family_id"),
+        Index("ix_ext_doc_efb_sftp_admission", "sftp_admission_execution_id"),
         *_safety_constraints("ext_doc_efb"),
     )
 
@@ -176,9 +192,17 @@ class ExternalDocumentSourceEvidenceFamilyBinding(
         nullable=False,
         index=True,
     )
-    admission_execution_id: Mapped[UUID] = mapped_column(
+    admission_execution_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("external_doc_source_evidence_admission_execs.id", ondelete="RESTRICT"),
-        nullable=False,
+        nullable=True,
+        index=True,
+    )
+    sftp_admission_execution_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey(
+            "external_doc_source_sftp_evidence_admission_execs.id",
+            ondelete="RESTRICT",
+        ),
+        nullable=True,
         index=True,
     )
     initial_document_id: Mapped[UUID] = mapped_column(
