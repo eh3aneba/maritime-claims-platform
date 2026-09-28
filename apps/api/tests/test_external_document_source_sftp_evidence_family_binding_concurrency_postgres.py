@@ -14,6 +14,7 @@ from app.modules.external_document_sources.evidence_family_binding_models import
 from app.modules.external_document_sources.evidence_family_binding_service import (
     bind_external_document_source_evidence_family,
 )
+from app.modules.external_document_sources.service import ExternalDocumentSourceConflictError
 from app.modules.external_document_sources.sftp_evidence_admission_execution_models import (
     ExternalDocumentSourceSftpEvidenceAdmissionExecution,
 )
@@ -147,7 +148,7 @@ def test_sftp_family_binding_serializes_on_phase_t_execution(
             assert replay.id == winner_id
 
         with SessionLocal() as duplicate_db:
-            with pytest.raises(Exception) as exc_info:
+            with pytest.raises(ExternalDocumentSourceConflictError) as exc_info:
                 bind_external_document_source_evidence_family(
                     duplicate_db,
                     organization_id=organization_id,
