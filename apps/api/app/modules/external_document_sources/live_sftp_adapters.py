@@ -52,6 +52,7 @@ from app.modules.external_document_sources.sftp_session_activation_service impor
 from app.modules.external_document_sources.sftp_transport_verification_service import (
     SftpTransportHostKeyProbeRequest,
     SftpTransportHostKeyProbeResult,
+    _ALLOWED_HOST_KEY_ALGORITHMS,
     register_external_document_source_sftp_transport_adapter,
 )
 
@@ -446,25 +447,60 @@ class LiveSftpRuntime:
             timeout_seconds=connect_timeout_seconds,
             allow_private_destinations=allow_private_destinations,
         )
+        transport = None
         try:
             transport = paramiko.Transport(sock)
             if hasattr(transport, "banner_timeout"):
                 transport.banner_timeout = max(0.5, float(handshake_timeout_seconds))
+
+            security_options = transport.get_security_options()
+            permitted_key_types = tuple(
+                key_type
+                for key_type in tuple(security_options.key_types)
+                if key_type in _ALLOWED_HOST_KEY_ALGORITHMS
+            )
+            if not permitted_key_types:
+                raise _SftpRuntimeFailure("ssh_negotiation_failed")
+            security_options.key_types = permitted_key_types
+
             transport.start_client(timeout=max(0.5, float(handshake_timeout_seconds)))
             remote_key = transport.get_remote_server_key()
             fingerprint = _openssh_sha256(remote_key.asbytes())
-            algorithm = (
+            algorithm = str(
                 getattr(transport, "host_key_type", None)
                 or remote_key.get_name()
             )
-            return sock, transport, fingerprint, str(algorithm), dns_performed
+            if algorithm not in _ALLOWED_HOST_KEY_ALGORITHMS:
+                raise _SftpRuntimeFailure("ssh_negotiation_failed")
+            return sock, transport, fingerprint, algorithm, dns_performed
         except socket.timeout as exc:
+            if transport is not None:
+                try:
+                    transport.close()
+                except Exception:
+                    pass
             try:
                 sock.close()
             except Exception:
                 pass
             raise _SftpRuntimeFailure("connection_timeout") from exc
+        except _SftpRuntimeFailure:
+            if transport is not None:
+                try:
+                    transport.close()
+                except Exception:
+                    pass
+            try:
+                sock.close()
+            except Exception:
+                pass
+            raise
         except Exception as exc:
+            if transport is not None:
+                try:
+                    transport.close()
+                except Exception:
+                    pass
             try:
                 sock.close()
             except Exception:
