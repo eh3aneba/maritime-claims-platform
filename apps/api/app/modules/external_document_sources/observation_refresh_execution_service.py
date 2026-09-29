@@ -3,7 +3,9 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from dataclasses import dataclass
 from datetime import datetime, timezone
+from typing import Any
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from sqlalchemy import select
@@ -42,6 +44,9 @@ from app.modules.external_document_sources.observation_review_decision_service i
     _require_human_admin,
     ensure_observation_refresh_authorization_integrity,
 )
+from app.modules.external_document_sources.recurring_observation_provider_lineage import (
+    resolve_recurring_provider_lineage,
+)
 from app.modules.external_document_sources.remote_content_staging_service import (
     _configured_store,
 )
@@ -54,6 +59,14 @@ from app.modules.external_document_sources.remote_file_content_read_service impo
     _normalize_media_type,
     _read_policy,
 )
+from app.modules.external_document_sources.sftp_file_content_proof_service import (
+    _validate_adapter_result as _validate_sftp_content_result,
+    get_external_document_source_sftp_file_content_read_adapter,
+)
+from app.modules.external_document_sources.sftp_successor_restaging_service import (
+    _READ_OPERATION_KIND as _SFTP_READ_OPERATION_KIND,
+    _read_policy_hash as _sftp_read_policy_hash,
+)
 from app.modules.external_document_sources.service import (
     ExternalDocumentSourceConflictError,
     ExternalDocumentSourceNotFoundError,
@@ -65,6 +78,18 @@ from app.modules.external_document_sources.service import (
 _SAFE_IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 STORAGE_PURPOSE = "external_observation_refresh_quarantine_v1"
 MAX_REFRESH_BYTES = 64 * 1024 * 1024
+
+
+@dataclass(frozen=True)
+class _RefreshReadContext:
+    provider_kind: str
+    read_operation_kind: str
+    read_adapter_kind: str
+    policy_hash: str
+    adapter: Any
+    target: Any
+    legacy_policy: Any | None = None
+    expected_auth_kind: str | None = None
 
 
 def _utc_now() -> datetime:
@@ -361,6 +386,48 @@ def _provider_read_context(
             "Observation refresh authorization is stale because canonical Evidence changed"
         )
 
+    if authorization.provider_kind == "sftp":
+        lineage = resolve_recurring_provider_lineage(db, binding)
+        if (
+            lineage.provider_kind != "sftp"
+            or lineage.sftp_observation_id is None
+            or lineage.sftp_checkpoint_id is None
+            or lineage.sftp_content_request is None
+            or lineage.sftp_expected_auth_kind is None
+            or lineage.sftp_observation_id
+            != observation.sftp_provider_lineage_observation_id
+            or lineage.sftp_checkpoint_id
+            != observation.sftp_provider_lineage_checkpoint_id
+            or lineage.profile_hash != authorization.profile_hash
+            or lineage.stable_source_item_hash
+            != authorization.stable_source_item_hash
+        ):
+            raise ExternalDocumentSourceConflictError(
+                "Observation refresh SFTP provider lineage no longer matches the changed observation"
+            )
+        adapter = get_external_document_source_sftp_file_content_read_adapter()
+        if adapter is None:
+            raise ExternalDocumentSourceConflictError(
+                "Observation refresh SFTP exact-file content adapter is unavailable"
+            )
+        adapter_kind = getattr(adapter, "adapter_kind", None)
+        if (
+            not isinstance(adapter_kind, str)
+            or not _SAFE_IDENTIFIER.fullmatch(adapter_kind)
+        ):
+            raise ExternalDocumentSourceConflictError(
+                "Observation refresh SFTP content adapter kind is invalid"
+            )
+        return current, _RefreshReadContext(
+            provider_kind="sftp",
+            read_operation_kind=_SFTP_READ_OPERATION_KIND,
+            read_adapter_kind=adapter_kind,
+            policy_hash=_sftp_read_policy_hash(),
+            adapter=adapter,
+            target=lineage.sftp_content_request,
+            expected_auth_kind=lineage.sftp_expected_auth_kind,
+        )
+
     lineage_observation, checkpoint, profile, locator, _observation_policy = _provider_lineage(
         db, binding
     )
@@ -429,12 +496,50 @@ def _provider_read_context(
         raise ExternalDocumentSourceConflictError(
             "Observation refresh content adapter policy drifted"
         )
-    return current, profile, locator, policy, adapter, adapter_kind
+    return current, _RefreshReadContext(
+        provider_kind=authorization.provider_kind,
+        read_operation_kind=read_context.read_operation_kind,
+        read_adapter_kind=read_context.read_adapter_kind,
+        policy_hash=_endpoint_policy_hash(policy),
+        adapter=adapter,
+        target=locator,
+        legacy_policy=policy,
+    )
 
+def _read_exact_changed_content(
+    context: _RefreshReadContext,
+    observation: ExternalDocumentSourceDueTickObservationExecution,
+):
+    if context.provider_kind == "sftp":
+        try:
+            result = context.adapter.read_content(context.target)
+        except Exception:
+            raise ExternalDocumentSourceConflictError(
+                "Observation refresh SFTP exact-file content read failed"
+            ) from None
+        payload, _authentication_method, _latency_class = _validate_sftp_content_result(
+            result,
+            expected_auth_kind=context.expected_auth_kind or "",
+            declared_byte_size=observation.observed_byte_size,
+        )
+        if len(payload) > MAX_REFRESH_BYTES:
+            raise ExternalDocumentSourceConflictError(
+                "Observation refresh content exceeded the byte bound"
+            )
+        media = _normalize_media_type(observation.observed_mime_type_class)
+        version = _normalize_hash(
+            observation.observed_version_token_hash,
+            field="Changed observation version-token hash",
+        )
+        return payload, hashlib.sha256(payload).hexdigest(), len(payload), media, version
 
-def _read_exact_changed_content(adapter, locator, policy, observation):
+    policy = context.legacy_policy
+    if policy is None:
+        raise ExternalDocumentSourceConflictError(
+            "Observation refresh legacy read policy is unavailable"
+        )
     try:
-        result = adapter.read_content(locator, policy)
+        result = context.adapter.read_content(context.target, policy)
     except Exception:
         raise ExternalDocumentSourceConflictError(
             "Observation refresh exact-item content read failed"
@@ -483,7 +588,6 @@ def _read_exact_changed_content(adapter, locator, policy, observation):
             "Observation refresh version no longer matches the changed observation"
         )
     return payload, hashlib.sha256(payload).hexdigest(), len(payload), media, version
-
 
 def _verify_storage(store, *, storage_key: str, digest: str, byte_count: int) -> None:
     try:
@@ -733,7 +837,7 @@ def execute_observation_refresh_authorization(
         return existing, "replayed"
 
     decision, observation = _originating_observation(db, authorization)
-    current, _profile, locator, policy, adapter, adapter_kind = _provider_read_context(
+    current, read_context = _provider_read_context(
         db,
         authorization=authorization,
         observation=observation,
@@ -752,7 +856,7 @@ def execute_observation_refresh_authorization(
     )
     storage_key = _storage_key(authorization.id, execution_id)
     storage_key_hash = hashlib.sha256(storage_key.encode("utf-8")).hexdigest()
-    endpoint_policy_hash = _endpoint_policy_hash(policy)
+    endpoint_policy_hash = read_context.policy_hash
     requested_at = _aware(now or _utc_now())
     scope_hash = _scope_hash(
         authorization,
@@ -760,8 +864,8 @@ def execute_observation_refresh_authorization(
         current_document_id=current.id,
         current_version_number=current.version_number,
         current_document_file_hash=current.file_hash,
-        read_operation_kind=policy.read_operation_kind,
-        read_adapter_kind=adapter_kind,
+        read_operation_kind=read_context.read_operation_kind,
+        read_adapter_kind=read_context.read_adapter_kind,
         endpoint_policy_hash=endpoint_policy_hash,
         storage_backend_kind=backend,
         storage_object_key_hash=storage_key_hash,
@@ -775,8 +879,13 @@ def execute_observation_refresh_authorization(
     )
 
     payload, digest, count, media, version = _read_exact_changed_content(
-        adapter, locator, policy, observation
+        read_context,
+        observation,
     )
+    if authorization.provider_kind == "sftp" and digest == current.file_hash.lower():
+        raise ExternalDocumentSourceConflictError(
+            "Observation refresh SFTP content digest still matches current canonical Evidence"
+        )
     try:
         try:
             store.put_bytes_if_absent(
