@@ -92,17 +92,19 @@ def test_phase_ad_nplus1_requires_fresh_release_and_explicit_baseline_transition
         assert prior_document is not None
         claim_id = prior_document.claim_id
 
-    old_release, old_outcome = grant_processing_release(
-        TestingSessionLocal(),
-        organization_id=organization_id,
-        claim_id=claim_id,
-        document_id=prior_document.id,
-        released_by_id=actor_id,
-        request_key="sftp-phase-ad-prior-release",
-        reason="Explicit local-processing release for the prior canonical SFTP Evidence version.",
-    )
-    assert old_outcome == "granted"
-    assert old_release.document_version_number == prior_document.version_number
+    with TestingSessionLocal() as db:
+        old_release, old_outcome = grant_processing_release(
+            db,
+            organization_id=organization_id,
+            claim_id=claim_id,
+            document_id=prior_document.id,
+            released_by_id=actor_id,
+            request_key="sftp-phase-ad-prior-release",
+            reason="Explicit local-processing release for the prior canonical SFTP Evidence version.",
+        )
+        assert old_outcome == "granted"
+        assert old_release.document_version_number == prior_document.version_number
+        old_release_document_id = old_release.document_id
 
     changed_body = b"n" * observed_size
     read_adapter = _FileReadAdapter(content=changed_body)
@@ -191,7 +193,7 @@ def test_phase_ad_nplus1_requires_fresh_release_and_explicit_baseline_transition
         assert release_outcome == "granted"
         assert new_release.document_id == new_document_id
         assert new_release.document_version_number == new_version_number
-        assert new_release.document_id != old_release.document_id
+        assert new_release.document_id != old_release_document_id
 
     assert len(read_adapter.calls) == 1
 
