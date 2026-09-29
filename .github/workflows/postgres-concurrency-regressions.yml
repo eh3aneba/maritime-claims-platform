@@ -37,7 +37,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          all_groups='["scheduling","observation","review","service-executor","authorization-foundation","admission-execution"]'
+          all_groups='["scheduling","observation-due-tick","observation-refresh","review","service-executor","authorization-foundation","admission-execution"]'
           placeholder_groups='["scheduling"]'
 
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
@@ -72,15 +72,19 @@ jobs:
                 postgres_required=true
                 add_group scheduling
                 ;;
-              apps/api/tests/test_external_document_source_due_tick_observation_concurrency_postgres.py|apps/api/tests/test_external_document_source_sftp_recurring_provider_lineage.py|apps/api/tests/test_external_document_source_observation_refresh_execution_concurrency_postgres.py)
+              apps/api/tests/test_external_document_source_due_tick_observation_concurrency_postgres.py|apps/api/tests/test_external_document_source_sftp_recurring_provider_lineage.py)
                 postgres_required=true
-                add_group observation
+                add_group observation-due-tick
+                ;;
+              apps/api/tests/test_external_document_source_observation_refresh_execution_concurrency_postgres.py)
+                postgres_required=true
+                add_group observation-refresh
                 ;;
               apps/api/tests/test_external_document_source_observation_review_handoff_concurrency_postgres.py|apps/api/tests/test_external_document_source_observation_review_decision_concurrency_postgres.py)
                 postgres_required=true
                 add_group review
                 ;;
-              apps/api/tests/test_external_document_source_due_tick_service_executor_concurrency_postgres.py)
+              apps/api/tests/test_external_document_source_due_tick_service_executor_concurrency_postgres.py|apps/api/tests/test_external_document_source_sftp_due_tick_service_executor.py)
                 postgres_required=true
                 add_group service-executor
                 ;;
@@ -187,13 +191,13 @@ jobs:
         run: pytest -q --durations=10 tests/test_external_document_source_due_tick_dispatch_concurrency_postgres.py
 
       - name: Observation — due-tick observation
-        if: ${{ matrix.group == 'observation' }}
+        if: ${{ matrix.group == 'observation-due-tick' }}
         env:
           EXTERNAL_EVIDENCE_DUE_TICK_POSTGRES_TEST: "1"
         run: pytest -q tests/test_external_document_source_due_tick_observation_concurrency_postgres.py tests/test_external_document_source_sftp_recurring_provider_lineage.py
 
       - name: Observation — refresh execution
-        if: ${{ matrix.group == 'observation' }}
+        if: ${{ matrix.group == 'observation-refresh' }}
         env:
           EXTERNAL_EVIDENCE_REFRESH_EXECUTION_POSTGRES_TEST: "1"
         run: pytest -q tests/test_external_document_source_observation_refresh_execution_concurrency_postgres.py
@@ -208,7 +212,7 @@ jobs:
         if: ${{ matrix.group == 'service-executor' }}
         env:
           EXTERNAL_EVIDENCE_DUE_TICK_SERVICE_EXECUTOR_POSTGRES_TEST: "1"
-        run: pytest -q --durations=10 tests/test_external_document_source_due_tick_service_executor_concurrency_postgres.py
+        run: pytest -q --durations=10 tests/test_external_document_source_due_tick_service_executor_concurrency_postgres.py tests/test_external_document_source_sftp_due_tick_service_executor.py::test_phase_y_generic_dispatch_and_service_consume_sftp_once_with_replay
 
       - name: Authorization/foundation — refresh admission authorization
         if: ${{ matrix.group == 'authorization-foundation' }}
