@@ -66,6 +66,20 @@ Exact content read performs:
 4. one bounded read;
 5. immediate handle/session/transport closure.
 
+## Operational telemetry
+
+Live SFTP operations emit metadata-minimal JSON events through the `mcri.sftp.operation` logger.
+
+Allowed fields are limited to:
+- operation;
+- outcome;
+- normalized failure code;
+- duration_ms.
+
+Never add hostname, address, path, username, credential reference, fingerprint, secret material or content to this logger.
+
+Operational counts and latency summaries should be derived from these structured events in the deployment log pipeline.
+
 ## Incident signals
 
 Treat these as operator-visible failures:
