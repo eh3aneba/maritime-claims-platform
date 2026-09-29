@@ -663,6 +663,7 @@ def create_external_document_source_sftp_file_content_proof(
             expected_auth_kind=binding.authentication_kind,
             declared_byte_size=entry.byte_size,
         )
+        remote_stat_performed = bool(transient_result.remote_stat_performed)
         content_sha256 = hashlib.sha256(content).hexdigest()
         content_byte_count = len(content)
         del content
@@ -713,7 +714,7 @@ def create_external_document_source_sftp_file_content_proof(
         content_sha256=content_sha256,
         content_byte_count=content_byte_count,
         result_hash="0" * 64,
-        **_completed_safety(remote_stat_performed=bool(adapter_result.remote_stat_performed)),
+        **_completed_safety(remote_stat_performed=remote_stat_performed),
     )
     row.request_hash = _request_hash(row)
     row.result_hash = _result_hash(row)
