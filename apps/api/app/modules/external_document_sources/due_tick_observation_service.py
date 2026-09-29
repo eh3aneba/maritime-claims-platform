@@ -10,13 +10,6 @@ from sqlalchemy.orm import Session
 
 from app.modules.audit.service import write_audit_log
 from app.modules.documents.models import Document
-from app.modules.external_document_sources.change_detection_service import (
-    _OBSERVATION_ADAPTERS,
-    _endpoint_policy_hash,
-    _normalize_identifier,
-    _projection_hash,
-    _validate_result,
-)
 from app.modules.external_document_sources.due_tick_observation_models import (
     ExternalDocumentSourceDueTickObservationExecution,
     ExternalDocumentSourceDueTickObservationReceipt,
@@ -24,11 +17,11 @@ from app.modules.external_document_sources.due_tick_observation_models import (
 from app.modules.external_document_sources.due_tick_dispatch_models import (
     ExternalDocumentSourceDueTickDispatch,
 )
-from app.modules.external_document_sources.evidence_admission_execution_models import (
-    ExternalDocumentSourceEvidenceAdmissionExecution,
+from app.modules.external_document_sources.checkpoint_generation_3_models import (
+    ExternalDocumentSourceCheckpointGeneration3Execution,
 )
-from app.modules.external_document_sources.evidence_admission_execution_service import (
-    _ensure_execution_integrity as _ensure_admission_integrity,
+from app.modules.external_document_sources.generation_3_change_detection_models import (
+    ExternalDocumentSourceGeneration3ChangeDetectionExecution,
 )
 from app.modules.external_document_sources.evidence_family_binding_models import (
     ExternalDocumentSourceEvidenceFamilyBinding,
@@ -40,13 +33,10 @@ from app.modules.external_document_sources.family_version_admission_service impo
     _lock_current_family_document,
     _prior_source_state,
 )
-from app.modules.external_document_sources.generation_3_change_detection_models import (
-    ExternalDocumentSourceGeneration3ChangeDetectionExecution,
-)
-from app.modules.external_document_sources.generation_3_change_detection_service import (
-    _checkpoint_generation_3,
-    _ensure_integrity as _ensure_generation3_integrity,
-    _lineage as _generation3_lineage,
+from app.modules.external_document_sources.recurring_observation_provider_lineage import (
+    RecurringProviderLineage,
+    read_recurring_provider_metadata,
+    resolve_recurring_provider_lineage,
 )
 from app.modules.external_document_sources.recurring_observation_schedule_models import (
     ExternalDocumentSourceRecurringObservationSchedule,
@@ -200,77 +190,43 @@ def _provider_lineage(
     db: Session,
     binding: ExternalDocumentSourceEvidenceFamilyBinding,
 ):
-    admission = db.scalar(
-        select(ExternalDocumentSourceEvidenceAdmissionExecution).where(
-            ExternalDocumentSourceEvidenceAdmissionExecution.id
-            == binding.admission_execution_id,
-            ExternalDocumentSourceEvidenceAdmissionExecution.organization_id
-            == binding.organization_id,
-            ExternalDocumentSourceEvidenceAdmissionExecution.profile_id
-            == binding.profile_id,
-        )
-    )
-    if admission is None:
-        raise ExternalDocumentSourceConflictError(
-            "Recurring observation initial admission lineage is missing"
-        )
-    _ensure_admission_integrity(db, admission)
+    """Legacy compatibility wrapper for refresh code during provider-neutralization.
 
-    observation = db.scalar(
-        select(ExternalDocumentSourceGeneration3ChangeDetectionExecution).where(
-            ExternalDocumentSourceGeneration3ChangeDetectionExecution.id
-            == admission.generation_3_change_detection_execution_id,
-            ExternalDocumentSourceGeneration3ChangeDetectionExecution.organization_id
-            == binding.organization_id,
-            ExternalDocumentSourceGeneration3ChangeDetectionExecution.profile_id
-            == binding.profile_id,
-        )
-    )
-    if observation is None:
-        raise ExternalDocumentSourceConflictError(
-            "Recurring observation provider-lineage observation is missing"
-        )
-    _ensure_generation3_integrity(db, observation)
+    Recurring schedule authority remains legacy-only until Phase X, so callers that
+    still consume the historical tuple may do so without bypassing the new resolver.
+    """
+    lineage = resolve_recurring_provider_lineage(db, binding)
     if (
-        observation.status != "completed"
-        or observation.result_status != "unchanged"
-        or observation.observed_provider_item_id_hash
-        != binding.stable_source_item_hash
-        or observation.observed_projection_hash != binding.source_projection_hash
-        or observation.completion_hash != binding.source_observation_completion_hash
+        lineage.provider_kind == "sftp"
+        or lineage.legacy_observation_id is None
+        or lineage.legacy_checkpoint_id is None
+        or lineage.legacy_profile is None
+        or lineage.legacy_locator is None
+        or lineage.legacy_policy is None
     ):
         raise ExternalDocumentSourceConflictError(
-            "Recurring observation provider lineage drifted"
+            "Legacy recurring provider-lineage tuple is unavailable for this provider"
         )
 
-    checkpoint = _checkpoint_generation_3(
-        db,
-        organization_id=binding.organization_id,
-        profile_id=binding.profile_id,
-        execution_id=observation.checkpoint_generation_3_execution_id,
+    observation = db.get(
+        ExternalDocumentSourceGeneration3ChangeDetectionExecution,
+        lineage.legacy_observation_id,
     )
-    (
-        _candidate,
-        _phase_s_observation,
-        _listing,
-        item,
-        profile,
-        locator,
-        policy,
-        _baseline,
-        _baseline_hash,
-    ) = _generation3_lineage(db, checkpoint)
-
-    if (
-        profile.profile_hash != binding.profile_hash
-        or profile.provider_kind != binding.provider_kind
-        or hashlib.sha256(item.provider_item_id.encode("utf-8")).hexdigest()
-        != binding.stable_source_item_hash
-    ):
+    checkpoint = db.get(
+        ExternalDocumentSourceCheckpointGeneration3Execution,
+        lineage.legacy_checkpoint_id,
+    )
+    if observation is None or checkpoint is None:
         raise ExternalDocumentSourceConflictError(
-            "Recurring observation exact-item provider lineage drifted"
+            "Legacy recurring provider-lineage rows are missing"
         )
-    return observation, checkpoint, profile, locator, policy
+    return (
+        observation,
+        checkpoint,
+        lineage.legacy_profile,
+        lineage.legacy_locator,
+        lineage.legacy_policy,
+    )
 
 
 def _next_due_tick(
@@ -300,7 +256,7 @@ def _scope_hash(
     schedule: ExternalDocumentSourceRecurringObservationSchedule,
     binding: ExternalDocumentSourceEvidenceFamilyBinding,
     current_document: Document,
-    observation: ExternalDocumentSourceGeneration3ChangeDetectionExecution,
+    lineage: RecurringProviderLineage,
     due_at: datetime,
     baseline_projection_hash: str,
     baseline_version_token_hash: str | None,
@@ -309,34 +265,40 @@ def _scope_hash(
     endpoint_policy_hash: str,
     request_key: str,
 ) -> str:
-    return _canonical_hash(
-        {
-            "organization_id": str(schedule.organization_id),
-            "claim_id": str(schedule.claim_id),
-            "profile_id": str(schedule.profile_id),
-            "schedule_id": str(schedule.id),
-            "schedule_authorization_hash": schedule.authorization_hash,
-            "schedule_revision_number": schedule.revision_number,
-            "binding_id": str(binding.id),
-            "binding_completion_hash": binding.completion_hash,
-            "document_family_id": str(binding.document_family_id),
-            "current_document_id": str(current_document.id),
-            "current_version_number": current_document.version_number,
-            "provider_lineage_observation_id": str(observation.id),
-            "provider_kind": binding.provider_kind,
-            "profile_hash": binding.profile_hash,
-            "stable_source_item_hash": binding.stable_source_item_hash,
-            "cadence_class": schedule.cadence_class,
-            "cadence_minutes": schedule.cadence_minutes,
-            "due_at": _iso(due_at),
-            "baseline_projection_hash": baseline_projection_hash,
-            "baseline_version_token_hash": baseline_version_token_hash,
-            "observation_operation_kind": observation_operation_kind,
-            "observation_adapter_kind": observation_adapter_kind,
-            "endpoint_policy_hash": endpoint_policy_hash,
-            "request_key": request_key,
-        }
-    )
+    payload = {
+        "organization_id": str(schedule.organization_id),
+        "claim_id": str(schedule.claim_id),
+        "profile_id": str(schedule.profile_id),
+        "schedule_id": str(schedule.id),
+        "schedule_authorization_hash": schedule.authorization_hash,
+        "schedule_revision_number": schedule.revision_number,
+        "binding_id": str(binding.id),
+        "binding_completion_hash": binding.completion_hash,
+        "document_family_id": str(binding.document_family_id),
+        "current_document_id": str(current_document.id),
+        "current_version_number": current_document.version_number,
+        "provider_kind": binding.provider_kind,
+        "profile_hash": binding.profile_hash,
+        "stable_source_item_hash": binding.stable_source_item_hash,
+        "cadence_class": schedule.cadence_class,
+        "cadence_minutes": schedule.cadence_minutes,
+        "due_at": _iso(due_at),
+        "baseline_projection_hash": baseline_projection_hash,
+        "baseline_version_token_hash": baseline_version_token_hash,
+        "observation_operation_kind": observation_operation_kind,
+        "observation_adapter_kind": observation_adapter_kind,
+        "endpoint_policy_hash": endpoint_policy_hash,
+        "request_key": request_key,
+    }
+    if lineage.provider_kind == "sftp":
+        payload["sftp_provider_lineage_observation_id"] = str(
+            lineage.sftp_observation_id
+        )
+    else:
+        payload["provider_lineage_observation_id"] = str(
+            lineage.legacy_observation_id
+        )
+    return _canonical_hash(payload)
 
 
 def _request_hash(
@@ -483,9 +445,7 @@ def ensure_due_tick_observation_integrity(
         binding=binding,
         current_document=current_document,
     )
-    observation, checkpoint, _profile, _locator, policy = _provider_lineage(
-        db, binding
-    )
+    lineage = resolve_recurring_provider_lineage(db, binding)
 
     expected = {
         "claim_id": binding.claim_id,
@@ -499,12 +459,14 @@ def ensure_due_tick_observation_integrity(
         "schedule_revision_number": schedule.revision_number,
         "cadence_class": schedule.cadence_class,
         "cadence_minutes": schedule.cadence_minutes,
-        "provider_lineage_observation_id": observation.id,
-        "provider_lineage_checkpoint_id": checkpoint.id,
+        "provider_lineage_observation_id": lineage.legacy_observation_id,
+        "provider_lineage_checkpoint_id": lineage.legacy_checkpoint_id,
+        "sftp_provider_lineage_observation_id": lineage.sftp_observation_id,
+        "sftp_provider_lineage_checkpoint_id": lineage.sftp_checkpoint_id,
         "baseline_projection_hash": baseline_projection_hash,
         "baseline_version_token_hash": baseline_version_token_hash,
-        "observation_operation_kind": policy.observation_operation_kind,
-        "endpoint_policy_hash": _endpoint_policy_hash(policy),
+        "observation_operation_kind": lineage.observation_operation_kind,
+        "endpoint_policy_hash": lineage.policy_hash,
         "status": "completed",
     }
     for field, value in expected.items():
@@ -529,7 +491,7 @@ def ensure_due_tick_observation_integrity(
         schedule=schedule,
         binding=binding,
         current_document=current_document,
-        observation=observation,
+        lineage=lineage,
         due_at=execution.due_at,
         baseline_projection_hash=baseline_projection_hash,
         baseline_version_token_hash=baseline_version_token_hash,
@@ -787,88 +749,20 @@ def execute_due_tick_observation(
                 "Due-tick dispatch authority no longer matches current observation authority"
             )
 
-    observation, checkpoint, profile, locator, policy = _provider_lineage(db, binding)
-    adapter = _OBSERVATION_ADAPTERS.get(
-        (profile.provider_kind, policy.observation_operation_kind)
+    lineage = resolve_recurring_provider_lineage(db, binding)
+    observed = read_recurring_provider_metadata(
+        lineage,
+        baseline_projection_hash=baseline_projection_hash,
     )
-    if adapter is None:
-        raise ExternalDocumentSourceConflictError(
-            "Exact-item metadata adapter is unavailable for due-tick observation"
-        )
-    adapter_kind = _normalize_identifier(
-        adapter.adapter_kind,
-        field="Due-tick observation adapter kind",
-    )
-    if (
-        adapter.provider_kind != profile.provider_kind
-        or adapter.client_kind != policy.client_kind
-        or adapter.observation_operation_kind != policy.observation_operation_kind
-        or adapter.provider_origin != policy.provider_origin
-    ):
-        raise ExternalDocumentSourceConflictError(
-            "Due-tick observation adapter policy drifted"
-        )
-    endpoint_policy_hash = _endpoint_policy_hash(policy)
-
-    try:
-        result = adapter.read_item_metadata(locator, policy)
-    except Exception:
-        raise ExternalDocumentSourceConflictError(
-            "Due-tick exact-item metadata observation failed"
-        ) from None
-    projection = _validate_result(result)
-
-    result_status: str
-    observed_projection_hash: str | None = None
-    observed_display_name_hash: str | None = None
-    observed_version_token_hash: str | None = None
-    observed_byte_size: int | None = None
-    observed_modified_at: datetime | None = None
-    observed_mime_type_class: str | None = None
-
-    if projection is None:
-        result_status = "missing"
-    else:
-        provider_item_id_hash = hashlib.sha256(
-            projection.provider_item_id.encode("utf-8")
-        ).hexdigest()
-        if provider_item_id_hash != binding.stable_source_item_hash:
-            raise ExternalDocumentSourceConflictError(
-                "Due-tick observation returned a different provider item"
-            )
-        if projection.item_kind != "file":
-            raise ExternalDocumentSourceConflictError(
-                "Due-tick observation source is no longer a file"
-            )
-        facts = {
-            "provider_item_id_hash": provider_item_id_hash,
-            "item_kind": projection.item_kind,
-            "display_name_hash": hashlib.sha256(
-                projection.display_name.encode("utf-8")
-            ).hexdigest(),
-            "parent_item_id_hash": (
-                hashlib.sha256(
-                    projection.parent_item_id.encode("utf-8")
-                ).hexdigest()
-                if projection.parent_item_id is not None
-                else None
-            ),
-            "mime_type_class": projection.mime_type_class,
-            "byte_size": projection.byte_size,
-            "modified_at": projection.modified_at,
-            "version_token_hash": projection.version_token_hash,
-        }
-        observed_projection_hash = _projection_hash(facts)
-        observed_display_name_hash = facts["display_name_hash"]
-        observed_version_token_hash = facts["version_token_hash"]
-        observed_byte_size = facts["byte_size"]
-        observed_modified_at = facts["modified_at"]
-        observed_mime_type_class = facts["mime_type_class"]
-        result_status = (
-            "unchanged"
-            if observed_projection_hash == baseline_projection_hash
-            else "changed"
-        )
+    result_status = observed.result_status
+    observed_projection_hash = observed.observed_projection_hash
+    observed_display_name_hash = observed.observed_display_name_hash
+    observed_version_token_hash = observed.observed_version_token_hash
+    observed_byte_size = observed.observed_byte_size
+    observed_modified_at = observed.observed_modified_at
+    observed_mime_type_class = observed.observed_mime_type_class
+    adapter_kind = observed.observation_adapter_kind
+    endpoint_policy_hash = observed.policy_hash
 
     executed_at = current_time
     completed_at = max(current_time, _utc_now())
@@ -882,8 +776,10 @@ def execute_due_tick_observation(
         document_family_id=binding.document_family_id,
         current_document_id=current_document.id,
         current_version_number=current_document.version_number,
-        provider_lineage_observation_id=observation.id,
-        provider_lineage_checkpoint_id=checkpoint.id,
+        provider_lineage_observation_id=lineage.legacy_observation_id,
+        provider_lineage_checkpoint_id=lineage.legacy_checkpoint_id,
+        sftp_provider_lineage_observation_id=lineage.sftp_observation_id,
+        sftp_provider_lineage_checkpoint_id=lineage.sftp_checkpoint_id,
         provider_kind=binding.provider_kind,
         profile_hash=binding.profile_hash,
         stable_source_item_hash=binding.stable_source_item_hash,
@@ -895,7 +791,7 @@ def execute_due_tick_observation(
         due_at=due_at,
         baseline_projection_hash=baseline_projection_hash,
         baseline_version_token_hash=baseline_version_token_hash,
-        observation_operation_kind=policy.observation_operation_kind,
+        observation_operation_kind=lineage.observation_operation_kind,
         observation_adapter_kind=adapter_kind,
         endpoint_policy_hash=endpoint_policy_hash,
         result_status=result_status,
@@ -922,11 +818,11 @@ def execute_due_tick_observation(
         schedule=schedule,
         binding=binding,
         current_document=current_document,
-        observation=observation,
+        lineage=lineage,
         due_at=due_at,
         baseline_projection_hash=baseline_projection_hash,
         baseline_version_token_hash=baseline_version_token_hash,
-        observation_operation_kind=policy.observation_operation_kind,
+        observation_operation_kind=lineage.observation_operation_kind,
         observation_adapter_kind=adapter_kind,
         endpoint_policy_hash=endpoint_policy_hash,
         request_key=normalized_key,

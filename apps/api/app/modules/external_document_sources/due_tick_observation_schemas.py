@@ -22,8 +22,10 @@ class ExternalDocumentSourceDueTickObservationRead(BaseModel):
     document_family_id: UUID
     current_document_id: UUID
     current_version_number: int
-    provider_lineage_observation_id: UUID
-    provider_lineage_checkpoint_id: UUID
+    provider_lineage_observation_id: UUID | None
+    provider_lineage_checkpoint_id: UUID | None
+    sftp_provider_lineage_observation_id: UUID | None
+    sftp_provider_lineage_checkpoint_id: UUID | None
     provider_kind: str
     profile_hash: str
     stable_source_item_hash: str

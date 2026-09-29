@@ -88,7 +88,23 @@ class ExternalDocumentSourceDueTickObservationExecution(
     __table_args__ = (
         UniqueConstraint("schedule_id", "due_at", name="uq_ext_doc_due_obs_tick"),
         UniqueConstraint("organization_id", "profile_id", "request_key", name="uq_ext_doc_due_obs_request"),
-        CheckConstraint("provider_kind IN ('sharepoint','google_drive')", name="ck_ext_doc_due_obs_provider"),
+        CheckConstraint("provider_kind IN ('sharepoint','google_drive','sftp')", name="ck_ext_doc_due_obs_provider"),
+        CheckConstraint(
+            "("
+            "(provider_kind IN ('sharepoint','google_drive') "
+            "AND provider_lineage_observation_id IS NOT NULL "
+            "AND provider_lineage_checkpoint_id IS NOT NULL "
+            "AND sftp_provider_lineage_observation_id IS NULL "
+            "AND sftp_provider_lineage_checkpoint_id IS NULL) "
+            "OR "
+            "(provider_kind = 'sftp' "
+            "AND provider_lineage_observation_id IS NULL "
+            "AND provider_lineage_checkpoint_id IS NULL "
+            "AND sftp_provider_lineage_observation_id IS NOT NULL "
+            "AND sftp_provider_lineage_checkpoint_id IS NOT NULL)"
+            ")",
+            name="ck_ext_doc_due_obs_lineage_selector",
+        ),
         CheckConstraint("current_version_number >= 1", name="ck_ext_doc_due_obs_version"),
         CheckConstraint("schedule_revision_number >= 1", name="ck_ext_doc_due_obs_revision"),
         CheckConstraint("cadence_minutes >= 60", name="ck_ext_doc_due_obs_cadence"),
@@ -109,6 +125,8 @@ class ExternalDocumentSourceDueTickObservationExecution(
         Index("ix_ext_doc_due_obs_org_claim", "organization_id", "claim_id"),
         Index("ix_ext_doc_due_obs_schedule", "schedule_id", "due_at"),
         Index("ix_ext_doc_due_obs_family", "binding_id", "completed_at"),
+        Index("ix_ext_doc_due_obs_sftp_observation", "sftp_provider_lineage_observation_id"),
+        Index("ix_ext_doc_due_obs_sftp_checkpoint", "sftp_provider_lineage_checkpoint_id"),
         *_safety_constraints("ext_doc_due_obs"),
     )
 
@@ -120,8 +138,10 @@ class ExternalDocumentSourceDueTickObservationExecution(
     document_family_id: Mapped[UUID] = mapped_column(nullable=False)
     current_document_id: Mapped[UUID] = mapped_column(ForeignKey("documents.id", ondelete="RESTRICT"), nullable=False)
     current_version_number: Mapped[int] = mapped_column(Integer, nullable=False)
-    provider_lineage_observation_id: Mapped[UUID] = mapped_column(ForeignKey("external_doc_source_gen3_change_detect_execs.id", ondelete="RESTRICT"), nullable=False)
-    provider_lineage_checkpoint_id: Mapped[UUID] = mapped_column(ForeignKey("external_doc_source_checkpoint_gen3_execs.id", ondelete="RESTRICT"), nullable=False)
+    provider_lineage_observation_id: Mapped[UUID | None] = mapped_column(ForeignKey("external_doc_source_gen3_change_detect_execs.id", ondelete="RESTRICT"), nullable=True)
+    provider_lineage_checkpoint_id: Mapped[UUID | None] = mapped_column(ForeignKey("external_doc_source_checkpoint_gen3_execs.id", ondelete="RESTRICT"), nullable=True)
+    sftp_provider_lineage_observation_id: Mapped[UUID | None] = mapped_column(ForeignKey("external_doc_source_sftp_generation3_change_detections.id", ondelete="RESTRICT"), nullable=True)
+    sftp_provider_lineage_checkpoint_id: Mapped[UUID | None] = mapped_column(ForeignKey("external_doc_source_sftp_generation3_checkpoint_advancements.id", ondelete="RESTRICT"), nullable=True)
 
     provider_kind: Mapped[str] = mapped_column(String(32), nullable=False)
     profile_hash: Mapped[str] = mapped_column(String(64), nullable=False)
