@@ -7,6 +7,7 @@ import importlib
 import io
 import ipaddress
 import json
+import logging
 import posixpath
 import socket
 import stat as stat_module
@@ -49,6 +50,57 @@ from app.modules.external_document_sources.sftp_session_activation_service impor
     SftpSessionActivationResult,
     register_external_document_source_sftp_session_activation_adapter,
 )
+sftp_operation_logger = logging.getLogger("mcri.sftp.operation")
+sftp_operation_logger.setLevel(logging.INFO)
+
+
+def _sftp_operation_event(
+    *,
+    operation: str,
+    outcome: str,
+    failure_code: str | None,
+    duration_ms: float,
+) -> str:
+    return json.dumps(
+        {
+            "event": "sftp_operation",
+            "operation": operation,
+            "outcome": outcome,
+            "failure_code": failure_code,
+            "duration_ms": round(max(0.0, duration_ms), 3),
+        },
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+
+
+def _observe_adapter_result(operation: str, started: float, result):
+    failure_code = getattr(result, "failure_code", None)
+    outcome = "failed" if failure_code is not None else "succeeded"
+    payload = _sftp_operation_event(
+        operation=operation,
+        outcome=outcome,
+        failure_code=failure_code,
+        duration_ms=(time.perf_counter() - started) * 1000,
+    )
+    if failure_code is None:
+        sftp_operation_logger.info(payload)
+    else:
+        sftp_operation_logger.warning(payload)
+    return result
+
+
+def _observe_adapter_exception(operation: str, started: float) -> None:
+    sftp_operation_logger.warning(
+        _sftp_operation_event(
+            operation=operation,
+            outcome="failed",
+            failure_code="adapter_exception",
+            duration_ms=(time.perf_counter() - started) * 1000,
+        )
+    )
+
+
 from app.modules.external_document_sources.sftp_transport_verification_service import (
     SftpTransportHostKeyProbeRequest,
     SftpTransportHostKeyProbeResult,
@@ -1258,6 +1310,7 @@ class _SftpCredentialHealthResolver:
         self,
         locator: SftpCredentialReferenceLocator,
     ) -> SftpCredentialHealthProbeResult:
+        started = time.perf_counter()
         material = None
         try:
             material = self._runtime._load_credential(
@@ -1267,10 +1320,14 @@ class _SftpCredentialHealthResolver:
                 version=locator.version,
                 expected_authentication_kind=locator.authentication_kind,
             )
-            return SftpCredentialHealthProbeResult(
-                resolved=True,
-                material_kind=material.authentication_kind,
-                failure_code=None,
+            return _observe_adapter_result(
+                "credential_health",
+                started,
+                SftpCredentialHealthProbeResult(
+                    resolved=True,
+                    material_kind=material.authentication_kind,
+                    failure_code=None,
+                ),
             )
         except _SftpRuntimeFailure as exc:
             if exc.code == "credential_unavailable":
@@ -1281,10 +1338,14 @@ class _SftpCredentialHealthResolver:
                 code = "reference_unresolved"
             else:
                 code = "resolver_rejected"
-            return SftpCredentialHealthProbeResult(
-                resolved=False,
-                material_kind=None,
-                failure_code=code,
+            return _observe_adapter_result(
+                "credential_health",
+                started,
+                SftpCredentialHealthProbeResult(
+                    resolved=False,
+                    material_kind=None,
+                    failure_code=code,
+                ),
             )
         finally:
             if material is not None:
@@ -1301,7 +1362,13 @@ class _SftpTransportAdapter:
         self,
         request: SftpTransportHostKeyProbeRequest,
     ) -> SftpTransportHostKeyProbeResult:
-        return self._runtime.probe_host_key(request)
+        started = time.perf_counter()
+        try:
+            result = self._runtime.probe_host_key(request)
+        except Exception:
+            _observe_adapter_exception("transport_verification", started)
+            raise
+        return _observe_adapter_result("transport_verification", started, result)
 
 
 class _SftpActivationAdapter:
@@ -1314,7 +1381,13 @@ class _SftpActivationAdapter:
         self,
         request: SftpSessionActivationRequest,
     ) -> SftpSessionActivationResult:
-        return self._runtime.activate(request)
+        started = time.perf_counter()
+        try:
+            result = self._runtime.activate(request)
+        except Exception:
+            _observe_adapter_exception("session_activation", started)
+            raise
+        return _observe_adapter_result("session_activation", started, result)
 
 
 class _SftpListingAdapter:
@@ -1327,7 +1400,13 @@ class _SftpListingAdapter:
         self,
         request: SftpDirectoryListingRequest,
     ) -> SftpDirectoryListingResult:
-        return self._runtime.list_metadata(request)
+        started = time.perf_counter()
+        try:
+            result = self._runtime.list_metadata(request)
+        except Exception:
+            _observe_adapter_exception("directory_listing", started)
+            raise
+        return _observe_adapter_result("directory_listing", started, result)
 
 
 class _SftpExactMetadataAdapter:
@@ -1340,7 +1419,13 @@ class _SftpExactMetadataAdapter:
         self,
         request: SftpExactFileMetadataRequest,
     ) -> SftpExactFileMetadataResult:
-        return self._runtime.stat_metadata(request)
+        started = time.perf_counter()
+        try:
+            result = self._runtime.stat_metadata(request)
+        except Exception:
+            _observe_adapter_exception("exact_metadata", started)
+            raise
+        return _observe_adapter_result("exact_metadata", started, result)
 
 
 class _SftpContentReadAdapter:
@@ -1353,7 +1438,13 @@ class _SftpContentReadAdapter:
         self,
         request: SftpFileContentReadRequest,
     ) -> SftpFileContentReadResult:
-        return self._runtime.read_content(request)
+        started = time.perf_counter()
+        try:
+            result = self._runtime.read_content(request)
+        except Exception:
+            _observe_adapter_exception("content_read", started)
+            raise
+        return _observe_adapter_result("content_read", started, result)
 
 
 def _configured_secret_backends() -> tuple[str, ...]:
