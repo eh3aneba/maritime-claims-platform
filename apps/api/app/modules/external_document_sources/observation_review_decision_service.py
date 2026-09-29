@@ -601,11 +601,6 @@ def decide_observation_review_handoff(
         decision_kind=normalized_kind,
     )
 
-    if handoff.provider_kind == "sftp" and normalized_kind == "approve_refresh":
-        raise ExternalDocumentSourceConflictError(
-            "SFTP refresh authorization is not enabled until Phase 17.6-AB"
-        )
-
     existing_handoff = db.scalar(
         select(ExternalDocumentSourceObservationReviewDecision).where(
             ExternalDocumentSourceObservationReviewDecision.handoff_id == handoff.id
