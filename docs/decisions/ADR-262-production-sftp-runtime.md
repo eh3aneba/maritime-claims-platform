@@ -91,6 +91,21 @@ Disallowed:
 - touch;
 - shell/command execution.
 
+## Operational observability
+
+Live SFTP adapter wrappers emit one content-free structured event per bounded operation.
+
+The event contains only:
+- event name;
+- operation class;
+- succeeded/failed outcome;
+- normalized failure code when present;
+- elapsed milliseconds.
+
+It never contains hostname, IP, remote path, username, credential locator, host-key fingerprint, secret/private-key/passphrase, file metadata or file content. Runtime exception text is not logged.
+
+Counts and latency distributions are derived from the deployment log pipeline, consistent with the existing Phase-14 observability baseline rather than introducing a second in-process metrics authority.
+
 ## Supply chain
 
 Paramiko is exact-pinned and must appear in the generated hash-locked production requirements.
