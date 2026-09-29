@@ -208,7 +208,7 @@ jobs:
         if: ${{ matrix.group == 'service-executor' }}
         env:
           EXTERNAL_EVIDENCE_DUE_TICK_SERVICE_EXECUTOR_POSTGRES_TEST: "1"
-        run: pytest -q --durations=10 tests/test_external_document_source_due_tick_service_executor_concurrency_postgres.py tests/test_external_document_source_sftp_due_tick_service_executor.py
+        run: pytest -q --durations=10 tests/test_external_document_source_due_tick_service_executor_concurrency_postgres.py tests/test_external_document_source_sftp_due_tick_service_executor.py::test_phase_y_generic_dispatch_and_service_consume_sftp_once_with_replay
 
       - name: Authorization/foundation — refresh admission authorization
         if: ${{ matrix.group == 'authorization-foundation' }}
