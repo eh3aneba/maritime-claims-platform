@@ -567,3 +567,73 @@ def test_live_sftp_runtime_production_shaped_transport_auth_list_stat_and_read(
     assert ("listdir_attr", "/evidence") in fake_sftp.events
     assert fake_sftp.events.count(("lstat", "/evidence/Survey Report.pdf")) == 2
     assert fake_sftp.events.count(("open", "/evidence/Survey Report.pdf", "rb")) == 1
+
+
+
+def test_live_sftp_runtime_host_key_mismatch_fails_before_secret_resolution(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import app.modules.external_document_sources.live_sftp_adapters as live
+    from app.modules.external_document_sources.sftp_session_activation_service import (
+        SftpSessionActivationRequest,
+    )
+
+    fake_sftp = _ProductionShapeSftp(b"unused")
+    fake_paramiko = _FakeParamikoModule(fake_sftp)
+    sockets = []
+
+    def fake_connect_socket(_hostname, _port, *, timeout_seconds, allow_private_destinations):
+        sock = _FakeSocket()
+        sockets.append(sock)
+        return sock, True
+
+    monkeypatch.setattr(live, "_paramiko", lambda: fake_paramiko)
+    monkeypatch.setattr(live, "_connect_socket", fake_connect_socket)
+
+    secret_runtime = _SecretRuntime(
+        {
+            "username": "claims-reader",
+            "authentication_kind": "password",
+            "password": "must-not-be-read",
+        }
+    )
+    runtime = LiveSftpRuntime(secret_runtime=secret_runtime)
+
+    result = runtime.activate(
+        SftpSessionActivationRequest(
+            hostname="files.example.com",
+            port=22,
+            pinned_host_key_fingerprint="SHA256:" + "Z" * 43,
+            authentication_kind="password",
+            reference_backend="azure_key_vault",
+            reference_namespace="claims-kv",
+            reference_name="sftp-reader",
+            reference_version=None,
+        )
+    )
+
+    assert result.failure_code == "host_key_revalidation_failed"
+    assert result.authentication_performed is False
+    assert result.authentication_succeeded is False
+    assert result.sftp_session_opened is False
+    assert secret_runtime.calls == []
+    assert all(sock.closed for sock in sockets)
+    assert all(transport.closed for transport in fake_paramiko.transports)
+
+
+def test_live_sftp_runtime_symlink_content_target_is_rejected_before_open(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime = LiveSftpRuntime(secret_runtime=_SecretRuntime({}))
+    sftp = _FakeSftp(body=b"must-not-be-read", symlink=True)
+    session = _FakeSession(sftp)
+    monkeypatch.setattr(runtime, "_open_session", lambda **_kwargs: session)
+
+    result = runtime.read_content(_read_request())
+
+    assert result.failure_code == "symlink_escape_detected"
+    assert result.content is None
+    assert result.remote_stat_performed is True
+    assert result.remote_read_performed is False
+    assert session.closed is True
+    assert sftp.events == [("lstat", "/evidence/Survey Report.pdf")]
