@@ -21,6 +21,9 @@ from app.modules.external_document_sources.sftp_credential_health_service import
 from app.modules.external_document_sources.sftp_file_content_proof_service import (
     SftpFileContentReadRequest,
 )
+from app.modules.external_document_sources.sftp_transport_verification_service import (
+    SftpTransportHostKeyProbeRequest,
+)
 
 
 class _SecretRuntime:
@@ -269,3 +272,88 @@ def test_live_sftp_registration_wires_only_bounded_adapters(
         "metadata",
         "content",
     ]
+
+
+class _FakeSocket:
+    def __init__(self):
+        self.closed = False
+
+    def close(self):
+        self.closed = True
+
+
+class _FakeHostKey:
+    def asbytes(self):
+        return b"weak-host-key"
+
+    def get_name(self):
+        return "ssh-rsa"
+
+
+class _FakeSecurityOptions:
+    def __init__(self):
+        self.key_types = (
+            "ssh-ed25519",
+            "rsa-sha2-512",
+            "ssh-rsa",
+        )
+
+
+class _WeakAlgorithmTransport:
+    instances = []
+
+    def __init__(self, sock):
+        self.sock = sock
+        self.banner_timeout = None
+        self.host_key_type = "ssh-rsa"
+        self.closed = False
+        self.options = _FakeSecurityOptions()
+        type(self).instances.append(self)
+
+    def get_security_options(self):
+        return self.options
+
+    def start_client(self, timeout):
+        self.timeout = timeout
+
+    def get_remote_server_key(self):
+        return _FakeHostKey()
+
+    def close(self):
+        self.closed = True
+
+
+def test_live_sftp_transport_rejects_weak_negotiated_host_key_algorithm(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import app.modules.external_document_sources.live_sftp_adapters as live
+
+    sock = _FakeSocket()
+    _WeakAlgorithmTransport.instances.clear()
+    monkeypatch.setattr(
+        live,
+        "_connect_socket",
+        lambda *args, **kwargs: (sock, False),
+    )
+    monkeypatch.setattr(
+        live,
+        "_paramiko",
+        lambda: SimpleNamespace(Transport=_WeakAlgorithmTransport),
+    )
+
+    runtime = LiveSftpRuntime(secret_runtime=_SecretRuntime({}))
+    result = runtime.probe_host_key(
+        SftpTransportHostKeyProbeRequest(
+            hostname="files.example.com",
+            port=22,
+        )
+    )
+
+    assert result.failure_code == "ssh_negotiation_failed"
+    assert result.authentication_performed is False
+    assert result.sftp_session_opened is False
+    assert len(_WeakAlgorithmTransport.instances) == 1
+    transport = _WeakAlgorithmTransport.instances[0]
+    assert "ssh-rsa" not in transport.options.key_types
+    assert transport.closed is True
+    assert sock.closed is True
