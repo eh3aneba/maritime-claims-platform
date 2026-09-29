@@ -184,6 +184,8 @@ def test_live_sftp_content_read_performs_lstat_before_single_bounded_read(
     assert result.content_read_count == 1
     assert session.closed is True
     assert sftp.events == [
+        ("normalize", "/evidence"),
+        ("normalize", "/evidence"),
         ("lstat", "/evidence/Survey Report.pdf"),
         ("open", "/evidence/Survey Report.pdf", "rb"),
     ]
@@ -204,7 +206,11 @@ def test_live_sftp_exact_metadata_rejects_symlink_without_following_it(
     assert result.remote_stat_performed is True
     assert result.symlink_escape_detected is True
     assert session.closed is True
-    assert sftp.events == [("lstat", "/evidence/Survey Report.pdf")]
+    assert sftp.events == [
+        ("normalize", "/evidence"),
+        ("normalize", "/evidence"),
+        ("lstat", "/evidence/Survey Report.pdf"),
+    ]
 
 
 def test_live_sftp_remote_path_policy_blocks_escape() -> None:
