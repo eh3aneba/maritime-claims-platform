@@ -10,6 +10,7 @@ from app.modules.external_document_sources.live_sftp_adapters import (
     LiveSftpRuntime,
     _SftpCredentialHealthResolver,
     _normalize_remote_path,
+    _observe_sftp_operation,
     register_live_sftp_adapters,
 )
 from app.modules.external_document_sources.sftp_change_detection_service import (
@@ -265,3 +266,36 @@ def test_live_sftp_registration_wires_only_bounded_adapters(
         "metadata",
         "content",
     ]
+
+
+
+def test_sftp_observability_is_low_cardinality_and_locator_free(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    with caplog.at_level("INFO", logger="mcri.sftp"):
+        _observe_sftp_operation(
+            operation="content_read",
+            result="success",
+            latency_class="normal",
+        )
+
+    message = caplog.records[-1].getMessage()
+    payload = json.loads(message)
+    assert payload == {
+        "event": "sftp_operation",
+        "latency_class": "normal",
+        "operation": "content_read",
+        "result": "success",
+    }
+    for forbidden in (
+        "hostname",
+        "path",
+        "username",
+        "reference_name",
+        "password",
+        "private_key",
+        "passphrase",
+        "content",
+    ):
+        assert forbidden not in payload
+        assert forbidden not in message
