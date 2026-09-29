@@ -24,6 +24,7 @@ REFRESH_AUTH_ID = "88888888-8888-8888-8888-888888888888"
 REFRESH_EXEC_ID = "99999999-9999-9999-9999-999999999999"
 ADMISSION_AUTH_ID = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
 ADMISSION_EXEC_ID = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+BASELINE_TRANSITION_ID = "abababab-abab-abab-abab-abababababab"
 
 
 def main() -> None:
@@ -35,12 +36,19 @@ def main() -> None:
         "profiles": [
             {
                 "profile_id": PROFILE_ID,
-                "provider_kind": "sharepoint",
-                "display_name": "AK SharePoint fixture",
+                "provider_kind": "sftp",
+                "display_name": "AE SFTP fixture",
                 "profile_status": "active",
                 "provider_health_status": "healthy",
                 "provider_health_latency_class": "fast",
                 "provider_health_completed_at": now,
+                "sftp_runtime_readiness": "ready",
+                "sftp_credential_health_status": "qualified",
+                "sftp_credential_health_checked_at": now,
+                "sftp_transport_status": "verified",
+                "sftp_transport_checked_at": now,
+                "sftp_session_status": "activated",
+                "sftp_session_checked_at": now,
                 "active_family_count": 1,
                 "pending_handoff_count": 1,
                 "processing_release_required_count": 1,
@@ -53,7 +61,7 @@ def main() -> None:
                 "binding_id": BINDING_ID,
                 "claim_id": CLAIM_ID,
                 "profile_id": PROFILE_ID,
-                "provider_kind": "sharepoint",
+                "provider_kind": "sftp",
                 "document_family_id": FAMILY_ID,
                 "current_document_id": DOC_V1,
                 "current_version_number": 1,
@@ -99,6 +107,11 @@ def main() -> None:
                 "latest_admission_executed_at": None,
                 "processing_release_status": None,
                 "processing_release_required": True,
+                "baseline_transition_id": None,
+                "baseline_transition_status": None,
+                "baseline_transition_version_number": None,
+                "baseline_transition_authorized_at": None,
+                "baseline_transition_required": False,
             }
         ],
     }
@@ -178,6 +191,7 @@ def main() -> None:
                 row["admission_execution_required"] = False
                 row["current_document_id"] = DOC_V2
                 row["current_version_number"] = 2
+                row["baseline_transition_required"] = True
                 row["version_history"] = [
                     {
                         "document_id": DOC_V1,
@@ -203,13 +217,27 @@ def main() -> None:
                 route.fulfill(status=201, content_type="application/json", body="{}")
                 return
 
+            if url.endswith(
+                f"/observation-refresh-admission-executions/{ADMISSION_EXEC_ID}/recurring-baseline-transition"
+            ):
+                row["baseline_transition_id"] = BASELINE_TRANSITION_ID
+                row["baseline_transition_status"] = "established"
+                row["baseline_transition_version_number"] = 2
+                row["baseline_transition_authorized_at"] = now
+                row["baseline_transition_required"] = False
+                route.fulfill(status=201, content_type="application/json", body="{}")
+                return
+
             raise AssertionError(f"Unexpected external Evidence mutation: {request.method} {url}")
 
         page.route("**/api/v1/external-document-sources/**", route_external_evidence)
         page.goto(f"{BASE_URL}/external-evidence", wait_until="networkidle")
 
-        expect(page.get_by_role("heading", name="SharePoint & Google Drive operations")).to_be_visible()
+        expect(page.get_by_role("heading", name="SharePoint, Google Drive & SFTP operations")).to_be_visible()
+        expect(page.get_by_text("SFTP runtime", exact=True)).to_be_visible()
+        expect(page.get_by_text("ready", exact=True).first).to_be_visible()
         expect(page.get_by_text("AG human decision required", exact=True)).to_be_visible()
+        expect(page.get_by_text("Initial v1 baseline", exact=True)).to_be_visible()
         expect(page.get_by_text("v1 · current · released", exact=True)).to_be_visible()
 
         note = page.get_by_label("Human reason / audit note")
@@ -230,12 +258,18 @@ def main() -> None:
         expect(page.get_by_text("v1 · historical · released", exact=True)).to_be_visible()
         expect(page.get_by_text("v2 · current · Phase-Z required", exact=True)).to_be_visible()
         expect(page.get_by_text("Phase-Z required", exact=True).last).to_be_visible()
+        expect(page.get_by_text("Transition required", exact=True)).to_be_visible()
+        expect(page.get_by_role("button", name="AD · Establish baseline")).to_be_visible()
 
-        assert len(mutations) == 4, f"Expected four separated governed mutations, got {mutations}"
+        page.get_by_role("button", name="AD · Establish baseline").click()
+        expect(page.get_by_text("Established", exact=True)).to_be_visible()
+
+        assert len(mutations) == 5, f"Expected five separated governed mutations, got {mutations}"
         assert "/decisions" in mutations[0][0]
         assert "/execute" in mutations[1][0]
         assert "/admission-authorizations" in mutations[2][0]
         assert "/observation-refresh-admissions/" in mutations[3][0]
+        assert "/recurring-baseline-transition" in mutations[4][0]
 
         browser.close()
 

@@ -46,6 +46,18 @@ from app.modules.external_document_sources.provider_client_health_models import 
 from app.modules.external_document_sources.recurring_observation_schedule_models import (
     ExternalDocumentSourceRecurringObservationSchedule,
 )
+from app.modules.external_document_sources.recurring_baseline_transition_models import (
+    ExternalDocumentSourceRecurringBaselineTransition,
+)
+from app.modules.external_document_sources.sftp_credential_health_models import (
+    ExternalDocumentSourceSftpCredentialHealthQualification,
+)
+from app.modules.external_document_sources.sftp_session_activation_models import (
+    ExternalDocumentSourceSftpSessionActivation,
+)
+from app.modules.external_document_sources.sftp_transport_verification_models import (
+    ExternalDocumentSourceSftpTransportVerification,
+)
 
 
 _REFRESH_FAILURE_AUDIT_ACTION = "EXTERNAL_EVIDENCE_OBSERVATION_REFRESH_FAILED"
@@ -64,6 +76,50 @@ def _latest_by(rows, key, timestamp):
         ):
             result[row_key] = row
     return result
+
+
+def _sftp_runtime_readiness(
+    *,
+    profile_hash: str,
+    credential_health,
+    transport_verification,
+    session_activation,
+) -> str:
+    credential_current = (
+        credential_health is not None
+        and credential_health.profile_hash == profile_hash
+    )
+    transport_current = (
+        transport_verification is not None
+        and transport_verification.profile_hash == profile_hash
+    )
+    session_current = (
+        session_activation is not None
+        and session_activation.profile_hash == profile_hash
+        and credential_current
+        and transport_current
+        and session_activation.health_qualification_id == credential_health.id
+        and session_activation.transport_verification_id == transport_verification.id
+    )
+
+    credential_status = (
+        credential_health.result_status if credential_current else None
+    )
+    transport_status = (
+        transport_verification.result_status if transport_current else None
+    )
+    session_status = session_activation.result_status if session_current else None
+
+    statuses = (credential_status, transport_status, session_status)
+    if statuses == ("qualified", "verified", "activated"):
+        return "ready"
+    if any(
+        status in {"unqualified", "failed"}
+        for status in statuses
+        if status is not None
+    ):
+        return "attention"
+    return "not_qualified"
 
 
 def build_external_document_source_operator_overview(
@@ -97,6 +153,30 @@ def build_external_document_source_operator_overview(
         db.scalars(
             select(ExternalDocumentSourceProviderClientHealthExecution).where(
                 ExternalDocumentSourceProviderClientHealthExecution.organization_id
+                == organization_id
+            )
+        ).all()
+    )
+    sftp_credential_health_rows = list(
+        db.scalars(
+            select(ExternalDocumentSourceSftpCredentialHealthQualification).where(
+                ExternalDocumentSourceSftpCredentialHealthQualification.organization_id
+                == organization_id
+            )
+        ).all()
+    )
+    sftp_transport_rows = list(
+        db.scalars(
+            select(ExternalDocumentSourceSftpTransportVerification).where(
+                ExternalDocumentSourceSftpTransportVerification.organization_id
+                == organization_id
+            )
+        ).all()
+    )
+    sftp_session_rows = list(
+        db.scalars(
+            select(ExternalDocumentSourceSftpSessionActivation).where(
+                ExternalDocumentSourceSftpSessionActivation.organization_id
                 == organization_id
             )
         ).all()
@@ -173,6 +253,14 @@ def build_external_document_source_operator_overview(
             )
         ).all()
     )
+    baseline_transitions = list(
+        db.scalars(
+            select(ExternalDocumentSourceRecurringBaselineTransition).where(
+                ExternalDocumentSourceRecurringBaselineTransition.organization_id
+                == organization_id
+            )
+        ).all()
+    )
 
     family_ids = [binding.document_family_id for binding in bindings]
     documents = (
@@ -206,6 +294,21 @@ def build_external_document_source_operator_overview(
 
     latest_health = _latest_by(
         health_rows, lambda row: row.profile_id, lambda row: row.completed_at
+    )
+    latest_sftp_credential_health = _latest_by(
+        sftp_credential_health_rows,
+        lambda row: row.profile_id,
+        lambda row: row.checked_at,
+    )
+    latest_sftp_transport = _latest_by(
+        sftp_transport_rows,
+        lambda row: row.profile_id,
+        lambda row: row.checked_at,
+    )
+    latest_sftp_session = _latest_by(
+        sftp_session_rows,
+        lambda row: row.profile_id,
+        lambda row: row.checked_at,
     )
     latest_schedule = _latest_by(
         schedules,
@@ -252,6 +355,11 @@ def build_external_document_source_operator_overview(
     release_by_exact_version = {
         (row.binding_id, row.document_id, row.document_version_number): row
         for row in releases
+    }
+    baseline_transition_by_exact_version = {
+        (row.binding_id, row.current_document_id, row.current_version_number): row
+        for row in baseline_transitions
+        if row.status == "established"
     }
 
     refresh_authorization_by_id = {row.id: row for row in refresh_authorizations}
@@ -336,6 +444,14 @@ def build_external_document_source_operator_overview(
         )
         release_status = release.status if release is not None else None
         release_required = release is None or release.status != "active"
+        baseline_transition = baseline_transition_by_exact_version.get(
+            (binding.id, current_document_id, current_version_number)
+        )
+        baseline_transition_required = (
+            binding.provider_kind == "sftp"
+            and current_version_number > 1
+            and baseline_transition is None
+        )
 
         version_history: list[ExternalDocumentSourceOperatorVersionRead] = []
         for document in family_documents:
@@ -448,6 +564,27 @@ def build_external_document_source_operator_overview(
                 ),
                 processing_release_status=release_status,
                 processing_release_required=release_required,
+                baseline_transition_id=(
+                    baseline_transition.id
+                    if baseline_transition is not None
+                    else None
+                ),
+                baseline_transition_status=(
+                    baseline_transition.status
+                    if baseline_transition is not None
+                    else None
+                ),
+                baseline_transition_version_number=(
+                    baseline_transition.current_version_number
+                    if baseline_transition is not None
+                    else None
+                ),
+                baseline_transition_authorized_at=(
+                    baseline_transition.authorized_at
+                    if baseline_transition is not None
+                    else None
+                ),
+                baseline_transition_required=baseline_transition_required,
             )
         )
 
@@ -458,6 +595,20 @@ def build_external_document_source_operator_overview(
     profile_rows: list[ExternalDocumentSourceOperatorProfileRead] = []
     for profile in profiles:
         health = latest_health.get(profile.id)
+        sftp_credential_health = latest_sftp_credential_health.get(profile.id)
+        sftp_transport = latest_sftp_transport.get(profile.id)
+        sftp_session = latest_sftp_session.get(profile.id)
+        sftp_runtime_readiness = (
+            _sftp_runtime_readiness(
+                profile_hash=profile.profile_hash,
+                credential_health=sftp_credential_health,
+                transport_verification=sftp_transport,
+                session_activation=sftp_session,
+            )
+            if profile.provider_kind == "sftp"
+            else None
+        )
+
         families = families_by_profile.get(profile.id, [])
         due_values = [
             row.next_due_at for row in families if row.next_due_at is not None
@@ -481,6 +632,37 @@ def build_external_document_source_operator_overview(
                 ),
                 provider_health_completed_at=(
                     health.completed_at if health is not None else None
+                ),
+                sftp_runtime_readiness=sftp_runtime_readiness,
+                sftp_credential_health_status=(
+                    sftp_credential_health.result_status
+                    if sftp_credential_health is not None
+                    else None
+                ),
+                sftp_credential_health_checked_at=(
+                    sftp_credential_health.checked_at
+                    if sftp_credential_health is not None
+                    else None
+                ),
+                sftp_transport_status=(
+                    sftp_transport.result_status
+                    if sftp_transport is not None
+                    else None
+                ),
+                sftp_transport_checked_at=(
+                    sftp_transport.checked_at
+                    if sftp_transport is not None
+                    else None
+                ),
+                sftp_session_status=(
+                    sftp_session.result_status
+                    if sftp_session is not None
+                    else None
+                ),
+                sftp_session_checked_at=(
+                    sftp_session.checked_at
+                    if sftp_session is not None
+                    else None
                 ),
                 active_family_count=len(families),
                 pending_handoff_count=sum(

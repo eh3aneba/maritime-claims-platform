@@ -12,6 +12,13 @@ type Profile = {
   provider_health_status: string | null;
   provider_health_latency_class: string | null;
   provider_health_completed_at: string | null;
+  sftp_runtime_readiness: string | null;
+  sftp_credential_health_status: string | null;
+  sftp_credential_health_checked_at: string | null;
+  sftp_transport_status: string | null;
+  sftp_transport_checked_at: string | null;
+  sftp_session_status: string | null;
+  sftp_session_checked_at: string | null;
   active_family_count: number;
   pending_handoff_count: number;
   processing_release_required_count: number;
@@ -69,6 +76,11 @@ type Family = {
   latest_admission_executed_at: string | null;
   processing_release_status: string | null;
   processing_release_required: boolean;
+  baseline_transition_id: string | null;
+  baseline_transition_status: string | null;
+  baseline_transition_version_number: number | null;
+  baseline_transition_authorized_at: string | null;
+  baseline_transition_required: boolean;
 };
 
 type Overview = { profiles: Profile[]; families: Family[] };
@@ -133,7 +145,7 @@ export default function ExternalEvidencePage() {
 
   const families = useMemo(() => {
     const rows = overview?.families ?? [];
-    if (filter === "attention") return rows.filter((row) => row.pending_handoff_id);
+    if (filter === "attention") return rows.filter((row) => row.pending_handoff_id || row.baseline_transition_required);
     if (filter === "release") return rows.filter((row) => row.processing_release_required);
     return rows;
   }, [overview, filter]);
@@ -218,13 +230,23 @@ export default function ExternalEvidencePage() {
     );
   }
 
+  async function establishBaselineTransition(row: Family) {
+    if (!row.latest_admission_execution_id || !noteReady(row)) return;
+    await runAction(
+      `ad-${row.binding_id}`,
+      `/external-document-sources/profiles/${row.profile_id}/observation-refresh-admission-executions/${row.latest_admission_execution_id}/recurring-baseline-transition`,
+      { request_key: requestKey("ad"), reason: noteFor(row) },
+      "Phase-AD recurring baseline transition established for the exact current SFTP Evidence version.",
+    );
+  }
+
   return (
     <div className="space-y-7">
       <section className="rounded-2xl bg-[#0b1f2a] p-7 text-white shadow-sm">
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-300">
-          External Evidence · Phase 17.5-AK
+          External Evidence · Governed source operations
         </p>
-        <h1 className="mt-3 text-3xl font-semibold">SharePoint & Google Drive operations</h1>
+        <h1 className="mt-3 text-3xl font-semibold">SharePoint, Google Drive & SFTP operations</h1>
         <p className="mt-3 max-w-4xl text-sm leading-6 text-slate-300">
           One operational view of source health, recurring observation, human review, exact refresh,
           admission authorization, canonical version lineage and the separate processing-release requirement.
@@ -284,6 +306,14 @@ export default function ExternalEvidencePage() {
               <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
                 <div><dt className="text-slate-500">Provider health</dt><dd className="font-medium capitalize">{badge(profile.provider_health_status)}</dd></div>
                 <div><dt className="text-slate-500">Health checked</dt><dd>{when(profile.provider_health_completed_at)}</dd></div>
+                {profile.provider_kind === "sftp" && (
+                  <>
+                    <div><dt className="text-slate-500">SFTP runtime</dt><dd className="font-medium capitalize">{badge(profile.sftp_runtime_readiness)}</dd></div>
+                    <div><dt className="text-slate-500">Credential health</dt><dd className="capitalize">{badge(profile.sftp_credential_health_status)} · {when(profile.sftp_credential_health_checked_at)}</dd></div>
+                    <div><dt className="text-slate-500">Host-key transport</dt><dd className="capitalize">{badge(profile.sftp_transport_status)} · {when(profile.sftp_transport_checked_at)}</dd></div>
+                    <div><dt className="text-slate-500">SFTP session</dt><dd className="capitalize">{badge(profile.sftp_session_status)} · {when(profile.sftp_session_checked_at)}</dd></div>
+                  </>
+                )}
                 <div><dt className="text-slate-500">Active families</dt><dd>{profile.active_family_count}</dd></div>
                 <div><dt className="text-slate-500">Pending handoffs</dt><dd>{profile.pending_handoff_count}</dd></div>
                 <div><dt className="text-slate-500">Next due</dt><dd>{when(profile.next_due_at)}</dd></div>
@@ -317,7 +347,7 @@ export default function ExternalEvidencePage() {
         </div>
 
         <div className="mt-5 overflow-x-auto">
-          <table className="min-w-[1540px] w-full border-separate border-spacing-0 text-left text-sm">
+          <table className="min-w-[1700px] w-full border-separate border-spacing-0 text-left text-sm">
             <thead>
               <tr className="text-xs uppercase tracking-wide text-slate-500">
                 {[
@@ -325,6 +355,7 @@ export default function ExternalEvidencePage() {
                   "Evidence lineage",
                   "Schedule",
                   "Observation",
+                  "Recurring baseline",
                   "AG review",
                   "AH / AI / AJ",
                   "Processing",
@@ -368,6 +399,23 @@ export default function ExternalEvidencePage() {
                     <td className="border-b border-slate-100 px-3 py-4">
                       <div className="capitalize">{badge(row.last_observation_result)}</div>
                       <div className="mt-1 text-xs text-slate-500">{when(row.last_observation_completed_at)}</div>
+                    </td>
+                    <td className="border-b border-slate-100 px-3 py-4">
+                      {row.provider_kind === "sftp" && row.current_version_number > 1 ? (
+                        row.baseline_transition_required ? (
+                          <div>
+                            <span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-900">Transition required</span>
+                            <div className="mt-2 text-xs text-slate-500">Current v{row.current_version_number} is not yet the governed recurring baseline.</div>
+                          </div>
+                        ) : (
+                          <div>
+                            <span className="rounded-full bg-emerald-100 px-2 py-1 text-xs font-semibold text-emerald-900">Established</span>
+                            <div className="mt-2 text-xs text-slate-500">v{row.baseline_transition_version_number ?? row.current_version_number} · {when(row.baseline_transition_authorized_at)}</div>
+                          </div>
+                        )
+                      ) : (
+                        <span className="text-xs text-slate-500">{row.provider_kind === "sftp" ? "Initial v1 baseline" : "Not applicable"}</span>
+                      )}
                     </td>
                     <td className="border-b border-slate-100 px-3 py-4">
                       {row.pending_handoff_id ? (
@@ -483,7 +531,16 @@ export default function ExternalEvidencePage() {
                             AJ · Admit canonical N+1
                           </button>
                         )}
-                        {!row.pending_handoff_id && !hasRefreshToRun && !hasAdmissionToAuthorize && !hasAdmissionToRun && (
+                        {row.baseline_transition_required && row.latest_admission_execution_id && (
+                          <button
+                            disabled={actionDisabled}
+                            onClick={() => void establishBaselineTransition(row)}
+                            className="rounded-md bg-indigo-700 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40"
+                          >
+                            AD · Establish baseline
+                          </button>
+                        )}
+                        {!row.pending_handoff_id && !hasRefreshToRun && !hasAdmissionToAuthorize && !hasAdmissionToRun && !row.baseline_transition_required && (
                           <span className="text-xs text-slate-400">No governed action is currently due.</span>
                         )}
                       </div>
