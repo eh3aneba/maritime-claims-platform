@@ -11,6 +11,7 @@ from app.modules.external_document_sources.live_sftp_adapters import (
     _SftpCredentialHealthResolver,
     _normalize_remote_path,
     _observe_sftp_operation,
+    _openssh_sha256,
     register_live_sftp_adapters,
 )
 from app.modules.external_document_sources.sftp_change_detection_service import (
@@ -299,3 +300,270 @@ def test_sftp_observability_is_low_cardinality_and_locator_free(
     ):
         assert forbidden not in payload
         assert forbidden not in message
+
+
+
+class _FakeHostKey:
+    def asbytes(self):
+        return b"mcri-production-shaped-host-key"
+
+    def get_name(self):
+        return "ssh-ed25519"
+
+
+class _FakeSocket:
+    def __init__(self):
+        self.closed = False
+        self.timeout = None
+
+    def settimeout(self, value):
+        self.timeout = value
+
+    def close(self):
+        self.closed = True
+
+
+class _FakeChannel:
+    def __init__(self):
+        self.timeout = None
+
+    def settimeout(self, value):
+        self.timeout = value
+
+
+class _ProductionShapeSftp:
+    def __init__(self, body: bytes):
+        self.body = body
+        self.closed = False
+        self.channel = _FakeChannel()
+        self.events = []
+
+    def get_channel(self):
+        return self.channel
+
+    def close(self):
+        self.closed = True
+
+    def listdir_attr(self, path):
+        self.events.append(("listdir_attr", path))
+        return [
+            SimpleNamespace(
+                filename="Survey Report.pdf",
+                st_mode=stat.S_IFREG | 0o640,
+                st_size=len(self.body),
+                st_mtime=1_796_000_000,
+                st_uid=1000,
+                st_gid=1000,
+            )
+        ]
+
+    def lstat(self, path):
+        self.events.append(("lstat", path))
+        return SimpleNamespace(
+            st_mode=stat.S_IFREG | 0o640,
+            st_size=len(self.body),
+            st_mtime=1_796_000_000,
+            st_uid=1000,
+            st_gid=1000,
+        )
+
+    def open(self, path, mode="rb"):
+        self.events.append(("open", path, mode))
+        return _ReadHandle(self.body)
+
+
+class _FakeTransport:
+    def __init__(self, sock, *, sftp):
+        self.sock = sock
+        self.sftp = sftp
+        self.banner_timeout = None
+        self.host_key_type = "ssh-ed25519"
+        self.authenticated = False
+        self.closed = False
+        self.events = []
+
+    def start_client(self, timeout=None):
+        self.events.append(("start_client", timeout))
+
+    def get_remote_server_key(self):
+        return _FakeHostKey()
+
+    def auth_password(self, username, password, fallback=False):
+        self.events.append(("auth_password", username, bool(password), fallback))
+        if username != "claims-reader" or password != "transient-password":
+            raise RuntimeError("auth failed")
+        self.authenticated = True
+
+    def auth_publickey(self, username, pkey):
+        self.events.append(("auth_publickey", username))
+        self.authenticated = True
+
+    def is_authenticated(self):
+        return self.authenticated
+
+    def close(self):
+        self.closed = True
+
+
+class _FakeSftpClientFactory:
+    current_transport = None
+
+    @classmethod
+    def from_transport(cls, transport):
+        cls.current_transport = transport
+        return transport.sftp
+
+
+class _FakeParamikoModule:
+    SFTPClient = _FakeSftpClientFactory
+
+    def __init__(self, sftp):
+        self.sftp = sftp
+        self.transports = []
+
+    def Transport(self, sock):
+        transport = _FakeTransport(sock, sftp=self.sftp)
+        self.transports.append(transport)
+        return transport
+
+
+def test_live_sftp_runtime_production_shaped_transport_auth_list_stat_and_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import app.modules.external_document_sources.live_sftp_adapters as live
+    from app.modules.external_document_sources.sftp_directory_listing_service import (
+        SftpDirectoryListingRequest,
+    )
+    from app.modules.external_document_sources.sftp_session_activation_service import (
+        SftpSessionActivationRequest,
+    )
+    from app.modules.external_document_sources.sftp_transport_verification_service import (
+        SftpTransportHostKeyProbeRequest,
+    )
+
+    body = b"production-shaped-evidence"
+    fake_sftp = _ProductionShapeSftp(body)
+    fake_paramiko = _FakeParamikoModule(fake_sftp)
+    sockets = []
+
+    def fake_connect_socket(_hostname, _port, *, timeout_seconds, allow_private_destinations):
+        sock = _FakeSocket()
+        sock.settimeout(timeout_seconds)
+        sockets.append(sock)
+        return sock, True
+
+    monkeypatch.setattr(live, "_paramiko", lambda: fake_paramiko)
+    monkeypatch.setattr(live, "_connect_socket", fake_connect_socket)
+
+    secret_runtime = _SecretRuntime(
+        {
+            "username": "claims-reader",
+            "authentication_kind": "password",
+            "password": "transient-password",
+        }
+    )
+    runtime = LiveSftpRuntime(secret_runtime=secret_runtime)
+
+    pinned = _openssh_sha256(_FakeHostKey().asbytes())
+
+    transport_result = runtime.probe_host_key(
+        SftpTransportHostKeyProbeRequest(
+            hostname="files.example.com",
+            port=22,
+        )
+    )
+    assert transport_result.failure_code is None
+    assert transport_result.observed_host_key_fingerprint == pinned
+    assert transport_result.host_key_algorithm == "ssh-ed25519"
+    assert transport_result.authentication_performed is False
+    assert transport_result.sftp_session_opened is False
+
+    activation_result = runtime.activate(
+        SftpSessionActivationRequest(
+            hostname="files.example.com",
+            port=22,
+            pinned_host_key_fingerprint=pinned,
+            authentication_kind="password",
+            reference_backend="azure_key_vault",
+            reference_namespace="claims-kv",
+            reference_name="sftp-reader",
+            reference_version=None,
+        )
+    )
+    assert activation_result.failure_code is None
+    assert activation_result.authentication_method == "password"
+    assert activation_result.sftp_session_opened is True
+    assert activation_result.sftp_session_closed is True
+
+    listing_result = runtime.list_metadata(
+        SftpDirectoryListingRequest(
+            hostname="files.example.com",
+            port=22,
+            username="claims-reader",
+            pinned_host_key_fingerprint=pinned,
+            authentication_kind="password",
+            reference_backend="azure_key_vault",
+            reference_namespace="claims-kv",
+            reference_name="sftp-reader",
+            reference_version=None,
+            remote_root_path="/evidence",
+            relative_path=".",
+            effective_remote_path="/evidence",
+        )
+    )
+    assert listing_result.failure_code is None
+    assert [entry.relative_path for entry in listing_result.entries] == [
+        "Survey Report.pdf"
+    ]
+    assert listing_result.remote_list_performed is True
+
+    stat_result = runtime.stat_metadata(
+        SftpExactFileMetadataRequest(
+            hostname="files.example.com",
+            port=22,
+            username="claims-reader",
+            pinned_host_key_fingerprint=pinned,
+            authentication_kind="password",
+            reference_backend="azure_key_vault",
+            reference_namespace="claims-kv",
+            reference_name="sftp-reader",
+            reference_version=None,
+            remote_root_path="/evidence",
+            entry_relative_path="Survey Report.pdf",
+            effective_remote_path="/evidence/Survey Report.pdf",
+        )
+    )
+    assert stat_result.failure_code is None
+    assert stat_result.found is True
+    assert stat_result.entry_kind == "file"
+    assert stat_result.byte_size == len(body)
+    assert stat_result.remote_stat_performed is True
+
+    read_result = runtime.read_content(
+        SftpFileContentReadRequest(
+            hostname="files.example.com",
+            port=22,
+            username="claims-reader",
+            pinned_host_key_fingerprint=pinned,
+            authentication_kind="password",
+            reference_backend="azure_key_vault",
+            reference_namespace="claims-kv",
+            reference_name="sftp-reader",
+            reference_version=None,
+            remote_root_path="/evidence",
+            entry_relative_path="Survey Report.pdf",
+            effective_remote_path="/evidence/Survey Report.pdf",
+        )
+    )
+    assert read_result.failure_code is None
+    assert read_result.content == body
+    assert read_result.remote_stat_performed is True
+    assert read_result.remote_read_performed is True
+    assert read_result.content_read_count == 1
+
+    assert len(secret_runtime.calls) == 4
+    assert all(sock.closed for sock in sockets)
+    assert all(transport.closed for transport in fake_paramiko.transports)
+    assert ("listdir_attr", "/evidence") in fake_sftp.events
+    assert fake_sftp.events.count(("lstat", "/evidence/Survey Report.pdf")) == 2
+    assert fake_sftp.events.count(("open", "/evidence/Survey Report.pdf", "rb")) == 1
