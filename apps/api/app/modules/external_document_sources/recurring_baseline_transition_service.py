@@ -674,3 +674,55 @@ def establish_recurring_baseline_transition(
         raise
     db.refresh(transition)
     return transition, "established"
+
+
+def get_recurring_baseline_transition(
+    db: Session,
+    *,
+    organization_id: UUID,
+    profile_id: UUID,
+    transition_id: UUID,
+) -> ExternalDocumentSourceRecurringBaselineTransition:
+    transition = db.scalar(
+        select(ExternalDocumentSourceRecurringBaselineTransition).where(
+            ExternalDocumentSourceRecurringBaselineTransition.id == transition_id,
+            ExternalDocumentSourceRecurringBaselineTransition.organization_id
+            == organization_id,
+            ExternalDocumentSourceRecurringBaselineTransition.profile_id == profile_id,
+        )
+    )
+    if transition is None:
+        raise ExternalDocumentSourceNotFoundError(
+            "Recurring baseline transition not found"
+        )
+    ensure_recurring_baseline_transition_integrity(db, transition)
+    return transition
+
+
+def list_recurring_baseline_transition_receipts(
+    db: Session,
+    *,
+    organization_id: UUID,
+    profile_id: UUID,
+    transition_id: UUID,
+) -> list[ExternalDocumentSourceRecurringBaselineTransitionReceipt]:
+    transition = get_recurring_baseline_transition(
+        db,
+        organization_id=organization_id,
+        profile_id=profile_id,
+        transition_id=transition_id,
+    )
+    return list(
+        db.scalars(
+            select(ExternalDocumentSourceRecurringBaselineTransitionReceipt)
+            .where(
+                ExternalDocumentSourceRecurringBaselineTransitionReceipt.organization_id
+                == organization_id,
+                ExternalDocumentSourceRecurringBaselineTransitionReceipt.transition_id
+                == transition.id,
+            )
+            .order_by(
+                ExternalDocumentSourceRecurringBaselineTransitionReceipt.sequence_number
+            )
+        ).all()
+    )
