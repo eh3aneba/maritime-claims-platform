@@ -41,6 +41,8 @@ Do not store these values in MCRI configuration, logs or database fields. Only s
 
 ## Host key
 
+The runtime restricts SSH host-key negotiation to the strong algorithm allow-list already enforced by the governed transport-verification contract. Weak `ssh-rsa` negotiation is rejected before authentication.
+
 The source profile uses a pinned OpenSSH SHA256 fingerprint.
 
 A host-key change must be treated as an authority change. Do not simply replace the fingerprint after a failed connection. Re-qualify the endpoint through the governed SFTP transport/credential flow.
