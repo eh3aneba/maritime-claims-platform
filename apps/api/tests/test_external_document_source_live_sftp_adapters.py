@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import stat
 from types import SimpleNamespace
 
@@ -9,6 +10,7 @@ import pytest
 from app.modules.external_document_sources.live_sftp_adapters import (
     LiveSftpRuntime,
     _CredentialMaterial,
+    _SftpContentReadAdapter,
     _SftpCredentialHealthResolver,
     _SftpRuntimeFailure,
     _normalize_remote_path,
@@ -498,3 +500,67 @@ def test_live_sftp_authentication_failure_closes_transport_and_socket(
     assert transport.auth_calls == 1
     assert transport.closed is True
     assert sock.closed is True
+
+
+def test_live_sftp_operational_event_excludes_request_and_exception_secrets(
+    caplog,
+) -> None:
+    secret_marker = "must-never-appear-secret"
+    path_marker = "/customers/acme/private/claim.pdf"
+    username_marker = "sensitive-user"
+
+    class _FailingRuntime:
+        def read_content(self, _request):
+            raise RuntimeError(
+                f"{secret_marker} {path_marker} {username_marker}"
+            )
+
+    adapter = _SftpContentReadAdapter(_FailingRuntime())  # type: ignore[arg-type]
+    request = SftpFileContentReadRequest(
+        hostname="sftp.private.example.com",
+        port=22,
+        username=username_marker,
+        pinned_host_key_fingerprint="SHA256:" + "A" * 43,
+        authentication_kind="password",
+        reference_backend="azure_key_vault",
+        reference_namespace="claims",
+        reference_name=secret_marker,
+        reference_version=None,
+        remote_root_path="/customers/acme/private",
+        entry_relative_path="claim.pdf",
+        effective_remote_path=path_marker,
+    )
+
+    with caplog.at_level(logging.WARNING, logger="mcri.sftp.operation"):
+        with pytest.raises(RuntimeError):
+            adapter.read_content(request)
+
+    records = [
+        record
+        for record in caplog.records
+        if record.name == "mcri.sftp.operation"
+    ]
+    assert len(records) == 1
+    record = records[0]
+    assert record.exc_info is None
+
+    raw = record.getMessage()
+    assert secret_marker not in raw
+    assert path_marker not in raw
+    assert username_marker not in raw
+    assert "sftp.private.example.com" not in raw
+
+    event = json.loads(raw)
+    assert set(event) == {
+        "event",
+        "operation",
+        "outcome",
+        "failure_code",
+        "duration_ms",
+    }
+    assert event["event"] == "sftp_operation"
+    assert event["operation"] == "content_read"
+    assert event["outcome"] == "failed"
+    assert event["failure_code"] == "adapter_exception"
+    assert isinstance(event["duration_ms"], (int, float))
+    assert event["duration_ms"] >= 0
