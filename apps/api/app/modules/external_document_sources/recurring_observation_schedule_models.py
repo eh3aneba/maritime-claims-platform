@@ -85,7 +85,7 @@ class ExternalDocumentSourceRecurringObservationSchedule(
         UniqueConstraint("organization_id", "profile_id", "request_key", name="uq_ext_doc_obs_sched_request"),
         UniqueConstraint("organization_id", "profile_id", "disable_request_key", name="uq_ext_doc_obs_sched_disable_request"),
         UniqueConstraint("active_binding_guard", name="uq_ext_doc_obs_sched_active_guard"),
-        CheckConstraint("provider_kind IN ('sharepoint','google_drive')", name="ck_ext_doc_obs_sched_provider"),
+        CheckConstraint("provider_kind IN ('sharepoint','google_drive','sftp')", name="ck_ext_doc_obs_sched_provider"),
         CheckConstraint("revision_number >= 1", name="ck_ext_doc_obs_sched_revision"),
         CheckConstraint(
             "cadence_class IN ('hourly','every_6_hours','every_12_hours','daily')",

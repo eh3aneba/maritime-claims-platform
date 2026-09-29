@@ -68,11 +68,11 @@ jobs:
 
           while IFS= read -r path; do
             case "$path" in
-              apps/api/tests/test_external_document_source_recurring_observation_schedule_concurrency_postgres.py|apps/api/tests/test_external_document_source_due_tick_dispatch_concurrency_postgres.py)
+              apps/api/tests/test_external_document_source_recurring_observation_schedule_concurrency_postgres.py|apps/api/tests/test_external_document_source_sftp_recurring_observation_schedule.py|apps/api/tests/test_external_document_source_due_tick_dispatch_concurrency_postgres.py)
                 postgres_required=true
                 add_group scheduling
                 ;;
-              apps/api/tests/test_external_document_source_due_tick_observation_concurrency_postgres.py|apps/api/tests/test_external_document_source_observation_refresh_execution_concurrency_postgres.py)
+              apps/api/tests/test_external_document_source_due_tick_observation_concurrency_postgres.py|apps/api/tests/test_external_document_source_sftp_recurring_provider_lineage.py|apps/api/tests/test_external_document_source_observation_refresh_execution_concurrency_postgres.py)
                 postgres_required=true
                 add_group observation
                 ;;
@@ -178,7 +178,7 @@ jobs:
         if: ${{ matrix.group == 'scheduling' }}
         env:
           EXTERNAL_EVIDENCE_OBSERVATION_SCHEDULE_POSTGRES_TEST: "1"
-        run: pytest -q --durations=10 tests/test_external_document_source_recurring_observation_schedule_concurrency_postgres.py
+        run: pytest -q --durations=10 tests/test_external_document_source_recurring_observation_schedule_concurrency_postgres.py tests/test_external_document_source_sftp_recurring_observation_schedule.py
 
       - name: Scheduling — due-tick dispatch
         if: ${{ matrix.group == 'scheduling' }}
@@ -190,7 +190,7 @@ jobs:
         if: ${{ matrix.group == 'observation' }}
         env:
           EXTERNAL_EVIDENCE_DUE_TICK_POSTGRES_TEST: "1"
-        run: pytest -q tests/test_external_document_source_due_tick_observation_concurrency_postgres.py
+        run: pytest -q tests/test_external_document_source_due_tick_observation_concurrency_postgres.py tests/test_external_document_source_sftp_recurring_provider_lineage.py
 
       - name: Observation — refresh execution
         if: ${{ matrix.group == 'observation' }}
