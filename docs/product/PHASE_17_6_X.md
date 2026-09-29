@@ -40,6 +40,10 @@ They only persist human authority for future due-tick observation.
 
 Schedule API and audit payloads contain durable hashes/IDs only. Raw remote paths, host/user credential material and secrets are not exposed.
 
+## Production validation
+
+After Phase W merged, Phase X was clean-rewritten onto the merged `main` lineage. The final production head must pass the complete CI, PostgreSQL concurrency, supply-chain, operational-performance, deployment-policy and Full Backend gate set before merge.
+
 ## Next
 
 Phase Y consumes an SFTP schedule due tick through the generic dispatch/service-executor pipeline.
