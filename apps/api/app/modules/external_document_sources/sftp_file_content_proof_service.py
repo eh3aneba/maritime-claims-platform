@@ -49,7 +49,6 @@ _FALSE_SAFETY_FIELDS = (
     "content_parsed",
     "content_extracted",
     "remote_list_performed",
-    "remote_stat_performed",
     "remote_write_performed",
     "remote_rename_performed",
     "remote_delete_performed",
@@ -247,11 +246,12 @@ def _requested_safety() -> dict:
         "sftp_session_closed": False,
         "remote_content_transiently_observed": False,
         "remote_read_performed": False,
+        "remote_stat_performed": False,
         **{field: False for field in _FALSE_SAFETY_FIELDS},
     }
 
 
-def _completed_safety() -> dict:
+def _completed_safety(*, remote_stat_performed: bool = False) -> dict:
     return {
         "credential_reference_stored": True,
         "secret_resolution_performed": True,
@@ -265,6 +265,7 @@ def _completed_safety() -> dict:
         "sftp_session_closed": True,
         "remote_content_transiently_observed": True,
         "remote_read_performed": True,
+        "remote_stat_performed": bool(remote_stat_performed),
         **{field: False for field in _FALSE_SAFETY_FIELDS},
     }
 
@@ -291,7 +292,7 @@ def _result_hash(row: ExternalDocumentSourceSftpFileContentProof) -> str:
         "latency_class": row.latency_class,
         "content_sha256": row.content_sha256,
         "content_byte_count": row.content_byte_count,
-        **_completed_safety(),
+        **_completed_safety(remote_stat_performed=row.remote_stat_performed),
     })
 
 
@@ -308,7 +309,7 @@ def _receipt_hash(receipt: ExternalDocumentSourceSftpFileContentProofReceipt) ->
         "scope_hash": receipt.scope_hash,
         "decision_hash": receipt.decision_hash,
         "prior_receipt_hash": receipt.prior_receipt_hash,
-        **(_completed_safety() if receipt.event_type == "completed" else _requested_safety()),
+        **(_completed_safety(remote_stat_performed=receipt.remote_stat_performed) if receipt.event_type == "completed" else _requested_safety()),
     })
 
 
@@ -350,7 +351,7 @@ def _append_receipts(db: Session, row: ExternalDocumentSourceSftpFileContentProo
         decision_hash=row.result_hash,
         prior_receipt_hash=requested.receipt_hash,
         receipt_hash="0" * 64,
-        **_completed_safety(),
+        **_completed_safety(remote_stat_performed=row.remote_stat_performed),
     )
     completed.receipt_hash = _receipt_hash(completed)
     db.add_all([requested, completed])
@@ -451,7 +452,6 @@ def _validate_adapter_result(
         or result.content_parsed
         or result.content_extracted
         or result.remote_list_performed
-        or result.remote_stat_performed
         or result.remote_write_performed
         or result.remote_rename_performed
         or result.remote_delete_performed
@@ -533,7 +533,7 @@ def _ensure_integrity(db: Session, row: ExternalDocumentSourceSftpFileContentPro
     ):
         raise ExternalDocumentSourceConflictError("SFTP file content proof lineage or result integrity failed")
 
-    for field, expected in _completed_safety().items():
+    for field, expected in _completed_safety(remote_stat_performed=row.remote_stat_performed).items():
         if bool(getattr(row, field)) != expected:
             raise ExternalDocumentSourceConflictError("SFTP file content proof safety boundary integrity failed")
 
@@ -548,7 +548,7 @@ def _ensure_integrity(db: Session, row: ExternalDocumentSourceSftpFileContentPro
         raise ExternalDocumentSourceConflictError("SFTP file content proof receipt chain is incomplete")
     expected_receipts = (
         (1, "requested", "requested", row.requested_at, row.request_hash, None, _requested_safety()),
-        (2, "completed", "read_verified", row.completed_at, row.result_hash, receipts[0].receipt_hash, _completed_safety()),
+        (2, "completed", "read_verified", row.completed_at, row.result_hash, receipts[0].receipt_hash, _completed_safety(remote_stat_performed=row.remote_stat_performed)),
     )
     for receipt, facts in zip(receipts, expected_receipts, strict=True):
         seq, event, status_after, at, decision_hash, prior, safety = facts
@@ -713,7 +713,7 @@ def create_external_document_source_sftp_file_content_proof(
         content_sha256=content_sha256,
         content_byte_count=content_byte_count,
         result_hash="0" * 64,
-        **_completed_safety(),
+        **_completed_safety(remote_stat_performed=bool(adapter_result.remote_stat_performed)),
     )
     row.request_hash = _request_hash(row)
     row.result_hash = _result_hash(row)
