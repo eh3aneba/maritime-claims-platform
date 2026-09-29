@@ -67,6 +67,10 @@ class _FakeSftp:
         self.events = []
         self.handle = _ReadHandle(body)
 
+    def normalize(self, path):
+        self.events.append(("normalize", path))
+        return path
+
     def lstat(self, path):
         self.events.append(("lstat", path))
         mode = stat.S_IFLNK | 0o777 if self.symlink else stat.S_IFREG | 0o640
@@ -340,6 +344,10 @@ class _ProductionShapeSftp:
 
     def get_channel(self):
         return self.channel
+
+    def normalize(self, path):
+        self.events.append(("normalize", path))
+        return path
 
     def close(self):
         self.closed = True
