@@ -68,7 +68,7 @@ def _prepare_handoff(
     return (
         chain,
         adapter,
-        UUID(chain["requester_id"]),
+        UUID(str(chain["requester_id"])),
         organization_id,
         profile_id,
         handoff_id,
