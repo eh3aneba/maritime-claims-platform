@@ -43,6 +43,21 @@ from app.modules.external_document_sources.family_version_admission_models impor
     ExternalDocumentSourceFamilyVersionAdmissionExecution,
     ExternalDocumentSourceFamilyVersionAdmissionReceipt,
 )
+from app.modules.external_document_sources.due_tick_observation_models import (
+    ExternalDocumentSourceDueTickObservationExecution,
+)
+from app.modules.external_document_sources.observation_refresh_admission_execution_models import (
+    ExternalDocumentSourceObservationRefreshAdmissionExecution,
+)
+from app.modules.external_document_sources.observation_refresh_execution_models import (
+    ExternalDocumentSourceObservationRefreshExecution,
+)
+from app.modules.external_document_sources.recurring_baseline_transition_models import (
+    ExternalDocumentSourceRecurringBaselineTransition,
+)
+from app.modules.external_document_sources.recurring_observation_schedule_models import (
+    ExternalDocumentSourceRecurringObservationSchedule,
+)
 from app.modules.external_document_sources.remote_content_staging_service import (
     _configured_store,
 )
@@ -322,6 +337,203 @@ def _latest_successor_change(
     )
 
 
+def _baseline_transition_safety_snapshot(
+    transition: ExternalDocumentSourceRecurringBaselineTransition,
+) -> dict[str, bool]:
+    fields = (
+        "refresh_admission_verified",
+        "refresh_execution_verified",
+        "originating_observation_verified",
+        "family_binding_verified",
+        "stable_source_identity_verified",
+        "current_document_verified",
+        "schedule_authority_verified",
+        "human_authorization_recorded",
+        "recurring_baseline_established",
+        "provider_client_constructed",
+        "remote_metadata_read_performed",
+        "remote_content_read_performed",
+        "storage_read_performed",
+        "storage_write_performed",
+        "document_mutated",
+        "processing_enqueued",
+        "ai_executed",
+        "claim_mutated",
+        "checkpoint_mutated",
+        "schedule_mutated",
+    )
+    return {field: bool(getattr(transition, field)) for field in fields}
+
+
+def _refreshed_sftp_source_state(
+    db: Session,
+    *,
+    binding: ExternalDocumentSourceEvidenceFamilyBinding,
+    current_document: Document,
+    admission: ExternalDocumentSourceObservationRefreshAdmissionExecution,
+) -> tuple[str, str | None]:
+    if admission.provider_kind != "sftp":
+        raise ExternalDocumentSourceConflictError(
+            "Current external Evidence family version lacks governed AA lineage"
+        )
+    transition = db.scalar(
+        select(ExternalDocumentSourceRecurringBaselineTransition).where(
+            ExternalDocumentSourceRecurringBaselineTransition.organization_id
+            == binding.organization_id,
+            ExternalDocumentSourceRecurringBaselineTransition.binding_id == binding.id,
+            ExternalDocumentSourceRecurringBaselineTransition.current_document_id
+            == current_document.id,
+            ExternalDocumentSourceRecurringBaselineTransition.refresh_admission_execution_id
+            == admission.id,
+        )
+    )
+    if transition is None:
+        raise ExternalDocumentSourceConflictError(
+            "Current SFTP refreshed Evidence version requires an explicit recurring baseline transition"
+        )
+
+    refresh = db.get(
+        ExternalDocumentSourceObservationRefreshExecution,
+        transition.refresh_execution_id,
+    )
+    observation = db.get(
+        ExternalDocumentSourceDueTickObservationExecution,
+        transition.originating_observation_execution_id,
+    )
+    schedule = db.get(
+        ExternalDocumentSourceRecurringObservationSchedule,
+        transition.schedule_id,
+    )
+    if refresh is None or observation is None or schedule is None:
+        raise ExternalDocumentSourceConflictError(
+            "Recurring baseline transition source lineage is missing"
+        )
+
+    safety = _baseline_transition_safety_snapshot(transition)
+    expected_safety = {
+        "refresh_admission_verified": True,
+        "refresh_execution_verified": True,
+        "originating_observation_verified": True,
+        "family_binding_verified": True,
+        "stable_source_identity_verified": True,
+        "current_document_verified": True,
+        "schedule_authority_verified": True,
+        "human_authorization_recorded": True,
+        "recurring_baseline_established": True,
+        "provider_client_constructed": False,
+        "remote_metadata_read_performed": False,
+        "remote_content_read_performed": False,
+        "storage_read_performed": False,
+        "storage_write_performed": False,
+        "document_mutated": False,
+        "processing_enqueued": False,
+        "ai_executed": False,
+        "claim_mutated": False,
+        "checkpoint_mutated": False,
+        "schedule_mutated": False,
+    }
+
+    expected_scope = _canonical_hash(
+        {
+            "organization_id": str(admission.organization_id),
+            "claim_id": str(admission.claim_id),
+            "profile_id": str(admission.profile_id),
+            "binding_id": str(admission.binding_id),
+            "document_family_id": str(admission.document_family_id),
+            "schedule_id": str(schedule.id),
+            "schedule_revision_number": schedule.revision_number,
+            "schedule_authorization_hash": schedule.authorization_hash,
+            "refresh_admission_execution_id": str(admission.id),
+            "refresh_admission_completion_hash": admission.completion_hash,
+            "refresh_execution_id": str(refresh.id),
+            "refresh_completion_hash": refresh.completion_hash,
+            "originating_observation_execution_id": str(observation.id),
+            "originating_observation_completion_hash": observation.completion_hash,
+            "prior_document_id": str(admission.prior_document_id),
+            "current_document_id": str(admission.new_document_id),
+            "current_version_number": admission.new_version_number,
+            "provider_kind": admission.provider_kind,
+            "profile_hash": admission.profile_hash,
+            "stable_source_item_hash": admission.stable_source_item_hash,
+            "binding_completion_hash": binding.completion_hash,
+            "baseline_projection_hash": refresh.observed_projection_hash,
+            "baseline_version_token_hash": refresh.observed_version_token_hash,
+            "refreshed_content_sha256": admission.refreshed_content_sha256,
+            "refreshed_content_proof_hash": admission.refreshed_content_proof_hash,
+            "request_key": transition.request_key,
+        }
+    )
+    expected_request = _canonical_hash(
+        {
+            "transition_id": str(transition.id),
+            "scope_hash": expected_scope,
+            "authorized_by_id": str(transition.authorized_by_id),
+            "authorization_reason": transition.authorization_reason,
+            "authorized_at": _iso(transition.authorized_at),
+            **expected_safety,
+        }
+    )
+    expected_completion = _canonical_hash(
+        {
+            "transition_id": str(transition.id),
+            "scope_hash": expected_scope,
+            "request_hash": expected_request,
+            "status": transition.status,
+            "current_document_id": str(transition.current_document_id),
+            "current_version_number": transition.current_version_number,
+            "baseline_projection_hash": transition.baseline_projection_hash,
+            "baseline_version_token_hash": transition.baseline_version_token_hash,
+            "refresh_admission_completion_hash": transition.refresh_admission_completion_hash,
+            "refresh_completion_hash": transition.refresh_completion_hash,
+            "originating_observation_completion_hash": transition.originating_observation_completion_hash,
+            **expected_safety,
+        }
+    )
+
+    if (
+        transition.provider_kind != "sftp"
+        or transition.status != "established"
+        or transition.claim_id != binding.claim_id
+        or transition.profile_id != binding.profile_id
+        or transition.document_family_id != binding.document_family_id
+        or transition.profile_hash != binding.profile_hash
+        or transition.stable_source_item_hash != binding.stable_source_item_hash
+        or transition.binding_completion_hash != binding.completion_hash
+        or transition.current_document_id != current_document.id
+        or transition.current_version_number != current_document.version_number
+        or transition.refresh_admission_completion_hash != admission.completion_hash
+        or transition.refresh_completion_hash != refresh.completion_hash
+        or transition.originating_observation_completion_hash != observation.completion_hash
+        or admission.new_document_id != current_document.id
+        or admission.new_version_number != current_document.version_number
+        or admission.refreshed_content_sha256 != current_document.file_hash
+        or refresh.id != admission.refresh_execution_id
+        or refresh.observed_projection_hash is None
+        or refresh.content_sha256 != admission.refreshed_content_sha256
+        or observation.id != refresh.observation_execution_id
+        or observation.result_status != "changed"
+        or observation.observed_projection_hash != refresh.observed_projection_hash
+        or schedule.id != observation.schedule_id
+        or schedule.status != "active"
+        or schedule.binding_id != binding.id
+        or schedule.revision_number != observation.schedule_revision_number
+        or schedule.authorization_hash != observation.schedule_authorization_hash
+        or transition.schedule_authorization_hash != schedule.authorization_hash
+        or transition.baseline_projection_hash != refresh.observed_projection_hash
+        or transition.baseline_version_token_hash != refresh.observed_version_token_hash
+        or transition.refreshed_content_sha256 != admission.refreshed_content_sha256
+        or transition.refreshed_content_proof_hash != admission.refreshed_content_proof_hash
+        or transition.scope_hash != expected_scope
+        or transition.request_hash != expected_request
+        or transition.completion_hash != expected_completion
+        or safety != expected_safety
+    ):
+        raise ExternalDocumentSourceConflictError(
+            "Recurring baseline transition integrity drifted"
+        )
+    return transition.baseline_projection_hash, transition.baseline_version_token_hash
+
+
 def _prior_source_state(
     db: Session,
     *,
@@ -347,17 +559,34 @@ def _prior_source_state(
             == current_document.id,
         )
     )
-    if prior_execution is None:
+    if prior_execution is not None:
+        _ensure_execution_integrity(db, prior_execution)
+        if prior_execution.new_version_number != current_document.version_number:
+            raise ExternalDocumentSourceConflictError(
+                "Current external Evidence family version lineage drifted"
+            )
+        return prior_execution.fresh_projection_hash, prior_execution.fresh_version_token_hash
+
+    refresh_admission = db.scalar(
+        select(ExternalDocumentSourceObservationRefreshAdmissionExecution).where(
+            ExternalDocumentSourceObservationRefreshAdmissionExecution.organization_id
+            == binding.organization_id,
+            ExternalDocumentSourceObservationRefreshAdmissionExecution.binding_id
+            == binding.id,
+            ExternalDocumentSourceObservationRefreshAdmissionExecution.new_document_id
+            == current_document.id,
+        )
+    )
+    if refresh_admission is None:
         raise ExternalDocumentSourceConflictError(
             "Current external Evidence family version lacks governed AA lineage"
         )
-    _ensure_execution_integrity(db, prior_execution)
-    if prior_execution.new_version_number != current_document.version_number:
-        raise ExternalDocumentSourceConflictError(
-            "Current external Evidence family version lineage drifted"
-        )
-    return prior_execution.fresh_projection_hash, prior_execution.fresh_version_token_hash
-
+    return _refreshed_sftp_source_state(
+        db,
+        binding=binding,
+        current_document=current_document,
+        admission=refresh_admission,
+    )
 
 def _auth_scope_hash(
     binding: ExternalDocumentSourceEvidenceFamilyBinding,
