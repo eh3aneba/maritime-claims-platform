@@ -82,7 +82,7 @@ class ExternalDocumentSourceObservationReviewHandoff(
         ),
         CheckConstraint("status = 'pending'", name="ck_ext_doc_obs_review_status"),
         CheckConstraint("observed_version_number >= 1", name="ck_ext_doc_obs_review_version"),
-        CheckConstraint("provider_kind IN ('sharepoint','google_drive')", name="ck_ext_doc_obs_review_provider"),
+        CheckConstraint("provider_kind IN ('sharepoint','google_drive','sftp')", name="ck_ext_doc_obs_review_provider"),
         Index("ix_ext_doc_obs_review_org_claim", "organization_id", "claim_id"),
         Index("ix_ext_doc_obs_review_pending", "organization_id", "status", "projected_at"),
         *_safety_constraints("ext_doc_obs_review"),
