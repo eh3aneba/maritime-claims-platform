@@ -137,6 +137,7 @@ def test_phase_ad_nplus1_requires_fresh_release_and_explicit_baseline_transition
         )
         assert auth_outcome == "authorized"
         binding_id = admission_auth.binding_id
+        admission_authorization_id = admission_auth.id
 
     security_calls = _enable_clean_aj(monkeypatch)
     with TestingSessionLocal() as db:
@@ -145,7 +146,7 @@ def test_phase_ad_nplus1_requires_fresh_release_and_explicit_baseline_transition
             organization_id=organization_id,
             profile_id=profile_id,
             binding_id=binding_id,
-            authorization_id=admission_auth.id,
+            authorization_id=admission_authorization_id,
             executed_by_id=actor_id,
             request_key="sftp-phase-ad-admit",
             execution_reason="Admit the verified refresh as canonical SFTP Evidence N+1.",
