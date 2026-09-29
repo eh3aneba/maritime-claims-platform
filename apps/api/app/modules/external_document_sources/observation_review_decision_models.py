@@ -107,7 +107,7 @@ class ExternalDocumentSourceObservationReviewDecision(
             name="ck_ext_doc_obs_review_dec_lifecycle",
         ),
         CheckConstraint("current_version_number >= 1", name="ck_ext_doc_obs_review_dec_version"),
-        CheckConstraint("provider_kind IN ('sharepoint','google_drive')", name="ck_ext_doc_obs_review_dec_provider"),
+        CheckConstraint("provider_kind IN ('sharepoint','google_drive','sftp')", name="ck_ext_doc_obs_review_dec_provider"),
         Index("ix_ext_doc_obs_review_dec_org_claim", "organization_id", "claim_id"),
         Index("ix_ext_doc_obs_review_dec_handoff", "handoff_id"),
         *_decision_safety_constraints("ext_doc_obs_review_dec"),
