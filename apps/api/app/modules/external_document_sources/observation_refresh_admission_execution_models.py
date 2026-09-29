@@ -111,7 +111,7 @@ class ExternalDocumentSourceObservationRefreshAdmissionExecution(
         UniqueConstraint("binding_id", "prior_document_id", name="uq_ext_doc_obs_refresh_adm_exec_prior"),
         UniqueConstraint("binding_id", "new_version_number", name="uq_ext_doc_obs_refresh_adm_exec_version"),
         UniqueConstraint("organization_id", "profile_id", "request_key", name="uq_ext_doc_obs_refresh_adm_exec_request"),
-        CheckConstraint("provider_kind IN ('sharepoint','google_drive')", name="ck_ext_doc_obs_refresh_adm_exec_provider"),
+        CheckConstraint("provider_kind IN ('sharepoint','google_drive','sftp')", name="ck_ext_doc_obs_refresh_adm_exec_provider"),
         CheckConstraint("status = 'admitted'", name="ck_ext_doc_obs_refresh_adm_exec_status"),
         CheckConstraint("prior_version_number >= 1", name="ck_ext_doc_obs_refresh_adm_exec_prior_ver"),
         CheckConstraint("new_version_number = prior_version_number + 1", name="ck_ext_doc_obs_refresh_adm_exec_next_ver"),
