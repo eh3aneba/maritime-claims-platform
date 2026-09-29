@@ -8,7 +8,9 @@ import pytest
 
 from app.modules.external_document_sources.live_sftp_adapters import (
     LiveSftpRuntime,
+    _CredentialMaterial,
     _SftpCredentialHealthResolver,
+    _SftpRuntimeFailure,
     _normalize_remote_path,
     register_live_sftp_adapters,
 )
@@ -361,5 +363,138 @@ def test_live_sftp_transport_rejects_weak_negotiated_host_key_algorithm(
     assert len(_WeakAlgorithmTransport.instances) == 1
     transport = _WeakAlgorithmTransport.instances[0]
     assert "ssh-rsa" not in transport.options.key_types
+    assert transport.closed is True
+    assert sock.closed is True
+
+
+class _ClosingTransport:
+    def __init__(self):
+        self.closed = False
+        self.auth_calls = 0
+
+    def close(self):
+        self.closed = True
+
+    def is_authenticated(self):
+        return False
+
+
+def test_live_sftp_host_key_mismatch_fails_before_secret_resolution_or_auth(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import app.modules.external_document_sources.live_sftp_adapters as live
+
+    runtime = LiveSftpRuntime(secret_runtime=_SecretRuntime({}))
+    sock = _FakeSocket()
+    transport = _ClosingTransport()
+    secret_calls = {"count": 0}
+
+    monkeypatch.setattr(live, "_paramiko", lambda: SimpleNamespace())
+    monkeypatch.setattr(
+        runtime,
+        "_start_transport",
+        lambda **_kwargs: (
+            sock,
+            transport,
+            "SHA256:" + "B" * 43,
+            "ssh-ed25519",
+            False,
+        ),
+    )
+
+    def _must_not_resolve(**_kwargs):
+        secret_calls["count"] += 1
+        raise AssertionError("credential resolution must not happen after host-key mismatch")
+
+    monkeypatch.setattr(runtime, "_load_credential", _must_not_resolve)
+
+    with pytest.raises(_SftpRuntimeFailure, match="host_key_revalidation_failed"):
+        runtime._open_session(
+            hostname="files.example.com",
+            port=22,
+            pinned_host_key_fingerprint="SHA256:" + "A" * 43,
+            authentication_kind="password",
+            reference_backend="azure_key_vault",
+            reference_namespace="claims-kv",
+            reference_name="sftp-reader",
+            reference_version=None,
+            expected_username="claims-reader",
+            connect_timeout_seconds=2.0,
+            authentication_timeout_seconds=2.0,
+            subsystem_timeout_seconds=2.0,
+            allow_private_destinations=False,
+        )
+
+    assert secret_calls["count"] == 0
+    assert transport.closed is True
+    assert sock.closed is True
+
+
+def test_live_sftp_authentication_failure_closes_transport_and_socket(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import app.modules.external_document_sources.live_sftp_adapters as live
+
+    class AuthenticationException(Exception):
+        pass
+
+    class AuthFailTransport(_ClosingTransport):
+        def auth_password(self, username, password, fallback=False):
+            self.auth_calls += 1
+            assert username == "claims-reader"
+            assert password == "transient-secret"
+            assert fallback is False
+            raise AuthenticationException()
+
+    runtime = LiveSftpRuntime(secret_runtime=_SecretRuntime({}))
+    sock = _FakeSocket()
+    transport = AuthFailTransport()
+
+    monkeypatch.setattr(
+        live,
+        "_paramiko",
+        lambda: SimpleNamespace(
+            AuthenticationException=AuthenticationException,
+        ),
+    )
+    monkeypatch.setattr(
+        runtime,
+        "_start_transport",
+        lambda **_kwargs: (
+            sock,
+            transport,
+            "SHA256:" + "A" * 43,
+            "ssh-ed25519",
+            False,
+        ),
+    )
+    monkeypatch.setattr(
+        runtime,
+        "_load_credential",
+        lambda **_kwargs: _CredentialMaterial(
+            username="claims-reader",
+            authentication_kind="password",
+            password="transient-secret",
+        ),
+    )
+
+    with pytest.raises(_SftpRuntimeFailure, match="authentication_failed"):
+        runtime._open_session(
+            hostname="files.example.com",
+            port=22,
+            pinned_host_key_fingerprint="SHA256:" + "A" * 43,
+            authentication_kind="password",
+            reference_backend="azure_key_vault",
+            reference_namespace="claims-kv",
+            reference_name="sftp-reader",
+            reference_version=None,
+            expected_username="claims-reader",
+            connect_timeout_seconds=2.0,
+            authentication_timeout_seconds=2.0,
+            subsystem_timeout_seconds=2.0,
+            allow_private_destinations=False,
+        )
+
+    assert transport.auth_calls == 1
     assert transport.closed is True
     assert sock.closed is True
