@@ -12,6 +12,14 @@ type Profile = {
   provider_health_status: string | null;
   provider_health_latency_class: string | null;
   provider_health_completed_at: string | null;
+  sftp_credential_health_status: string | null;
+  sftp_credential_health_checked_at: string | null;
+  sftp_transport_status: string | null;
+  sftp_transport_latency_class: string | null;
+  sftp_transport_checked_at: string | null;
+  sftp_session_status: string | null;
+  sftp_session_latency_class: string | null;
+  sftp_session_checked_at: string | null;
   active_family_count: number;
   pending_handoff_count: number;
   processing_release_required_count: number;
@@ -28,6 +36,10 @@ type Version = {
   superseded_at: string | null;
   processing_release_status: string | null;
   processing_release_required: boolean;
+  recurring_baseline_transition_id: string | null;
+  recurring_baseline_status: string | null;
+  recurring_baseline_authorized_at: string | null;
+  recurring_baseline_transition_required: boolean;
 };
 
 type Family = {
@@ -218,16 +230,26 @@ export default function ExternalEvidencePage() {
     );
   }
 
+  async function establishRecurringBaseline(row: Family) {
+    if (!row.latest_admission_execution_id || !noteReady(row)) return;
+    await runAction(
+      `ad-baseline-${row.binding_id}`,
+      `/external-document-sources/profiles/${row.profile_id}/observation-refresh-admission-executions/${row.latest_admission_execution_id}/recurring-baseline-transition`,
+      { request_key: requestKey("ad-baseline"), reason: noteFor(row) },
+      "The refreshed SFTP source projection is now the explicit recurring-observation baseline.",
+    );
+  }
+
   return (
     <div className="space-y-7">
       <section className="rounded-2xl bg-[#0b1f2a] p-7 text-white shadow-sm">
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-300">
-          External Evidence · Phase 17.5-AK
+          External Evidence operations
         </p>
-        <h1 className="mt-3 text-3xl font-semibold">SharePoint & Google Drive operations</h1>
+        <h1 className="mt-3 text-3xl font-semibold">SharePoint, Google Drive & SFTP operations</h1>
         <p className="mt-3 max-w-4xl text-sm leading-6 text-slate-300">
-          One operational view of source health, recurring observation, human review, exact refresh,
-          admission authorization, canonical version lineage and the separate processing-release requirement.
+          One operational view of source readiness, recurring observation, human review, exact refresh,
+          canonical version lineage, processing release and SFTP recurring-baseline authority.
           Every mutation below calls its own governed API; there is deliberately no “sync everything” action.
         </p>
       </section>
@@ -284,6 +306,16 @@ export default function ExternalEvidencePage() {
               <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
                 <div><dt className="text-slate-500">Provider health</dt><dd className="font-medium capitalize">{badge(profile.provider_health_status)}</dd></div>
                 <div><dt className="text-slate-500">Health checked</dt><dd>{when(profile.provider_health_completed_at)}</dd></div>
+                {profile.provider_kind === "sftp" && (
+                  <>
+                    <div><dt className="text-slate-500">Credential reference</dt><dd className="font-medium capitalize">{badge(profile.sftp_credential_health_status)}</dd></div>
+                    <div><dt className="text-slate-500">Credential checked</dt><dd>{when(profile.sftp_credential_health_checked_at)}</dd></div>
+                    <div><dt className="text-slate-500">Pinned host key / transport</dt><dd className="font-medium capitalize">{badge(profile.sftp_transport_status)}</dd></div>
+                    <div><dt className="text-slate-500">Transport checked</dt><dd>{when(profile.sftp_transport_checked_at)}</dd></div>
+                    <div><dt className="text-slate-500">SFTP session readiness</dt><dd className="font-medium capitalize">{badge(profile.sftp_session_status)}</dd></div>
+                    <div><dt className="text-slate-500">Session checked</dt><dd>{when(profile.sftp_session_checked_at)}</dd></div>
+                  </>
+                )}
                 <div><dt className="text-slate-500">Active families</dt><dd>{profile.active_family_count}</dd></div>
                 <div><dt className="text-slate-500">Pending handoffs</dt><dd>{profile.pending_handoff_count}</dd></div>
                 <div><dt className="text-slate-500">Next due</dt><dd>{when(profile.next_due_at)}</dd></div>
@@ -299,7 +331,7 @@ export default function ExternalEvidencePage() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-lg font-semibold">Bound Evidence families</h2>
-            <p className="mt-1 text-sm text-slate-500">Current and historical versions plus separate AG → AH → AI → AJ controls.</p>
+            <p className="mt-1 text-sm text-slate-500">Current and historical versions plus separate review, refresh, admission, processing and recurring-baseline controls.</p>
           </div>
           <div className="flex flex-wrap gap-2">
             {(["all", "attention", "release"] as const).map((value) => (
@@ -407,6 +439,19 @@ export default function ExternalEvidencePage() {
                         <span className="rounded-full bg-emerald-100 px-2 py-1 text-xs font-semibold text-emerald-900">Released</span>
                       )}
                       <div className="mt-2 text-xs capitalize text-slate-500">{badge(row.processing_release_status)}</div>
+                      {row.provider_kind === "sftp" && row.current_version_number >= 2 && (
+                        <div className="mt-4 border-t border-slate-100 pt-3">
+                          <div className="text-xs font-semibold text-slate-500">Recurring baseline</div>
+                          <div className="mt-1 capitalize">
+                            {row.recurring_baseline_transition_required
+                              ? "explicit transition required"
+                              : badge(row.recurring_baseline_status, "not required")}
+                          </div>
+                          <div className="mt-1 text-[11px] text-slate-400">
+                            {when(row.recurring_baseline_authorized_at)}
+                          </div>
+                        </div>
+                      )}
                     </td>
                     <td className="border-b border-slate-100 px-3 py-4">
                       <label className="block text-xs font-semibold text-slate-600" htmlFor={`note-${row.binding_id}`}>
@@ -483,7 +528,16 @@ export default function ExternalEvidencePage() {
                             AJ · Admit canonical N+1
                           </button>
                         )}
-                        {!row.pending_handoff_id && !hasRefreshToRun && !hasAdmissionToAuthorize && !hasAdmissionToRun && (
+                        {hasBaselineToEstablish && row.latest_admission_execution_id && (
+                          <button
+                            disabled={actionDisabled}
+                            onClick={() => void establishRecurringBaseline(row)}
+                            className="rounded-md bg-violet-800 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40"
+                          >
+                            Establish SFTP recurring baseline
+                          </button>
+                        )}
+                        {!row.pending_handoff_id && !hasRefreshToRun && !hasAdmissionToAuthorize && !hasAdmissionToRun && !hasBaselineToEstablish && (
                           <span className="text-xs text-slate-400">No governed action is currently due.</span>
                         )}
                       </div>
@@ -501,7 +555,7 @@ export default function ExternalEvidencePage() {
 
       <section className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm leading-6 text-amber-950">
         <strong>Authority boundary:</strong> changed and missing observations never update or delete canonical Evidence automatically.
-        AG review, AH exact refresh/staging, AI admission authorization, AJ canonical admission and Phase-Z processing release remain separate.
+        Human review, exact refresh/staging, admission authorization, canonical admission, processing release and SFTP baseline transition remain separate.
         No action on this page grants external-AI execution authority.
       </section>
     </div>
