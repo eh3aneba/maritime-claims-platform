@@ -37,7 +37,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          all_groups='["scheduling","observation-due-tick","observation-refresh","review-core","review-sftp","service-executor-core","service-executor-sftp","authorization-foundation","admission-execution"]'
+          all_groups='["scheduling","observation-due-tick","observation-refresh","review-core","review-sftp-changed","review-sftp-missing","review-sftp-unchanged","service-executor-core","service-executor-sftp","authorization-foundation","admission-execution"]'
           placeholder_groups='["scheduling"]'
 
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
@@ -86,7 +86,9 @@ jobs:
                 ;;
               apps/api/tests/test_external_document_source_sftp_observation_review_handoff.py)
                 postgres_required=true
-                add_group review-sftp
+                add_group review-sftp-changed
+                add_group review-sftp-missing
+                add_group review-sftp-unchanged
                 ;;
               apps/api/tests/test_external_document_source_due_tick_service_executor_concurrency_postgres.py)
                 postgres_required=true
@@ -216,11 +218,23 @@ jobs:
           EXTERNAL_EVIDENCE_REVIEW_HANDOFF_POSTGRES_TEST: "1"
         run: pytest -q --durations=10 tests/test_external_document_source_observation_review_handoff_concurrency_postgres.py
 
-      - name: Review — SFTP handoff compatibility
-        if: ${{ matrix.group == 'review-sftp' }}
+      - name: Review — SFTP changed handoff
+        if: ${{ matrix.group == 'review-sftp-changed' }}
         env:
           EXTERNAL_EVIDENCE_REVIEW_HANDOFF_POSTGRES_TEST: "1"
-        run: pytest -q --durations=10 tests/test_external_document_source_sftp_observation_review_handoff.py
+        run: pytest -q --durations=10 'tests/test_external_document_source_sftp_observation_review_handoff.py::test_phase_z_projects_sftp_changed_or_missing_to_pending_review_without_io[changed]'
+
+      - name: Review — SFTP missing handoff
+        if: ${{ matrix.group == 'review-sftp-missing' }}
+        env:
+          EXTERNAL_EVIDENCE_REVIEW_HANDOFF_POSTGRES_TEST: "1"
+        run: pytest -q --durations=10 'tests/test_external_document_source_sftp_observation_review_handoff.py::test_phase_z_projects_sftp_changed_or_missing_to_pending_review_without_io[missing]'
+
+      - name: Review — SFTP unchanged ineligible
+        if: ${{ matrix.group == 'review-sftp-unchanged' }}
+        env:
+          EXTERNAL_EVIDENCE_REVIEW_HANDOFF_POSTGRES_TEST: "1"
+        run: pytest -q --durations=10 tests/test_external_document_source_sftp_observation_review_handoff.py::test_phase_z_sftp_unchanged_observation_is_not_review_eligible
 
       - name: Service executor — core concurrency
         if: ${{ matrix.group == 'service-executor-core' }}
