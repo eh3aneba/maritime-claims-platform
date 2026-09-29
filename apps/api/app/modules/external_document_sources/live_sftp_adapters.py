@@ -7,6 +7,7 @@ import importlib
 import io
 import ipaddress
 import json
+import logging
 import posixpath
 import socket
 import stat as stat_module
@@ -63,6 +64,44 @@ _SUPPORTED_SECRET_BACKENDS = frozenset(
     }
 )
 _ALLOWED_AUTH_KINDS = frozenset({"password", "private_key"})
+_sftp_logger = logging.getLogger("mcri.sftp")
+_sftp_logger.setLevel(logging.INFO)
+
+
+def _observe_sftp_operation(
+    *,
+    operation: str,
+    result: str,
+    latency_class: str | None,
+) -> None:
+    """Emit only bounded low-cardinality SFTP operational metadata."""
+
+    if operation not in {
+        "credential_health",
+        "transport_probe",
+        "session_activation",
+        "directory_listing",
+        "exact_metadata",
+        "content_read",
+    }:
+        operation = "unknown"
+    if result not in {"success", "failed", "missing", "rejected"}:
+        result = "failed"
+    if latency_class not in {"fast", "normal", "slow"}:
+        latency_class = "unknown"
+
+    _sftp_logger.info(
+        json.dumps(
+            {
+                "event": "sftp_operation",
+                "operation": operation,
+                "result": result,
+                "latency_class": latency_class,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+    )
 
 
 class _SftpRuntimeFailure(RuntimeError):
@@ -1181,11 +1220,17 @@ class _SftpCredentialHealthResolver:
                 version=locator.version,
                 expected_authentication_kind=locator.authentication_kind,
             )
-            return SftpCredentialHealthProbeResult(
+            result = SftpCredentialHealthProbeResult(
                 resolved=True,
                 material_kind=material.authentication_kind,
                 failure_code=None,
             )
+            _observe_sftp_operation(
+                operation="credential_health",
+                result="success",
+                latency_class=None,
+            )
+            return result
         except _SftpRuntimeFailure as exc:
             if exc.code == "credential_unavailable":
                 code = "material_missing"
@@ -1195,11 +1240,17 @@ class _SftpCredentialHealthResolver:
                 code = "reference_unresolved"
             else:
                 code = "resolver_rejected"
-            return SftpCredentialHealthProbeResult(
+            result = SftpCredentialHealthProbeResult(
                 resolved=False,
                 material_kind=None,
                 failure_code=code,
             )
+            _observe_sftp_operation(
+                operation="credential_health",
+                result="failed",
+                latency_class=None,
+            )
+            return result
         finally:
             if material is not None:
                 material.clear()
@@ -1215,7 +1266,13 @@ class _SftpTransportAdapter:
         self,
         request: SftpTransportHostKeyProbeRequest,
     ) -> SftpTransportHostKeyProbeResult:
-        return self._runtime.probe_host_key(request)
+        result = self._runtime.probe_host_key(request)
+        _observe_sftp_operation(
+            operation="transport_probe",
+            result="success" if result.failure_code is None else "failed",
+            latency_class=result.latency_class,
+        )
+        return result
 
 
 class _SftpActivationAdapter:
@@ -1228,7 +1285,13 @@ class _SftpActivationAdapter:
         self,
         request: SftpSessionActivationRequest,
     ) -> SftpSessionActivationResult:
-        return self._runtime.activate(request)
+        result = self._runtime.activate(request)
+        _observe_sftp_operation(
+            operation="session_activation",
+            result="success" if result.failure_code is None else "failed",
+            latency_class=result.latency_class,
+        )
+        return result
 
 
 class _SftpListingAdapter:
@@ -1241,7 +1304,13 @@ class _SftpListingAdapter:
         self,
         request: SftpDirectoryListingRequest,
     ) -> SftpDirectoryListingResult:
-        return self._runtime.list_metadata(request)
+        result = self._runtime.list_metadata(request)
+        _observe_sftp_operation(
+            operation="directory_listing",
+            result="success" if result.failure_code is None else "failed",
+            latency_class=result.latency_class,
+        )
+        return result
 
 
 class _SftpExactMetadataAdapter:
@@ -1254,7 +1323,22 @@ class _SftpExactMetadataAdapter:
         self,
         request: SftpExactFileMetadataRequest,
     ) -> SftpExactFileMetadataResult:
-        return self._runtime.stat_metadata(request)
+        result = self._runtime.stat_metadata(request)
+        status = (
+            "success"
+            if result.failure_code is None
+            else "missing"
+            if result.failure_code == "not_found"
+            else "rejected"
+            if result.failure_code in {"symlink_escape_detected", "path_policy_violation"}
+            else "failed"
+        )
+        _observe_sftp_operation(
+            operation="exact_metadata",
+            result=status,
+            latency_class=result.latency_class,
+        )
+        return result
 
 
 class _SftpContentReadAdapter:
@@ -1267,7 +1351,19 @@ class _SftpContentReadAdapter:
         self,
         request: SftpFileContentReadRequest,
     ) -> SftpFileContentReadResult:
-        return self._runtime.read_content(request)
+        result = self._runtime.read_content(request)
+        _observe_sftp_operation(
+            operation="content_read",
+            result=(
+                "success"
+                if result.failure_code is None
+                else "rejected"
+                if result.failure_code in {"symlink_escape_detected", "path_policy_violation"}
+                else "failed"
+            ),
+            latency_class=result.latency_class,
+        )
+        return result
 
 
 def _configured_secret_backends() -> tuple[str, ...]:
