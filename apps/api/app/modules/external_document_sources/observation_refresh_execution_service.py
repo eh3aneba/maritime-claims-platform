@@ -498,8 +498,8 @@ def _provider_read_context(
         )
     return current, _RefreshReadContext(
         provider_kind=authorization.provider_kind,
-        read_operation_kind=read_context.read_operation_kind,
-        read_adapter_kind=read_context.read_adapter_kind,
+        read_operation_kind=policy.read_operation_kind,
+        read_adapter_kind=adapter_kind,
         policy_hash=_endpoint_policy_hash(policy),
         adapter=adapter,
         target=locator,
@@ -940,8 +940,8 @@ def execute_observation_refresh_authorization(
         binding_completion_hash=authorization.binding_completion_hash,
         observed_projection_hash=authorization.observed_projection_hash,
         observed_version_token_hash=authorization.observed_version_token_hash,
-        read_operation_kind=policy.read_operation_kind,
-        read_adapter_kind=adapter_kind,
+        read_operation_kind=read_context.read_operation_kind,
+        read_adapter_kind=read_context.read_adapter_kind,
         endpoint_policy_hash=endpoint_policy_hash,
         storage_backend_kind=backend,
         storage_purpose=STORAGE_PURPOSE,
