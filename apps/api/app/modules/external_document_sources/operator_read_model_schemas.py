@@ -16,6 +16,11 @@ class ExternalDocumentSourceOperatorVersionRead(BaseModel):
     processing_release_status: str | None = None
     processing_release_required: bool
 
+    recurring_baseline_transition_id: UUID | None = None
+    recurring_baseline_status: str | None = None
+    recurring_baseline_authorized_at: datetime | None = None
+    recurring_baseline_transition_required: bool = False
+
 
 class ExternalDocumentSourceOperatorFamilyRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -78,6 +83,15 @@ class ExternalDocumentSourceOperatorProfileRead(BaseModel):
     provider_health_status: str | None = None
     provider_health_latency_class: str | None = None
     provider_health_completed_at: datetime | None = None
+
+    sftp_credential_health_status: str | None = None
+    sftp_credential_health_checked_at: datetime | None = None
+    sftp_transport_status: str | None = None
+    sftp_transport_latency_class: str | None = None
+    sftp_transport_checked_at: datetime | None = None
+    sftp_session_status: str | None = None
+    sftp_session_latency_class: str | None = None
+    sftp_session_checked_at: datetime | None = None
 
     active_family_count: int
     pending_handoff_count: int
