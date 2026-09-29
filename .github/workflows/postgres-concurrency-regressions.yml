@@ -72,7 +72,7 @@ jobs:
                 postgres_required=true
                 add_group scheduling
                 ;;
-              apps/api/tests/test_external_document_source_due_tick_observation_concurrency_postgres.py|apps/api/tests/test_external_document_source_sftp_recurring_provider_lineage.py|apps/api/tests/test_external_document_source_observation_refresh_execution_concurrency_postgres.py)
+              apps/api/tests/test_external_document_source_due_tick_observation_concurrency_postgres.py|apps/api/tests/test_external_document_source_sftp_recurring_provider_lineage.py|apps/api/tests/test_external_document_source_observation_refresh_execution_concurrency_postgres.py|apps/api/tests/test_external_document_source_sftp_observation_refresh_execution.py)
                 postgres_required=true
                 add_group observation
                 ;;
@@ -196,7 +196,7 @@ jobs:
         if: ${{ matrix.group == 'observation' }}
         env:
           EXTERNAL_EVIDENCE_REFRESH_EXECUTION_POSTGRES_TEST: "1"
-        run: pytest -q tests/test_external_document_source_observation_refresh_execution_concurrency_postgres.py
+        run: pytest -q tests/test_external_document_source_observation_refresh_execution_concurrency_postgres.py tests/test_external_document_source_sftp_observation_refresh_execution.py
 
       - name: Review — handoff and decision concurrency
         if: ${{ matrix.group == 'review' }}
