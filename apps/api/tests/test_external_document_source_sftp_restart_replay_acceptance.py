@@ -7,8 +7,20 @@ import pytest
 from app.modules.external_document_sources.live_sftp_adapters import (
     _SftpContentReadAdapter,
 )
+from app.modules.external_document_sources.observation_refresh_admission_authorization_service import (
+    authorize_observation_refresh_admission,
+)
+from app.modules.external_document_sources.observation_refresh_admission_execution_service import (
+    execute_observation_refresh_admission,
+)
 from app.modules.external_document_sources.observation_refresh_execution_service import (
     execute_observation_refresh_authorization,
+)
+from app.modules.external_document_sources.processing_release_service import (
+    grant_processing_release,
+)
+from app.modules.external_document_sources.recurring_baseline_transition_service import (
+    establish_recurring_baseline_transition,
 )
 from app.modules.external_document_sources.remote_content_staging_service import (
     register_external_document_source_remote_content_staging_store,
@@ -19,6 +31,9 @@ from app.modules.external_document_sources.sftp_file_content_proof_service impor
     register_external_document_source_sftp_file_content_read_adapter,
 )
 from tests.db_harness import TestingSessionLocal
+from tests.test_external_document_source_observation_refresh_admission_execution import (
+    _enable_clean_aj,
+)
 from tests.test_external_document_source_remote_content_staging import _QuarantineStore
 from tests.test_external_document_source_sftp_file_content_proof import (
     _FILE_BODY,
@@ -186,3 +201,144 @@ def test_committed_changed_refresh_replay_after_registry_restart_does_not_reread
 
     assert len(restarted_runtime.calls) == 0
     assert store.put_calls == 1
+
+
+
+def test_post_admission_release_and_baseline_replay_remain_db_only_after_restart(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (
+        _chain,
+        _metadata_adapter,
+        actor_id,
+        organization_id,
+        profile_id,
+        refresh_authorization_id,
+        observed_size,
+    ) = _approved_sftp_refresh(monkeypatch, "ae-c-post-admission-restart")
+
+    refreshed_body = b"p" * observed_size
+    first_runtime = _CountingProductionReadRuntime(refreshed_body)
+    register_external_document_source_sftp_file_content_read_adapter(
+        _SftpContentReadAdapter(first_runtime)
+    )
+    register_external_document_source_remote_content_staging_store(_QuarantineStore())
+
+    with TestingSessionLocal() as db:
+        refresh, refresh_outcome = execute_observation_refresh_authorization(
+            db,
+            organization_id=organization_id,
+            profile_id=profile_id,
+            authorization_id=refresh_authorization_id,
+            requested_by_id=actor_id,
+            request_key="ae-c-post-admission-refresh",
+            request_reason=(
+                "Stage the exact changed SFTP content before post-admission replay proof."
+            ),
+            now=datetime(2026, 9, 29, 8, 10, tzinfo=UTC),
+        )
+        assert refresh_outcome == "completed"
+
+        admission_auth, auth_outcome = authorize_observation_refresh_admission(
+            db,
+            organization_id=organization_id,
+            profile_id=profile_id,
+            refresh_execution_id=refresh.id,
+            authorized_by_id=actor_id,
+            request_key="ae-c-post-admission-auth",
+            authorization_reason=(
+                "Authorize this exact staged SFTP refresh for canonical N+1 admission."
+            ),
+            now=datetime(2026, 9, 29, 8, 11, tzinfo=UTC),
+        )
+        assert auth_outcome == "authorized"
+        binding_id = admission_auth.binding_id
+        admission_authorization_id = admission_auth.id
+
+    _enable_clean_aj(monkeypatch)
+    with TestingSessionLocal() as db:
+        admission, admission_outcome = execute_observation_refresh_admission(
+            db,
+            organization_id=organization_id,
+            profile_id=profile_id,
+            binding_id=binding_id,
+            authorization_id=admission_authorization_id,
+            executed_by_id=actor_id,
+            request_key="ae-c-post-admission-admit",
+            execution_reason=(
+                "Admit the exact staged SFTP refresh before release/baseline replay proof."
+            ),
+        )
+        assert admission_outcome == "admitted"
+
+        release, release_outcome = grant_processing_release(
+            db,
+            organization_id=organization_id,
+            claim_id=admission.claim_id,
+            document_id=admission.new_document_id,
+            released_by_id=actor_id,
+            request_key="ae-c-post-admission-release",
+            reason=(
+                "Release the exact newly admitted SFTP Evidence version for local processing."
+            ),
+        )
+        assert release_outcome == "granted"
+
+        transition, transition_outcome = establish_recurring_baseline_transition(
+            db,
+            organization_id=organization_id,
+            profile_id=profile_id,
+            refresh_admission_execution_id=admission.id,
+            authorized_by_id=actor_id,
+            request_key="ae-c-post-admission-baseline",
+            reason=(
+                "Establish the refreshed SFTP projection as the explicit recurring baseline."
+            ),
+            now=datetime(2026, 9, 29, 8, 12, tzinfo=UTC),
+        )
+        assert transition_outcome == "established"
+
+        admission_id = admission.id
+        new_document_id = admission.new_document_id
+        claim_id = admission.claim_id
+        release_id = release.id
+        transition_id = transition.id
+
+    assert len(first_runtime.calls) == 1
+
+    clear_external_document_source_sftp_file_content_read_adapter()
+    restarted_runtime = _CountingProductionReadRuntime(refreshed_body)
+    register_external_document_source_sftp_file_content_read_adapter(
+        _SftpContentReadAdapter(restarted_runtime)
+    )
+
+    with TestingSessionLocal() as db:
+        release_replay, release_replay_outcome = grant_processing_release(
+            db,
+            organization_id=organization_id,
+            claim_id=claim_id,
+            document_id=new_document_id,
+            released_by_id=actor_id,
+            request_key="ae-c-post-admission-release",
+            reason=(
+                "Release the exact newly admitted SFTP Evidence version for local processing."
+            ),
+        )
+        assert release_replay_outcome == "replayed"
+        assert release_replay.id == release_id
+
+        transition_replay, transition_replay_outcome = establish_recurring_baseline_transition(
+            db,
+            organization_id=organization_id,
+            profile_id=profile_id,
+            refresh_admission_execution_id=admission_id,
+            authorized_by_id=actor_id,
+            request_key="ae-c-post-admission-baseline",
+            reason=(
+                "Establish the refreshed SFTP projection as the explicit recurring baseline."
+            ),
+        )
+        assert transition_replay_outcome == "replayed"
+        assert transition_replay.id == transition_id
+
+    assert len(restarted_runtime.calls) == 0
