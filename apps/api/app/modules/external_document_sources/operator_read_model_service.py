@@ -46,6 +46,18 @@ from app.modules.external_document_sources.provider_client_health_models import 
 from app.modules.external_document_sources.recurring_observation_schedule_models import (
     ExternalDocumentSourceRecurringObservationSchedule,
 )
+from app.modules.external_document_sources.recurring_baseline_transition_models import (
+    ExternalDocumentSourceRecurringBaselineTransition,
+)
+from app.modules.external_document_sources.sftp_credential_health_models import (
+    ExternalDocumentSourceSftpCredentialHealthQualification,
+)
+from app.modules.external_document_sources.sftp_session_activation_models import (
+    ExternalDocumentSourceSftpSessionActivation,
+)
+from app.modules.external_document_sources.sftp_transport_verification_models import (
+    ExternalDocumentSourceSftpTransportVerification,
+)
 
 
 _REFRESH_FAILURE_AUDIT_ACTION = "EXTERNAL_EVIDENCE_OBSERVATION_REFRESH_FAILED"
@@ -174,6 +186,39 @@ def build_external_document_source_operator_overview(
         ).all()
     )
 
+    baseline_transitions = list(
+        db.scalars(
+            select(ExternalDocumentSourceRecurringBaselineTransition).where(
+                ExternalDocumentSourceRecurringBaselineTransition.organization_id
+                == organization_id
+            )
+        ).all()
+    )
+    sftp_credential_health_rows = list(
+        db.scalars(
+            select(ExternalDocumentSourceSftpCredentialHealthQualification).where(
+                ExternalDocumentSourceSftpCredentialHealthQualification.organization_id
+                == organization_id
+            )
+        ).all()
+    )
+    sftp_transport_rows = list(
+        db.scalars(
+            select(ExternalDocumentSourceSftpTransportVerification).where(
+                ExternalDocumentSourceSftpTransportVerification.organization_id
+                == organization_id
+            )
+        ).all()
+    )
+    sftp_session_rows = list(
+        db.scalars(
+            select(ExternalDocumentSourceSftpSessionActivation).where(
+                ExternalDocumentSourceSftpSessionActivation.organization_id
+                == organization_id
+            )
+        ).all()
+    )
+
     family_ids = [binding.document_family_id for binding in bindings]
     documents = (
         list(
@@ -236,6 +281,27 @@ def build_external_document_source_operator_overview(
     latest_admission = _latest_by(
         admissions, lambda row: row.binding_id, lambda row: row.executed_at
     )
+
+    latest_sftp_credential_health = _latest_by(
+        sftp_credential_health_rows,
+        lambda row: row.profile_id,
+        lambda row: row.checked_at,
+    )
+    latest_sftp_transport = _latest_by(
+        sftp_transport_rows,
+        lambda row: row.profile_id,
+        lambda row: row.checked_at,
+    )
+    latest_sftp_session = _latest_by(
+        sftp_session_rows,
+        lambda row: row.profile_id,
+        lambda row: row.checked_at,
+    )
+    baseline_by_exact_version = {
+        (row.binding_id, row.current_document_id, row.current_version_number): row
+        for row in baseline_transitions
+        if row.status == "established"
+    }
 
     decided_handoffs = {row.handoff_id for row in decisions}
     pending_handoffs = [row for row in handoffs if row.id not in decided_handoffs]
@@ -330,6 +396,18 @@ def build_external_document_source_operator_overview(
         else:
             current_document_id = binding.current_document_id
             current_version_number = binding.current_version_number
+
+        baseline_transition = baseline_by_exact_version.get(
+            (binding.id, current_document_id, current_version_number)
+        )
+        baseline_transition_required = (
+            binding.provider_kind == "sftp"
+            and current_version_number >= 2
+            and admission is not None
+            and admission.new_document_id == current_document_id
+            and admission.new_version_number == current_version_number
+            and baseline_transition is None
+        )
 
         release = release_by_exact_version.get(
             (binding.id, current_document_id, current_version_number)
@@ -448,6 +526,22 @@ def build_external_document_source_operator_overview(
                 ),
                 processing_release_status=release_status,
                 processing_release_required=release_required,
+                recurring_baseline_transition_id=(
+                    baseline_transition.id
+                    if baseline_transition is not None
+                    else None
+                ),
+                recurring_baseline_status=(
+                    baseline_transition.status
+                    if baseline_transition is not None
+                    else None
+                ),
+                recurring_baseline_authorized_at=(
+                    baseline_transition.authorized_at
+                    if baseline_transition is not None
+                    else None
+                ),
+                recurring_baseline_transition_required=baseline_transition_required,
             )
         )
 
@@ -458,6 +552,9 @@ def build_external_document_source_operator_overview(
     profile_rows: list[ExternalDocumentSourceOperatorProfileRead] = []
     for profile in profiles:
         health = latest_health.get(profile.id)
+        sftp_credential_health = latest_sftp_credential_health.get(profile.id)
+        sftp_transport = latest_sftp_transport.get(profile.id)
+        sftp_session = latest_sftp_session.get(profile.id)
         families = families_by_profile.get(profile.id, [])
         due_values = [
             row.next_due_at for row in families if row.next_due_at is not None
@@ -481,6 +578,46 @@ def build_external_document_source_operator_overview(
                 ),
                 provider_health_completed_at=(
                     health.completed_at if health is not None else None
+                ),
+                sftp_credential_health_status=(
+                    sftp_credential_health.result_status
+                    if sftp_credential_health is not None
+                    else None
+                ),
+                sftp_credential_health_checked_at=(
+                    sftp_credential_health.checked_at
+                    if sftp_credential_health is not None
+                    else None
+                ),
+                sftp_transport_status=(
+                    sftp_transport.result_status
+                    if sftp_transport is not None
+                    else None
+                ),
+                sftp_transport_latency_class=(
+                    sftp_transport.latency_class
+                    if sftp_transport is not None
+                    else None
+                ),
+                sftp_transport_checked_at=(
+                    sftp_transport.checked_at
+                    if sftp_transport is not None
+                    else None
+                ),
+                sftp_session_status=(
+                    sftp_session.result_status
+                    if sftp_session is not None
+                    else None
+                ),
+                sftp_session_latency_class=(
+                    sftp_session.latency_class
+                    if sftp_session is not None
+                    else None
+                ),
+                sftp_session_checked_at=(
+                    sftp_session.checked_at
+                    if sftp_session is not None
+                    else None
                 ),
                 active_family_count=len(families),
                 pending_handoff_count=sum(
