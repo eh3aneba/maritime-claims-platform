@@ -194,6 +194,38 @@ def _normalize_remote_path(root: str, effective: str) -> str:
     return normalized_effective
 
 
+def _canonical_remote_path(sftp, path: str) -> str:
+    try:
+        canonical = sftp.normalize(path)
+    except Exception as exc:
+        raise _SftpRuntimeFailure("path_policy_violation") from exc
+    if not isinstance(canonical, str) or not canonical.startswith("/") or "\x00" in canonical:
+        raise _SftpRuntimeFailure("path_policy_violation")
+    return posixpath.normpath(canonical)
+
+
+def _ensure_canonical_path_within_root(
+    sftp,
+    *,
+    remote_root_path: str,
+    effective_remote_path: str,
+    exact_entry: bool,
+) -> None:
+    canonical_root = _canonical_remote_path(sftp, remote_root_path)
+    target_for_resolution = (
+        posixpath.dirname(effective_remote_path)
+        if exact_entry
+        else effective_remote_path
+    )
+    canonical_target = _canonical_remote_path(sftp, target_for_resolution)
+    if canonical_root == "/":
+        return
+    prefix = canonical_root.rstrip("/") + "/"
+    if canonical_target != canonical_root and not canonical_target.startswith(prefix):
+        raise _SftpRuntimeFailure("symlink_escape_detected")
+
+
+
 def _resolved_public_addresses(hostname: str, port: int) -> list[str]:
     try:
         records = socket.getaddrinfo(
@@ -747,6 +779,12 @@ class LiveSftpRuntime:
                 subsystem_timeout_seconds=request.listing_timeout_seconds,
                 allow_private_destinations=request.allow_private_destinations,
             )
+            _ensure_canonical_path_within_root(
+                session.sftp,
+                remote_root_path=request.remote_root_path,
+                effective_remote_path=path,
+                exact_entry=False,
+            )
             attrs = session.sftp.listdir_attr(path)
             if len(attrs) > request.max_entries:
                 return SftpDirectoryListingResult(
@@ -920,6 +958,12 @@ class LiveSftpRuntime:
                 subsystem_timeout_seconds=request.stat_timeout_seconds,
                 allow_private_destinations=request.allow_private_destinations,
             )
+            _ensure_canonical_path_within_root(
+                session.sftp,
+                remote_root_path=request.remote_root_path,
+                effective_remote_path=path,
+                exact_entry=True,
+            )
             try:
                 attr = session.sftp.lstat(path)
             except FileNotFoundError:
@@ -1076,6 +1120,12 @@ class LiveSftpRuntime:
                 allow_private_destinations=request.allow_private_destinations,
             )
 
+            _ensure_canonical_path_within_root(
+                session.sftp,
+                remote_root_path=request.remote_root_path,
+                effective_remote_path=path,
+                exact_entry=True,
+            )
             attr = session.sftp.lstat(path)
             remote_stat_performed = True
             mode = getattr(attr, "st_mode", None)
