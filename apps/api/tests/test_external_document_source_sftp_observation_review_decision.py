@@ -87,7 +87,7 @@ def test_phase_aa_changed_sftp_handoff_can_be_dismissed_and_replayed_without_io(
         profile_id,
         handoff_id,
         result_status,
-    ) = _prepare_handoff(monkeypatch, "changed-dismiss", mode="changed")
+    ) = _prepare_handoff(monkeypatch, "cd", mode="changed")
     assert result_status == "changed"
     before = _io_snapshot(chain, adapter)
 
@@ -165,7 +165,7 @@ def test_phase_aa_missing_sftp_handoff_supports_human_terminal_decisions(
         result_status,
     ) = _prepare_handoff(
         monkeypatch,
-        f"missing-{decision_kind}",
+        "ma" if decision_kind == "acknowledge_missing" else "md",
         mode="missing",
     )
     assert result_status == "missing"
@@ -208,7 +208,7 @@ def test_phase_aa_sftp_approve_refresh_remains_closed_before_decision_persistenc
         profile_id,
         handoff_id,
         result_status,
-    ) = _prepare_handoff(monkeypatch, "changed-approve-blocked", mode="changed")
+    ) = _prepare_handoff(monkeypatch, "rb", mode="changed")
     assert result_status == "changed"
     before = _io_snapshot(chain, adapter)
 
