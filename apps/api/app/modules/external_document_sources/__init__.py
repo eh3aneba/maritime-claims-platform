@@ -166,6 +166,10 @@ from app.modules.external_document_sources.recurring_observation_schedule_models
     ExternalDocumentSourceRecurringObservationSchedule,
     ExternalDocumentSourceRecurringObservationScheduleReceipt,
 )
+from app.modules.external_document_sources.recurring_baseline_transition_models import (
+    ExternalDocumentSourceRecurringBaselineTransition,
+    ExternalDocumentSourceRecurringBaselineTransitionReceipt,
+)
 from app.modules.external_document_sources.generation_3_change_detection_models import (
     ExternalDocumentSourceGeneration3ChangeDetectionExecution,
     ExternalDocumentSourceGeneration3ChangeDetectionReceipt,
@@ -258,6 +262,7 @@ from app.modules.external_document_sources import remote_content_staging_router 
 from app.modules.external_document_sources import remote_file_content_read_router as _remote_file_content_read_router  # noqa: F401,E402
 from app.modules.external_document_sources import remote_metadata_listing_router as _remote_metadata_listing_router  # noqa: F401,E402
 from app.modules.external_document_sources import recurring_observation_schedule_router as _recurring_observation_schedule_router  # noqa: F401,E402
+from app.modules.external_document_sources import recurring_baseline_transition_router as _recurring_baseline_transition_router  # noqa: F401,E402
 from app.modules.external_document_sources import observation_review_decision_router as _observation_review_decision_router  # noqa: F401,E402
 from app.modules.external_document_sources import observation_refresh_execution_router as _observation_refresh_execution_router  # noqa: F401,E402
 from app.modules.external_document_sources import observation_refresh_admission_authorization_router as _observation_refresh_admission_authorization_router  # noqa: F401,E402
