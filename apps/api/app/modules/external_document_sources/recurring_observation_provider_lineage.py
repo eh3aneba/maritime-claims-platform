@@ -60,6 +60,9 @@ from app.modules.external_document_sources.sftp_generation3_checkpoint_advanceme
 from app.modules.external_document_sources.sftp_generation3_checkpoint_advancement_service import (
     _ensure_integrity as _ensure_sftp_checkpoint_integrity,
 )
+from app.modules.external_document_sources.sftp_file_content_proof_service import (
+    SftpFileContentReadRequest,
+)
 
 
 @dataclass(frozen=True)
@@ -81,6 +84,7 @@ class RecurringProviderLineage:
     legacy_policy: Any | None = None
 
     sftp_request: sftp_change.SftpExactFileMetadataRequest | None = None
+    sftp_content_request: SftpFileContentReadRequest | None = None
     sftp_expected_auth_kind: str | None = None
     sftp_display_name_hash: str | None = None
 
@@ -345,6 +349,23 @@ def _resolve_sftp(
             entry.relative_path,
         ),
     )
+    content_request = SftpFileContentReadRequest(
+        hostname=listing.destination_hostname,
+        port=listing.destination_port,
+        username=normalized["username"],
+        pinned_host_key_fingerprint=listing.pinned_host_key_fingerprint,
+        authentication_kind=credential_binding.authentication_kind,
+        reference_backend=credential_binding.reference_backend,
+        reference_namespace=credential_binding.reference_namespace,
+        reference_name=credential_binding.reference_name,
+        reference_version=credential_binding.reference_version,
+        remote_root_path=normalized["remote_root_path"],
+        entry_relative_path=entry.relative_path,
+        effective_remote_path=sftp_change._effective_remote_path(
+            normalized["remote_root_path"],
+            entry.relative_path,
+        ),
+    )
     display_name = entry.relative_path.replace("\\", "/").rsplit("/", 1)[-1]
     return RecurringProviderLineage(
         provider_kind="sftp",
@@ -357,6 +378,7 @@ def _resolve_sftp(
         observation_operation_kind=observation.observation_operation_kind,
         policy_hash=sftp_change._observation_policy_hash(),
         sftp_request=request,
+        sftp_content_request=content_request,
         sftp_expected_auth_kind=credential_binding.authentication_kind,
         sftp_display_name_hash=hashlib.sha256(
             display_name.encode("utf-8")
