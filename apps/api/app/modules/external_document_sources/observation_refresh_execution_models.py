@@ -98,7 +98,7 @@ class ExternalDocumentSourceObservationRefreshExecution(
         CheckConstraint("result_status = 'staged_refresh_verified'", name="ck_ext_doc_obs_refresh_exec_result"),
         CheckConstraint("current_version_number >= 1", name="ck_ext_doc_obs_refresh_exec_version"),
         CheckConstraint("content_byte_count >= 0", name="ck_ext_doc_obs_refresh_exec_size"),
-        CheckConstraint("provider_kind IN ('sharepoint','google_drive')", name="ck_ext_doc_obs_refresh_exec_provider"),
+        CheckConstraint("provider_kind IN ('sharepoint','google_drive','sftp')", name="ck_ext_doc_obs_refresh_exec_provider"),
         Index("ix_ext_doc_obs_refresh_exec_org_claim", "organization_id", "claim_id"),
         Index("ix_ext_doc_obs_refresh_exec_auth", "authorization_id"),
         *_safety_constraints("ext_doc_obs_refresh_exec"),

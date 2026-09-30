@@ -197,7 +197,7 @@ class ExternalDocumentSourceObservationRefreshAuthorization(
         CheckConstraint("result_status = 'changed'", name="ck_ext_doc_obs_refresh_auth_result"),
         CheckConstraint("observed_projection_hash IS NOT NULL", name="ck_ext_doc_obs_refresh_auth_projection"),
         CheckConstraint("current_version_number >= 1", name="ck_ext_doc_obs_refresh_auth_version"),
-        CheckConstraint("provider_kind IN ('sharepoint','google_drive')", name="ck_ext_doc_obs_refresh_auth_provider"),
+        CheckConstraint("provider_kind IN ('sharepoint','google_drive','sftp')", name="ck_ext_doc_obs_refresh_auth_provider"),
         *_decision_safety_constraints("ext_doc_obs_refresh_auth"),
     )
 

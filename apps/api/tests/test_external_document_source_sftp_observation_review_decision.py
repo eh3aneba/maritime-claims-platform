@@ -17,9 +17,6 @@ from app.modules.external_document_sources.observation_review_decision_service i
 from app.modules.external_document_sources.observation_review_handoff_service import (
     project_observation_review_handoff,
 )
-from app.modules.external_document_sources.service import (
-    ExternalDocumentSourceConflictError,
-)
 from tests.db_harness import TestingSessionLocal
 from tests.test_external_document_source_sftp_due_tick_service_executor import (
     _io_snapshot,
@@ -200,6 +197,7 @@ def test_phase_aa_missing_sftp_handoff_supports_human_terminal_decisions(
 def test_phase_aa_sftp_approve_refresh_remains_closed_before_decision_persistence(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Phase AB supersedes AA's temporary SFTP approve-refresh closure."""
     (
         chain,
         adapter,
@@ -213,31 +211,34 @@ def test_phase_aa_sftp_approve_refresh_remains_closed_before_decision_persistenc
     before = _io_snapshot(chain, adapter)
 
     with TestingSessionLocal() as db:
-        with pytest.raises(
-            ExternalDocumentSourceConflictError,
-            match="17.6-AB",
-        ):
-            decide_observation_review_handoff(
-                db,
-                organization_id=organization_id,
-                profile_id=profile_id,
-                handoff_id=handoff_id,
-                decided_by_id=actor_id,
-                request_key="sftp-phase-aa-approve-must-remain-closed",
-                decision_kind="approve_refresh",
-                decision_reason="This must not create SFTP refresh authority in AA.",
-            )
-        db.rollback()
+        decision, authorization, outcome = decide_observation_review_handoff(
+            db,
+            organization_id=organization_id,
+            profile_id=profile_id,
+            handoff_id=handoff_id,
+            decided_by_id=actor_id,
+            request_key="sftp-phase-ab-approve-review-only",
+            decision_kind="approve_refresh",
+            decision_reason="Phase AB authorizes one controlled SFTP refresh without performing remote I/O at review time.",
+            now=datetime(2026, 9, 29, 4, 0, tzinfo=UTC),
+        )
+        assert outcome == "decided"
+        assert decision.provider_kind == "sftp"
+        assert decision.result_status == "changed"
+        assert decision.decision_kind == "approve_refresh"
+        assert decision.status == "refresh_authorized"
+        assert authorization is not None
+        assert authorization.provider_kind == "sftp"
+        ensure_observation_review_decision_integrity(db, decision)
 
-    with TestingSessionLocal() as db:
-        assert db.query(ExternalDocumentSourceObservationReviewDecision).count() == 0
+        assert db.query(ExternalDocumentSourceObservationReviewDecision).count() == 1
         assert (
             db.query(ExternalDocumentSourceObservationReviewDecisionReceipt).count()
-            == 0
+            == 1
         )
         assert (
             db.query(ExternalDocumentSourceObservationRefreshAuthorization).count()
-            == 0
+            == 1
         )
 
     assert _io_snapshot(chain, adapter) == before

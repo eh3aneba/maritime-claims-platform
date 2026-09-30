@@ -100,7 +100,9 @@ jobs:
     needs: classify
     if: ${{ (github.event_name == 'workflow_dispatch' || github.event.pull_request.draft == false) && needs.classify.outputs.backend_required == 'true' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    # Individual end-to-end Evidence lineage tests can legitimately approach 25 minutes;
+    # retain bounded headroom for pytest reporting and Actions cleanup without masking hangs.
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
