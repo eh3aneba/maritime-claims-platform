@@ -37,7 +37,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          all_groups='["scheduling","observation-due-tick","observation-refresh","review-core","review-sftp-changed","review-sftp-missing","review-sftp-unchanged","service-executor-core","service-executor-sftp","authorization-foundation","admission-execution"]'
+          all_groups='["scheduling","observation-due-tick","observation-refresh","review-core","review-sftp-changed","review-sftp-missing","review-sftp-unchanged","review-decision-sftp-changed-dismiss","review-decision-sftp-missing-ack","review-decision-sftp-missing-dismiss","review-decision-sftp-refresh-blocked","service-executor-core","service-executor-sftp","authorization-foundation","admission-execution"]'
           placeholder_groups='["scheduling"]'
 
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
@@ -89,6 +89,13 @@ jobs:
                 add_group review-sftp-changed
                 add_group review-sftp-missing
                 add_group review-sftp-unchanged
+                ;;
+              apps/api/tests/test_external_document_source_sftp_observation_review_decision.py)
+                postgres_required=true
+                add_group review-decision-sftp-changed-dismiss
+                add_group review-decision-sftp-missing-ack
+                add_group review-decision-sftp-missing-dismiss
+                add_group review-decision-sftp-refresh-blocked
                 ;;
               apps/api/tests/test_external_document_source_due_tick_service_executor_concurrency_postgres.py)
                 postgres_required=true
@@ -235,6 +242,30 @@ jobs:
         env:
           EXTERNAL_EVIDENCE_REVIEW_HANDOFF_POSTGRES_TEST: "1"
         run: pytest -q --durations=10 tests/test_external_document_source_sftp_observation_review_handoff.py::test_phase_z_sftp_unchanged_observation_is_not_review_eligible
+
+      - name: Review decision — SFTP changed dismiss
+        if: ${{ matrix.group == 'review-decision-sftp-changed-dismiss' }}
+        env:
+          EXTERNAL_EVIDENCE_REVIEW_HANDOFF_POSTGRES_TEST: "1"
+        run: pytest -q --durations=10 tests/test_external_document_source_sftp_observation_review_decision.py::test_phase_aa_changed_sftp_handoff_can_be_dismissed_and_replayed_without_io
+
+      - name: Review decision — SFTP missing acknowledge
+        if: ${{ matrix.group == 'review-decision-sftp-missing-ack' }}
+        env:
+          EXTERNAL_EVIDENCE_REVIEW_HANDOFF_POSTGRES_TEST: "1"
+        run: pytest -q --durations=10 'tests/test_external_document_source_sftp_observation_review_decision.py::test_phase_aa_missing_sftp_handoff_supports_human_terminal_decisions[acknowledge_missing-missing_acknowledged]'
+
+      - name: Review decision — SFTP missing dismiss
+        if: ${{ matrix.group == 'review-decision-sftp-missing-dismiss' }}
+        env:
+          EXTERNAL_EVIDENCE_REVIEW_HANDOFF_POSTGRES_TEST: "1"
+        run: pytest -q --durations=10 'tests/test_external_document_source_sftp_observation_review_decision.py::test_phase_aa_missing_sftp_handoff_supports_human_terminal_decisions[dismiss-dismissed]'
+
+      - name: Review decision — SFTP approve-refresh blocked
+        if: ${{ matrix.group == 'review-decision-sftp-refresh-blocked' }}
+        env:
+          EXTERNAL_EVIDENCE_REVIEW_HANDOFF_POSTGRES_TEST: "1"
+        run: pytest -q --durations=10 tests/test_external_document_source_sftp_observation_review_decision.py::test_phase_aa_sftp_approve_refresh_remains_closed_before_decision_persistence
 
       - name: Service executor — core concurrency
         if: ${{ matrix.group == 'service-executor-core' }}
