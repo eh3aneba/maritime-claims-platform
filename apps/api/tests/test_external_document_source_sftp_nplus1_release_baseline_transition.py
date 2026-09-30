@@ -76,7 +76,7 @@ def test_phase_ad_nplus1_requires_fresh_release_and_explicit_baseline_transition
         profile_id,
         refresh_authorization_id,
         observed_size,
-    ) = _approved_sftp_refresh(monkeypatch, "nplus1-release-baseline")
+    ) = _approved_sftp_refresh(monkeypatch, "ad")
 
     with TestingSessionLocal() as db:
         from app.modules.external_document_sources.observation_review_decision_models import (
