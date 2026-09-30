@@ -96,7 +96,7 @@ class ExternalDocumentSourceObservationRefreshAdmissionAuthorization(
     __table_args__ = (
         UniqueConstraint("refresh_execution_id", name="uq_ext_doc_obs_refresh_adm_auth_exec"),
         UniqueConstraint("organization_id", "profile_id", "request_key", name="uq_ext_doc_obs_refresh_adm_auth_request"),
-        CheckConstraint("provider_kind IN ('sharepoint','google_drive')", name="ck_ext_doc_obs_refresh_adm_auth_provider"),
+        CheckConstraint("provider_kind IN ('sharepoint','google_drive','sftp')", name="ck_ext_doc_obs_refresh_adm_auth_provider"),
         CheckConstraint("status = 'authorized'", name="ck_ext_doc_obs_refresh_adm_auth_status"),
         CheckConstraint("expected_prior_version_number >= 1", name="ck_ext_doc_obs_refresh_adm_auth_version"),
         CheckConstraint("refreshed_content_byte_count >= 0", name="ck_ext_doc_obs_refresh_adm_auth_size"),
