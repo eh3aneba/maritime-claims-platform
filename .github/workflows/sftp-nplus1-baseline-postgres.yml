@@ -10,7 +10,7 @@ on:
       - "apps/api/app/modules/external_document_sources/__init__.py"
       - "apps/api/app/modules/external_document_sources/family_version_admission_service.py"
       - "apps/api/app/modules/external_document_sources/recurring_baseline_transition_*.py"
-      - "apps/api/tests/test_external_document_source_sftp_nplus1_release_baseline_transition.py"
+      - "apps/api/tests/acceptance_external_document_source_sftp_nplus1_release_baseline_transition.py"
   workflow_dispatch:
 
 permissions:
@@ -24,7 +24,10 @@ jobs:
   sftp-nplus1-baseline:
     name: SFTP N+1 recurring baseline transition
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    # This production-shaped acceptance path intentionally traverses the full
+    # governed SFTP lineage. Keep it isolated from the generic backend matrix
+    # and give the dedicated job bounded headroom above its observed ~25m run.
+    timeout-minutes: 35
     services:
       postgres:
         image: postgres:18.4
@@ -72,4 +75,4 @@ jobs:
         run: alembic upgrade head
 
       - name: Validate SFTP N+1 release and recurring baseline transition
-        run: pytest -q --durations=10 tests/test_external_document_source_sftp_nplus1_release_baseline_transition.py
+        run: pytest -q --durations=10 tests/acceptance_external_document_source_sftp_nplus1_release_baseline_transition.py
