@@ -37,7 +37,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          all_groups='["scheduling","observation-due-tick","observation-refresh","review-core","review-sftp-changed","review-sftp-missing","review-sftp-unchanged","review-decision-sftp-changed-dismiss","review-decision-sftp-missing-ack","review-decision-sftp-missing-dismiss","review-decision-sftp-refresh-blocked","service-executor-core","service-executor-sftp","authorization-foundation","admission-execution"]'
+          all_groups='["scheduling","observation-due-tick","observation-refresh","observation-refresh-sftp-read-replay","observation-refresh-sftp-size-mismatch","review-core","review-sftp-changed","review-sftp-missing","review-sftp-unchanged","review-decision-sftp-changed-dismiss","review-decision-sftp-missing-ack","review-decision-sftp-missing-dismiss","review-decision-sftp-refresh-blocked","service-executor-core","service-executor-sftp","authorization-foundation","admission-execution"]'
           placeholder_groups='["scheduling"]'
 
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
@@ -79,6 +79,11 @@ jobs:
               apps/api/tests/test_external_document_source_observation_refresh_execution_concurrency_postgres.py)
                 postgres_required=true
                 add_group observation-refresh
+                ;;
+              apps/api/tests/test_external_document_source_sftp_observation_refresh_execution.py)
+                postgres_required=true
+                add_group observation-refresh-sftp-read-replay
+                add_group observation-refresh-sftp-size-mismatch
                 ;;
               apps/api/tests/test_external_document_source_observation_review_handoff_concurrency_postgres.py|apps/api/tests/test_external_document_source_observation_review_decision_concurrency_postgres.py)
                 postgres_required=true
@@ -218,6 +223,18 @@ jobs:
         env:
           EXTERNAL_EVIDENCE_REFRESH_EXECUTION_POSTGRES_TEST: "1"
         run: pytest -q tests/test_external_document_source_observation_refresh_execution_concurrency_postgres.py
+
+      - name: Observation — SFTP refresh read and replay
+        if: ${{ matrix.group == 'observation-refresh-sftp-read-replay' }}
+        env:
+          EXTERNAL_EVIDENCE_REFRESH_EXECUTION_POSTGRES_TEST: "1"
+        run: pytest -q --durations=10 tests/test_external_document_source_sftp_observation_refresh_execution.py::test_phase_ab_sftp_approve_refresh_executes_one_exact_read_and_replays
+
+      - name: Observation — SFTP refresh size mismatch
+        if: ${{ matrix.group == 'observation-refresh-sftp-size-mismatch' }}
+        env:
+          EXTERNAL_EVIDENCE_REFRESH_EXECUTION_POSTGRES_TEST: "1"
+        run: pytest -q --durations=10 tests/test_external_document_source_sftp_observation_refresh_execution.py::test_phase_ab_sftp_refresh_size_mismatch_fails_before_quarantine_write
 
       - name: Review — core handoff and decision concurrency
         if: ${{ matrix.group == 'review-core' }}
