@@ -25,9 +25,10 @@ jobs:
     name: SFTP N+1 recurring baseline transition
     runs-on: ubuntu-latest
     # This production-shaped acceptance path intentionally traverses the full
-    # governed SFTP lineage. Keep it isolated from the generic backend matrix
-    # and give the dedicated job bounded headroom above its observed ~25m run.
-    timeout-minutes: 35
+    # governed SFTP lineage. Keep it isolated from the generic backend matrix.
+    # The exact-head run exceeded 34 minutes inside pytest, so retain bounded
+    # headroom without weakening or splitting the end-to-end acceptance path.
+    timeout-minutes: 50
     services:
       postgres:
         image: postgres:18.4
