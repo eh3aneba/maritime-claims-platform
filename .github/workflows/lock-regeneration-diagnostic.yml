@@ -4,10 +4,9 @@ on:
   pull_request:
     branches:
       - main
-  workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: lock-regeneration-diagnostic-${{ github.ref }}
@@ -15,12 +14,14 @@ concurrency:
 
 jobs:
   regenerate-locks:
-    name: Regenerate dependency locks artifact
+    name: Regenerate and commit dependency locks
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Check out repository
+      - name: Check out PR branch
         uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
 
       - name: Set up Python
         uses: actions/setup-python@v7
@@ -55,23 +56,23 @@ jobs:
           npm install --package-lock-only --ignore-scripts --no-audit --no-fund \
             --prefix apps/web
 
-      - name: Capture generated lock diff
+      - name: Commit exact regenerated locks
         run: |
-          mkdir -p regenerated-locks/apps/api regenerated-locks/apps/web regenerated-locks/tests/browser
-          cp apps/api/requirements.lock regenerated-locks/apps/api/requirements.lock
-          cp apps/api/requirements-dev.lock regenerated-locks/apps/api/requirements-dev.lock
-          cp apps/web/package-lock.json regenerated-locks/apps/web/package-lock.json
-          cp tests/browser/requirements.lock regenerated-locks/tests/browser/requirements.lock
-          git diff -- \
+          set -euo pipefail
+          if git diff --quiet -- \
             apps/api/requirements.lock \
             apps/api/requirements-dev.lock \
             apps/web/package-lock.json \
-            tests/browser/requirements.lock > regenerated-locks/lock-diff.patch || true
-
-      - name: Upload regenerated dependency locks
-        uses: actions/upload-artifact@v4
-        with:
-          name: regenerated-dependency-locks
-          path: regenerated-locks/
-          if-no-files-found: error
-          retention-days: 1
+            tests/browser/requirements.lock; then
+            echo "Dependency locks are already current."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            apps/api/requirements.lock \
+            apps/api/requirements-dev.lock \
+            apps/web/package-lock.json \
+            tests/browser/requirements.lock
+          git commit -m "Build: refresh generated dependency locks"
+          git push origin "HEAD:${{ github.event.pull_request.head.ref }}"
