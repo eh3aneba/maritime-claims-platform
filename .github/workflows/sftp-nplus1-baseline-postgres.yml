@@ -26,9 +26,10 @@ jobs:
     runs-on: ubuntu-latest
     # This production-shaped acceptance path intentionally traverses the full
     # governed SFTP lineage. Keep it isolated from the generic backend matrix.
-    # The exact-head run exceeded 34 minutes inside pytest, so retain bounded
-    # headroom without weakening or splitting the end-to-end acceptance path.
-    timeout-minutes: 50
+    # The latest exact-head run reached the previous 50-minute job ceiling
+    # inside pytest without an assertion failure. Retain bounded headroom
+    # without weakening or splitting the end-to-end acceptance path.
+    timeout-minutes: 75
     services:
       postgres:
         image: postgres:18.4
