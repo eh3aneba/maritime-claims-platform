@@ -1,0 +1,50 @@
+name: Temporary refresh pypdf locks
+
+on:
+  push:
+    branches:
+      - feature/sftp-nplus1-release-baseline-transition
+
+permissions:
+  contents: write
+
+jobs:
+  refresh-locks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v6
+        with:
+          ref: feature/sftp-nplus1-release-baseline-transition
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Regenerate API locks with repository-pinned pip-tools
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install "pip-tools==7.6.1"
+          CUSTOM_COMPILE_COMMAND="pip-compile --generate-hashes --output-file=apps/api/requirements.lock --strip-extras apps/api/requirements.txt" \
+            pip-compile --generate-hashes --strip-extras --resolver=backtracking \
+              --output-file=apps/api/requirements.lock apps/api/requirements.txt
+          CUSTOM_COMPILE_COMMAND="pip-compile --generate-hashes --output-file=apps/api/requirements-dev.lock --strip-extras apps/api/requirements-dev.in" \
+            pip-compile --generate-hashes --strip-extras --resolver=backtracking \
+              --output-file=apps/api/requirements-dev.lock apps/api/requirements-dev.in
+          git diff --check
+
+      - name: Commit regenerated locks when changed
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- apps/api/requirements.lock apps/api/requirements-dev.lock; then
+            echo "Locks already current."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/api/requirements.lock apps/api/requirements-dev.lock
+          git commit -m "chore(deps): regenerate pypdf locks [skip ci]"
+          git push origin HEAD:feature/sftp-nplus1-release-baseline-transition
