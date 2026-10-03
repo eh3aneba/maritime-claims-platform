@@ -26,11 +26,11 @@ That matrix is narrower than the repository's current production-quality validat
 The critical workflows now emit stable contexts suitable for branch protection:
 
 - `Backend tests` is the Full Backend Pre-Merge aggregate. Full Backend is intentionally deferred until a PR is non-Draft / Ready for Review, and the 64-shard matrix is allocated only when the exact-head diff is backend-relevant.
+- Continuous Integration runs on every PR to `main`, classifies dependency-lock and browser-E2E relevance internally, and emits stable aggregate context `Scoped CI gate` with `if: always()`.
 - PostgreSQL concurrency runs on every PR to `main`, classifies relevance internally, and emits stable aggregate context `PostgreSQL concurrency gate` with `if: always()`.
 - Operational Performance runs on every PR to `main`, classifies relevance internally, and emits stable aggregate context `Operational performance gate` with `if: always()`.
 - Supply Chain Security runs on every PR to `main` and emits stable security contexts.
 - Production Deployment Policy runs on every PR to `main` and emits stable context `Production environment policy`.
-- Continuous Integration runs on every PR to `main` and emits the existing core contexts plus `Dependency lock consistency` and `Design partner browser E2E`.
 
 ## Target required status checks
 
@@ -40,8 +40,9 @@ The critical workflows now emit stable contexts suitable for branch protection:
 - `PostgreSQL migration chain`
 - `Frontend typecheck and build`
 - `Docker Compose validation`
-- `Dependency lock consistency`
-- `Design partner browser E2E`
+- `Scoped CI gate`
+
+`Scoped CI gate` is the required aggregate for `Dependency lock consistency` and `Design partner browser E2E`. When either implementation job is selected for the exact diff, the aggregate fails unless that selected job succeeds. When an implementation job is not relevant, the aggregate accepts only its expected `skipped` or `success` result.
 
 ### PostgreSQL safety
 
@@ -67,6 +68,8 @@ Require the aggregate gate, not the conditional `Live-stack performance smoke` i
 
 ## Contexts that must not be required globally
 
+Do not require the conditional `Dependency lock consistency` or `Design partner browser E2E` implementation jobs directly when `Scoped CI gate` provides the stable always-emitted fail-closed aggregate.
+
 Do not require dynamic PostgreSQL matrix job names such as individual scheduling, observation, review, authorization or admission-execution groups.
 
 Do not require phase-specific/path-scoped contexts such as `SFTP N+1 recurring baseline transition`; unrelated PRs intentionally do not emit those checks.
@@ -76,17 +79,20 @@ Do not require a conditional implementation job when a stable aggregate gate exi
 ## Safe activation sequence
 
 1. Confirm every target stable context exists on the default branch and on a fresh pull request.
-2. Update `Protect main` through an authorized GitHub administration surface.
-3. Preserve strict/up-to-date checks, squash-only merging, review-thread resolution, linear history, deletion/non-fast-forward protection, and an empty bypass actor set.
-4. Read the active ruleset back and verify the exact context matrix above.
-5. Create a temporary proof PR in which one required critical check deliberately fails.
-6. Confirm repository protection marks the PR non-mergeable without bypass.
-7. Restore the check on the same proof branch and confirm mergeability returns after all required checks pass.
-8. Close the proof PR without merging unless it contains an independently desired repository change.
+2. Ensure the current default-branch dependency baseline is clean under the intended Supply Chain checks before making those contexts required.
+3. Update `Protect main` through an authorized GitHub administration surface.
+4. Preserve strict/up-to-date checks, squash-only merging, review-thread resolution, linear history, deletion/non-fast-forward protection, and an empty bypass actor set.
+5. Read the active ruleset back and verify the exact context matrix above.
+6. Create a temporary proof PR in which one required critical check deliberately fails.
+7. Confirm repository protection marks the PR non-mergeable without bypass.
+8. Restore the check on the same proof branch and confirm mergeability returns after all required checks pass.
+9. Close the proof PR without merging unless it contains an independently desired repository change.
 
-## Important failure mode
+## Important failure modes
 
 Never require a context that is not guaranteed to be emitted for every PR targeting protected `main`. A missing required context can leave all PRs permanently waiting for a check that can never be reported.
+
+Never activate a newly required fail-closed security context while the default branch itself contains a known failing baseline for that context. First land the reviewed baseline repair, then prove an unrelated fresh PR succeeds against the repaired default branch.
 
 ## Governance rule for new workflows
 
@@ -111,6 +117,7 @@ The expanded matrix is not yet proven active. Do not declare repository governan
 - ruleset readback contains the exact target contexts;
 - bypass actors remain empty;
 - strict required-status-check policy remains enabled;
+- the default-branch dependency baseline is clean under required Supply Chain checks;
 - a deliberate failing required check blocks merge;
 - restoring the check restores mergeability without bypass;
 - this document still matches the actual workflow context names.
