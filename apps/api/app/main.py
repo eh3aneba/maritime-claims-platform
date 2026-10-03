@@ -99,6 +99,7 @@ from app.modules.email_ingestion.router import router as email_ingestion_router
 from app.modules.evidence_search.router import router as evidence_search_router
 from app.modules.external_document_sources.router import router as external_document_sources_router
 from app.modules.external_document_sources.live_provider_adapters import register_live_external_document_source_adapters
+from app.modules.external_document_sources.live_sftp_adapters import register_live_sftp_adapters
 from app.modules.external_portal.router import router as external_portal_router
 from app.modules.evidence_matrix.router import router as evidence_matrix_router
 from app.modules.health.router import router as health_router
@@ -126,6 +127,9 @@ settings = get_settings()
 
 if settings.external_evidence_live_provider_adapters_enabled:
     register_live_external_document_source_adapters()
+
+if settings.external_evidence_live_sftp_adapters_enabled:
+    register_live_sftp_adapters()
 
 app = FastAPI(
     title=settings.app_name,
