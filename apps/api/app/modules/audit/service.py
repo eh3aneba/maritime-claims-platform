@@ -17,7 +17,12 @@ def write_audit_log(
     old_values: dict[str, Any] | None = None,
     new_values: dict[str, Any] | None = None,
     details: str | None = None,
+    change_summary: str | None = None,
 ) -> AuditLog:
+    if details is not None and change_summary is not None:
+        raise ValueError("Provide either details or change_summary, not both")
+
+    resolved_details = details if details is not None else change_summary
     event = AuditLog(
         organization_id=organization_id,
         user_id=user_id,
@@ -26,7 +31,7 @@ def write_audit_log(
         entity_id=entity_id,
         old_values=old_values,
         new_values=new_values,
-        details=details,
+        details=resolved_details,
     )
     db.add(event)
     return event
