@@ -1,0 +1,80 @@
+name: SFTP N+1 Baseline PostgreSQL
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/sftp-nplus1-baseline-postgres.yml"
+      - "apps/api/alembic/versions/0221_sftp_recurring_baseline_transition.py"
+      - "apps/api/app/modules/external_document_sources/__init__.py"
+      - "apps/api/app/modules/external_document_sources/family_version_admission_service.py"
+      - "apps/api/app/modules/external_document_sources/recurring_baseline_transition_*.py"
+      - "apps/api/tests/acceptance_external_document_source_sftp_nplus1_release_baseline_transition.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sftp-nplus1-baseline-postgres-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sftp-nplus1-baseline:
+    name: SFTP N+1 recurring baseline transition
+    runs-on: ubuntu-latest
+    # This production-shaped acceptance path intentionally traverses the full
+    # governed SFTP lineage. Keep it isolated from the generic backend matrix.
+    # The latest exact-head run reached the previous 50-minute job ceiling
+    # inside pytest without an assertion failure. Retain bounded headroom
+    # without weakening or splitting the end-to-end acceptance path.
+    timeout-minutes: 75
+    services:
+      postgres:
+        image: postgres:18.4
+        env:
+          POSTGRES_DB: mcri_sftp_nplus1_ci
+          POSTGRES_USER: mcri_ci
+          POSTGRES_PASSWORD: mcri_ci_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U mcri_ci -d mcri_sftp_nplus1_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    defaults:
+      run:
+        working-directory: apps/api
+    env:
+      APP_ENV: test
+      DATABASE_URL: postgresql+psycopg://mcri_ci:mcri_ci_password@127.0.0.1:5432/mcri_sftp_nplus1_ci
+      MCRI_TEST_DATABASE_URL: postgresql+psycopg://mcri_ci:mcri_ci_password@127.0.0.1:5432/mcri_sftp_nplus1_ci
+      SECRET_KEY: ci-only-sftp-nplus1-baseline-not-a-deployment-secret-2026
+      AI_PROVIDER: disabled
+      OPENAI_API_KEY: ""
+      LOCAL_STORAGE_PATH: /tmp/mcri-sftp-nplus1-baseline-ci
+      EXTERNAL_EVIDENCE_OBSERVATION_SCHEDULE_POSTGRES_TEST: "1"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: apps/api/requirements-dev.lock
+
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --require-hashes -r requirements-dev.lock
+          python -m pip check
+
+      - name: Apply migrations
+        run: alembic upgrade head
+
+      - name: Validate SFTP N+1 release and recurring baseline transition
+        run: pytest -q --durations=10 tests/acceptance_external_document_source_sftp_nplus1_release_baseline_transition.py
