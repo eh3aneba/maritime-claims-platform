@@ -24,7 +24,7 @@ jobs:
       - name: Regenerate production dependency lock reproducibly
         run: |
           python -m pip install --disable-pip-version-check 'pip-tools==7.6.1'
-          pip-compile --generate-hashes --output-file=apps/api/requirements.lock --strip-extras apps/api/requirements.txt
+          env -u PIP_NO_INDEX pip-compile --generate-hashes --output-file=apps/api/requirements.lock --strip-extras apps/api/requirements.txt
       - name: Commit regenerated lock
         run: |
           if git diff --quiet -- apps/api/requirements.lock; then
