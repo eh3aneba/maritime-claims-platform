@@ -12,20 +12,25 @@ Repository ruleset `Protect main` (ruleset ID `20842512`) is active on the defau
 - required linear history;
 - no bypass actors.
 
-The active required status checks are currently:
+Current ruleset readback still requires only:
 
 - `Backend tests`
 - `PostgreSQL migration chain`
 - `Frontend typecheck and build`
 - `Docker Compose validation`
 
-That matrix is narrower than the repository's actual production-quality validation surface.
+That matrix is narrower than the repository's current production-quality validation surface. This document records the intended target matrix; it does not itself change GitHub enforcement.
 
-## Workflow availability on main
+## Workflow behavior relevant to protection
 
-At the stabilization baseline represented by this PR, the workflow definitions needed to emit the target contexts below are present on `main`, including the specialized PostgreSQL safety workflows introduced by A03 and A02.
+The critical workflows now emit stable contexts suitable for branch protection:
 
-This satisfies the workflow-availability prerequisite for expanding the required-gate matrix. It does **not** mean the expanded ruleset is enforced. Ruleset mutation, readback of the expanded matrix, and deliberate failure proof remain separate administrative steps.
+- `Backend tests` is the Full Backend Pre-Merge aggregate. Full Backend is intentionally deferred until a PR is non-Draft / Ready for Review, and the 64-shard matrix is allocated only when the exact-head diff is backend-relevant.
+- PostgreSQL concurrency runs on every PR to `main`, classifies relevance internally, and emits stable aggregate context `PostgreSQL concurrency gate` with `if: always()`.
+- Operational Performance runs on every PR to `main`, classifies relevance internally, and emits stable aggregate context `Operational performance gate` with `if: always()`.
+- Supply Chain Security runs on every PR to `main` and emits stable security contexts.
+- Production Deployment Policy runs on every PR to `main` and emits stable context `Production environment policy`.
+- Continuous Integration runs on every PR to `main` and emits the existing core contexts plus `Dependency lock consistency` and `Design partner browser E2E`.
 
 ## Target required status checks
 
@@ -38,41 +43,54 @@ This satisfies the workflow-availability prerequisite for expanding the required
 - `Dependency lock consistency`
 - `Design partner browser E2E`
 
-### Security, deployment and operations
+### PostgreSQL safety
 
-- `Secret history scan`
+- `PostgreSQL concurrency gate`
+
+Require the aggregate gate, not dynamic matrix job names. Narrow PRs intentionally select only affected PostgreSQL groups; shared/runtime/workflow/ambiguous backend changes fail closed to the full selected safety surface.
+
+### Supply-chain security
+
 - `Production dependency audit and SBOM`
+- `Secret history scan`
 - `Container image vulnerability scan`
+
+### Deployment policy
+
 - `Production environment policy`
-- `Live-stack performance smoke`
 
-### Specialized PostgreSQL safety gates
+### Operational performance
 
-- `Processing lease fencing` — introduced by A03;
-- `Payment settlement concurrency` — introduced by A02.
+- `Operational performance gate`
+
+Require the aggregate gate, not the conditional `Live-stack performance smoke` implementation job.
+
+## Contexts that must not be required globally
+
+Do not require dynamic PostgreSQL matrix job names such as individual scheduling, observation, review, authorization or admission-execution groups.
+
+Do not require phase-specific/path-scoped contexts such as `SFTP N+1 recurring baseline transition`; unrelated PRs intentionally do not emit those checks.
+
+Do not require a conditional implementation job when a stable aggregate gate exists.
 
 ## Safe activation sequence
 
-1. Confirm every target context is emitted successfully from the workflow definitions now present on `main` and on a fresh pull request.
-2. Update `Protect main` using an authorized GitHub administration surface.
-3. Preserve:
-   - strict/up-to-date required checks;
-   - squash-only merge policy;
-   - review-thread resolution;
-   - linear history;
-   - empty bypass actor set.
-4. Read back the ruleset and compare the exact required context names with this document.
-5. Create a temporary validation PR that intentionally fails one required critical gate.
+1. Confirm every target stable context exists on the default branch and on a fresh pull request.
+2. Update `Protect main` through an authorized GitHub administration surface.
+3. Preserve strict/up-to-date checks, squash-only merging, review-thread resolution, linear history, deletion/non-fast-forward protection, and an empty bypass actor set.
+4. Read the active ruleset back and verify the exact context matrix above.
+5. Create a temporary proof PR in which one required critical check deliberately fails.
 6. Confirm repository protection marks the PR non-mergeable without bypass.
-7. Restore the check, rerun it, and confirm mergeability returns.
+7. Restore the check on the same proof branch and confirm mergeability returns after all required checks pass.
+8. Close the proof PR without merging unless it contains an independently desired repository change.
 
 ## Important failure mode
 
-Do not require a status context before a workflow capable of producing that context exists on the default branch. GitHub can otherwise leave every pull request permanently waiting for a check that can never be reported.
+Never require a context that is not guaranteed to be emitted for every PR targeting protected `main`. A missing required context can leave all PRs permanently waiting for a check that can never be reported.
 
 ## Governance rule for new workflows
 
-Any new workflow that protects one of the following must be explicitly reviewed for required-gate treatment:
+Any workflow that protects one of the following must be explicitly evaluated for required-gate treatment:
 
 - financial authority or concurrency;
 - authentication or MFA;
@@ -81,12 +99,18 @@ Any new workflow that protects one of the following must be explicitly reviewed 
 - Production AI authorization;
 - supply-chain security;
 - deployment policy;
+- operational performance;
 - disaster recovery or data-loss prevention.
 
-If a specialized workflow should not become a separate required context, its critical assertion must be aggregated into an already-required stable gate and documented.
+If a specialized workflow should not become a separate global required context, its critical result must be aggregated into an already-required stable gate or into a new stable always-emitted aggregate gate.
 
 ## Enforcement status
 
-This document describes the target protection matrix. It does not by itself change GitHub branch protection.
+The expanded matrix is not yet proven active. Do not declare repository governance complete until:
 
-Do not claim the expanded matrix is enforced until a ruleset readback shows the exact contexts above and a deliberate failure test proves protection blocks merge.
+- ruleset readback contains the exact target contexts;
+- bypass actors remain empty;
+- strict required-status-check policy remains enabled;
+- a deliberate failing required check blocks merge;
+- restoring the check restores mergeability without bypass;
+- this document still matches the actual workflow context names.
