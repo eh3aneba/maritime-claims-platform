@@ -1157,14 +1157,20 @@ export function finalizeAIEvaluationSuite(id: string) {
   });
 }
 
-export function reviewAIEvaluationSuite(id: string, reviewRole: "quality" | "risk",
-  action: "approve" | "reject") {
+export function reviewAIEvaluationSuite(
+  id: string,
+  reviewRole: "quality" | "risk",
+  action: "approve" | "reject",
+  payload: { evidence_reference: string | null; note: string },
+) {
   return apiFetch<import("./types").AIEvaluationSuite>(`/ai-evaluation/suites/${id}/reviews`, {
-    method: "POST", body: JSON.stringify({ review_role: reviewRole, action,
-      evidence_reference: action === "approve" ? `artifact://ai-evaluation/${reviewRole}-review` : null,
-      note: action === "approve"
-        ? `Independent ${reviewRole} reviewer reproduced the benchmark evidence and thresholds.`
-        : `Independent ${reviewRole} reviewer rejected this evaluation attempt.` }),
+    method: "POST",
+    body: JSON.stringify({
+      review_role: reviewRole,
+      action,
+      evidence_reference: payload.evidence_reference,
+      note: payload.note,
+    }),
   });
 }
 
