@@ -158,7 +158,7 @@ export default function AIEvaluationPage() {
       <p className="mt-3 max-w-4xl text-sm leading-6 text-slate-300">{L("Promotion is fail-closed and pinned to the Sprint 11A model, prompt and schema bundle. This ledger stores only aggregate observations and hashes—never document text, prompts, expected answers, provider responses or keys.", "ارتقا به‌صورت fail-closed و مقید به مدل، پرامپت و بسته schema در Sprint 11A است. این دفتر فقط مشاهدات تجمیعی و hashها را نگه می‌دارد و هرگز متن سند، پرامپت، پاسخ مورد انتظار، پاسخ ارائه‌دهنده یا کلیدها را ذخیره نمی‌کند.")}</p>
     </section>
 
-    {(message || error) && <div role="status" dir="auto" className={`rounded-xl border px-4 py-3 text-sm ${error ? "border-rose-200 bg-rose-50 text-rose-800" : "border-emerald-50 bg-emerald-50 text-emerald-800"}`}>{error ?? message}</div>}
+    {(message || error) && <div role="status" dir="auto" className={`rounded-xl border px-4 py-3 text-sm ${error ? "border-rose-200 bg-rose-50 text-rose-800" : "border-emerald-200 bg-emerald-50 text-emerald-800"}`}>{error ?? message}</div>}
 
     <section className="grid gap-4 md:grid-cols-4">
       {[
