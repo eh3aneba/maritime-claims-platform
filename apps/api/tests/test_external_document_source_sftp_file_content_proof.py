@@ -51,12 +51,14 @@ class _FileReadAdapter:
         raise_error: bool = False,
         failure_code: str | None = None,
         remote_write_performed: bool = False,
+        remote_stat_performed: bool = False,
         invalid_content: bool = False,
     ):
         self.content = content
         self.raise_error = raise_error
         self.failure_code = failure_code
         self.remote_write_performed = remote_write_performed
+        self.remote_stat_performed = remote_stat_performed
         self.invalid_content = invalid_content
         self.calls = []
 
@@ -98,6 +100,7 @@ class _FileReadAdapter:
             remote_read_performed=True,
             content_read_count=1,
             sftp_session_closed=True,
+            remote_stat_performed=self.remote_stat_performed,
             remote_write_performed=self.remote_write_performed,
         )
 
@@ -264,6 +267,37 @@ def test_sftp_file_content_proof_observes_bytes_once_without_persisting_body() -
         assert _BODY_MARKER not in persisted
         assert _SECRET_MARKER not in persisted
         assert _RAW_MARKER not in persisted
+
+
+def test_sftp_file_content_proof_accepts_truthful_lstat_nofollow_preflight() -> None:
+    chain = _listed_chain("sftp-content-lstat-preflight")
+    adapter = _FileReadAdapter(remote_stat_performed=True)
+    register_external_document_source_sftp_file_content_read_adapter(adapter)
+
+    response = _proof(chain, key="content-proof-lstat-001")
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["result_status"] == "read_verified"
+    assert body["remote_stat_performed"] is True
+    assert body["remote_read_performed"] is True
+    assert len(adapter.calls) == 1
+
+    proof_id = UUID(body["id"])
+    with TestingSessionLocal() as db:
+        proof = db.get(ExternalDocumentSourceSftpFileContentProof, proof_id)
+        assert proof is not None
+        assert proof.remote_stat_performed is True
+        receipts = (
+            db.query(ExternalDocumentSourceSftpFileContentProofReceipt)
+            .filter(
+                ExternalDocumentSourceSftpFileContentProofReceipt.proof_id == proof_id
+            )
+            .order_by(
+                ExternalDocumentSourceSftpFileContentProofReceipt.sequence_number.asc()
+            )
+            .all()
+        )
+        assert [row.remote_stat_performed for row in receipts] == [False, True]
 
 
 def test_sftp_file_content_proof_rejects_folder_arbitrary_fields_and_wrong_tenant_before_read() -> None:

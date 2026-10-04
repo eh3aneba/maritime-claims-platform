@@ -13,3 +13,4 @@ pypdf>=6.19.0,<7
 python-docx>=1.2,<2
 openpyxl>=3.1,<4
 openai==2.46.0
+paramiko==5.0.0
