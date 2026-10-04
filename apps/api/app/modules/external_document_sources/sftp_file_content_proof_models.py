@@ -59,7 +59,6 @@ _FALSE_SAFETY_FIELDS = (
     "content_parsed",
     "content_extracted",
     "remote_list_performed",
-    "remote_stat_performed",
     "remote_write_performed",
     "remote_rename_performed",
     "remote_delete_performed",
@@ -85,6 +84,7 @@ def _safety_constraints(prefix: str):
         CheckConstraint("authentication_succeeded = false OR authentication_performed = true", name=f"ck_{prefix}_auth_order"),
         CheckConstraint("sftp_session_opened = false OR authentication_succeeded = true", name=f"ck_{prefix}_session_auth"),
         CheckConstraint("remote_read_performed = false OR sftp_session_opened = true", name=f"ck_{prefix}_read_session"),
+        CheckConstraint("remote_stat_performed = false OR sftp_session_opened = true", name=f"ck_{prefix}_stat_session"),
         CheckConstraint("remote_content_transiently_observed = false OR remote_read_performed = true", name=f"ck_{prefix}_content_read"),
         CheckConstraint("sftp_session_opened = false OR sftp_session_closed = true", name=f"ck_{prefix}_session_closed"),
     )

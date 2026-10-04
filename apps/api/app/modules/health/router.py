@@ -3,7 +3,16 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Response, status
 from sqlalchemy import text
 
+from app.core.config import get_settings
 from app.db.session import create_session
+from app.modules.external_document_sources.sftp_production_hardening import (
+    install_sftp_production_hardening,
+    sftp_runtime_registration_complete,
+)
+
+# app.main imports this module before startup live-SFTP registration. Installing
+# the guard here is pure in-process work: no DNS, secret, provider or storage I/O.
+install_sftp_production_hardening()
 
 router = APIRouter(tags=["health"])
 _SERVICE = "maritime-claims-api"
@@ -23,6 +32,15 @@ def database_ready() -> bool:
         return False
 
 
+def _sftp_runtime_state() -> str:
+    settings = get_settings()
+    if not settings.external_evidence_live_sftp_adapters_enabled:
+        return "disabled"
+    if sftp_runtime_registration_complete():
+        return "registered"
+    return "unavailable"
+
+
 @router.get("/health/live")
 def liveness() -> dict[str, str]:
     return {
@@ -35,14 +53,21 @@ def liveness() -> dict[str, str]:
 
 @router.get("/health/ready")
 def readiness(response: Response) -> dict[str, str | dict[str, str]]:
-    if not database_ready():
+    db_ready = database_ready()
+    sftp_state = _sftp_runtime_state()
+    dependencies = {
+        "database": "ok" if db_ready else "unavailable",
+        "sftp_runtime": sftp_state,
+    }
+
+    if not db_ready or sftp_state == "unavailable":
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
         return {
             "status": "not_ready",
             "service": _SERVICE,
             "check": "readiness",
             "timestamp": _timestamp(),
-            "dependencies": {"database": "unavailable"},
+            "dependencies": dependencies,
         }
 
     return {
@@ -50,7 +75,7 @@ def readiness(response: Response) -> dict[str, str | dict[str, str]]:
         "service": _SERVICE,
         "check": "readiness",
         "timestamp": _timestamp(),
-        "dependencies": {"database": "ok"},
+        "dependencies": dependencies,
     }
 
 

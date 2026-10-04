@@ -106,7 +106,10 @@ def test_readiness_is_200_when_database_probe_succeeds(monkeypatch) -> None:
 
     assert response.status_code == 200
     assert response.json()["status"] == "ready"
-    assert response.json()["dependencies"] == {"database": "ok"}
+    assert response.json()["dependencies"] == {
+        "database": "ok",
+        "sftp_runtime": "disabled",
+    }
 
 
 def test_readiness_fails_closed_without_exposing_database_error(monkeypatch) -> None:
@@ -117,7 +120,10 @@ def test_readiness_fails_closed_without_exposing_database_error(monkeypatch) -> 
     assert response.status_code == 503
     payload = response.json()
     assert payload["status"] == "not_ready"
-    assert payload["dependencies"] == {"database": "unavailable"}
+    assert payload["dependencies"] == {
+        "database": "unavailable",
+        "sftp_runtime": "disabled",
+    }
     serialized = json.dumps(payload).lower()
     assert "postgresql" not in serialized
     assert "password" not in serialized
