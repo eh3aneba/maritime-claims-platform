@@ -28,6 +28,7 @@ _OUTCOMES = frozenset(
         "authorized",
         "admitted",
         "released",
+        "revoked",
         "established",
         "projected",
     }
