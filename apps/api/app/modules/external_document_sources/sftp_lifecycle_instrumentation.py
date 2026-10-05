@@ -181,6 +181,11 @@ def _queue_after_commit(
     outcome: str,
     started_ns: int,
 ) -> None:
+    # A deferred success is meaningful only when the governed operation is
+    # already participating in a real outer transaction. Telemetry must never
+    # create a transaction merely so it can later observe commit/rollback.
+    if not db.in_transaction():
+        return
     pending = db.info.setdefault(_PENDING_KEY, [])
     pending.append((operation, outcome, started_ns))
 
