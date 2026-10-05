@@ -22,6 +22,9 @@ from app.modules.external_document_sources.operator_read_model_service import (
     _sftp_runtime_readiness,
     build_external_document_source_operator_overview,
 )
+from app.modules.external_document_sources.recurring_baseline_transition_models import (
+    ExternalDocumentSourceRecurringBaselineTransition,
+)
 from app.modules.external_document_sources.recurring_baseline_transition_service import (
     establish_recurring_baseline_transition,
 )
@@ -161,6 +164,25 @@ def test_ae_b_operator_overview_reports_sftp_readiness_and_baseline_transition(
         assert family.baseline_transition_status == "established"
         assert family.baseline_transition_version_number == new_version_number
         assert family.baseline_transition_authorized_at == transition.authorized_at
+
+        # A row that still says `established` but whose immutable transition
+        # hash has drifted must never be presented as the governed baseline.
+        transition_row = db.get(
+            ExternalDocumentSourceRecurringBaselineTransition,
+            transition.id,
+        )
+        assert transition_row is not None
+        transition_row.completion_hash = "0" * 64
+        db.commit()
+
+        overview = build_external_document_source_operator_overview(
+            db,
+            organization_id=organization_id,
+        )
+        family = next(row for row in overview.families if row.binding_id == binding_id)
+        assert family.baseline_transition_required is True
+        assert family.baseline_transition_id is None
+        assert family.baseline_transition_status is None
 
     assert len(read_adapter.calls) == 1
 
