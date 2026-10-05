@@ -1,7 +1,9 @@
 """Phase 12K browser coverage for AI review/governance/operations localization."""
 from __future__ import annotations
 
+import json
 import os
+import traceback
 
 from playwright.sync_api import expect, sync_playwright
 
@@ -20,11 +22,55 @@ TRACKED = (
 )
 
 
+def _evaluation_suite(status: str = "collecting") -> dict:
+    return {
+        "id": "11111111-1111-1111-1111-111111111111",
+        "activation_request_id": "22222222-2222-2222-2222-222222222222",
+        "requested_by_id": "33333333-3333-3333-3333-333333333333",
+        "finalized_by_id": None,
+        "revoked_by_id": None,
+        "attempt_number": 1,
+        "suite_key": "browser-measured-inputs",
+        "benchmark_profile": "content-free-browser-fixture",
+        "activation_model": "synthetic-governed-model",
+        "prompt_bundle_version": "prompt-v1",
+        "schema_bundle_version": "schema-v1",
+        "max_input_chars": 12000,
+        "max_output_tokens": 1500,
+        "data_mode": "synthetic",
+        "thresholds": {},
+        "status": status,
+        "outcome": None,
+        "metrics": None,
+        "failure_reasons": [],
+        "evaluation_hash": None,
+        "evaluation_note": None,
+        "decision_note": None,
+        "decision_hash": None,
+        "decided_at": None,
+        "evaluated_at": None,
+        "promotion_expires_at": None,
+        "revoked_at": None,
+        "revocation_note": None,
+        "summary": {
+            "case_count": 0 if status == "collecting" else 12,
+            "required_case_count": 12,
+            "thresholds_passed": status != "collecting",
+            "independent_reviews_complete": False,
+            "promotion_active": False,
+        },
+        "cases": [],
+        "reviews": [],
+        "created_at": "2026-10-04T00:00:00Z",
+    }
+
+
 def main() -> None:
     if len(PASSWORD) < 12:
         raise SystemExit("Set MCRI_DEMO_PASSWORD (12+ characters) before running browser E2E")
 
     mutations: list[str] = []
+    evaluation_fixture = {"suites": [_evaluation_suite()]}
 
     with sync_playwright() as pw:
         browser = pw.chromium.launch(headless=True)
@@ -40,6 +86,12 @@ def main() -> None:
         def record_request(request) -> None:
             if request.method not in {"GET", "HEAD", "OPTIONS"} and any(part in request.url for part in TRACKED):
                 mutations.append(f"{request.method} {request.url}")
+
+        def fulfill_evaluation(route) -> None:
+            if route.request.method != "GET":
+                route.continue_()
+                return
+            route.fulfill(status=200, content_type="application/json", body=json.dumps(evaluation_fixture))
 
         page.on("request", record_request)
 
@@ -60,9 +112,46 @@ def main() -> None:
         expect(page.locator("html")).to_have_attribute("dir", "ltr")
         assert mutations == [], f"AI Governance locale switch caused mutation: {mutations}"
 
-        # Evaluation gate: language switching cannot create/finalize/review/promote a suite.
+        # Evaluation gate: real measurement fields must start unknown/blank and reviewer approval
+        # must remain disabled until the reviewer supplies bounded evidence plus a human note.
+        page.route("**/api/v1/ai-evaluation", fulfill_evaluation)
         page.goto(f"{BASE_URL}/ai-evaluation", wait_until="networkidle")
         expect(page.get_by_role("heading", name="AI quality, safety and cost evaluation", exact=True)).to_be_visible()
+        benchmark_section = page.locator("section").filter(has_text="Record an observed benchmark result")
+        expect(benchmark_section).to_have_count(1)
+        measured_inputs = benchmark_section.locator('input[type="number"]')
+        expect(measured_inputs).to_have_count(14)
+        for index in range(14):
+            expect(measured_inputs.nth(index)).to_have_value("")
+        measured_result = benchmark_section.locator("label").filter(has_text="Measured result").locator("select")
+        boundary_outcome = benchmark_section.locator("label").filter(has_text="Boundary control outcome").locator("select")
+        expect(measured_result).to_have_count(1)
+        expect(boundary_outcome).to_have_count(1)
+        expect(measured_result).to_have_value("")
+        expect(boundary_outcome).to_have_value("")
+        expect(benchmark_section.get_by_label("Bounded evidence reference", exact=True)).to_have_value("")
+        expect(benchmark_section.get_by_label("Human verification note", exact=True)).to_have_value("")
+        assert "reviewer reproduced the benchmark" not in page.content().lower()
+        assert mutations == [], f"Loading blank evaluation form caused mutation: {mutations}"
+
+        evaluation_fixture["suites"] = [_evaluation_suite("review_ready")]
+        page.reload(wait_until="networkidle")
+        approve_buttons = page.get_by_role("button", name="Approve with evidence", exact=True)
+        expect(approve_buttons).to_have_count(2)
+        expect(approve_buttons.nth(0)).to_be_disabled()
+        expect(approve_buttons.nth(1)).to_be_disabled()
+        evidence_inputs = page.get_by_label("Reviewer evidence reference", exact=True)
+        note_inputs = page.get_by_label("Reviewer note", exact=True)
+        expect(evidence_inputs).to_have_count(2)
+        expect(note_inputs).to_have_count(2)
+        expect(evidence_inputs.nth(0)).to_have_value("")
+        expect(note_inputs.nth(0)).to_have_value("")
+        note_inputs.nth(0).fill("Independent benchmark evidence checked.")
+        expect(approve_buttons.nth(0)).to_be_disabled()
+        evidence_inputs.nth(0).fill("artifact://evaluation/quality-review")
+        expect(approve_buttons.nth(0)).to_be_enabled()
+        assert mutations == [], f"Entering reviewer evidence without approval caused mutation: {mutations}"
+
         page.get_by_role("button", name="FA", exact=True).click()
         expect(page.get_by_role("heading", name="ارزیابی کیفیت، ایمنی و هزینه AI", exact=True)).to_be_visible()
         expect(page.locator("html")).to_have_attribute("dir", "rtl")
@@ -97,4 +186,10 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception:
+        os.makedirs("artifacts", exist_ok=True)
+        with open("artifacts/ai-governance-localization-failure.txt", "w", encoding="utf-8") as handle:
+            traceback.print_exc(file=handle)
+        raise
