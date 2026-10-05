@@ -103,7 +103,11 @@ def test_ae_b_outer_transaction_success_waits_for_after_commit(monkeypatch: pyte
         lambda **payload: events.append(payload),
     )
 
-    def operation(_session, **_kwargs):
+    def operation(session, **_kwargs):
+        # The production due-tick path has already opened a DB transaction by
+        # the time it returns with commit_transaction=False. Model that real
+        # outer-transaction contract rather than relying on a no-op Session.
+        session.begin()
         return SimpleNamespace(provider_kind="sftp"), "completed"
 
     wrapped = instrumentation._wrap(operation, _spec(defer=True))
@@ -123,7 +127,11 @@ def test_ae_b_outer_transaction_rollback_clears_pending_success(monkeypatch: pyt
         lambda **payload: events.append(payload),
     )
 
-    def operation(_session, **_kwargs):
+    def operation(session, **_kwargs):
+        # A rollback event only exists for a real transaction. The governed
+        # due-tick service performs DB work before returning to its outer
+        # transaction, so the synthetic test must exercise the same contract.
+        session.begin()
         return SimpleNamespace(provider_kind="sftp"), "completed"
 
     wrapped = instrumentation._wrap(operation, _spec(defer=True))
@@ -131,6 +139,26 @@ def test_ae_b_outer_transaction_rollback_clears_pending_success(monkeypatch: pyt
         wrapped(db, commit_transaction=False)
         assert events == []
         db.rollback()
+        db.commit()
+
+    assert events == []
+
+
+def test_ae_b_deferred_success_without_outer_transaction_is_not_queued(monkeypatch: pytest.MonkeyPatch) -> None:
+    events: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        instrumentation,
+        "emit_sftp_lifecycle",
+        lambda **payload: events.append(payload),
+    )
+
+    def operation(_session, **_kwargs):
+        return SimpleNamespace(provider_kind="sftp"), "completed"
+
+    wrapped = instrumentation._wrap(operation, _spec(defer=True))
+    with TestingSessionLocal() as db:
+        wrapped(db, commit_transaction=False)
+        assert events == []
         db.commit()
 
     assert events == []
