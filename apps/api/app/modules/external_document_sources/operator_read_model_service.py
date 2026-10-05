@@ -32,6 +32,9 @@ from app.modules.external_document_sources.observation_review_decision_models im
 from app.modules.external_document_sources.observation_review_handoff_models import (
     ExternalDocumentSourceObservationReviewHandoff,
 )
+from app.modules.external_document_sources.operator_baseline_integrity import (
+    baseline_transition_is_integrity_valid,
+)
 from app.modules.external_document_sources.operator_read_model_schemas import (
     ExternalDocumentSourceOperatorFamilyRead,
     ExternalDocumentSourceOperatorOverviewRead,
@@ -46,6 +49,7 @@ from app.modules.external_document_sources.provider_client_health_models import 
 )
 from app.modules.external_document_sources.recurring_baseline_transition_models import (
     ExternalDocumentSourceRecurringBaselineTransition,
+    ExternalDocumentSourceRecurringBaselineTransitionReceipt,
 )
 from app.modules.external_document_sources.recurring_observation_schedule_models import (
     ExternalDocumentSourceRecurringObservationSchedule,
@@ -87,11 +91,7 @@ def _latest_sftp_rows_by_profile(
     profile_ids: list[UUID],
     timestamp_column: Any,
 ) -> dict[UUID, Any]:
-    """Return one deterministic latest row per profile without loading history.
-
-    The window-query shape is supported by both PostgreSQL and the SQLite test
-    harness.  ID is used as an immutable tie-breaker for equal timestamps.
-    """
+    """Return one deterministic latest row per profile without loading history."""
 
     if not profile_ids:
         return {}
@@ -198,6 +198,93 @@ def _current_document_reference(
     if admission is not None:
         return admission.new_document_id, admission.new_version_number
     return binding.current_document_id, binding.current_version_number
+
+
+def _integrity_valid_current_baselines(
+    db: Session,
+    *,
+    organization_id: UUID,
+    bindings: list[ExternalDocumentSourceEvidenceFamilyBinding],
+    current_reference_by_binding: dict[UUID, tuple[UUID, int]],
+) -> dict[tuple[UUID, UUID, int], ExternalDocumentSourceRecurringBaselineTransition]:
+    """Read only current SFTP baseline candidates and validate them in bounded batches."""
+
+    sftp_bindings = [row for row in bindings if row.provider_kind == "sftp"]
+    if not sftp_bindings:
+        return {}
+    binding_by_id = {row.id: row for row in sftp_bindings}
+    binding_ids = list(binding_by_id)
+    current_document_ids = [
+        current_reference_by_binding[binding_id][0]
+        for binding_id in binding_ids
+        if binding_id in current_reference_by_binding
+    ]
+    if not current_document_ids:
+        return {}
+
+    candidates = list(
+        db.scalars(
+            select(ExternalDocumentSourceRecurringBaselineTransition).where(
+                ExternalDocumentSourceRecurringBaselineTransition.organization_id
+                == organization_id,
+                ExternalDocumentSourceRecurringBaselineTransition.binding_id.in_(
+                    binding_ids
+                ),
+                ExternalDocumentSourceRecurringBaselineTransition.current_document_id.in_(
+                    current_document_ids
+                ),
+                ExternalDocumentSourceRecurringBaselineTransition.status == "established",
+            )
+        ).all()
+    )
+    if not candidates:
+        return {}
+
+    candidate_ids = [row.id for row in candidates]
+    receipts = list(
+        db.scalars(
+            select(ExternalDocumentSourceRecurringBaselineTransitionReceipt).where(
+                ExternalDocumentSourceRecurringBaselineTransitionReceipt.organization_id
+                == organization_id,
+                ExternalDocumentSourceRecurringBaselineTransitionReceipt.transition_id.in_(
+                    candidate_ids
+                ),
+            )
+        ).all()
+    )
+    receipts_by_transition: dict[
+        UUID, list[ExternalDocumentSourceRecurringBaselineTransitionReceipt]
+    ] = defaultdict(list)
+    for receipt in receipts:
+        receipts_by_transition[receipt.transition_id].append(receipt)
+
+    valid: dict[
+        tuple[UUID, UUID, int], ExternalDocumentSourceRecurringBaselineTransition
+    ] = {}
+    for transition in candidates:
+        binding = binding_by_id.get(transition.binding_id)
+        if binding is None:
+            continue
+        expected_reference = current_reference_by_binding.get(binding.id)
+        if expected_reference != (
+            transition.current_document_id,
+            transition.current_version_number,
+        ):
+            continue
+        if not baseline_transition_is_integrity_valid(
+            binding=binding,
+            transition=transition,
+            receipts=receipts_by_transition.get(transition.id, []),
+        ):
+            continue
+        valid[
+            (
+                transition.binding_id,
+                transition.current_document_id,
+                transition.current_version_number,
+            )
+        ] = transition
+    return valid
 
 
 def build_external_document_source_operator_overview(
@@ -420,39 +507,12 @@ def build_external_document_source_operator_overview(
         (row.binding_id, row.document_id, row.document_version_number): row
         for row in releases
     }
-
-    sftp_binding_ids = [
-        binding.id for binding in bindings if binding.provider_kind == "sftp"
-    ]
-    sftp_current_document_ids = [
-        current_reference_by_binding[binding_id][0]
-        for binding_id in sftp_binding_ids
-        if binding_id in current_reference_by_binding
-    ]
-    baseline_transitions = (
-        list(
-            db.scalars(
-                select(ExternalDocumentSourceRecurringBaselineTransition).where(
-                    ExternalDocumentSourceRecurringBaselineTransition.organization_id
-                    == organization_id,
-                    ExternalDocumentSourceRecurringBaselineTransition.binding_id.in_(
-                        sftp_binding_ids
-                    ),
-                    ExternalDocumentSourceRecurringBaselineTransition.current_document_id.in_(
-                        sftp_current_document_ids
-                    ),
-                    ExternalDocumentSourceRecurringBaselineTransition.status
-                    == "established",
-                )
-            ).all()
-        )
-        if sftp_binding_ids and sftp_current_document_ids
-        else []
+    baseline_transition_by_exact_version = _integrity_valid_current_baselines(
+        db,
+        organization_id=organization_id,
+        bindings=bindings,
+        current_reference_by_binding=current_reference_by_binding,
     )
-    baseline_transition_by_exact_version = {
-        (row.binding_id, row.current_document_id, row.current_version_number): row
-        for row in baseline_transitions
-    }
 
     refresh_authorization_by_id = {row.id: row for row in refresh_authorizations}
     latest_failure_by_binding: dict[UUID, AuditLog] = {}
