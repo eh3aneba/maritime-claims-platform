@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import traceback
 
 from playwright.sync_api import expect, sync_playwright
 
@@ -181,4 +182,10 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception:
+        os.makedirs("artifacts", exist_ok=True)
+        with open("artifacts/ai-governance-localization-failure.txt", "w", encoding="utf-8") as handle:
+            traceback.print_exc(file=handle)
+        raise
