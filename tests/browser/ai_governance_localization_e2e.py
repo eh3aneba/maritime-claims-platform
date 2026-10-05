@@ -139,8 +139,8 @@ def main() -> None:
         note_inputs = page.get_by_label("Reviewer note", exact=True)
         expect(evidence_inputs).to_have_count(2)
         expect(note_inputs).to_have_count(2)
-        assert evidence_inputs.nth(0).input_value() == ""
-        assert note_inputs.nth(0).input_value() == ""
+        expect(evidence_inputs.nth(0)).to_have_value("")
+        expect(note_inputs.nth(0)).to_have_value("")
         note_inputs.nth(0).fill("Independent benchmark evidence checked.")
         expect(approve_buttons.nth(0)).to_be_disabled()
         evidence_inputs.nth(0).fill("artifact://evaluation/quality-review")
