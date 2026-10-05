@@ -121,11 +121,11 @@ def main() -> None:
         measured_inputs = benchmark_section.locator('input[type="number"]')
         expect(measured_inputs).to_have_count(14)
         for index in range(14):
-            assert measured_inputs.nth(index).input_value() == "", f"Measured input {index} was pre-filled"
+            expect(measured_inputs.nth(index)).to_have_value("")
         expect(benchmark_section.get_by_label("Measured result", exact=True)).to_have_value("")
         expect(benchmark_section.get_by_label("Boundary control outcome", exact=True)).to_have_value("")
-        assert benchmark_section.get_by_label("Bounded evidence reference", exact=True).input_value() == ""
-        assert benchmark_section.get_by_label("Human verification note", exact=True).input_value() == ""
+        expect(benchmark_section.get_by_label("Bounded evidence reference", exact=True)).to_have_value("")
+        expect(benchmark_section.get_by_label("Human verification note", exact=True)).to_have_value("")
         assert "reviewer reproduced the benchmark" not in page.content().lower()
         assert mutations == [], f"Loading blank evaluation form caused mutation: {mutations}"
 
