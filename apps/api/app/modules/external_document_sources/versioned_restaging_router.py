@@ -219,3 +219,10 @@ def list_versioned_restaging_receipts_endpoint(
     ) as exc:
         db.rollback()
         _raise_service_error(exc)
+
+
+from app.modules.external_document_sources.sftp_lifecycle_instrumentation import (
+    install_sftp_lifecycle_instrumentation,
+)
+
+install_sftp_lifecycle_instrumentation()
