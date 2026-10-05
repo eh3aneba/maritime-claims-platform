@@ -45,10 +45,10 @@ def _evaluation_suite(status: str = "collecting") -> dict:
         "failure_reasons": [],
         "evaluation_hash": None,
         "evaluation_note": None,
-        "evaluated_at": None,
         "decision_note": None,
         "decision_hash": None,
         "decided_at": None,
+        "evaluated_at": None,
         "promotion_expires_at": None,
         "revoked_at": None,
         "revocation_note": None,
@@ -123,8 +123,12 @@ def main() -> None:
         expect(measured_inputs).to_have_count(14)
         for index in range(14):
             expect(measured_inputs.nth(index)).to_have_value("")
-        expect(benchmark_section.get_by_label("Measured result", exact=True)).to_have_value("")
-        expect(benchmark_section.get_by_label("Boundary control outcome", exact=True)).to_have_value("")
+        measured_result = benchmark_section.locator("label").filter(has_text="Measured result").locator("select")
+        boundary_outcome = benchmark_section.locator("label").filter(has_text="Boundary control outcome").locator("select")
+        expect(measured_result).to_have_count(1)
+        expect(boundary_outcome).to_have_count(1)
+        expect(measured_result).to_have_value("")
+        expect(boundary_outcome).to_have_value("")
         expect(benchmark_section.get_by_label("Bounded evidence reference", exact=True)).to_have_value("")
         expect(benchmark_section.get_by_label("Human verification note", exact=True)).to_have_value("")
         assert "reviewer reproduced the benchmark" not in page.content().lower()
