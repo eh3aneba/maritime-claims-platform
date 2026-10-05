@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from typing import Any
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.modules.audit.models import AuditLog
@@ -43,8 +44,20 @@ from app.modules.external_document_sources.processing_release_models import (
 from app.modules.external_document_sources.provider_client_health_models import (
     ExternalDocumentSourceProviderClientHealthExecution,
 )
+from app.modules.external_document_sources.recurring_baseline_transition_models import (
+    ExternalDocumentSourceRecurringBaselineTransition,
+)
 from app.modules.external_document_sources.recurring_observation_schedule_models import (
     ExternalDocumentSourceRecurringObservationSchedule,
+)
+from app.modules.external_document_sources.sftp_credential_health_models import (
+    ExternalDocumentSourceSftpCredentialHealthQualification,
+)
+from app.modules.external_document_sources.sftp_session_activation_models import (
+    ExternalDocumentSourceSftpSessionActivation,
+)
+from app.modules.external_document_sources.sftp_transport_verification_models import (
+    ExternalDocumentSourceSftpTransportVerification,
 )
 
 
@@ -66,15 +79,136 @@ def _latest_by(rows, key, timestamp):
     return result
 
 
+def _latest_sftp_rows_by_profile(
+    db: Session,
+    *,
+    model: Any,
+    organization_id: UUID,
+    profile_ids: list[UUID],
+    timestamp_column: Any,
+) -> dict[UUID, Any]:
+    """Return one deterministic latest row per profile without loading history.
+
+    The window-query shape is supported by both PostgreSQL and the SQLite test
+    harness.  ID is used as an immutable tie-breaker for equal timestamps.
+    """
+
+    if not profile_ids:
+        return {}
+
+    ranked = (
+        select(
+            model.id.label("row_id"),
+            func.row_number()
+            .over(
+                partition_by=model.profile_id,
+                order_by=(timestamp_column.desc(), model.id.desc()),
+            )
+            .label("row_rank"),
+        )
+        .where(
+            model.organization_id == organization_id,
+            model.profile_id.in_(profile_ids),
+        )
+        .subquery()
+    )
+    rows = list(
+        db.scalars(
+            select(model)
+            .join(ranked, model.id == ranked.c.row_id)
+            .where(ranked.c.row_rank == 1)
+        ).all()
+    )
+    return {row.profile_id: row for row in rows}
+
+
+def _sftp_current_lineage_rows(
+    *,
+    profile_hash: str,
+    credential_health: Any | None,
+    transport_verification: Any | None,
+    session_activation: Any | None,
+) -> tuple[Any | None, Any | None, Any | None]:
+    credential_current = (
+        credential_health is not None
+        and credential_health.profile_hash == profile_hash
+    )
+    transport_current = (
+        transport_verification is not None
+        and transport_verification.profile_hash == profile_hash
+    )
+    session_current = (
+        session_activation is not None
+        and session_activation.profile_hash == profile_hash
+        and credential_current
+        and transport_current
+        and session_activation.health_qualification_id == credential_health.id
+        and session_activation.transport_verification_id == transport_verification.id
+    )
+    return (
+        credential_health if credential_current else None,
+        transport_verification if transport_current else None,
+        session_activation if session_current else None,
+    )
+
+
+def _sftp_runtime_readiness(
+    *,
+    profile_hash: str,
+    credential_health: Any | None,
+    transport_verification: Any | None,
+    session_activation: Any | None,
+) -> str:
+    credential_health, transport_verification, session_activation = (
+        _sftp_current_lineage_rows(
+            profile_hash=profile_hash,
+            credential_health=credential_health,
+            transport_verification=transport_verification,
+            session_activation=session_activation,
+        )
+    )
+    statuses = (
+        credential_health.result_status if credential_health is not None else None,
+        transport_verification.result_status
+        if transport_verification is not None
+        else None,
+        session_activation.result_status if session_activation is not None else None,
+    )
+    if statuses == ("qualified", "verified", "activated"):
+        return "ready"
+    if any(
+        status in {"unqualified", "failed"}
+        for status in statuses
+        if status is not None
+    ):
+        return "attention"
+    return "not_qualified"
+
+
+def _current_document_reference(
+    *,
+    binding: ExternalDocumentSourceEvidenceFamilyBinding,
+    family_documents: list[Document],
+    admission: ExternalDocumentSourceObservationRefreshAdmissionExecution | None,
+) -> tuple[UUID, int]:
+    current_candidates = [row for row in family_documents if row.is_current]
+    if len(current_candidates) == 1:
+        current_document = current_candidates[0]
+        return current_document.id, current_document.version_number
+    if admission is not None:
+        return admission.new_document_id, admission.new_version_number
+    return binding.current_document_id, binding.current_version_number
+
+
 def build_external_document_source_operator_overview(
     db: Session,
     *,
     organization_id: UUID,
 ) -> ExternalDocumentSourceOperatorOverviewRead:
-    """Compose existing durable facts into a non-authoritative operator view.
+    """Compose durable facts into a non-authoritative, DB-only operator view.
 
-    The read model never mutates upstream state and never infers permission for a
-    later phase. Every action shown by the UI still calls its governed phase API.
+    No provider network, secret-resolution or storage I/O is performed here. Every
+    mutation shown by the UI continues to call its dedicated governed phase API.
     """
 
     profiles = list(
@@ -174,6 +308,31 @@ def build_external_document_source_operator_overview(
         ).all()
     )
 
+    sftp_profile_ids = [
+        profile.id for profile in profiles if profile.provider_kind == "sftp"
+    ]
+    latest_sftp_credential_health = _latest_sftp_rows_by_profile(
+        db,
+        model=ExternalDocumentSourceSftpCredentialHealthQualification,
+        organization_id=organization_id,
+        profile_ids=sftp_profile_ids,
+        timestamp_column=ExternalDocumentSourceSftpCredentialHealthQualification.checked_at,
+    )
+    latest_sftp_transport = _latest_sftp_rows_by_profile(
+        db,
+        model=ExternalDocumentSourceSftpTransportVerification,
+        organization_id=organization_id,
+        profile_ids=sftp_profile_ids,
+        timestamp_column=ExternalDocumentSourceSftpTransportVerification.checked_at,
+    )
+    latest_sftp_session = _latest_sftp_rows_by_profile(
+        db,
+        model=ExternalDocumentSourceSftpSessionActivation,
+        organization_id=organization_id,
+        profile_ids=sftp_profile_ids,
+        timestamp_column=ExternalDocumentSourceSftpSessionActivation.checked_at,
+    )
+
     family_ids = [binding.document_family_id for binding in bindings]
     documents = (
         list(
@@ -249,9 +408,50 @@ def build_external_document_source_operator_overview(
     for document in documents:
         documents_by_family[document.document_family_id].append(document)
 
+    current_reference_by_binding: dict[UUID, tuple[UUID, int]] = {}
+    for binding in bindings:
+        current_reference_by_binding[binding.id] = _current_document_reference(
+            binding=binding,
+            family_documents=documents_by_family.get(binding.document_family_id, []),
+            admission=latest_admission.get(binding.id),
+        )
+
     release_by_exact_version = {
         (row.binding_id, row.document_id, row.document_version_number): row
         for row in releases
+    }
+
+    sftp_binding_ids = [
+        binding.id for binding in bindings if binding.provider_kind == "sftp"
+    ]
+    sftp_current_document_ids = [
+        current_reference_by_binding[binding_id][0]
+        for binding_id in sftp_binding_ids
+        if binding_id in current_reference_by_binding
+    ]
+    baseline_transitions = (
+        list(
+            db.scalars(
+                select(ExternalDocumentSourceRecurringBaselineTransition).where(
+                    ExternalDocumentSourceRecurringBaselineTransition.organization_id
+                    == organization_id,
+                    ExternalDocumentSourceRecurringBaselineTransition.binding_id.in_(
+                        sftp_binding_ids
+                    ),
+                    ExternalDocumentSourceRecurringBaselineTransition.current_document_id.in_(
+                        sftp_current_document_ids
+                    ),
+                    ExternalDocumentSourceRecurringBaselineTransition.status
+                    == "established",
+                )
+            ).all()
+        )
+        if sftp_binding_ids and sftp_current_document_ids
+        else []
+    )
+    baseline_transition_by_exact_version = {
+        (row.binding_id, row.current_document_id, row.current_version_number): row
+        for row in baseline_transitions
     }
 
     refresh_authorization_by_id = {row.id: row for row in refresh_authorizations}
@@ -318,25 +518,24 @@ def build_external_document_source_operator_overview(
             )
         )
 
-        family_documents = documents_by_family.get(binding.document_family_id, [])
-        current_candidates = [row for row in family_documents if row.is_current]
-        if len(current_candidates) == 1:
-            current_document = current_candidates[0]
-            current_document_id = current_document.id
-            current_version_number = current_document.version_number
-        elif admission is not None:
-            current_document_id = admission.new_document_id
-            current_version_number = admission.new_version_number
-        else:
-            current_document_id = binding.current_document_id
-            current_version_number = binding.current_version_number
-
+        current_document_id, current_version_number = current_reference_by_binding[
+            binding.id
+        ]
         release = release_by_exact_version.get(
             (binding.id, current_document_id, current_version_number)
         )
         release_status = release.status if release is not None else None
         release_required = release is None or release.status != "active"
+        baseline_transition = baseline_transition_by_exact_version.get(
+            (binding.id, current_document_id, current_version_number)
+        )
+        baseline_transition_required = (
+            binding.provider_kind == "sftp"
+            and current_version_number > 1
+            and baseline_transition is None
+        )
 
+        family_documents = documents_by_family.get(binding.document_family_id, [])
         version_history: list[ExternalDocumentSourceOperatorVersionRead] = []
         for document in family_documents:
             version_release = release_by_exact_version.get(
@@ -448,6 +647,25 @@ def build_external_document_source_operator_overview(
                 ),
                 processing_release_status=release_status,
                 processing_release_required=release_required,
+                baseline_transition_id=(
+                    baseline_transition.id if baseline_transition is not None else None
+                ),
+                baseline_transition_status=(
+                    baseline_transition.status
+                    if baseline_transition is not None
+                    else None
+                ),
+                baseline_transition_version_number=(
+                    baseline_transition.current_version_number
+                    if baseline_transition is not None
+                    else None
+                ),
+                baseline_transition_authorized_at=(
+                    baseline_transition.authorized_at
+                    if baseline_transition is not None
+                    else None
+                ),
+                baseline_transition_required=baseline_transition_required,
             )
         )
 
@@ -458,6 +676,32 @@ def build_external_document_source_operator_overview(
     profile_rows: list[ExternalDocumentSourceOperatorProfileRead] = []
     for profile in profiles:
         health = latest_health.get(profile.id)
+        raw_sftp_credential_health = latest_sftp_credential_health.get(profile.id)
+        raw_sftp_transport = latest_sftp_transport.get(profile.id)
+        raw_sftp_session = latest_sftp_session.get(profile.id)
+        if profile.provider_kind == "sftp":
+            (
+                sftp_credential_health,
+                sftp_transport,
+                sftp_session,
+            ) = _sftp_current_lineage_rows(
+                profile_hash=profile.profile_hash,
+                credential_health=raw_sftp_credential_health,
+                transport_verification=raw_sftp_transport,
+                session_activation=raw_sftp_session,
+            )
+            sftp_runtime_readiness = _sftp_runtime_readiness(
+                profile_hash=profile.profile_hash,
+                credential_health=raw_sftp_credential_health,
+                transport_verification=raw_sftp_transport,
+                session_activation=raw_sftp_session,
+            )
+        else:
+            sftp_credential_health = None
+            sftp_transport = None
+            sftp_session = None
+            sftp_runtime_readiness = None
+
         families = families_by_profile.get(profile.id, [])
         due_values = [
             row.next_due_at for row in families if row.next_due_at is not None
@@ -481,6 +725,29 @@ def build_external_document_source_operator_overview(
                 ),
                 provider_health_completed_at=(
                     health.completed_at if health is not None else None
+                ),
+                sftp_runtime_readiness=sftp_runtime_readiness,
+                sftp_credential_health_status=(
+                    sftp_credential_health.result_status
+                    if sftp_credential_health is not None
+                    else None
+                ),
+                sftp_credential_health_checked_at=(
+                    sftp_credential_health.checked_at
+                    if sftp_credential_health is not None
+                    else None
+                ),
+                sftp_transport_status=(
+                    sftp_transport.result_status if sftp_transport is not None else None
+                ),
+                sftp_transport_checked_at=(
+                    sftp_transport.checked_at if sftp_transport is not None else None
+                ),
+                sftp_session_status=(
+                    sftp_session.result_status if sftp_session is not None else None
+                ),
+                sftp_session_checked_at=(
+                    sftp_session.checked_at if sftp_session is not None else None
                 ),
                 active_family_count=len(families),
                 pending_handoff_count=sum(
