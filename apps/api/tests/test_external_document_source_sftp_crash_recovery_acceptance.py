@@ -57,7 +57,7 @@ def test_ae_c_quarantine_write_followed_by_db_commit_failure_is_not_replay_autho
         profile_id,
         refresh_authorization_id,
         observed_size,
-    ) = _approved_sftp_refresh(monkeypatch, "crash-after-quarantine-write")
+    ) = _approved_sftp_refresh(monkeypatch, "cw")
 
     read_adapter = _FileReadAdapter(content=b"c" * observed_size)
     register_external_document_source_sftp_file_content_read_adapter(read_adapter)
