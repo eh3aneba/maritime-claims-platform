@@ -62,7 +62,7 @@ def test_ae_c_contiguous_changed_refresh_n_plus_one_baseline_then_next_tick_unch
         profile_id,
         refresh_authorization_id,
         observed_size,
-    ) = _approved_sftp_refresh(monkeypatch, "full-lifecycle")
+    ) = _approved_sftp_refresh(monkeypatch, "fl")
 
     # The metadata adapter is still returning the same provider projection that
     # was observed as changed against v1. After AD transition that projection
