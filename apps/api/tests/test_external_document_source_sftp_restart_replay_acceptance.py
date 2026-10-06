@@ -4,20 +4,37 @@ from datetime import UTC, datetime
 
 import pytest
 
+from app.modules.documents.models import Document
 from app.modules.external_document_sources.observation_refresh_admission_authorization_service import (
     authorize_observation_refresh_admission,
+)
+from app.modules.external_document_sources.observation_refresh_admission_execution_models import (
+    ExternalDocumentSourceObservationRefreshAdmissionExecution,
+    ExternalDocumentSourceObservationRefreshAdmissionReceipt,
 )
 from app.modules.external_document_sources.observation_refresh_admission_execution_service import (
     execute_observation_refresh_admission,
 )
+from app.modules.external_document_sources.observation_refresh_execution_models import (
+    ExternalDocumentSourceObservationRefreshExecution,
+    ExternalDocumentSourceObservationRefreshReceipt,
+)
 from app.modules.external_document_sources.observation_refresh_execution_service import (
     execute_observation_refresh_authorization,
+)
+from app.modules.external_document_sources.recurring_baseline_transition_models import (
+    ExternalDocumentSourceRecurringBaselineTransition,
+    ExternalDocumentSourceRecurringBaselineTransitionReceipt,
 )
 from app.modules.external_document_sources.recurring_baseline_transition_service import (
     establish_recurring_baseline_transition,
 )
 from app.modules.external_document_sources.remote_content_staging_service import (
     register_external_document_source_remote_content_staging_store,
+)
+from app.modules.external_document_sources.sftp_file_content_proof_models import (
+    ExternalDocumentSourceSftpFileContentProof,
+    ExternalDocumentSourceSftpFileContentProofReceipt,
 )
 from app.modules.external_document_sources.sftp_file_content_proof_service import (
     clear_external_document_source_sftp_file_content_read_adapter,
@@ -70,6 +87,12 @@ def test_ae_c_content_proof_replay_survives_provider_runtime_reset() -> None:
     proof_id = first.json()["id"]
     assert len(adapter.calls) == 1
 
+    with TestingSessionLocal() as db:
+        durable_counts = (
+            db.query(ExternalDocumentSourceSftpFileContentProof).count(),
+            db.query(ExternalDocumentSourceSftpFileContentProofReceipt).count(),
+        )
+
     # Simulate process restart: live provider registry is empty.
     clear_external_document_source_sftp_file_content_read_adapter()
 
@@ -77,6 +100,12 @@ def test_ae_c_content_proof_replay_survives_provider_runtime_reset() -> None:
     assert replay.status_code == 201, replay.text
     assert replay.json()["id"] == proof_id
     assert len(adapter.calls) == 1
+
+    with TestingSessionLocal() as db:
+        assert (
+            db.query(ExternalDocumentSourceSftpFileContentProof).count(),
+            db.query(ExternalDocumentSourceSftpFileContentProofReceipt).count(),
+        ) == durable_counts
 
 
 def test_ae_c_refresh_replay_survives_sftp_runtime_replacement(
@@ -110,6 +139,10 @@ def test_ae_c_refresh_replay_survives_sftp_runtime_replacement(
         )
         assert outcome == "completed"
         first_id = first.id
+        durable_counts = (
+            db.query(ExternalDocumentSourceObservationRefreshExecution).count(),
+            db.query(ExternalDocumentSourceObservationRefreshReceipt).count(),
+        )
 
     assert len(read_adapter.calls) == 1
     put_calls = store.put_calls
@@ -131,6 +164,10 @@ def test_ae_c_refresh_replay_survives_sftp_runtime_replacement(
         )
         assert outcome == "replayed"
         assert replay.id == first_id
+        assert (
+            db.query(ExternalDocumentSourceObservationRefreshExecution).count(),
+            db.query(ExternalDocumentSourceObservationRefreshReceipt).count(),
+        ) == durable_counts
 
     assert len(read_adapter.calls) == 1
     assert store.put_calls == put_calls
@@ -199,6 +236,11 @@ def test_ae_c_canonical_admission_and_baseline_transition_replay_without_side_ef
         first_id = first.id
         new_document_id = first.new_document_id
         admission_id = first.id
+        admission_counts = (
+            db.query(ExternalDocumentSourceObservationRefreshAdmissionExecution).count(),
+            db.query(ExternalDocumentSourceObservationRefreshAdmissionReceipt).count(),
+            db.query(Document).count(),
+        )
 
     initial_security_calls = dict(security_calls)
     assert initial_security_calls == {"signature": 1, "malware": 1}
@@ -218,6 +260,11 @@ def test_ae_c_canonical_admission_and_baseline_transition_replay_without_side_ef
         assert outcome == "replayed"
         assert replay.id == first_id
         assert replay.new_document_id == new_document_id
+        assert (
+            db.query(ExternalDocumentSourceObservationRefreshAdmissionExecution).count(),
+            db.query(ExternalDocumentSourceObservationRefreshAdmissionReceipt).count(),
+            db.query(Document).count(),
+        ) == admission_counts
 
     assert security_calls == initial_security_calls
     assert len(read_adapter.calls) == 1
@@ -238,6 +285,11 @@ def test_ae_c_canonical_admission_and_baseline_transition_replay_without_side_ef
         )
         assert outcome == "established"
         transition_id = transition.id
+        baseline_counts = (
+            db.query(ExternalDocumentSourceRecurringBaselineTransition).count(),
+            db.query(ExternalDocumentSourceRecurringBaselineTransitionReceipt).count(),
+            db.query(Document).count(),
+        )
 
     with TestingSessionLocal() as db:
         replay, outcome = establish_recurring_baseline_transition(
@@ -255,5 +307,10 @@ def test_ae_c_canonical_admission_and_baseline_transition_replay_without_side_ef
         )
         assert outcome == "replayed"
         assert replay.id == transition_id
+        assert (
+            db.query(ExternalDocumentSourceRecurringBaselineTransition).count(),
+            db.query(ExternalDocumentSourceRecurringBaselineTransitionReceipt).count(),
+            db.query(Document).count(),
+        ) == baseline_counts
 
     assert len(read_adapter.calls) == 1
