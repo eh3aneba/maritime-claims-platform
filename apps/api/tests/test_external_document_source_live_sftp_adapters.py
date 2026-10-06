@@ -46,6 +46,13 @@ class _ReadHandle:
         self._offset = 0
         self.timeout = None
         self.read_calls = 0
+        self.stat_result = SimpleNamespace(
+            st_mode=stat.S_IFREG | 0o640,
+            st_size=len(body),
+            st_mtime=1_796_000_000,
+            st_uid=1000,
+            st_gid=1000,
+        )
 
     def __enter__(self):
         return self
@@ -55,6 +62,9 @@ class _ReadHandle:
 
     def settimeout(self, value):
         self.timeout = value
+
+    def stat(self):
+        return self.stat_result
 
     def read(self, size):
         self.read_calls += 1
@@ -186,6 +196,7 @@ def test_live_sftp_content_read_performs_lstat_before_single_bounded_read(
     assert result.remote_stat_performed is True
     assert result.remote_read_performed is True
     assert result.content_read_count == 1
+    assert sftp.handle.read_calls >= 1
     assert session.closed is True
     assert sftp.events == [
         ("normalize", "/evidence"),
@@ -193,6 +204,32 @@ def test_live_sftp_content_read_performs_lstat_before_single_bounded_read(
         ("lstat", "/evidence/Survey Report.pdf"),
         ("open", "/evidence/Survey Report.pdf", "rb"),
     ]
+
+
+def test_live_sftp_content_read_rejects_opened_handle_metadata_drift_before_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime = LiveSftpRuntime(secret_runtime=_SecretRuntime({}))
+    sftp = _FakeSftp(body=b"authorized-evidence")
+    sftp.handle.stat_result = SimpleNamespace(
+        st_mode=stat.S_IFREG | 0o640,
+        st_size=len(b"replacement-evidence"),
+        st_mtime=1_796_000_001,
+        st_uid=1000,
+        st_gid=1000,
+    )
+    session = _FakeSession(sftp)
+    monkeypatch.setattr(runtime, "_open_session", lambda **_kwargs: session)
+
+    result = runtime.read_content(_read_request())
+
+    assert result.failure_code == "opened_file_changed"
+    assert result.content is None
+    assert result.remote_stat_performed is True
+    assert result.remote_read_performed is False
+    assert result.content_read_count == 0
+    assert sftp.handle.read_calls == 0
+    assert session.closed is True
 
 
 def test_live_sftp_exact_metadata_rejects_symlink_without_following_it(
