@@ -13,6 +13,7 @@ on:
       - "apps/api/tests/test_external_document_source_sftp_production_adapter_acceptance.py"
       - "apps/api/tests/test_external_document_source_sftp_restart_replay_acceptance.py"
       - "apps/api/tests/test_external_document_source_sftp_due_tick_restart_replay_acceptance.py"
+      - "apps/api/tests/test_external_document_source_sftp_crash_recovery_acceptance.py"
   workflow_dispatch:
 
 permissions:
@@ -90,7 +91,8 @@ jobs:
             tests/test_external_document_source_live_sftp_production_acceptance.py \
             tests/test_external_document_source_sftp_production_adapter_acceptance.py \
             tests/test_external_document_source_sftp_restart_replay_acceptance.py \
-            tests/test_external_document_source_sftp_due_tick_restart_replay_acceptance.py
+            tests/test_external_document_source_sftp_due_tick_restart_replay_acceptance.py \
+            tests/test_external_document_source_sftp_crash_recovery_acceptance.py
           status=$?
           printf '{"schema_version":1,"suite":"phase-17.6-ae-c-sftp-acceptance","exit_code":%d}\n' "$status" \
             > /tmp/mcri-ae-c-diagnostics/summary.json
