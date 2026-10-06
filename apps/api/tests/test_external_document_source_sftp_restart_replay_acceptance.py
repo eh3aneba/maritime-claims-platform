@@ -119,7 +119,7 @@ def test_ae_c_refresh_replay_survives_sftp_runtime_replacement(
         profile_id,
         refresh_authorization_id,
         observed_size,
-    ) = _approved_sftp_refresh(monkeypatch, "restart-refresh")
+    ) = _approved_sftp_refresh(monkeypatch, "rr")
 
     read_adapter = _FileReadAdapter(content=b"q" * observed_size)
     register_external_document_source_sftp_file_content_read_adapter(read_adapter)
@@ -184,7 +184,7 @@ def test_ae_c_canonical_admission_and_baseline_transition_replay_without_side_ef
         profile_id,
         refresh_authorization_id,
         observed_size,
-    ) = _approved_sftp_refresh(monkeypatch, "restart-admission")
+    ) = _approved_sftp_refresh(monkeypatch, "ra")
 
     read_adapter = _FileReadAdapter(content=b"z" * observed_size)
     register_external_document_source_sftp_file_content_read_adapter(read_adapter)
