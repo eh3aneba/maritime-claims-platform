@@ -1,4 +1,4 @@
-"""Phase 17.5-AK browser coverage for the separated external-Evidence operator sequence."""
+"""Phase 17.6-AE-B browser coverage for SFTP operator readiness and baseline control."""
 from __future__ import annotations
 
 import json
@@ -24,6 +24,7 @@ REFRESH_AUTH_ID = "88888888-8888-8888-8888-888888888888"
 REFRESH_EXEC_ID = "99999999-9999-9999-9999-999999999999"
 ADMISSION_AUTH_ID = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
 ADMISSION_EXEC_ID = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+BASELINE_TRANSITION_ID = "12121212-1212-1212-1212-121212121212"
 
 
 def main() -> None:
@@ -35,12 +36,19 @@ def main() -> None:
         "profiles": [
             {
                 "profile_id": PROFILE_ID,
-                "provider_kind": "sharepoint",
-                "display_name": "AK SharePoint fixture",
+                "provider_kind": "sftp",
+                "display_name": "AE-B SFTP fixture",
                 "profile_status": "active",
                 "provider_health_status": "healthy",
                 "provider_health_latency_class": "fast",
                 "provider_health_completed_at": now,
+                "sftp_runtime_readiness": "ready",
+                "sftp_credential_health_status": "qualified",
+                "sftp_credential_health_checked_at": now,
+                "sftp_transport_status": "verified",
+                "sftp_transport_checked_at": now,
+                "sftp_session_status": "activated",
+                "sftp_session_checked_at": now,
                 "active_family_count": 1,
                 "pending_handoff_count": 1,
                 "processing_release_required_count": 1,
@@ -53,7 +61,7 @@ def main() -> None:
                 "binding_id": BINDING_ID,
                 "claim_id": CLAIM_ID,
                 "profile_id": PROFILE_ID,
-                "provider_kind": "sharepoint",
+                "provider_kind": "sftp",
                 "document_family_id": FAMILY_ID,
                 "current_document_id": DOC_V1,
                 "current_version_number": 1,
@@ -99,10 +107,16 @@ def main() -> None:
                 "latest_admission_executed_at": None,
                 "processing_release_status": None,
                 "processing_release_required": True,
+                "baseline_transition_id": None,
+                "baseline_transition_status": None,
+                "baseline_transition_version_number": None,
+                "baseline_transition_authorized_at": None,
+                "baseline_transition_required": False,
             }
         ],
     }
     mutations: list[tuple[str, dict]] = []
+    external_reads: list[str] = []
 
     def family() -> dict:
         return state["families"][0]
@@ -121,18 +135,24 @@ def main() -> None:
         def route_external_evidence(route) -> None:
             request = route.request
             url = request.url
-            if request.method == "GET" and url.endswith("/external-document-sources/operator-overview"):
-                route.fulfill(status=200, content_type="application/json", body=json.dumps(state))
-                return
+            if request.method == "GET":
+                external_reads.append(url)
+                if url.endswith("/external-document-sources/operator-overview"):
+                    route.fulfill(status=200, content_type="application/json", body=json.dumps(state))
+                    return
+                raise AssertionError(
+                    f"Operator view performed an unexpected external-Evidence read/provider call: {url}"
+                )
 
             if request.method != "POST":
-                route.fallback()
-                return
+                raise AssertionError(
+                    f"Operator view performed an unexpected external-Evidence request: {request.method} {url}"
+                )
 
             payload = json.loads(request.post_data or "{}")
             mutations.append((url, deepcopy(payload)))
             assert len(payload.get("reason", "")) >= 20, "Governed action must carry an explicit human reason"
-            assert str(payload.get("request_key", "")).startswith("ak-"), "AK action must use a unique request key"
+            assert str(payload.get("request_key", "")).startswith("ak-"), "Operator action must use a unique request key"
 
             row = family()
             if url.endswith(f"/observation-review-handoffs/{HANDOFF_ID}/decisions"):
@@ -178,6 +198,7 @@ def main() -> None:
                 row["admission_execution_required"] = False
                 row["current_document_id"] = DOC_V2
                 row["current_version_number"] = 2
+                row["baseline_transition_required"] = True
                 row["version_history"] = [
                     {
                         "document_id": DOC_V1,
@@ -203,17 +224,37 @@ def main() -> None:
                 route.fulfill(status=201, content_type="application/json", body="{}")
                 return
 
+            if url.endswith(
+                f"/observation-refresh-admission-executions/{ADMISSION_EXEC_ID}/recurring-baseline-transition"
+            ):
+                row["baseline_transition_id"] = BASELINE_TRANSITION_ID
+                row["baseline_transition_status"] = "established"
+                row["baseline_transition_version_number"] = 2
+                row["baseline_transition_authorized_at"] = now
+                row["baseline_transition_required"] = False
+                route.fulfill(status=201, content_type="application/json", body="{}")
+                return
+
             raise AssertionError(f"Unexpected external Evidence mutation: {request.method} {url}")
 
         page.route("**/api/v1/external-document-sources/**", route_external_evidence)
         page.goto(f"{BASE_URL}/external-evidence", wait_until="networkidle")
 
-        expect(page.get_by_role("heading", name="SharePoint & Google Drive operations")).to_be_visible()
+        expect(page.get_by_role("heading", name="SharePoint, Google Drive & SFTP operations")).to_be_visible()
+        expect(page.get_by_text("SFTP runtime", exact=True)).to_be_visible()
+        expect(page.get_by_text("Credential health", exact=True)).to_be_visible()
+        expect(page.get_by_text("Host-key transport", exact=True)).to_be_visible()
+        expect(page.get_by_text("SFTP session", exact=True)).to_be_visible()
+        expect(page.get_by_text("ready", exact=True)).to_be_visible()
+        expect(page.get_by_text("qualified", exact=False).first).to_be_visible()
+        expect(page.get_by_text("verified", exact=False).first).to_be_visible()
+        expect(page.get_by_text("activated", exact=False).first).to_be_visible()
         expect(page.get_by_text("AG human decision required", exact=True)).to_be_visible()
         expect(page.get_by_text("v1 · current · released", exact=True)).to_be_visible()
+        expect(page.get_by_text("Initial v1 baseline", exact=True)).to_be_visible()
 
         note = page.get_by_label("Human reason / audit note")
-        note.fill("Human reviewer verified the exact changed source version and lineage.")
+        note.fill("Human reviewer verified the exact changed SFTP source version and lineage.")
 
         page.get_by_role("button", name="AG · Approve refresh").click()
         expect(page.get_by_role("button", name="AH · Read & stage exact refresh")).to_be_visible()
@@ -230,16 +271,28 @@ def main() -> None:
         expect(page.get_by_text("v1 · historical · released", exact=True)).to_be_visible()
         expect(page.get_by_text("v2 · current · Phase-Z required", exact=True)).to_be_visible()
         expect(page.get_by_text("Phase-Z required", exact=True).last).to_be_visible()
+        expect(page.get_by_text("Transition required", exact=True)).to_be_visible()
+        expect(page.get_by_role("button", name="AD · Establish baseline")).to_be_visible()
 
-        assert len(mutations) == 4, f"Expected four separated governed mutations, got {mutations}"
+        page.get_by_role("button", name="AD · Establish baseline").click()
+        expect(page.get_by_text("Established", exact=True)).to_be_visible()
+        expect(page.get_by_text("Transition required", exact=True)).to_have_count(0)
+
+        assert len(mutations) == 5, f"Expected five separated governed mutations, got {mutations}"
         assert "/decisions" in mutations[0][0]
         assert "/execute" in mutations[1][0]
         assert "/admission-authorizations" in mutations[2][0]
         assert "/observation-refresh-admissions/" in mutations[3][0]
+        assert "/recurring-baseline-transition" in mutations[4][0]
+        assert external_reads, "Expected the operator overview read"
+        assert all(
+            url.endswith("/external-document-sources/operator-overview")
+            for url in external_reads
+        ), f"Unexpected external-Evidence reads/provider calls: {external_reads}"
 
         browser.close()
 
-    print("External Evidence operator browser E2E passed.")
+    print("External Evidence AE-B SFTP operator browser E2E passed.")
 
 
 if __name__ == "__main__":

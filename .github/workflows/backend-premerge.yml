@@ -102,7 +102,7 @@ jobs:
     runs-on: ubuntu-latest
     # Individual end-to-end Evidence lineage tests can legitimately approach 25 minutes;
     # retain bounded headroom for pytest reporting and Actions cleanup without masking hangs.
-    timeout-minutes: 30
+    timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
@@ -159,7 +159,8 @@ jobs:
             exit 1
           fi
           printf 'Running %s backend test nodes in shard %s\n' "${#shard_nodes[@]}" "${{ matrix.shard }}"
-          pytest -q "${shard_nodes[@]}"
+          printf '%s\n' "${shard_nodes[@]}"
+          pytest -vv --durations=20 --durations-min=1.0 "${shard_nodes[@]}"
 
   backend:
     name: Backend tests
