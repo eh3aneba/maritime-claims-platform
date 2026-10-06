@@ -14,6 +14,8 @@ on:
       - "apps/api/tests/test_external_document_source_sftp_restart_replay_acceptance.py"
       - "apps/api/tests/test_external_document_source_sftp_due_tick_restart_replay_acceptance.py"
       - "apps/api/tests/test_external_document_source_sftp_crash_recovery_acceptance.py"
+      - "apps/api/tests/test_external_document_source_sftp_admission_response_replay_acceptance.py"
+      - "apps/api/tests/test_external_document_source_observation_refresh_admission_execution.py"
   workflow_dispatch:
 
 permissions:
@@ -92,7 +94,9 @@ jobs:
             tests/test_external_document_source_sftp_production_adapter_acceptance.py \
             tests/test_external_document_source_sftp_restart_replay_acceptance.py \
             tests/test_external_document_source_sftp_due_tick_restart_replay_acceptance.py \
-            tests/test_external_document_source_sftp_crash_recovery_acceptance.py
+            tests/test_external_document_source_sftp_crash_recovery_acceptance.py \
+            tests/test_external_document_source_sftp_admission_response_replay_acceptance.py \
+            tests/test_external_document_source_observation_refresh_admission_execution.py::test_phase_aj_database_failure_rolls_back_document_and_canonical_storage
           status=$?
           printf '{"schema_version":1,"suite":"phase-17.6-ae-c-sftp-acceptance","exit_code":%d}\n' "$status" \
             > /tmp/mcri-ae-c-diagnostics/summary.json
