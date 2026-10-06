@@ -8,9 +8,13 @@ from app.modules.external_document_sources.live_sftp_adapters import (
 from app.modules.external_document_sources.sftp_directory_listing_service import (
     SftpDirectoryMetadataEntry,
 )
+from app.modules.external_document_sources.sftp_file_content_proof_models import (
+    ExternalDocumentSourceSftpFileContentProof,
+)
 from app.modules.external_document_sources.sftp_file_content_proof_service import (
     SftpFileContentReadResult,
 )
+from tests.db_harness import TestingSessionLocal
 from tests.test_external_document_source_sftp_directory_listing import (
     _list,
     _success_listing_result,
@@ -87,6 +91,19 @@ class _ProductionShapedRuntime:
         )
 
 
+class _OpenedFileDriftRuntime(_ProductionShapedRuntime):
+    def read_content(self, request):
+        self.calls.append(("read", request))
+        return SftpFileContentReadResult(
+            content=None,
+            failure_code="opened_file_changed",
+            latency_class="normal",
+            remote_stat_performed=True,
+            remote_read_performed=False,
+            content_read_count=0,
+        )
+
+
 def setup_function() -> None:
     _proof_setup()
 
@@ -95,13 +112,8 @@ def teardown_function() -> None:
     _proof_teardown()
 
 
-def test_ae_c_production_adapter_registration_drives_real_governed_sftp_api_slice(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def _register_runtime(monkeypatch: pytest.MonkeyPatch, runtime) -> None:
     import app.modules.external_document_sources.live_sftp_adapters as live
-
-    chain = _completed_execution("ae-c-production-adapter-slice")
-    runtime = _ProductionShapedRuntime(chain["fingerprint"])
 
     monkeypatch.setattr(live, "_paramiko", lambda: object())
     monkeypatch.setattr(
@@ -111,22 +123,39 @@ def test_ae_c_production_adapter_registration_drives_real_governed_sftp_api_slic
     )
     register_live_sftp_adapters(runtime)  # type: ignore[arg-type]
 
-    verified = _verify(chain, key="ae-c-live-transport")
+
+def _prepare_governed_slice(monkeypatch: pytest.MonkeyPatch, suffix: str, runtime_type):
+    chain = _completed_execution(f"ae-c-production-adapter-{suffix}")
+    runtime = runtime_type(chain["fingerprint"])
+    _register_runtime(monkeypatch, runtime)
+
+    verified = _verify(chain, key=f"ae-c-{suffix}-transport")
     assert verified.status_code == 201, verified.text
     assert verified.json()["result_status"] == "verified"
     chain["verification_id"] = verified.json()["id"]
 
-    activated = _activate(chain, key="ae-c-live-activation")
+    activated = _activate(chain, key=f"ae-c-{suffix}-activation")
     assert activated.status_code == 201, activated.text
     assert activated.json()["result_status"] == "activated"
     chain["activation_id"] = activated.json()["id"]
 
-    listed = _list(chain, key="ae-c-live-list")
+    listed = _list(chain, key=f"ae-c-{suffix}-list")
     assert listed.status_code == 201, listed.text
     listing = listed.json()
     assert listing["result_status"] == "listed"
     chain["listing_id"] = listing["id"]
     chain["file_entry_id"] = listing["entries"][0]["id"]
+    return chain, runtime
+
+
+def test_ae_c_production_adapter_registration_drives_real_governed_sftp_api_slice(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    chain, runtime = _prepare_governed_slice(
+        monkeypatch,
+        "live",
+        _ProductionShapedRuntime,
+    )
 
     proof = _proof(chain, key="ae-c-live-content-proof")
     assert proof.status_code == 201, proof.text
@@ -152,3 +181,23 @@ def test_ae_c_production_adapter_registration_drives_real_governed_sftp_api_slic
     assert read_request.exact_file_only is True
     assert read_request.follow_symlinks is False
     assert read_request.max_read_attempts == 1
+
+
+def test_ae_c_opened_file_drift_is_rejected_without_persisting_content_proof(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    chain, runtime = _prepare_governed_slice(
+        monkeypatch,
+        "opened-drift",
+        _OpenedFileDriftRuntime,
+    )
+
+    with TestingSessionLocal() as db:
+        proofs_before = db.query(ExternalDocumentSourceSftpFileContentProof).count()
+
+    proof = _proof(chain, key="ae-c-opened-drift-content-proof")
+    assert proof.status_code == 409, proof.text
+    assert [name for name, _request in runtime.calls][-1] == "read"
+
+    with TestingSessionLocal() as db:
+        assert db.query(ExternalDocumentSourceSftpFileContentProof).count() == proofs_before
