@@ -47,7 +47,7 @@ def test_ae_c_committed_admission_survives_response_finalization_failure_and_rep
         _metadata_adapter,
         _read_adapter,
         _store,
-    ) = _authorized_refresh(monkeypatch, "ae-c-response-finalization")
+    ) = _authorized_refresh(monkeypatch, "rf")
     security_calls = _enable_clean_aj(monkeypatch)
 
     request_key = "ae-c-response-finalization-exec"
