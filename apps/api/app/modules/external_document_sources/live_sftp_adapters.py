@@ -230,6 +230,16 @@ def _modified_at(value: int | float | None) -> datetime | None:
     return datetime.fromtimestamp(value, tz=timezone.utc)
 
 
+def _stat_identity(attr: Any) -> tuple[object, object, object, object, object]:
+    return (
+        getattr(attr, "st_mode", None),
+        getattr(attr, "st_size", None),
+        getattr(attr, "st_mtime", None),
+        getattr(attr, "st_uid", None),
+        getattr(attr, "st_gid", None),
+    )
+
+
 def _normalize_remote_path(root: str, effective: str) -> str:
     if not isinstance(root, str) or not isinstance(effective, str):
         raise _SftpRuntimeFailure("path_policy_violation")
@@ -276,7 +286,6 @@ def _ensure_canonical_path_within_root(
     prefix = canonical_root.rstrip("/") + "/"
     if canonical_target != canonical_root and not canonical_target.startswith(prefix):
         raise _SftpRuntimeFailure("symlink_escape_detected")
-
 
 
 def _resolved_public_addresses(hostname: str, port: int) -> list[str]:
@@ -1229,6 +1238,14 @@ class LiveSftpRuntime:
                     )
                 except Exception:
                     pass
+                try:
+                    opened_attr = handle.stat()
+                except Exception as exc:
+                    raise _SftpRuntimeFailure("opened_file_stat_failed") from exc
+                if _entry_kind(getattr(opened_attr, "st_mode", None)) != "file":
+                    raise _SftpRuntimeFailure("symlink_escape_detected")
+                if _stat_identity(opened_attr) != _stat_identity(attr):
+                    raise _SftpRuntimeFailure("opened_file_changed")
                 while True:
                     chunk = handle.read(request.max_chunk_bytes)
                     if not chunk:
