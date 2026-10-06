@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - ".github/workflows/ae-c-sftp-acceptance.yml"
+      - "apps/api/alembic/versions/0223_sftp_content_read_lstat_constraint_repair.py"
       - "apps/api/app/modules/external_document_sources/live_sftp_adapters.py"
       - "apps/api/app/modules/external_document_sources/sftp_*.py"
       - "apps/api/tests/test_external_document_source_live_sftp_adapters.py"
@@ -30,7 +31,7 @@ jobs:
   ae-c-postgres-acceptance:
     name: AE-C PostgreSQL restart/replay acceptance
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     services:
       postgres:
         image: postgres:18.4
@@ -81,15 +82,20 @@ jobs:
         run: alembic upgrade head
 
       - name: Prepare privacy-safe diagnostics directory
-        run: mkdir -p /tmp/mcri-ae-c-diagnostics
+        run: |
+          diag_dir="${GITHUB_WORKSPACE}/ae-c-diagnostics"
+          mkdir -p "$diag_dir"
+          printf '%s\n' '{"schema_version":1,"suite":"phase-17.6-ae-c-sftp-acceptance","status":"started","exit_code":null}' \
+            > "$diag_dir/summary.json"
 
       - name: Run AE-C restart/replay and production acceptance
         id: acceptance
         shell: bash
         run: |
+          diag_dir="${GITHUB_WORKSPACE}/ae-c-diagnostics"
           set +e
-          pytest -q --durations=20 \
-            --junitxml=/tmp/mcri-ae-c-diagnostics/junit.xml \
+          pytest -vv --durations=20 --durations-min=1.0 \
+            --junitxml="$diag_dir/junit.xml" \
             tests/test_external_document_source_live_sftp_adapters.py \
             tests/test_external_document_source_live_sftp_production_acceptance.py \
             tests/test_external_document_source_sftp_production_adapter_acceptance.py \
@@ -100,8 +106,8 @@ jobs:
             tests/test_external_document_source_sftp_full_lifecycle_acceptance.py \
             tests/test_external_document_source_observation_refresh_admission_execution.py::test_phase_aj_database_failure_rolls_back_document_and_canonical_storage
           status=$?
-          printf '{"schema_version":1,"suite":"phase-17.6-ae-c-sftp-acceptance","exit_code":%d}\n' "$status" \
-            > /tmp/mcri-ae-c-diagnostics/summary.json
+          printf '{"schema_version":1,"suite":"phase-17.6-ae-c-sftp-acceptance","status":"completed","exit_code":%d}\n' "$status" \
+            > "$diag_dir/summary.json"
           exit "$status"
 
       - name: Upload AE-C diagnostics
@@ -109,6 +115,6 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: ae-c-sftp-acceptance-${{ github.run_id }}-${{ github.run_attempt }}
-          path: /tmp/mcri-ae-c-diagnostics
+          path: ${{ github.workspace }}/ae-c-diagnostics
           if-no-files-found: error
           retention-days: 7
