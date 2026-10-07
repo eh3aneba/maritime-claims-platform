@@ -88,6 +88,34 @@ jobs:
           printf '%s\n' '{"schema_version":1,"suite":"phase-17.6-ae-c-sftp-acceptance","status":"started","exit_code":null}' \
             > "$diag_dir/summary.json"
 
+      - name: Run AE-C critical regressions with bounded diagnostics
+        shell: bash
+        run: |
+          set -uo pipefail
+          status=0
+          critical_tests=(
+            "tests/test_external_document_source_live_sftp_production_acceptance.py::test_ae_c_live_runtime_rejects_opened_file_replacement_before_first_byte"
+            "tests/test_external_document_source_sftp_production_adapter_acceptance.py::test_ae_c_production_adapter_registration_drives_real_governed_sftp_api_slice"
+            "tests/test_external_document_source_sftp_restart_replay_acceptance.py::test_ae_c_refresh_replay_survives_sftp_runtime_replacement"
+          )
+
+          for test_node in "${critical_tests[@]}"; do
+            echo "::group::Critical regression: ${test_node}"
+            set +e
+            timeout --signal=TERM --kill-after=10s 300s \
+              pytest -vv --tb=short --durations=10 --durations-min=0.5 "${test_node}"
+            test_status=$?
+            set -e
+            echo "::endgroup::"
+
+            if [ "${test_status}" -ne 0 ]; then
+              echo "::error::Critical AE-C regression failed or exceeded 300 seconds: ${test_node} (exit ${test_status})"
+              status=1
+            fi
+          done
+
+          exit "${status}"
+
       - name: Run AE-C restart/replay and production acceptance
         id: acceptance
         shell: bash
