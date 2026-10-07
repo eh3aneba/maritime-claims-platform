@@ -145,6 +145,36 @@ Also confirm:
 - linear-history rule remains present;
 - `bypass_actors` remains empty.
 
+## Automated verifier
+
+The repository includes a read-only fail-closed verifier:
+
+```bash
+python scripts/verify_main_ruleset.py
+```
+
+It fetches ruleset `20842512` from GitHub (using `GITHUB_TOKEN` when present)
+and fails unless all of the following remain true:
+
+- ruleset name is `Protect main`;
+- enforcement is active;
+- the ruleset targets the default branch;
+- bypass actors are empty;
+- review-thread resolution remains required;
+- squash is the only allowed merge method;
+- strict/up-to-date required checks remain enabled;
+- all 11 required contexts are present;
+- deletion, non-fast-forward and linear-history protections remain present.
+
+For offline review of an exported readback:
+
+```bash
+python scripts/verify_main_ruleset.py --input ruleset.json
+```
+
+The verifier is intentionally read-only and does not contain any repository
+administration mutation path.
+
 ## Deliberate fail-closed proof
 
 Do this only after the ruleset readback is correct.
