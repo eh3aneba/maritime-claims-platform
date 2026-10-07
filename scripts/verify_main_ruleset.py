@@ -102,25 +102,31 @@ def verify_ruleset(ruleset: dict[str, Any]) -> list[str]:
 
     if ruleset.get("name") != "Protect main":
         failures.append("ruleset name must be 'Protect main'")
+    if ruleset.get("target") != "branch":
+        failures.append("ruleset target must remain branch")
     if ruleset.get("enforcement") != "active":
         failures.append("ruleset enforcement must be active")
-    if ruleset.get("bypass_actors") not in ([], None):
-        failures.append("bypass_actors must be empty")
+    if ruleset.get("bypass_actors") != []:
+        failures.append("bypass_actors must be explicitly empty")
 
     conditions = ruleset.get("conditions")
-    include = (
-        conditions.get("ref_name", {}).get("include", [])
-        if isinstance(conditions, dict)
-        else []
-    )
+    ref_name = conditions.get("ref_name", {}) if isinstance(conditions, dict) else {}
+    include = ref_name.get("include", [])
+    exclude = ref_name.get("exclude", [])
     if "~DEFAULT_BRANCH" not in include:
         failures.append("ruleset must target the default branch")
+    if exclude != []:
+        failures.append("default-branch ruleset must not add ref exclusions")
 
     try:
         pull_request = _single_rule(ruleset, "pull_request")
         pull_params = pull_request.get("parameters", {})
         if pull_params.get("required_review_thread_resolution") is not True:
             failures.append("review-thread resolution must remain required")
+        if pull_params.get("require_extra_approval_for_unattributed_changes") is not True:
+            failures.append(
+                "extra approval for unattributed changes must remain required"
+            )
         allowed_merge_methods = pull_params.get("allowed_merge_methods")
         if allowed_merge_methods != ["squash"]:
             failures.append("allowed merge methods must remain squash-only")
@@ -132,6 +138,8 @@ def verify_ruleset(ruleset: dict[str, Any]) -> list[str]:
         status_params = status_rule.get("parameters", {})
         if status_params.get("strict_required_status_checks_policy") is not True:
             failures.append("required status checks must remain strict/up-to-date")
+        if status_params.get("do_not_enforce_on_create") is not False:
+            failures.append("required checks must enforce on branch creation")
 
         raw_checks = status_params.get("required_status_checks", [])
         actual_contexts = {
