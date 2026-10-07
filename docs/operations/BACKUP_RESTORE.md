@@ -30,7 +30,15 @@ A successful backup produces:
 - `mcri-....dump.sha256` — SHA-256 plus dump basename;
 - `mcri-....dump.meta` — bounded metadata including UTC creation time, database name, repository SHA when available, Alembic revision(s), dump basename and digest.
 
-Existing backup artifacts are never silently overwritten. A failed archive validation leaves no final dump/checksum/metadata artifact at the requested path.
+Existing backup artifacts are never silently overwritten. A failed archive validation or Alembic revision change during backup leaves no final dump/checksum/metadata artifact at the requested path.
+
+After copying a backup off-host or before using it in a recovery exercise, re-verify the dump against both sidecars and the PostgreSQL archive parser:
+
+```bash
+./scripts/verify_postgres_backup.sh /secure/path/mcri.dump
+```
+
+The verifier is read-only. It checks the dump SHA-256, sidecar filename/digest binding, metadata format/Alembic revision presence, and `pg_restore --list`. A checksum mismatch fails before archive parsing.
 
 Store production/pilot backups off-host and encrypted according to the organization's retention policy.
 
