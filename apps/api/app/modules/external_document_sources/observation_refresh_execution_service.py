@@ -35,6 +35,8 @@ from app.modules.external_document_sources.generation_3_change_detection_service
 from app.modules.external_document_sources.observation_refresh_execution_models import (
     ExternalDocumentSourceObservationRefreshExecution,
     ExternalDocumentSourceObservationRefreshReceipt,
+    ExternalDocumentSourceObservationRefreshRecoveryAnchor,
+    ExternalDocumentSourceObservationRefreshRecoveryAnchorReceipt,
 )
 from app.modules.external_document_sources.observation_review_decision_models import (
     ExternalDocumentSourceObservationRefreshAuthorization,
@@ -76,6 +78,7 @@ from app.modules.external_document_sources.service import (
 )
 
 _SAFE_IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+_HEX_64 = re.compile(r"^[0-9a-f]{64}$")
 STORAGE_PURPOSE = "external_observation_refresh_quarantine_v1"
 MAX_REFRESH_BYTES = 64 * 1024 * 1024
 
@@ -767,6 +770,361 @@ def ensure_observation_refresh_execution_integrity(
         )
 
 
+
+
+def _recovery_safety() -> dict[str, bool]:
+    return {
+        "authorization_integrity_verified": True,
+        "current_authority_verified": True,
+        "current_document_verified": True,
+        "provider_lineage_verified": True,
+        "originating_observation_verified": True,
+        "storage_metadata_read_performed": True,
+        "storage_key_absence_verified": True,
+        "provider_client_constructed": False,
+        "exact_item_content_read_performed": False,
+        "storage_write_performed": False,
+        "storage_read_performed": False,
+        "durable_content_staged": False,
+        "remote_list_performed": False,
+        "remote_write_performed": False,
+        "remote_delete_performed": False,
+        "storage_delete_performed": False,
+        "provider_response_body_stored": False,
+        "remote_content_returned": False,
+        "content_parsed": False,
+        "content_extracted": False,
+        "document_mutated": False,
+        "evidence_admitted": False,
+        "processing_enqueued": False,
+        "ai_executed": False,
+        "claim_mutated": False,
+        "checkpoint_advanced": False,
+    }
+
+
+def _recovery_scope_hash(
+    authorization: ExternalDocumentSourceObservationRefreshAuthorization,
+    *,
+    decision: ExternalDocumentSourceObservationReviewDecision,
+    observation: ExternalDocumentSourceDueTickObservationExecution,
+    current_document_id: UUID,
+    current_version_number: int,
+    current_document_file_hash: str,
+    read_operation_kind: str,
+    read_adapter_kind: str,
+    endpoint_policy_hash: str,
+    storage_backend_kind: str,
+    planned_execution_id: UUID,
+    storage_object_key_hash: str,
+    request_key: str,
+) -> str:
+    return _canonical_hash(
+        {
+            "authorization_id": str(authorization.id),
+            "authorization_hash": authorization.authorization_hash,
+            "decision_id": str(decision.id),
+            "decision_completion_hash": decision.completion_hash,
+            "handoff_id": str(authorization.handoff_id),
+            "handoff_completion_hash": authorization.handoff_completion_hash,
+            "observation_execution_id": str(observation.id),
+            "observation_completion_hash": observation.completion_hash,
+            "binding_id": str(authorization.binding_id),
+            "binding_completion_hash": authorization.binding_completion_hash,
+            "document_family_id": str(authorization.document_family_id),
+            "current_document_id": str(current_document_id),
+            "current_version_number": current_version_number,
+            "current_document_file_hash": current_document_file_hash,
+            "provider_kind": authorization.provider_kind,
+            "profile_hash": authorization.profile_hash,
+            "stable_source_item_hash": authorization.stable_source_item_hash,
+            "observed_projection_hash": authorization.observed_projection_hash,
+            "observed_version_token_hash": authorization.observed_version_token_hash,
+            "read_operation_kind": read_operation_kind,
+            "read_adapter_kind": read_adapter_kind,
+            "endpoint_policy_hash": endpoint_policy_hash,
+            "storage_backend_kind": storage_backend_kind,
+            "storage_purpose": STORAGE_PURPOSE,
+            "planned_execution_id": str(planned_execution_id),
+            "storage_object_key_hash": storage_object_key_hash,
+            "request_key": request_key,
+        }
+    )
+
+
+def _recovery_request_hash(
+    *,
+    scope_hash: str,
+    requested_by_id: UUID,
+    reason: str,
+    requested_at: datetime,
+) -> str:
+    return _canonical_hash(
+        {
+            "scope_hash": scope_hash,
+            "requested_by_id": str(requested_by_id),
+            "reason": reason,
+            "requested_at": _iso(requested_at),
+            **_recovery_safety(),
+        }
+    )
+
+
+def _recovery_anchor_hash(
+    anchor: ExternalDocumentSourceObservationRefreshRecoveryAnchor,
+) -> str:
+    return _canonical_hash(
+        {
+            "anchor_id": str(anchor.id),
+            "scope_hash": anchor.scope_hash,
+            "request_hash": anchor.request_hash,
+            "status": anchor.status,
+            "storage_purpose": anchor.storage_purpose,
+            "planned_execution_id": str(anchor.planned_execution_id),
+            "storage_object_key_hash": anchor.storage_object_key_hash,
+            "requested_at": _iso(anchor.requested_at),
+            **_recovery_safety(),
+        }
+    )
+
+
+def _recovery_receipt_hash(
+    receipt: ExternalDocumentSourceObservationRefreshRecoveryAnchorReceipt,
+) -> str:
+    return _canonical_hash(
+        {
+            "receipt_id": str(receipt.id),
+            "organization_id": str(receipt.organization_id),
+            "anchor_id": str(receipt.anchor_id),
+            "sequence_number": receipt.sequence_number,
+            "event_type": receipt.event_type,
+            "status_after": receipt.status_after,
+            "actor_id": str(receipt.actor_id),
+            "occurred_at": _iso(receipt.occurred_at),
+            "reason": receipt.reason,
+            "scope_hash": receipt.scope_hash,
+            "decision_hash": receipt.decision_hash,
+            "prior_receipt_hash": receipt.prior_receipt_hash,
+            **_recovery_safety(),
+        }
+    )
+
+
+def _recovery_receipts(
+    db: Session,
+    anchor: ExternalDocumentSourceObservationRefreshRecoveryAnchor,
+) -> list[ExternalDocumentSourceObservationRefreshRecoveryAnchorReceipt]:
+    return list(
+        db.scalars(
+            select(ExternalDocumentSourceObservationRefreshRecoveryAnchorReceipt).where(
+                ExternalDocumentSourceObservationRefreshRecoveryAnchorReceipt.organization_id
+                == anchor.organization_id,
+                ExternalDocumentSourceObservationRefreshRecoveryAnchorReceipt.anchor_id
+                == anchor.id,
+            )
+        ).all()
+    )
+
+
+def _ensure_recovery_anchor_integrity(
+    db: Session,
+    anchor: ExternalDocumentSourceObservationRefreshRecoveryAnchor,
+    *,
+    authorization: ExternalDocumentSourceObservationRefreshAuthorization,
+    decision: ExternalDocumentSourceObservationReviewDecision,
+    observation: ExternalDocumentSourceDueTickObservationExecution,
+    current,
+    read_context: _RefreshReadContext,
+    storage_backend_kind: str,
+    storage_key: str,
+) -> None:
+    planned_execution_id = uuid5(
+        NAMESPACE_URL,
+        f"mcri:observation-refresh:{authorization.id}",
+    )
+    expected_anchor_id = uuid5(
+        NAMESPACE_URL,
+        f"mcri:observation-refresh-recovery:{authorization.id}",
+    )
+    storage_key_hash = hashlib.sha256(storage_key.encode("utf-8")).hexdigest()
+    expected = {
+        "organization_id": authorization.organization_id,
+        "claim_id": authorization.claim_id,
+        "profile_id": authorization.profile_id,
+        "authorization_id": authorization.id,
+        "decision_id": authorization.decision_id,
+        "handoff_id": authorization.handoff_id,
+        "observation_execution_id": observation.id,
+        "binding_id": authorization.binding_id,
+        "document_family_id": authorization.document_family_id,
+        "current_document_id": current.id,
+        "current_version_number": current.version_number,
+        "current_document_file_hash": current.file_hash,
+        "provider_kind": authorization.provider_kind,
+        "profile_hash": authorization.profile_hash,
+        "stable_source_item_hash": authorization.stable_source_item_hash,
+        "authorization_hash": authorization.authorization_hash,
+        "decision_completion_hash": decision.completion_hash,
+        "handoff_completion_hash": authorization.handoff_completion_hash,
+        "binding_completion_hash": authorization.binding_completion_hash,
+        "observation_completion_hash": observation.completion_hash,
+        "observed_projection_hash": authorization.observed_projection_hash,
+        "observed_version_token_hash": authorization.observed_version_token_hash,
+        "read_operation_kind": read_context.read_operation_kind,
+        "read_adapter_kind": read_context.read_adapter_kind,
+        "endpoint_policy_hash": read_context.policy_hash,
+        "storage_backend_kind": storage_backend_kind,
+        "storage_purpose": STORAGE_PURPOSE,
+        "planned_execution_id": planned_execution_id,
+        "storage_object_key_hash": storage_key_hash,
+    }
+    for field, value in expected.items():
+        if getattr(anchor, field) != value:
+            raise ExternalDocumentSourceConflictError(
+                f"Observation refresh recovery anchor drifted at {field}"
+            )
+    expected_scope_hash = _recovery_scope_hash(
+        authorization,
+        decision=decision,
+        observation=observation,
+        current_document_id=current.id,
+        current_version_number=current.version_number,
+        current_document_file_hash=current.file_hash,
+        read_operation_kind=read_context.read_operation_kind,
+        read_adapter_kind=read_context.read_adapter_kind,
+        endpoint_policy_hash=read_context.policy_hash,
+        storage_backend_kind=storage_backend_kind,
+        planned_execution_id=planned_execution_id,
+        storage_object_key_hash=storage_key_hash,
+        request_key=anchor.request_key,
+    )
+    expected_request_hash = _recovery_request_hash(
+        scope_hash=expected_scope_hash,
+        requested_by_id=anchor.requested_by_id,
+        reason=anchor.request_reason,
+        requested_at=anchor.requested_at,
+    )
+    if (
+        anchor.id != expected_anchor_id
+        or anchor.scope_hash != expected_scope_hash
+        or anchor.request_hash != expected_request_hash
+        or anchor.status != "requested"
+        or anchor.anchor_hash != _recovery_anchor_hash(anchor)
+    ):
+        raise ExternalDocumentSourceConflictError(
+            "Observation refresh recovery anchor cryptographic integrity failed"
+        )
+    for field, value in _recovery_safety().items():
+        if bool(getattr(anchor, field)) != value:
+            raise ExternalDocumentSourceConflictError(
+                "Observation refresh recovery anchor safety boundary drifted"
+            )
+    receipts = _recovery_receipts(db, anchor)
+    if len(receipts) != 1:
+        raise ExternalDocumentSourceConflictError(
+            "Observation refresh recovery anchor receipt lifecycle drifted"
+        )
+    receipt = receipts[0]
+    if (
+        receipt.sequence_number != 1
+        or receipt.event_type != "requested"
+        or receipt.status_after != "requested"
+        or receipt.actor_id != anchor.requested_by_id
+        or _aware(receipt.occurred_at) != _aware(anchor.requested_at)
+        or receipt.reason != anchor.request_reason
+        or receipt.scope_hash != anchor.scope_hash
+        or receipt.decision_hash != anchor.anchor_hash
+        or receipt.prior_receipt_hash is not None
+        or receipt.receipt_hash != _recovery_receipt_hash(receipt)
+    ):
+        raise ExternalDocumentSourceConflictError(
+            "Observation refresh recovery anchor receipt integrity drifted"
+        )
+    for field, value in _recovery_safety().items():
+        if bool(getattr(receipt, field)) != value:
+            raise ExternalDocumentSourceConflictError(
+                "Observation refresh recovery receipt safety boundary drifted"
+            )
+
+
+def _preflight_storage_key_absent(store, *, storage_key: str) -> None:
+    try:
+        store.head_object(storage_key=storage_key)
+    except ObjectStorageNotFound:
+        return
+    except (ObjectStorageError, ObjectStorageIntegrityError):
+        raise ExternalDocumentSourceConflictError(
+            "Observation refresh recovery storage preflight failed"
+        ) from None
+    raise ExternalDocumentSourceConflictError(
+        "Observation refresh recovery key is already occupied without durable authority"
+    )
+
+
+def _recover_anchored_storage(
+    store,
+    *,
+    storage_key: str,
+    observation: ExternalDocumentSourceDueTickObservationExecution,
+    current,
+    provider_kind: str,
+):
+    try:
+        metadata = store.head_object(storage_key=storage_key)
+    except ObjectStorageNotFound:
+        return None
+    except (ObjectStorageError, ObjectStorageIntegrityError):
+        raise ExternalDocumentSourceConflictError(
+            "Observation refresh recovery storage verification failed"
+        ) from None
+
+    digest = str(metadata.file_hash).lower()
+    byte_count = int(metadata.file_size_bytes)
+    if (
+        not _HEX_64.fullmatch(digest)
+        or byte_count < 0
+        or byte_count > MAX_REFRESH_BYTES
+    ):
+        raise ExternalDocumentSourceConflictError(
+            "Observation refresh recovery object metadata is invalid"
+        )
+    try:
+        payload = store.get_bytes(
+            storage_key=storage_key,
+            expected_sha256=digest,
+        )
+    except (ObjectStorageNotFound, ObjectStorageError, ObjectStorageIntegrityError):
+        raise ExternalDocumentSourceConflictError(
+            "Observation refresh recovery object integrity failed"
+        ) from None
+    try:
+        actual_digest = hashlib.sha256(payload).hexdigest()
+        actual_count = len(payload)
+    finally:
+        del payload
+    if actual_digest != digest or actual_count != byte_count:
+        raise ExternalDocumentSourceConflictError(
+            "Observation refresh recovery object content drifted"
+        )
+    if (
+        observation.observed_byte_size is not None
+        and actual_count != observation.observed_byte_size
+    ):
+        raise ExternalDocumentSourceConflictError(
+            "Observation refresh recovery object byte count no longer matches the changed observation"
+        )
+    if provider_kind == "sftp" and digest == current.file_hash.lower():
+        raise ExternalDocumentSourceConflictError(
+            "Observation refresh SFTP recovered content still matches current canonical Evidence"
+        )
+    media = _normalize_media_type(observation.observed_mime_type_class)
+    version = _normalize_hash(
+        observation.observed_version_token_hash,
+        field="Changed observation version-token hash",
+    )
+    return digest, actual_count, media, version
+
+
 def execute_observation_refresh_authorization(
     db: Session,
     *,
@@ -814,6 +1172,25 @@ def execute_observation_refresh_authorization(
             )
         return existing_request, "replayed"
 
+    anchor_by_request = db.scalar(
+        select(ExternalDocumentSourceObservationRefreshRecoveryAnchor).where(
+            ExternalDocumentSourceObservationRefreshRecoveryAnchor.organization_id
+            == organization_id,
+            ExternalDocumentSourceObservationRefreshRecoveryAnchor.profile_id
+            == profile_id,
+            ExternalDocumentSourceObservationRefreshRecoveryAnchor.request_key
+            == normalized_key,
+        )
+    )
+    if anchor_by_request is not None and (
+        anchor_by_request.authorization_id != authorization_id
+        or anchor_by_request.requested_by_id != requested_by_id
+        or anchor_by_request.request_reason != normalized_reason
+    ):
+        raise ExternalDocumentSourceConflictError(
+            "Observation refresh recovery request_key is already bound to another request"
+        )
+
     authorization = _authorization_for_update(
         db,
         organization_id=organization_id,
@@ -860,8 +1237,247 @@ def execute_observation_refresh_authorization(
     )
     storage_key = _storage_key(authorization.id, execution_id)
     storage_key_hash = hashlib.sha256(storage_key.encode("utf-8")).hexdigest()
+
+    anchor = db.scalar(
+        select(ExternalDocumentSourceObservationRefreshRecoveryAnchor).where(
+            ExternalDocumentSourceObservationRefreshRecoveryAnchor.authorization_id
+            == authorization.id
+        )
+    )
+    if anchor is not None:
+        if (
+            anchor.request_key != normalized_key
+            or anchor.requested_by_id != requested_by_id
+            or anchor.request_reason != normalized_reason
+        ):
+            raise ExternalDocumentSourceConflictError(
+                "Observation refresh authorization already has another recovery request"
+            )
+        _ensure_recovery_anchor_integrity(
+            db,
+            anchor,
+            authorization=authorization,
+            decision=decision,
+            observation=observation,
+            current=current,
+            read_context=read_context,
+            storage_backend_kind=backend,
+            storage_key=storage_key,
+        )
+    else:
+        if anchor_by_request is not None:
+            raise ExternalDocumentSourceConflictError(
+                "Observation refresh recovery request_key lineage is inconsistent"
+            )
+        _preflight_storage_key_absent(store, storage_key=storage_key)
+        requested_at = _aware(now or _utc_now())
+        recovery_scope_hash = _recovery_scope_hash(
+            authorization,
+            decision=decision,
+            observation=observation,
+            current_document_id=current.id,
+            current_version_number=current.version_number,
+            current_document_file_hash=current.file_hash,
+            read_operation_kind=read_context.read_operation_kind,
+            read_adapter_kind=read_context.read_adapter_kind,
+            endpoint_policy_hash=read_context.policy_hash,
+            storage_backend_kind=backend,
+            planned_execution_id=execution_id,
+            storage_object_key_hash=storage_key_hash,
+            request_key=normalized_key,
+        )
+        recovery_request_hash = _recovery_request_hash(
+            scope_hash=recovery_scope_hash,
+            requested_by_id=requested_by_id,
+            reason=normalized_reason,
+            requested_at=requested_at,
+        )
+        anchor = ExternalDocumentSourceObservationRefreshRecoveryAnchor(
+            id=uuid5(
+                NAMESPACE_URL,
+                f"mcri:observation-refresh-recovery:{authorization.id}",
+            ),
+            organization_id=organization_id,
+            claim_id=authorization.claim_id,
+            profile_id=profile_id,
+            authorization_id=authorization.id,
+            decision_id=authorization.decision_id,
+            handoff_id=authorization.handoff_id,
+            observation_execution_id=observation.id,
+            binding_id=authorization.binding_id,
+            document_family_id=authorization.document_family_id,
+            current_document_id=current.id,
+            current_version_number=current.version_number,
+            current_document_file_hash=current.file_hash,
+            provider_kind=authorization.provider_kind,
+            profile_hash=authorization.profile_hash,
+            stable_source_item_hash=authorization.stable_source_item_hash,
+            authorization_hash=authorization.authorization_hash,
+            decision_completion_hash=decision.completion_hash,
+            handoff_completion_hash=authorization.handoff_completion_hash,
+            binding_completion_hash=authorization.binding_completion_hash,
+            observation_completion_hash=observation.completion_hash,
+            observed_projection_hash=authorization.observed_projection_hash,
+            observed_version_token_hash=authorization.observed_version_token_hash,
+            read_operation_kind=read_context.read_operation_kind,
+            read_adapter_kind=read_context.read_adapter_kind,
+            endpoint_policy_hash=read_context.policy_hash,
+            storage_backend_kind=backend,
+            storage_purpose=STORAGE_PURPOSE,
+            planned_execution_id=execution_id,
+            storage_object_key_hash=storage_key_hash,
+            request_key=normalized_key,
+            scope_hash=recovery_scope_hash,
+            request_hash=recovery_request_hash,
+            status="requested",
+            requested_by_id=requested_by_id,
+            request_reason=normalized_reason,
+            requested_at=requested_at,
+            anchor_hash="",
+            **_recovery_safety(),
+        )
+        anchor.anchor_hash = _recovery_anchor_hash(anchor)
+        db.add(anchor)
+        db.flush()
+
+        anchor_receipt = ExternalDocumentSourceObservationRefreshRecoveryAnchorReceipt(
+            id=uuid4(),
+            organization_id=organization_id,
+            anchor_id=anchor.id,
+            sequence_number=1,
+            event_type="requested",
+            status_after="requested",
+            actor_id=requested_by_id,
+            occurred_at=requested_at,
+            reason=normalized_reason,
+            scope_hash=anchor.scope_hash,
+            decision_hash=anchor.anchor_hash,
+            prior_receipt_hash=None,
+            receipt_hash="",
+            **_recovery_safety(),
+        )
+        anchor_receipt.receipt_hash = _recovery_receipt_hash(anchor_receipt)
+        db.add(anchor_receipt)
+        db.flush()
+        _ensure_recovery_anchor_integrity(
+            db,
+            anchor,
+            authorization=authorization,
+            decision=decision,
+            observation=observation,
+            current=current,
+            read_context=read_context,
+            storage_backend_kind=backend,
+            storage_key=storage_key,
+        )
+
+        # The recovery authority must be durable before provider content read
+        # or quarantine mutation can occur.
+        db.commit()
+        db.refresh(anchor)
+
+    # Reacquire the exact human authorization after the anchor commit. This
+    # serializes restart/concurrent recovery and revalidates all currentness
+    # before any provider content read or storage write.
+    authorization = _authorization_for_update(
+        db,
+        organization_id=organization_id,
+        profile_id=profile_id,
+        authorization_id=authorization_id,
+    )
+    existing = db.scalar(
+        select(ExternalDocumentSourceObservationRefreshExecution).where(
+            ExternalDocumentSourceObservationRefreshExecution.authorization_id
+            == authorization.id
+        )
+    )
+    if existing is not None:
+        ensure_observation_refresh_execution_integrity(
+            db, existing, verify_storage=True
+        )
+        if (
+            existing.request_key != normalized_key
+            or existing.requested_by_id != requested_by_id
+            or existing.request_reason != normalized_reason
+        ):
+            raise ExternalDocumentSourceConflictError(
+                "Observation refresh authorization was already consumed by another request"
+            )
+        return existing, "replayed"
+
+    decision, observation = _originating_observation(db, authorization)
+    current, read_context = _provider_read_context(
+        db,
+        authorization=authorization,
+        observation=observation,
+    )
+    store = _configured_store()
+    backend = getattr(store.sanitized_health_identity, "backend", None)
+    if not isinstance(backend, str) or not _SAFE_IDENTIFIER.fullmatch(backend):
+        raise ExternalDocumentSourceConflictError(
+            "Observation refresh quarantine storage backend identity is invalid"
+        )
+    execution_id = uuid5(
+        NAMESPACE_URL,
+        f"mcri:observation-refresh:{authorization.id}",
+    )
+    storage_key = _storage_key(authorization.id, execution_id)
+    storage_key_hash = hashlib.sha256(storage_key.encode("utf-8")).hexdigest()
+    _ensure_recovery_anchor_integrity(
+        db,
+        anchor,
+        authorization=authorization,
+        decision=decision,
+        observation=observation,
+        current=current,
+        read_context=read_context,
+        storage_backend_kind=backend,
+        storage_key=storage_key,
+    )
+
+    recovered = _recover_anchored_storage(
+        store,
+        storage_key=storage_key,
+        observation=observation,
+        current=current,
+        provider_kind=authorization.provider_kind,
+    )
+    if recovered is None:
+        payload, digest, count, media, version = _read_exact_changed_content(
+            read_context,
+            observation,
+        )
+        if authorization.provider_kind == "sftp" and digest == current.file_hash.lower():
+            raise ExternalDocumentSourceConflictError(
+                "Observation refresh SFTP content digest still matches current canonical Evidence"
+            )
+        try:
+            try:
+                store.put_bytes_if_absent(
+                    payload,
+                    storage_key=storage_key,
+                    expected_sha256=digest,
+                )
+            except ObjectStoragePreconditionFailed:
+                pass
+            except ObjectStorageError:
+                raise ExternalDocumentSourceConflictError(
+                    "Observation refresh quarantine storage write failed"
+                ) from None
+        finally:
+            del payload
+
+        _verify_storage(
+            store,
+            storage_key=storage_key,
+            digest=digest,
+            byte_count=count,
+        )
+    else:
+        digest, count, media, version = recovered
+
+    requested_at = _aware(anchor.requested_at)
     endpoint_policy_hash = read_context.policy_hash
-    requested_at = _aware(now or _utc_now())
     scope_hash = _scope_hash(
         authorization,
         observation=observation,
@@ -880,37 +1496,6 @@ def execute_observation_refresh_authorization(
         requested_by_id=requested_by_id,
         reason=normalized_reason,
         requested_at=requested_at,
-    )
-
-    payload, digest, count, media, version = _read_exact_changed_content(
-        read_context,
-        observation,
-    )
-    if authorization.provider_kind == "sftp" and digest == current.file_hash.lower():
-        raise ExternalDocumentSourceConflictError(
-            "Observation refresh SFTP content digest still matches current canonical Evidence"
-        )
-    try:
-        try:
-            store.put_bytes_if_absent(
-                payload,
-                storage_key=storage_key,
-                expected_sha256=digest,
-            )
-        except ObjectStoragePreconditionFailed:
-            pass
-        except ObjectStorageError:
-            raise ExternalDocumentSourceConflictError(
-                "Observation refresh quarantine storage write failed"
-            ) from None
-    finally:
-        del payload
-
-    _verify_storage(
-        store,
-        storage_key=storage_key,
-        digest=digest,
-        byte_count=count,
     )
     completed_at = max(requested_at, _utc_now())
     content_proof_hash = _content_proof_hash(
@@ -1011,7 +1596,8 @@ def execute_observation_refresh_authorization(
             "content_sha256": digest,
             "content_byte_count": count,
             "remote_list_performed": False,
-            "exact_item_content_read_performed": True,
+            "exact_item_content_read_performed": recovered is None,
+            "recovered_from_anchored_storage": recovered is not None,
             "document_mutated": False,
             "evidence_admitted": False,
             "processing_enqueued": False,
@@ -1021,7 +1607,6 @@ def execute_observation_refresh_authorization(
     db.commit()
     db.refresh(execution)
     return execution, "completed"
-
 
 def get_observation_refresh_execution(
     db: Session,

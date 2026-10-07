@@ -10,6 +10,9 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.modules.external_document_sources.observation_refresh_execution_models import (
     ExternalDocumentSourceObservationRefreshExecution,
+    ExternalDocumentSourceObservationRefreshReceipt,
+    ExternalDocumentSourceObservationRefreshRecoveryAnchor,
+    ExternalDocumentSourceObservationRefreshRecoveryAnchorReceipt,
 )
 from app.modules.external_document_sources.observation_refresh_execution_service import (
     execute_observation_refresh_authorization,
@@ -122,8 +125,17 @@ def test_two_refresh_consumers_serialize_on_exact_authorization(
         assert read_adapter.calls == 1
         assert store.put_calls == 1
         with SessionLocal() as db:
+            anchors = db.query(ExternalDocumentSourceObservationRefreshRecoveryAnchor).all()
+            anchor_receipts = db.query(
+                ExternalDocumentSourceObservationRefreshRecoveryAnchorReceipt
+            ).all()
             rows = db.query(ExternalDocumentSourceObservationRefreshExecution).all()
+            receipts = db.query(ExternalDocumentSourceObservationRefreshReceipt).all()
+            assert len(anchors) == 1
+            assert len(anchor_receipts) == 1
             assert len(rows) == 1
+            assert len(receipts) == 1
+            assert anchors[0].authorization_id == authorization_id
             assert rows[0].id == execution_id
             assert rows[0].authorization_id == authorization_id
     finally:
