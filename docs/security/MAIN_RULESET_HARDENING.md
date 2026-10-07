@@ -156,13 +156,13 @@ python scripts/verify_main_ruleset.py
 It fetches ruleset `20842512` from GitHub (using `GITHUB_TOKEN` when present)
 and fails unless all of the following remain true:
 
-- ruleset name is `Protect main`;
+- ruleset name is `Protect main` and the target remains a branch ruleset;
 - enforcement is active;
-- the ruleset targets the default branch;
-- bypass actors are empty;
-- review-thread resolution remains required;
+- the ruleset targets the default branch with no ref exclusions;
+- bypass actors are explicitly empty;
+- review-thread resolution and extra approval for unattributed changes remain required;
 - squash is the only allowed merge method;
-- strict/up-to-date required checks remain enabled;
+- strict/up-to-date required checks remain enabled and enforce on branch creation;
 - all 11 required contexts are present;
 - deletion, non-fast-forward and linear-history protections remain present.
 
