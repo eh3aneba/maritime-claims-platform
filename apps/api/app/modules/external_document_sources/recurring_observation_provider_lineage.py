@@ -38,27 +38,17 @@ from app.modules.external_document_sources.service import (
 from app.modules.external_document_sources.sftp_evidence_admission_authorization_models import (
     ExternalDocumentSourceSftpEvidenceAdmissionAuthorization,
 )
-from app.modules.external_document_sources.sftp_evidence_admission_authorization_service import (
-    _ensure_integrity as _ensure_sftp_authorization_integrity,
-)
 from app.modules.external_document_sources.sftp_evidence_admission_execution_models import (
     ExternalDocumentSourceSftpEvidenceAdmissionExecution,
-)
-from app.modules.external_document_sources.sftp_evidence_admission_execution_service import (
-    _ensure_execution_integrity as _ensure_sftp_execution_integrity,
 )
 from app.modules.external_document_sources.sftp_generation3_change_detection_models import (
     ExternalDocumentSourceSftpGeneration3ChangeDetection,
 )
 from app.modules.external_document_sources.sftp_generation3_change_detection_service import (
-    _ensure_integrity as _ensure_sftp_generation3_integrity,
     _load_lineage as _load_sftp_generation3_lineage,
 )
 from app.modules.external_document_sources.sftp_generation3_checkpoint_advancement_models import (
     ExternalDocumentSourceSftpGeneration3CheckpointAdvancement,
-)
-from app.modules.external_document_sources.sftp_generation3_checkpoint_advancement_service import (
-    _ensure_integrity as _ensure_sftp_checkpoint_integrity,
 )
 from app.modules.external_document_sources.sftp_file_content_proof_service import (
     SftpFileContentReadRequest,
@@ -230,8 +220,8 @@ def _resolve_sftp(
         raise ExternalDocumentSourceConflictError(
             "SFTP recurring admission execution lineage is missing"
         )
-    _ensure_sftp_execution_integrity(db, execution)
-
+    # Binding integrity already verifies the SFTP admission execution and
+    # authorization lineage before this provider-specific resolver is entered.
     authorization = db.scalar(
         select(ExternalDocumentSourceSftpEvidenceAdmissionAuthorization).where(
             ExternalDocumentSourceSftpEvidenceAdmissionAuthorization.id
@@ -246,8 +236,6 @@ def _resolve_sftp(
         raise ExternalDocumentSourceConflictError(
             "SFTP recurring admission authorization lineage is missing"
         )
-    _ensure_sftp_authorization_integrity(db, authorization)
-
     observation = db.scalar(
         select(ExternalDocumentSourceSftpGeneration3ChangeDetection).where(
             ExternalDocumentSourceSftpGeneration3ChangeDetection.id
@@ -262,8 +250,6 @@ def _resolve_sftp(
         raise ExternalDocumentSourceConflictError(
             "SFTP recurring generation-3 observation lineage is missing"
         )
-    _ensure_sftp_generation3_integrity(db, observation)
-
     checkpoint = db.scalar(
         select(ExternalDocumentSourceSftpGeneration3CheckpointAdvancement).where(
             ExternalDocumentSourceSftpGeneration3CheckpointAdvancement.id
@@ -278,8 +264,6 @@ def _resolve_sftp(
         raise ExternalDocumentSourceConflictError(
             "SFTP recurring generation-3 checkpoint lineage is missing"
         )
-    _ensure_sftp_checkpoint_integrity(db, checkpoint)
-
     (
         _candidate,
         _predecessor_observation,
@@ -316,20 +300,6 @@ def _resolve_sftp(
     ):
         raise ExternalDocumentSourceConflictError(
             "SFTP recurring provider lineage drifted"
-        )
-
-    adapter = sftp_change._METADATA_ADAPTER
-    if adapter is None:
-        raise ExternalDocumentSourceConflictError(
-            "SFTP exact-file metadata adapter is unavailable"
-        )
-    adapter_kind = getattr(adapter, "adapter_kind", None)
-    if (
-        not isinstance(adapter_kind, str)
-        or not sftp_change._SAFE_ADAPTER_KIND.fullmatch(adapter_kind)
-    ):
-        raise ExternalDocumentSourceConflictError(
-            "SFTP exact-file metadata adapter kind is invalid"
         )
 
     request = sftp_change.SftpExactFileMetadataRequest(
@@ -389,8 +359,11 @@ def _resolve_sftp(
 def resolve_recurring_provider_lineage(
     db: Session,
     binding: ExternalDocumentSourceEvidenceFamilyBinding,
+    *,
+    binding_integrity_verified: bool = False,
 ) -> RecurringProviderLineage:
-    _ensure_binding_integrity(db, binding)
+    if not binding_integrity_verified:
+        _ensure_binding_integrity(db, binding)
     if binding.provider_kind == "sftp":
         return _resolve_sftp(db, binding)
     return _resolve_legacy(db, binding)

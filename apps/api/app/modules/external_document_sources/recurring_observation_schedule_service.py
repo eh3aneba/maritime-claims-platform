@@ -280,21 +280,34 @@ def _receipts(
 def ensure_recurring_observation_schedule_integrity(
     db: Session,
     schedule: ExternalDocumentSourceRecurringObservationSchedule,
+    *,
+    verified_binding: ExternalDocumentSourceEvidenceFamilyBinding | None = None,
 ) -> None:
-    binding = db.scalar(
-        select(ExternalDocumentSourceEvidenceFamilyBinding).where(
-            ExternalDocumentSourceEvidenceFamilyBinding.id == schedule.binding_id,
-            ExternalDocumentSourceEvidenceFamilyBinding.organization_id
-            == schedule.organization_id,
-            ExternalDocumentSourceEvidenceFamilyBinding.profile_id
-            == schedule.profile_id,
+    if verified_binding is None:
+        binding = db.scalar(
+            select(ExternalDocumentSourceEvidenceFamilyBinding).where(
+                ExternalDocumentSourceEvidenceFamilyBinding.id == schedule.binding_id,
+                ExternalDocumentSourceEvidenceFamilyBinding.organization_id
+                == schedule.organization_id,
+                ExternalDocumentSourceEvidenceFamilyBinding.profile_id
+                == schedule.profile_id,
+            )
         )
-    )
-    if binding is None:
-        raise ExternalDocumentSourceConflictError(
-            "Recurring observation schedule family binding is missing"
-        )
-    _ensure_binding_integrity(db, binding)
+        if binding is None:
+            raise ExternalDocumentSourceConflictError(
+                "Recurring observation schedule family binding is missing"
+            )
+        _ensure_binding_integrity(db, binding)
+    else:
+        binding = verified_binding
+        if (
+            binding.id != schedule.binding_id
+            or binding.organization_id != schedule.organization_id
+            or binding.profile_id != schedule.profile_id
+        ):
+            raise ExternalDocumentSourceConflictError(
+                "Recurring observation schedule verified binding does not match"
+            )
 
     expected = {
         "claim_id": binding.claim_id,
@@ -335,7 +348,11 @@ def ensure_recurring_observation_schedule_integrity(
             raise ExternalDocumentSourceConflictError(
                 "Recurring observation schedule revision lineage drifted"
             )
-        ensure_recurring_observation_schedule_integrity(db, prior)
+        ensure_recurring_observation_schedule_integrity(
+            db,
+            prior,
+            verified_binding=binding,
+        )
 
     expected_scope = _scope_hash(
         binding,

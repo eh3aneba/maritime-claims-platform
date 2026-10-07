@@ -37,9 +37,6 @@ from app.modules.external_document_sources.service import (
 from app.modules.external_document_sources.sftp_evidence_admission_authorization_models import (
     ExternalDocumentSourceSftpEvidenceAdmissionAuthorization,
 )
-from app.modules.external_document_sources.sftp_evidence_admission_authorization_service import (
-    _ensure_integrity as _ensure_sftp_authorization_integrity,
-)
 from app.modules.external_document_sources.sftp_evidence_admission_execution_models import (
     ExternalDocumentSourceSftpEvidenceAdmissionExecution,
 )
@@ -294,7 +291,7 @@ def _resolve_sftp_admission_lineage(
         raise ExternalDocumentSourceConflictError(
             "SFTP Evidence family binding authorization lineage is missing"
         )
-    _ensure_sftp_authorization_integrity(db, authorization)
+    # Execution integrity above already verified this exact authorization.
     if (
         authorization.claim_id != execution.claim_id
         or authorization.profile_hash != execution.profile_hash

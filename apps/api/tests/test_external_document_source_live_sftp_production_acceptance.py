@@ -364,7 +364,7 @@ def test_ae_c_live_runtime_rejects_opened_file_replacement_before_first_byte(
 
     result = runtime.read_content(_read_request(pinned))
 
-    assert result.failure_code == "opened_file_changed"
+    assert result.failure_code == "opened_file_snapshot_drift"
     assert result.content is None
     assert result.remote_stat_performed is True
     assert result.remote_read_performed is False

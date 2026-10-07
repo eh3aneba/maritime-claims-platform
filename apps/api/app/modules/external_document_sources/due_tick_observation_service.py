@@ -125,6 +125,7 @@ def _schedule_for_update(
     profile_id: UUID,
     schedule_id: UUID,
     expected_binding_id: UUID,
+    verified_binding: ExternalDocumentSourceEvidenceFamilyBinding | None = None,
 ) -> ExternalDocumentSourceRecurringObservationSchedule:
     # The Y-family binding row is the single serialization authority.
     # Phase AB authorize/replace/disable all acquire that binding FOR UPDATE
@@ -146,7 +147,11 @@ def _schedule_for_update(
         raise ExternalDocumentSourceNotFoundError(
             "Recurring observation schedule not found"
         )
-    ensure_recurring_observation_schedule_integrity(db, schedule)
+    ensure_recurring_observation_schedule_integrity(
+        db,
+        schedule,
+        verified_binding=verified_binding,
+    )
     if schedule.status != "active" or schedule.active_binding_guard != schedule.binding_id:
         raise ExternalDocumentSourceConflictError(
             "Recurring observation schedule is not active"
@@ -157,6 +162,8 @@ def _schedule_for_update(
 def _binding(
     db: Session,
     schedule: ExternalDocumentSourceRecurringObservationSchedule,
+    *,
+    integrity_verified: bool = False,
 ) -> ExternalDocumentSourceEvidenceFamilyBinding:
     binding = db.scalar(
         select(ExternalDocumentSourceEvidenceFamilyBinding).where(
@@ -171,7 +178,8 @@ def _binding(
         raise ExternalDocumentSourceConflictError(
             "Recurring observation Evidence family binding is missing"
         )
-    _ensure_binding_integrity(db, binding)
+    if not integrity_verified:
+        _ensure_binding_integrity(db, binding)
     if (
         binding.claim_id != schedule.claim_id
         or binding.document_family_id != schedule.document_family_id
@@ -434,7 +442,7 @@ def ensure_due_tick_observation_integrity(
         )
     ensure_recurring_observation_schedule_integrity(db, schedule)
 
-    binding = _binding(db, schedule)
+    binding = _binding(db, schedule, integrity_verified=True)
     current_document = db.get(Document, execution.current_document_id)
     if current_document is None:
         raise ExternalDocumentSourceConflictError(
@@ -445,7 +453,11 @@ def ensure_due_tick_observation_integrity(
         binding=binding,
         current_document=current_document,
     )
-    lineage = resolve_recurring_provider_lineage(db, binding)
+    lineage = resolve_recurring_provider_lineage(
+        db,
+        binding,
+        binding_integrity_verified=True,
+    )
 
     expected = {
         "claim_id": binding.claim_id,
@@ -693,8 +705,9 @@ def execute_due_tick_observation(
         profile_id=profile_id,
         schedule_id=schedule_id,
         expected_binding_id=binding.id,
+        verified_binding=binding,
     )
-    verified_binding = _binding(db, schedule)
+    verified_binding = _binding(db, schedule, integrity_verified=True)
     if verified_binding.id != binding.id:
         raise ExternalDocumentSourceConflictError(
             "Recurring observation schedule binding changed while acquiring authority"
@@ -749,7 +762,11 @@ def execute_due_tick_observation(
                 "Due-tick dispatch authority no longer matches current observation authority"
             )
 
-    lineage = resolve_recurring_provider_lineage(db, binding)
+    lineage = resolve_recurring_provider_lineage(
+        db,
+        binding,
+        binding_integrity_verified=True,
+    )
     observed = read_recurring_provider_metadata(
         lineage,
         baseline_projection_hash=baseline_projection_hash,

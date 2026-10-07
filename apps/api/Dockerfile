@@ -86,8 +86,15 @@ RUN git init /src/tesseract \
     && make install
 
 # Poppler utilities are built from the Alpine-verified upstream tarball against /opt/ocr.
-RUN python -c "import hashlib,urllib.request; u='https://poppler.freedesktop.org/poppler-25.12.0.tar.xz'; d=urllib.request.urlopen(u,timeout=120).read(); h=hashlib.sha512(d).hexdigest(); assert h=='4f68713d7efa5003a60773749d3bcff4041b165dfb65104a56cec576559c15164fc4a021244cc91f4ed76aab709757637396d7c5b6fbcf3eed23e3469072e4f3',h; open('/tmp/poppler.tar.xz','wb').write(d)" \
-    && mkdir /src/poppler \
+RUN set -eu; \
+    for attempt in 1 2 3 4 5 6; do \
+        if python -c "import hashlib,urllib.request; u='https://poppler.freedesktop.org/poppler-25.12.0.tar.xz'; d=urllib.request.urlopen(u,timeout=120).read(); h=hashlib.sha512(d).hexdigest(); assert h=='4f68713d7efa5003a60773749d3bcff4041b165dfb65104a56cec576559c15164fc4a021244cc91f4ed76aab709757637396d7c5b6fbcf3eed23e3469072e4f3',h; open('/tmp/poppler.tar.xz','wb').write(d)"; then \
+            break; \
+        fi; \
+        if [ "$attempt" -eq 6 ]; then exit 1; fi; \
+        sleep $((attempt * 2)); \
+    done; \
+    mkdir /src/poppler \
     && tar -xJf /tmp/poppler.tar.xz -C /src/poppler --strip-components=1 \
     && cmake -S /src/poppler -B /src/poppler/build -G Ninja \
         -DCMAKE_INSTALL_PREFIX=/opt/poppler \
