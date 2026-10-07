@@ -199,7 +199,11 @@ jobs:
         run: |
           diag_dir="${GITHUB_WORKSPACE}/ae-c-diagnostics/${TEST_SLUG}"
           set +e
-          pytest -vv --tb=short -o faulthandler_timeout=300 \
+          faulthandler_timeout=300
+          if [ "$TEST_SLUG" = "crash-recovery" ]; then
+            faulthandler_timeout=900
+          fi
+          pytest -vv --tb=short -o faulthandler_timeout="$faulthandler_timeout" \
             --durations=20 --durations-min=1.0 \
             --junitxml="$diag_dir/junit.xml" \
             "$TEST_NODE"
