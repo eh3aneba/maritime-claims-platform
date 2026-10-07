@@ -28,10 +28,10 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  ae-c-postgres-acceptance:
-    name: AE-C PostgreSQL restart/replay acceptance
+  ae-c-fast:
+    name: AE-C focused PostgreSQL acceptance
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 30
     services:
       postgres:
         image: postgres:18.4
@@ -83,66 +83,158 @@ jobs:
 
       - name: Prepare privacy-safe diagnostics directory
         run: |
-          diag_dir="${GITHUB_WORKSPACE}/ae-c-diagnostics"
+          diag_dir="${GITHUB_WORKSPACE}/ae-c-diagnostics/fast"
           mkdir -p "$diag_dir"
-          printf '%s\n' '{"schema_version":1,"suite":"phase-17.6-ae-c-sftp-acceptance","status":"started","exit_code":null}' \
+          printf '%s\n' '{"schema_version":1,"suite":"phase-17.6-ae-c-sftp-focused","status":"started","exit_code":null}' \
             > "$diag_dir/summary.json"
 
-      - name: Run AE-C critical regressions with bounded diagnostics
+      - name: Run focused runtime and content-proof acceptance
         shell: bash
         run: |
-          set -uo pipefail
-          status=0
-          critical_tests=(
-            "tests/test_external_document_source_live_sftp_production_acceptance.py::test_ae_c_live_runtime_rejects_opened_file_replacement_before_first_byte"
-            "tests/test_external_document_source_sftp_production_adapter_acceptance.py::test_ae_c_production_adapter_registration_drives_real_governed_sftp_api_slice"
-            "tests/test_external_document_source_sftp_restart_replay_acceptance.py::test_ae_c_refresh_replay_survives_sftp_runtime_replacement"
-          )
-
-          for test_node in "${critical_tests[@]}"; do
-            echo "::group::Critical regression: ${test_node}"
-            set +e
-            timeout --signal=TERM --kill-after=10s 120s \
-              pytest -vv --tb=short -o faulthandler_timeout=30 --durations=10 --durations-min=0.5 "${test_node}"
-            test_status=$?
-            set -e
-            echo "::endgroup::"
-
-            if [ "${test_status}" -ne 0 ]; then
-              echo "::error::Critical AE-C regression failed or exceeded 120 seconds: ${test_node} (exit ${test_status})"
-              status=1
-            fi
-          done
-
-          exit "${status}"
-
-      - name: Run AE-C restart/replay and production acceptance
-        id: acceptance
-        shell: bash
-        run: |
-          diag_dir="${GITHUB_WORKSPACE}/ae-c-diagnostics"
+          diag_dir="${GITHUB_WORKSPACE}/ae-c-diagnostics/fast"
           set +e
-          pytest -vv --durations=20 --durations-min=1.0 \
+          pytest -vv --tb=short --durations=20 --durations-min=1.0 \
             --junitxml="$diag_dir/junit.xml" \
             tests/test_external_document_source_live_sftp_adapters.py \
             tests/test_external_document_source_live_sftp_production_acceptance.py \
             tests/test_external_document_source_sftp_production_adapter_acceptance.py \
-            tests/test_external_document_source_sftp_restart_replay_acceptance.py \
-            tests/test_external_document_source_sftp_due_tick_restart_replay_acceptance.py \
-            tests/test_external_document_source_sftp_crash_recovery_acceptance.py \
-            tests/test_external_document_source_sftp_admission_response_replay_acceptance.py \
-            tests/test_external_document_source_sftp_full_lifecycle_acceptance.py \
-            tests/test_external_document_source_observation_refresh_admission_execution.py::test_phase_aj_database_failure_rolls_back_document_and_canonical_storage
+            tests/test_external_document_source_sftp_restart_replay_acceptance.py::test_ae_c_content_proof_replay_survives_provider_runtime_reset
           status=$?
-          printf '{"schema_version":1,"suite":"phase-17.6-ae-c-sftp-acceptance","status":"completed","exit_code":%d}\n' "$status" \
+          printf '{"schema_version":1,"suite":"phase-17.6-ae-c-sftp-focused","status":"completed","exit_code":%d}\n' "$status" \
             > "$diag_dir/summary.json"
           exit "$status"
 
-      - name: Upload AE-C diagnostics
+      - name: Upload focused AE-C diagnostics
         if: ${{ always() }}
         uses: actions/upload-artifact@v6
         with:
-          name: ae-c-sftp-acceptance-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ github.workspace }}/ae-c-diagnostics
+          name: ae-c-sftp-focused-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ github.workspace }}/ae-c-diagnostics/fast
           if-no-files-found: error
           retention-days: 7
+
+  ae-c-lineage:
+    name: AE-C lineage acceptance — ${{ matrix.slug }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - slug: refresh-replay
+            test_node: tests/test_external_document_source_sftp_restart_replay_acceptance.py::test_ae_c_refresh_replay_survives_sftp_runtime_replacement
+          - slug: canonical-admission-baseline-replay
+            test_node: tests/test_external_document_source_sftp_restart_replay_acceptance.py::test_ae_c_canonical_admission_and_baseline_transition_replay_without_side_effects
+          - slug: due-tick-replay
+            test_node: tests/test_external_document_source_sftp_due_tick_restart_replay_acceptance.py::test_ae_c_due_tick_replay_survives_provider_registry_restart_without_second_io
+          - slug: crash-recovery
+            test_node: tests/test_external_document_source_sftp_crash_recovery_acceptance.py::test_ae_c_quarantine_write_followed_by_db_commit_failure_is_not_replay_authority
+          - slug: admission-response-replay
+            test_node: tests/test_external_document_source_sftp_admission_response_replay_acceptance.py::test_ae_c_committed_admission_survives_response_finalization_failure_and_replays
+          - slug: full-lifecycle
+            test_node: tests/test_external_document_source_sftp_full_lifecycle_acceptance.py::test_ae_c_contiguous_changed_refresh_n_plus_one_baseline_then_next_tick_unchanged
+          - slug: admission-rollback
+            test_node: tests/test_external_document_source_observation_refresh_admission_execution.py::test_phase_aj_database_failure_rolls_back_document_and_canonical_storage
+    services:
+      postgres:
+        image: postgres:18.4
+        env:
+          POSTGRES_DB: mcri_ae_c_ci
+          POSTGRES_USER: mcri_ci
+          POSTGRES_PASSWORD: mcri_ci_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U mcri_ci -d mcri_ae_c_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    defaults:
+      run:
+        working-directory: apps/api
+    env:
+      APP_ENV: test
+      DATABASE_URL: postgresql+psycopg://mcri_ci:mcri_ci_password@127.0.0.1:5432/mcri_ae_c_ci
+      MCRI_TEST_DATABASE_URL: postgresql+psycopg://mcri_ci:mcri_ci_password@127.0.0.1:5432/mcri_ae_c_ci
+      SECRET_KEY: ci-only-ae-c-sftp-acceptance-not-a-deployment-secret-2026
+      AI_PROVIDER: disabled
+      OPENAI_API_KEY: ""
+      LOCAL_STORAGE_PATH: /tmp/mcri-ae-c-storage
+      EXTERNAL_EVIDENCE_REFRESH_EXECUTION_POSTGRES_TEST: "1"
+      EXTERNAL_EVIDENCE_REFRESH_ADMISSION_EXEC_POSTGRES_TEST: "1"
+      EXTERNAL_EVIDENCE_DUE_TICK_SERVICE_EXECUTOR_POSTGRES_TEST: "1"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: apps/api/requirements-dev.lock
+
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --require-hashes -r requirements-dev.lock
+          python -m pip check
+
+      - name: Apply migrations
+        run: alembic upgrade head
+
+      - name: Prepare privacy-safe lineage diagnostics
+        run: |
+          diag_dir="${GITHUB_WORKSPACE}/ae-c-diagnostics/${{ matrix.slug }}"
+          mkdir -p "$diag_dir"
+          printf '%s\n' '{"schema_version":1,"suite":"phase-17.6-ae-c-sftp-lineage","status":"started","exit_code":null}' \
+            > "$diag_dir/summary.json"
+
+      - name: Run lineage acceptance scenario
+        shell: bash
+        env:
+          TEST_NODE: ${{ matrix.test_node }}
+          TEST_SLUG: ${{ matrix.slug }}
+        run: |
+          diag_dir="${GITHUB_WORKSPACE}/ae-c-diagnostics/${TEST_SLUG}"
+          set +e
+          pytest -vv --tb=short -o faulthandler_timeout=300 \
+            --durations=20 --durations-min=1.0 \
+            --junitxml="$diag_dir/junit.xml" \
+            "$TEST_NODE"
+          status=$?
+          printf '{"schema_version":1,"suite":"phase-17.6-ae-c-sftp-lineage","status":"completed","exit_code":%d}\n' "$status" \
+            > "$diag_dir/summary.json"
+          exit "$status"
+
+      - name: Upload lineage diagnostics
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: ae-c-sftp-lineage-${{ matrix.slug }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ github.workspace }}/ae-c-diagnostics/${{ matrix.slug }}
+          if-no-files-found: error
+          retention-days: 7
+
+  ae-c-postgres-acceptance:
+    name: AE-C PostgreSQL restart/replay acceptance
+    needs:
+      - ae-c-fast
+      - ae-c-lineage
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Verify focused and lineage gates succeeded
+        env:
+          FAST_RESULT: ${{ needs.ae-c-fast.result }}
+          LINEAGE_RESULT: ${{ needs.ae-c-lineage.result }}
+        run: |
+          set -euo pipefail
+          if [ "$FAST_RESULT" != "success" ] || [ "$LINEAGE_RESULT" != "success" ]; then
+            echo "Focused AE-C result: $FAST_RESULT" >&2
+            echo "Lineage AE-C matrix result: $LINEAGE_RESULT" >&2
+            exit 1
+          fi
+          echo "All focused and sharded AE-C acceptance scenarios succeeded."
