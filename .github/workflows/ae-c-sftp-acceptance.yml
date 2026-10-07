@@ -103,7 +103,7 @@ jobs:
             echo "::group::Critical regression: ${test_node}"
             set +e
             timeout --signal=TERM --kill-after=10s 300s \
-              pytest -vv --tb=short --durations=10 --durations-min=0.5 "${test_node}"
+              pytest -vv --tb=short -o faulthandler_timeout=60 --durations=10 --durations-min=0.5 "${test_node}"
             test_status=$?
             set -e
             echo "::endgroup::"
