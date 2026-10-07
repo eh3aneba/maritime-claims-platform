@@ -17,8 +17,13 @@ PARTIAL_DUMP="${OUT}.partial.$$"
 PARTIAL_SHA="${SHA_FILE}.partial.$$"
 PARTIAL_META="${META_FILE}.partial.$$"
 
+PUBLISH_STARTED=false
+
 cleanup_partials() {
   rm -f "$PARTIAL_DUMP" "$PARTIAL_SHA" "$PARTIAL_META"
+  if [[ "$PUBLISH_STARTED" == "true" && ! -e "$OUT" ]]; then
+    rm -f "$SHA_FILE" "$META_FILE"
+  fi
 }
 trap cleanup_partials EXIT
 
@@ -28,6 +33,21 @@ for target in "$OUT" "$SHA_FILE" "$META_FILE"; do
     exit 1
   fi
 done
+
+read_alembic_heads() {
+  docker compose exec -T db psql \
+    -U "$POSTGRES_USER" \
+    -d "$POSTGRES_DB" \
+    -At \
+    -c 'SELECT version_num FROM alembic_version ORDER BY version_num;' \
+    | paste -sd, -
+}
+
+ALEMBIC_HEADS_BEFORE="$(read_alembic_heads)"
+if [[ -z "$ALEMBIC_HEADS_BEFORE" ]]; then
+  echo "Could not determine Alembic revision before backup." >&2
+  exit 1
+fi
 
 echo "Creating PostgreSQL custom-format backup: $OUT"
 docker compose exec -T db pg_dump \
@@ -60,16 +80,13 @@ if [[ ! "$DUMP_SHA256" =~ ^[0-9a-fA-F]{64}$ ]]; then
   exit 1
 fi
 
-ALEMBIC_HEADS="$(
-  docker compose exec -T db psql \
-    -U "$POSTGRES_USER" \
-    -d "$POSTGRES_DB" \
-    -At \
-    -c 'SELECT version_num FROM alembic_version ORDER BY version_num;' \
-    | paste -sd, -
-)"
-if [[ -z "$ALEMBIC_HEADS" ]]; then
-  echo "Could not determine Alembic revision from the database." >&2
+ALEMBIC_HEADS_AFTER="$(read_alembic_heads)"
+if [[ -z "$ALEMBIC_HEADS_AFTER" ]]; then
+  echo "Could not determine Alembic revision after backup." >&2
+  exit 1
+fi
+if [[ "$ALEMBIC_HEADS_BEFORE" != "$ALEMBIC_HEADS_AFTER" ]]; then
+  echo "Alembic revision changed during backup; refusing publication." >&2
   exit 1
 fi
 
@@ -87,14 +104,15 @@ format=mcri-postgres-backup-v1
 created_at_utc=$CREATED_AT_UTC
 database=$POSTGRES_DB
 git_sha=$GIT_SHA
-alembic_heads=$ALEMBIC_HEADS
+alembic_heads=$ALEMBIC_HEADS_BEFORE
 dump_file=$DUMP_BASENAME
 dump_sha256=$DUMP_SHA256
 EOF
 
-mv "$PARTIAL_DUMP" "$OUT"
+PUBLISH_STARTED=true
 mv "$PARTIAL_SHA" "$SHA_FILE"
 mv "$PARTIAL_META" "$META_FILE"
+mv "$PARTIAL_DUMP" "$OUT"
 
 trap - EXIT
 
