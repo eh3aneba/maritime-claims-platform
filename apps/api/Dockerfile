@@ -122,11 +122,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-RUN /sbin/apk upgrade --no-cache libssl3 libcrypto3 \
-    && /sbin/apk add --no-cache \
-        --repository=https://dl-cdn.alpinelinux.org/alpine/v3.19/main \
-        'zlib=1.3.1-r0' \
-    && /sbin/apk add --no-cache libuuid \
+RUN /sbin/apk upgrade --no-cache libssl3 libcrypto3 zlib \
+    && /sbin/apk add --no-cache 'zlib>=1.3.2-r1' libuuid \
     && /sbin/apk info -v libssl3 libcrypto3 zlib \
     && python -c "import _uuid, uuid, zlib; value = uuid.uuid4(); assert value.version == 4; print(value, zlib.ZLIB_VERSION)" \
     && rm -rf /usr/local/lib/python3.14/site-packages/pip* /usr/local/bin/pip*
@@ -148,11 +145,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-RUN /sbin/apk upgrade --no-cache libssl3 libcrypto3 \
-    && /sbin/apk add --no-cache \
-        --repository=https://dl-cdn.alpinelinux.org/alpine/v3.19/main \
-        'zlib=1.3.1-r0' \
-    && /sbin/apk add --no-cache \
+RUN /sbin/apk upgrade --no-cache libssl3 libcrypto3 zlib \
+    && /sbin/apk add --no-cache 'zlib>=1.3.2-r1' \
         cairo \
         ca-certificates \
         fontconfig \
