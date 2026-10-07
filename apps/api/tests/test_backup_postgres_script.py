@@ -14,7 +14,7 @@ VERIFY_SCRIPT = REPO_ROOT / "scripts" / "verify_postgres_backup.sh"
 
 def _fake_docker(tmp_path: Path) -> tuple[Path, Path]:
     fake_bin = tmp_path / "bin"
-    fake_bin.mkdir()
+    fake_bin.mkdir(parents=True)
     log_path = tmp_path / "docker.log"
     docker = fake_bin / "docker"
     docker.write_text(
