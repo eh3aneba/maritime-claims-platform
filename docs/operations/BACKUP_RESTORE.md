@@ -40,6 +40,8 @@ After copying a backup off-host or before using it in a recovery exercise, re-ve
 
 The verifier is read-only. It checks the dump SHA-256, sidecar filename/digest binding, metadata format/Alembic revision presence, and `pg_restore --list`. A checksum mismatch fails before archive parsing.
 
+The SHA-256 sidecar is an integrity/copy-consistency control, not a digital signature. Protect the dump and both sidecars together with the organization's access controls and off-host backup policy; an attacker able to replace all artifacts could recompute the digest.
+
 Store production/pilot backups off-host and encrypted according to the organization's retention policy.
 
 ### Recovery-point consistency boundary
