@@ -40,7 +40,17 @@ if [[ " ${*:-} " == *" pg_restore --list "* ]]; then
 fi
 
 if [[ " ${*:-} " == *" psql "* ]]; then
-  printf '0224_obs_refresh_recovery_anchor\n'
+  count=0
+  if [[ -f "$FAKE_PSQL_COUNT_FILE" ]]; then
+    count="$(cat "$FAKE_PSQL_COUNT_FILE")"
+  fi
+  count=$((count + 1))
+  printf '%s' "$count" > "$FAKE_PSQL_COUNT_FILE"
+  if [[ "$count" -gt 1 && -n "${FAKE_ALEMBIC_HEAD_SECOND:-}" ]]; then
+    printf '%s\n' "$FAKE_ALEMBIC_HEAD_SECOND"
+  else
+    printf '%s\n' "${FAKE_ALEMBIC_HEAD_FIRST:-0224_obs_refresh_recovery_anchor}"
+  fi
   exit 0
 fi
 
@@ -56,14 +66,18 @@ def _run_backup(
     tmp_path: Path,
     *,
     archive_validation_fails: bool = False,
+    alembic_head_second: str | None = None,
 ) -> tuple[subprocess.CompletedProcess[str], Path, str]:
     output = tmp_path / "pilot.dump"
     fake_bin, log_path = _fake_docker(tmp_path)
     env = os.environ.copy()
     env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
     env["FAKE_DOCKER_LOG"] = str(log_path)
+    env["FAKE_PSQL_COUNT_FILE"] = str(tmp_path / "psql-count")
     if archive_validation_fails:
         env["FAKE_PG_RESTORE_FAIL"] = "1"
+    if alembic_head_second is not None:
+        env["FAKE_ALEMBIC_HEAD_SECOND"] = alembic_head_second
 
     result = subprocess.run(
         ["bash", str(BACKUP_SCRIPT), str(output)],
@@ -95,7 +109,7 @@ def test_backup_is_validated_hashed_and_published_atomically(tmp_path: Path) -> 
     assert f"dump_sha256={digest}" in metadata
     assert "compose exec -T db pg_dump" in log
     assert "compose exec -T db pg_restore --list" in log
-    assert "compose exec -T db psql" in log
+    assert log.count("compose exec -T db psql") == 2
     assert not list(tmp_path.glob("*.partial.*"))
 
 
@@ -110,6 +124,20 @@ def test_backup_archive_validation_failure_publishes_nothing(tmp_path: Path) -> 
     assert not list(tmp_path.glob("*.partial.*"))
 
 
+
+def test_backup_rejects_alembic_revision_drift(tmp_path: Path) -> None:
+    result, output, _ = _run_backup(
+        tmp_path,
+        alembic_head_second="0225_changed_during_backup",
+    )
+
+    assert result.returncode != 0
+    assert "Alembic revision changed during backup" in result.stderr
+    assert not output.exists()
+    assert not Path(f"{output}.sha256").exists()
+    assert not Path(f"{output}.meta").exists()
+    assert not list(tmp_path.glob("*.partial.*"))
+
 def test_backup_refuses_to_overwrite_existing_artifact(tmp_path: Path) -> None:
     output = tmp_path / "pilot.dump"
     output.write_bytes(b"preserve-me")
@@ -117,6 +145,7 @@ def test_backup_refuses_to_overwrite_existing_artifact(tmp_path: Path) -> None:
     env = os.environ.copy()
     env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
     env["FAKE_DOCKER_LOG"] = str(log_path)
+    env["FAKE_PSQL_COUNT_FILE"] = str(tmp_path / "psql-count")
 
     result = subprocess.run(
         ["bash", str(BACKUP_SCRIPT), str(output)],
