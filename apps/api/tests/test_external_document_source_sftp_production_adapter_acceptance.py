@@ -177,7 +177,7 @@ def test_ae_c_production_adapter_registration_drives_real_governed_sftp_api_slic
 
     assert transport_request.max_connection_attempts == 1
     assert activation_request.max_authentication_attempts == 1
-    assert listing_request.non_recursive is True
+    assert listing_request.recursive is False
     assert read_request.exact_file_only is True
     assert read_request.follow_symlinks is False
     assert read_request.max_read_attempts == 1
