@@ -16,9 +16,6 @@ from app.modules.external_document_sources.due_tick_observation_models import (
 from app.modules.external_document_sources.due_tick_observation_service import (
     ensure_due_tick_observation_integrity,
 )
-from app.modules.external_document_sources.evidence_family_binding_service import (
-    _ensure_binding_integrity,
-)
 from app.modules.external_document_sources.family_version_admission_service import (
     _binding_for_update,
     _lock_current_family_document,
@@ -255,7 +252,6 @@ def ensure_recurring_baseline_transition_integrity(
         profile_id=transition.profile_id,
         binding_id=transition.binding_id,
     )
-    _ensure_binding_integrity(db, binding)
 
     schedule = db.get(
         ExternalDocumentSourceRecurringObservationSchedule,
@@ -265,7 +261,11 @@ def ensure_recurring_baseline_transition_integrity(
         raise ExternalDocumentSourceConflictError(
             "Recurring baseline transition schedule is missing"
         )
-    ensure_recurring_observation_schedule_integrity(db, schedule)
+    ensure_recurring_observation_schedule_integrity(
+        db,
+        schedule,
+        verified_binding=binding,
+    )
 
     current = db.get(Document, transition.current_document_id)
     prior = db.get(Document, transition.prior_document_id)
@@ -508,7 +508,6 @@ def establish_recurring_baseline_transition(
         profile_id=profile_id,
         binding_id=admission.binding_id,
     )
-    _ensure_binding_integrity(db, binding)
     current = _lock_current_family_document(
         db,
         organization_id=organization_id,
@@ -547,7 +546,11 @@ def establish_recurring_baseline_transition(
         raise ExternalDocumentSourceConflictError(
             "SFTP recurring schedule lineage is missing"
         )
-    ensure_recurring_observation_schedule_integrity(db, schedule)
+    ensure_recurring_observation_schedule_integrity(
+        db,
+        schedule,
+        verified_binding=binding,
+    )
     if (
         schedule.status != "active"
         or schedule.active_binding_guard != binding.id

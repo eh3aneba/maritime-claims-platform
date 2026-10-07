@@ -387,7 +387,11 @@ def _provider_read_context(
         )
 
     if authorization.provider_kind == "sftp":
-        lineage = resolve_recurring_provider_lineage(db, binding)
+        lineage = resolve_recurring_provider_lineage(
+            db,
+            binding,
+            binding_integrity_verified=True,
+        )
         if (
             lineage.provider_kind != "sftp"
             or lineage.sftp_observation_id is None

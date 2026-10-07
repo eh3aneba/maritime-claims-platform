@@ -86,8 +86,15 @@ RUN git init /src/tesseract \
     && make install
 
 # Poppler utilities are built from the Alpine-verified upstream tarball against /opt/ocr.
-RUN python -c "import hashlib,urllib.request; u='https://poppler.freedesktop.org/poppler-25.12.0.tar.xz'; d=urllib.request.urlopen(u,timeout=120).read(); h=hashlib.sha512(d).hexdigest(); assert h=='4f68713d7efa5003a60773749d3bcff4041b165dfb65104a56cec576559c15164fc4a021244cc91f4ed76aab709757637396d7c5b6fbcf3eed23e3469072e4f3',h; open('/tmp/poppler.tar.xz','wb').write(d)" \
-    && mkdir /src/poppler \
+RUN set -eu; \
+    for attempt in 1 2 3 4 5 6; do \
+        if python -c "import hashlib,urllib.request; u='https://poppler.freedesktop.org/poppler-25.12.0.tar.xz'; d=urllib.request.urlopen(u,timeout=120).read(); h=hashlib.sha512(d).hexdigest(); assert h=='4f68713d7efa5003a60773749d3bcff4041b165dfb65104a56cec576559c15164fc4a021244cc91f4ed76aab709757637396d7c5b6fbcf3eed23e3469072e4f3',h; open('/tmp/poppler.tar.xz','wb').write(d)"; then \
+            break; \
+        fi; \
+        if [ "$attempt" -eq 6 ]; then exit 1; fi; \
+        sleep $((attempt * 2)); \
+    done; \
+    mkdir /src/poppler \
     && tar -xJf /tmp/poppler.tar.xz -C /src/poppler --strip-components=1 \
     && cmake -S /src/poppler -B /src/poppler/build -G Ninja \
         -DCMAKE_INSTALL_PREFIX=/opt/poppler \
@@ -115,11 +122,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-RUN /sbin/apk add --no-cache \
+RUN /sbin/apk upgrade --no-cache libssl3 libcrypto3 \
+    && /sbin/apk add --no-cache \
         --repository=https://dl-cdn.alpinelinux.org/alpine/v3.19/main \
         'zlib=1.3.1-r0' \
     && /sbin/apk add --no-cache libuuid \
-    && /sbin/apk info -v zlib \
+    && /sbin/apk info -v libssl3 libcrypto3 zlib \
     && python -c "import _uuid, uuid, zlib; value = uuid.uuid4(); assert value.version == 4; print(value, zlib.ZLIB_VERSION)" \
     && rm -rf /usr/local/lib/python3.14/site-packages/pip* /usr/local/bin/pip*
 
@@ -140,7 +148,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-RUN /sbin/apk add --no-cache \
+RUN /sbin/apk upgrade --no-cache libssl3 libcrypto3 \
+    && /sbin/apk add --no-cache \
         --repository=https://dl-cdn.alpinelinux.org/alpine/v3.19/main \
         'zlib=1.3.1-r0' \
     && /sbin/apk add --no-cache \
@@ -162,7 +171,7 @@ RUN /sbin/apk add --no-cache \
         nss \
         openjpeg \
         pango \
-    && /sbin/apk info -v zlib \
+    && /sbin/apk info -v libssl3 libcrypto3 zlib \
     && python -c "import hashlib,pathlib,urllib.request; files=[('eng.traineddata',23466654,'f4744c201359d02ced6914c77f0de68ee9bbdd74'),('fas.traineddata',561272,'a0b9843164d928caad5afb0bd6973c964ba5b0b9')]; base='https://raw.githubusercontent.com/tesseract-ocr/tessdata/ced78752cc61322fb554c280d13360b35b8684e4/'; out=pathlib.Path('/usr/share/tessdata'); out.mkdir(parents=True,exist_ok=True); [(lambda name,size,want: (lambda data: ((_ for _ in ()).throw(AssertionError(len(data))) if len(data)!=size else None, (_ for _ in ()).throw(AssertionError('git sha mismatch')) if hashlib.sha1(b'blob '+str(len(data)).encode()+b'\\0'+data).hexdigest()!=want else None, print(name+'.sha256='+hashlib.sha256(data).hexdigest()), (out/name).write_bytes(data)))(urllib.request.urlopen(base+name,timeout=120).read()))(name,size,want) for name,size,want in files]" \
     && rm -rf /usr/local/lib/python3.14/site-packages/pip* /usr/local/bin/pip*
 

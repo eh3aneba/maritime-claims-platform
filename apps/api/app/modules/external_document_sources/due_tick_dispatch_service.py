@@ -223,11 +223,19 @@ def dispatch_next_due_tick(
         schedule = db.get(ExternalDocumentSourceRecurringObservationSchedule, schedule_id)
         if schedule is None:
             raise ExternalDocumentSourceConflictError("Recurring observation schedule disappeared during dispatch")
-        ensure_recurring_observation_schedule_integrity(db, schedule)
+        ensure_recurring_observation_schedule_integrity(
+            db,
+            schedule,
+            verified_binding=binding,
+        )
         if schedule.status != "active" or schedule.active_binding_guard != schedule.binding_id:
             continue
 
-        verified_binding = _verified_binding(db, schedule)
+        verified_binding = _verified_binding(
+            db,
+            schedule,
+            integrity_verified=True,
+        )
         if verified_binding.id != binding.id:
             raise ExternalDocumentSourceConflictError("Due-tick dispatch family binding drifted")
 
