@@ -149,7 +149,7 @@ def test_ae_c_object_write_then_final_db_failure_recovers_without_second_provide
         assert db.query(ExternalDocumentSourceObservationRefreshReceipt).count() == 1
         persisted = db.get(ExternalDocumentSourceObservationRefreshExecution, execution_id)
         assert persisted is not None
-        assert persisted.requested_at == datetime(2026, 9, 29, 8, 0, tzinfo=UTC)
+        assert refresh_service._aware(persisted.requested_at) == datetime(2026, 9, 29, 8, 0, tzinfo=UTC)
 
 
 def test_ae_c_anchor_only_restart_performs_one_controlled_provider_read(
@@ -215,7 +215,7 @@ def test_ae_c_anchor_only_restart_performs_one_controlled_provider_read(
             now=datetime(2026, 9, 29, 9, 1, tzinfo=UTC),
         )
         assert outcome == "completed"
-        assert execution.requested_at == datetime(2026, 9, 29, 9, 0, tzinfo=UTC)
+        assert refresh_service._aware(execution.requested_at) == datetime(2026, 9, 29, 9, 0, tzinfo=UTC)
 
     assert len(adapter.calls) == 1
     assert store.put_calls == 1
