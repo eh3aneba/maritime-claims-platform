@@ -9,6 +9,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 BACKUP_SCRIPT = REPO_ROOT / "scripts" / "backup_postgres.sh"
+VERIFY_SCRIPT = REPO_ROOT / "scripts" / "verify_postgres_backup.sh"
 
 
 def _fake_docker(tmp_path: Path) -> tuple[Path, Path]:
@@ -91,6 +92,28 @@ def _run_backup(
     return result, output, log
 
 
+
+def _run_verify(
+    tmp_path: Path,
+    output: Path,
+) -> tuple[subprocess.CompletedProcess[str], str]:
+    fake_bin, log_path = _fake_docker(tmp_path / "verify")
+    env = os.environ.copy()
+    env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+    env["FAKE_DOCKER_LOG"] = str(log_path)
+    env["FAKE_PSQL_COUNT_FILE"] = str(tmp_path / "verify-psql-count")
+
+    result = subprocess.run(
+        ["bash", str(VERIFY_SCRIPT), str(output)],
+        cwd=REPO_ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    log = log_path.read_text(encoding="utf-8") if log_path.exists() else ""
+    return result, log
+
 def test_backup_is_validated_hashed_and_published_atomically(tmp_path: Path) -> None:
     result, output, log = _run_backup(tmp_path)
 
@@ -112,6 +135,23 @@ def test_backup_is_validated_hashed_and_published_atomically(tmp_path: Path) -> 
     assert log.count("compose exec -T db psql") == 2
     assert not list(tmp_path.glob("*.partial.*"))
 
+    verified, verify_log = _run_verify(tmp_path, output)
+    assert verified.returncode == 0, verified.stderr
+    assert "Backup verification passed" in verified.stdout
+    assert "compose exec -T db pg_restore --list" in verify_log
+
+
+
+def test_backup_verifier_rejects_tampered_dump(tmp_path: Path) -> None:
+    result, output, _ = _run_backup(tmp_path)
+    assert result.returncode == 0, result.stderr
+
+    output.write_bytes(output.read_bytes() + b"-tampered")
+    verified, verify_log = _run_verify(tmp_path, output)
+
+    assert verified.returncode != 0
+    assert "Backup checksum mismatch" in verified.stderr
+    assert "pg_restore --list" not in verify_log
 
 def test_backup_archive_validation_failure_publishes_nothing(tmp_path: Path) -> None:
     result, output, _ = _run_backup(tmp_path, archive_validation_fails=True)
@@ -122,7 +162,6 @@ def test_backup_archive_validation_failure_publishes_nothing(tmp_path: Path) -> 
     assert not Path(f"{output}.sha256").exists()
     assert not Path(f"{output}.meta").exists()
     assert not list(tmp_path.glob("*.partial.*"))
-
 
 
 def test_backup_rejects_alembic_revision_drift(tmp_path: Path) -> None:
@@ -137,6 +176,7 @@ def test_backup_rejects_alembic_revision_drift(tmp_path: Path) -> None:
     assert not Path(f"{output}.sha256").exists()
     assert not Path(f"{output}.meta").exists()
     assert not list(tmp_path.glob("*.partial.*"))
+
 
 def test_backup_refuses_to_overwrite_existing_artifact(tmp_path: Path) -> None:
     output = tmp_path / "pilot.dump"
