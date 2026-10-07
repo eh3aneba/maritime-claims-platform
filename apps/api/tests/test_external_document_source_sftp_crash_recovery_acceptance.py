@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+import os
 from uuid import NAMESPACE_URL, uuid5
 
 import pytest
@@ -33,11 +34,31 @@ from tests.test_external_document_source_sftp_observation_refresh_execution impo
     setup_function as _ab_setup,
     teardown_function as _ab_teardown,
 )
+from tests.test_external_document_source_observation_refresh_admission_execution_concurrency_postgres import (
+    _seed_authorized_refresh,
+    setup_function as _pg_setup,
+    teardown_function as _pg_teardown,
+)
+from tests.test_external_document_source_observation_refresh_execution import (
+    _refresh_io as _generic_refresh_io,
+)
 
 
 _REASON = (
     "Consume the exact approved changed SFTP file through the durable AE-C crash recovery anchor."
 )
+_POSTGRES_RECOVERY_GATE = (
+    os.environ.get("EXTERNAL_EVIDENCE_REFRESH_EXECUTION_POSTGRES_TEST") == "1"
+)
+
+
+def _skip_heavy_sftp_in_postgres_gate() -> None:
+    if _POSTGRES_RECOVERY_GATE:
+        pytest.skip(
+            "The AE-C PostgreSQL gate uses the focused provider-neutral recovery-anchor "
+            "test below; exact SFTP crash recovery remains in Full Backend where the "
+            "long production-shaped lineage is sharded with a 40-minute bound."
+        )
 
 
 def setup_function() -> None:
@@ -53,6 +74,7 @@ def teardown_function() -> None:
 def test_ae_c_object_write_then_final_db_failure_recovers_without_second_provider_io(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _skip_heavy_sftp_in_postgres_gate()
     (
         _chain,
         _metadata_adapter,
@@ -139,6 +161,7 @@ def test_ae_c_object_write_then_final_db_failure_recovers_without_second_provide
 def test_ae_c_anchor_only_restart_performs_one_controlled_provider_read(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _skip_heavy_sftp_in_postgres_gate()
     (
         _chain,
         _metadata_adapter,
@@ -207,6 +230,7 @@ def test_ae_c_anchor_only_restart_performs_one_controlled_provider_read(
 def test_ae_c_unanchored_preexisting_quarantine_object_fails_closed_before_provider_read(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _skip_heavy_sftp_in_postgres_gate()
     (
         _chain,
         _metadata_adapter,
@@ -255,3 +279,115 @@ def test_ae_c_unanchored_preexisting_quarantine_object_fails_closed_before_provi
         assert db.query(ExternalDocumentSourceObservationRefreshRecoveryAnchor).count() == 0
         assert db.query(ExternalDocumentSourceObservationRefreshRecoveryAnchorReceipt).count() == 0
         assert db.query(ExternalDocumentSourceObservationRefreshExecution).count() == 0
+
+@pytest.mark.skipif(
+    not _POSTGRES_RECOVERY_GATE,
+    reason="Focused provider-neutral crash recovery is only needed in the AE-C PostgreSQL gate.",
+)
+def test_ae_c_postgres_anchor_recovers_persisted_object_after_final_db_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Build the compact PostgreSQL fixture used by the existing concurrency gate
+    # instead of replaying the entire production-shaped SFTP lineage in this job.
+    # The recovery state machine is provider-neutral; exact SFTP wiring is still
+    # exercised by the three tests above in Full Backend.
+    _pg_setup()
+    try:
+        (
+            actor_id,
+            profile_id,
+            organization_id,
+            _document_id,
+            authorization_id,
+            _metadata_adapter,
+        ) = _seed_authorized_refresh(
+            monkeypatch,
+            "ae-c-recovery-pg",
+            include_refresh_execution=False,
+        )
+        _changed_body, read_adapter, store = _generic_refresh_io()
+
+        with TestingSessionLocal() as db:
+            real_commit = db.commit
+            commit_calls = {"count": 0}
+
+            def _fail_final_commit() -> None:
+                commit_calls["count"] += 1
+                if commit_calls["count"] == 2:
+                    raise RuntimeError("simulated-final-db-commit-crash")
+                real_commit()
+
+            monkeypatch.setattr(db, "commit", _fail_final_commit)
+            with pytest.raises(RuntimeError, match="simulated-final-db-commit-crash"):
+                execute_observation_refresh_authorization(
+                    db,
+                    organization_id=organization_id,
+                    profile_id=profile_id,
+                    authorization_id=authorization_id,
+                    requested_by_id=actor_id,
+                    request_key="ae-c-recovery-pg-key",
+                    request_reason=(
+                        "Exercise durable recovery after quarantine persistence but before "
+                        "the final observation-refresh execution commit."
+                    ),
+                    now=datetime(2026, 9, 29, 11, 0, tzinfo=UTC),
+                )
+            assert commit_calls["count"] == 2
+            db.rollback()
+            monkeypatch.setattr(db, "commit", real_commit)
+
+        assert read_adapter.calls == 1
+        assert store.put_calls == 1
+
+        with TestingSessionLocal() as db:
+            assert db.query(ExternalDocumentSourceObservationRefreshRecoveryAnchor).count() == 1
+            assert (
+                db.query(
+                    ExternalDocumentSourceObservationRefreshRecoveryAnchorReceipt
+                ).count()
+                == 1
+            )
+            assert db.query(ExternalDocumentSourceObservationRefreshExecution).count() == 0
+            assert db.query(ExternalDocumentSourceObservationRefreshReceipt).count() == 0
+
+        with TestingSessionLocal() as db:
+            execution, outcome = execute_observation_refresh_authorization(
+                db,
+                organization_id=organization_id,
+                profile_id=profile_id,
+                authorization_id=authorization_id,
+                requested_by_id=actor_id,
+                request_key="ae-c-recovery-pg-key",
+                request_reason=(
+                    "Exercise durable recovery after quarantine persistence but before "
+                    "the final observation-refresh execution commit."
+                ),
+                now=datetime(2026, 9, 29, 11, 1, tzinfo=UTC),
+            )
+            assert outcome == "completed"
+            execution_id = execution.id
+
+        assert read_adapter.calls == 1
+        assert store.put_calls == 1
+
+        with TestingSessionLocal() as db:
+            assert db.query(ExternalDocumentSourceObservationRefreshRecoveryAnchor).count() == 1
+            assert (
+                db.query(
+                    ExternalDocumentSourceObservationRefreshRecoveryAnchorReceipt
+                ).count()
+                == 1
+            )
+            assert db.query(ExternalDocumentSourceObservationRefreshExecution).count() == 1
+            assert db.query(ExternalDocumentSourceObservationRefreshReceipt).count() == 1
+            persisted = db.get(
+                ExternalDocumentSourceObservationRefreshExecution,
+                execution_id,
+            )
+            assert persisted is not None
+            assert persisted.requested_at == datetime(
+                2026, 9, 29, 11, 0, tzinfo=UTC
+            )
+    finally:
+        _pg_teardown()
+
