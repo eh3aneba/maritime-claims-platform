@@ -102,14 +102,14 @@ jobs:
           for test_node in "${critical_tests[@]}"; do
             echo "::group::Critical regression: ${test_node}"
             set +e
-            timeout --signal=TERM --kill-after=10s 300s \
-              pytest -vv --tb=short -o faulthandler_timeout=60 --durations=10 --durations-min=0.5 "${test_node}"
+            timeout --signal=TERM --kill-after=10s 120s \
+              pytest -vv --tb=short -o faulthandler_timeout=30 --durations=10 --durations-min=0.5 "${test_node}"
             test_status=$?
             set -e
             echo "::endgroup::"
 
             if [ "${test_status}" -ne 0 ]; then
-              echo "::error::Critical AE-C regression failed or exceeded 300 seconds: ${test_node} (exit ${test_status})"
+              echo "::error::Critical AE-C regression failed or exceeded 120 seconds: ${test_node} (exit ${test_status})"
               status=1
             fi
           done
