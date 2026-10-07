@@ -367,6 +367,7 @@ def test_ae_c_postgres_gate_recovery_state_machine_avoids_duplicate_sftp_io(
             self.pending = []
             self.commit_calls = 0
             self.fail_final_commit = True
+            self.fail_execution_refresh_once = False
 
         def scalar(self, query):
             if query.model is ExternalDocumentSourceObservationRefreshExecution:
@@ -402,7 +403,13 @@ def test_ae_c_postgres_gate_recovery_state_machine_avoids_duplicate_sftp_io(
         def rollback(self):
             self.pending.clear()
 
-        def refresh(self, _row):
+        def refresh(self, row):
+            if (
+                self.fail_execution_refresh_once
+                and isinstance(row, ExternalDocumentSourceObservationRefreshExecution)
+            ):
+                self.fail_execution_refresh_once = False
+                raise RuntimeError("simulated-response-finalization-failure")
             return None
 
     db = _Session()
@@ -469,7 +476,36 @@ def test_ae_c_postgres_gate_recovery_state_machine_avoids_duplicate_sftp_io(
     assert read_calls["count"] == 1
     assert store.put_calls == 1
 
+    # Retry recovers the already-persisted anchored object without a second
+    # provider read/write. Then simulate response finalization failing after the
+    # completed execution/receipt commit has succeeded.
     db.fail_final_commit = False
+    db.fail_execution_refresh_once = True
+    with pytest.raises(
+        RuntimeError,
+        match="simulated-response-finalization-failure",
+    ):
+        execute_observation_refresh_authorization(
+            db,
+            organization_id=organization_id,
+            profile_id=profile_id,
+            authorization_id=authorization_id,
+            requested_by_id=actor_id,
+            request_key="ae-c-recovery-state-machine",
+            request_reason=reason,
+            now=datetime(2026, 9, 29, 11, 1, tzinfo=UTC),
+        )
+
+    assert db.execution is not None
+    assert db.execution_receipt is not None
+    assert read_calls["count"] == 1
+    assert store.put_calls == 1
+    assert db.execution.requested_at == requested_at
+    assert db.execution.provider_kind == "sftp"
+    assert db.execution.content_sha256 == digest
+
+    # Exact replay after response-finalization failure returns the durable
+    # completed execution and consumes no additional provider/storage authority.
     execution, outcome = execute_observation_refresh_authorization(
         db,
         organization_id=organization_id,
@@ -478,15 +514,10 @@ def test_ae_c_postgres_gate_recovery_state_machine_avoids_duplicate_sftp_io(
         requested_by_id=actor_id,
         request_key="ae-c-recovery-state-machine",
         request_reason=reason,
-        now=datetime(2026, 9, 29, 11, 1, tzinfo=UTC),
+        now=datetime(2026, 9, 29, 11, 2, tzinfo=UTC),
     )
-
-    assert outcome == "completed"
+    assert outcome == "replayed"
     assert execution is db.execution
-    assert db.execution_receipt is not None
     assert read_calls["count"] == 1
     assert store.put_calls == 1
-    assert execution.requested_at == requested_at
-    assert execution.provider_kind == "sftp"
-    assert execution.content_sha256 == digest
 
