@@ -14,10 +14,8 @@ RUN npm run build
 FROM node:22-alpine3.24 AS runner
 WORKDIR /app
 ENV NODE_ENV=production
-RUN /sbin/apk upgrade --no-cache libssl3 libcrypto3 \
-    && /sbin/apk add --no-cache \
-        --repository=https://dl-cdn.alpinelinux.org/alpine/v3.19/main \
-        'zlib=1.3.1-r0' \
+RUN /sbin/apk upgrade --no-cache libssl3 libcrypto3 zlib \
+    && /sbin/apk add --no-cache 'zlib>=1.3.2-r1' \
     && /sbin/apk info -v libssl3 libcrypto3 zlib \
     && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
     && rm -f /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack \

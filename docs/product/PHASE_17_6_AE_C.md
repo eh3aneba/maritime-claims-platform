@@ -42,23 +42,37 @@ After a schedule dispatch is durably consumed, replace/clear the provider metada
 
 ## Crash-window recovery matrix
 
+AB refresh staging now has a dedicated pre-I/O recovery authority:
+
+1. while holding the exact human refresh authorization, derive the deterministic quarantine key and verify that a brand-new key is empty;
+2. persist one immutable `requested` recovery anchor + requested receipt binding the authorization, current Document/version/hash, originating changed observation, provider/profile/source lineage, read policy/adapter identity, storage backend/purpose/key hash, actor/reason/request and planned AB execution;
+3. commit the anchor **before** provider content read or storage mutation;
+4. reacquire and revalidate the exact authorization/current lineage;
+5. if the anchored object already exists, verify its store digest/size and changed-observation invariants and complete AB with zero second provider read/write;
+6. if it does not exist, perform the one controlled reread/write under the same anchor;
+7. AC/AD continue to consume only the immutable completed AB execution/receipt.
+
 AE-C explicitly covers:
-- failure before DB commit leaves no durable success/authority row;
-- committed immutable execution survives response-finalization failure and replays without provider/storage I/O;
-- storage write followed by DB rollback cannot produce a current N+1 without execution lineage;
-- quarantine/staging rollback cannot create a reusable orphan that bypasses refresh authority;
-- competing service executors remain single-consumer;
-- stale/replaced schedule and stale human authorization fail before consuming admission/baseline authority.
+- failure before anchor commit leaves no durable recovery authority;
+- anchor-only restart with an empty key performs the controlled read/write once;
+- persisted anchored object + failed final AB DB commit recovers with zero second provider read/write;
+- an unanchored pre-existing object fails closed and is never adopted/overwritten;
+- completed AB commit + response-finalization failure replays the completed execution with zero provider/storage mutation;
+- canonical admission rollback cannot produce a current N+1 without execution lineage;
+- competing consumers remain serialized and durable row/receipt cardinality remains one;
+- stale/replaced schedule, current Document and human authorization fail before new I/O/authority consumption.
+
+This is not a claim of physical exactly-once SFTP reads across the impossible gap after a remote read but before any durable object exists. If a process dies there, retry may reread under the same durable anchor. Once the anchored object exists, restart performs zero second provider read/write.
 
 ## Privacy-safe diagnostics
 
-The PostgreSQL production-shaped scenario measures stage duration and SQL query counts with test-only instrumentation. The artifact contains aggregate labels/numbers only and must exclude SQL text, bind values, credentials, usernames, raw hostnames/paths, secret references, claim identifiers, file contents and tokens.
+The PostgreSQL production-shaped scenario measures stage duration and SQL query counts with test-only instrumentation. The artifact contains aggregate labels/numbers only and must exclude SQL text, bind values, credentials, usernames, raw hostnames/paths, raw quarantine keys, secret references, claim identifiers, file contents and tokens. Recovery anchor rows/receipts retain only bounded lineage and hash-safe custody facts.
 
 Regression budgets are calibrated after the first exact-head measured baseline; ceilings are CI tripwires rather than production SLOs.
 
 ## CI acceptance
 
-Before Ready for Review / merge, the clean AE-C head must pass:
+Before Ready for Review / merge, the clean AE-C head must pass. AE-C workflow concurrency cancels stale synchronized heads so only the latest PR head consumes acceptance runners:
 - scoped PostgreSQL admission-execution acceptance;
 - Full Backend exact-head validation;
 - Supply Chain Security;
