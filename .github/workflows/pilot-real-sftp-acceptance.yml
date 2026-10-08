@@ -31,7 +31,6 @@ jobs:
       MCRI_REAL_SFTP_HOST: "127.0.0.1"
       MCRI_REAL_SFTP_PORT: "2222"
       MCRI_REAL_SFTP_USERNAME: "mcri-sftp-ci"
-      MCRI_REAL_SFTP_PASSWORD: "McriCiPassword2026Only"
       MCRI_REAL_SFTP_ROOT: "/home/mcri-sftp-ci/evidence"
 
     steps:
@@ -59,10 +58,15 @@ jobs:
           sudo apt-get install -y --no-install-recommends openssh-server
 
           sudo mkdir -p /run/sshd
+
+          password="$(python -c 'import secrets; print(secrets.token_urlsafe(24))')"
+          echo "::add-mask::$password"
+          echo "MCRI_REAL_SFTP_PASSWORD=$password" >> "$GITHUB_ENV"
+
           if ! id "$MCRI_REAL_SFTP_USERNAME" >/dev/null 2>&1; then
             sudo useradd --create-home --shell /bin/bash "$MCRI_REAL_SFTP_USERNAME"
           fi
-          printf '%s:%s\n' "$MCRI_REAL_SFTP_USERNAME" "$MCRI_REAL_SFTP_PASSWORD" \
+          printf '%s:%s\n' "$MCRI_REAL_SFTP_USERNAME" "$password" \
             | sudo chpasswd
 
           sudo mkdir -p "$MCRI_REAL_SFTP_ROOT"
