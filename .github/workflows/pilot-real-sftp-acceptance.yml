@@ -11,6 +11,7 @@ on:
       - "apps/api/tests/test_external_document_source_live_sftp_real_server_acceptance.py"
       - "apps/api/tests/test_external_document_source_live_sftp_governed_postgres_acceptance.py"
       - "apps/api/tests/test_external_document_source_live_sftp_nplus1_governed_acceptance.py"
+      - "apps/api/tests/test_external_document_source_live_sftp_initial_custody_acceptance.py"
   workflow_dispatch:
 
 permissions:
@@ -182,6 +183,11 @@ jobs:
         run: |
           pytest -q -vv --tb=short \
             tests/test_external_document_source_live_sftp_nplus1_governed_acceptance.py
+
+      - name: Run real OpenSSH governed initial content custody against PostgreSQL
+        run: |
+          pytest -q -vv --tb=short \
+            tests/test_external_document_source_live_sftp_initial_custody_acceptance.py
 
       - name: Record privacy-safe acceptance evidence
         if: ${{ always() }}
