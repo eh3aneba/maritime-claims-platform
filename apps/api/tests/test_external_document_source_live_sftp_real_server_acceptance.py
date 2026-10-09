@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import socket
 
 import pytest
 
@@ -302,3 +303,56 @@ def test_real_openssh_missing_traversal_symlink_and_oversize_are_rejected() -> N
     assert oversized.remote_stat_performed is True
     assert oversized.remote_read_performed is True
     assert oversized.content_read_count == 0
+
+
+
+def test_real_openssh_unavailable_port_fails_closed_without_authentication() -> None:
+    """Network outage before the SSH banner is not interpreted as SFTP success."""
+    host, _port, _user, _password, _root = _settings()
+    runtime = _runtime()
+
+    # Obtain a genuinely unused loopback port. This is a best-effort controlled
+    # unavailable-server case, not a simulated mid-session disconnect.
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+        listener.bind((host, 0))
+        unavailable_port = listener.getsockname()[1]
+
+    result = runtime.probe_host_key(
+        SftpTransportHostKeyProbeRequest(
+            hostname=host,
+            port=unavailable_port,
+            connect_timeout_seconds=1,
+            handshake_timeout_seconds=1,
+            allow_private_destinations=True,
+        )
+    )
+    assert result.failure_code == "connection_refused"
+    assert result.ssh_transport_performed is False
+    assert result.authentication_performed is False
+    assert result.sftp_session_opened is False
+    assert result.remote_operation_performed is False
+
+
+def test_real_openssh_permission_denied_read_fails_closed() -> None:
+    """An actual OpenSSH SFTP permission error must never release file bytes."""
+    runtime = _runtime()
+    fingerprint = _fingerprint(runtime)
+
+    # The CI fixture is root-owned with mode 0600; the SFTP account is non-root.
+    # Metadata may be visible while content access is forbidden.
+    metadata = runtime.stat_metadata(
+        _stat_request(fingerprint, relative="denied.txt")
+    )
+    assert metadata.failure_code is None
+    assert metadata.found is True
+
+    read = runtime.read_content(
+        _read_request(fingerprint, relative="denied.txt")
+    )
+    assert read.content is None
+    assert read.failure_code == "read_failed"
+    assert read.content_read_count == 0
+    assert read.remote_read_performed is False
+    assert read.remote_write_performed is False
+    assert read.remote_delete_performed is False
+    assert read.command_executed is False
