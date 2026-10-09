@@ -49,7 +49,6 @@ jobs:
       AI_PROVIDER: disabled
       OPENAI_API_KEY: ""
       LOCAL_STORAGE_PATH: /tmp/mcri-real-sftp-postgres-ci
-      MCRI_REAL_SFTP_PRIVATE_KEY_FILE: ${{ runner.temp }}/mcri-sftp-client-ed25519
       MCRI_REAL_SFTP_ACCEPTANCE: "1"
       MCRI_REAL_SFTP_HOST: "127.0.0.1"
       MCRI_REAL_SFTP_PORT: "2222"
@@ -107,6 +106,9 @@ jobs:
             "/home/$MCRI_REAL_SFTP_USERNAME"
           sudo chmod 0750 "/home/$MCRI_REAL_SFTP_USERNAME" "$MCRI_REAL_SFTP_ROOT"
           sudo chmod 0640 "$MCRI_REAL_SFTP_ROOT/survey.txt" "$MCRI_REAL_SFTP_ROOT/oversized.bin"
+
+          MCRI_REAL_SFTP_PRIVATE_KEY_FILE="${RUNNER_TEMP}/mcri-sftp-client-ed25519"
+          echo "MCRI_REAL_SFTP_PRIVATE_KEY_FILE=$MCRI_REAL_SFTP_PRIVATE_KEY_FILE" >> "$GITHUB_ENV"
 
           # Real ephemeral SSH public-key path for governed v1 observation;
           # private material stays local to this runner and is never uploaded.
