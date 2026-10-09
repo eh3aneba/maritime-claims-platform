@@ -16,7 +16,39 @@ Optional output path:
 ./scripts/backup_postgres.sh /secure/path/mcri.dump
 ```
 
+The backup is published fail-closed:
+
+1. `pg_dump` writes to a private temporary path rather than the final operator-facing filename;
+2. the custom-format archive must parse successfully through `pg_restore --list`;
+3. the script records the current database Alembic revision(s);
+4. SHA-256 and bounded metadata sidecars are prepared;
+5. only after those checks pass is the final dump path published.
+
+A successful backup produces:
+
+- `mcri-....dump` — PostgreSQL custom-format archive;
+- `mcri-....dump.sha256` — SHA-256 plus dump basename;
+- `mcri-....dump.meta` — bounded metadata including UTC creation time, database name, repository SHA when available, Alembic revision(s), dump basename and digest.
+
+Existing backup artifacts are never silently overwritten. A failed archive validation or Alembic revision change during backup leaves no final dump/checksum/metadata artifact at the requested path.
+
+After copying a backup off-host or before using it in a recovery exercise, re-verify the dump against both sidecars and the PostgreSQL archive parser:
+
+```bash
+./scripts/verify_postgres_backup.sh /secure/path/mcri.dump
+```
+
+The verifier is read-only. It checks the dump SHA-256, sidecar filename/digest binding, metadata format/Alembic revision presence, and `pg_restore --list`. A checksum mismatch fails before archive parsing.
+
+The SHA-256 sidecar is an integrity/copy-consistency control, not a digital signature. Protect the dump and both sidecars together with the organization's access controls and off-host backup policy; an attacker able to replace all artifacts could recompute the digest.
+
 Store production/pilot backups off-host and encrypted according to the organization's retention policy.
+
+### Recovery-point consistency boundary
+
+The PostgreSQL checksum/metadata sidecars prove the database dump artifact itself; they do **not** prove that Evidence/storage bytes belong to the same recovery point.
+
+Before Pilot v1 can claim a complete recovery point, the operator must quiesce or otherwise consistently snapshot all database writers and the corresponding Evidence/storage layer, then bind both artifact identifiers in the recovery record. Do not infer storage consistency merely because a database dump passed integrity validation.
 
 ## Evidence files
 

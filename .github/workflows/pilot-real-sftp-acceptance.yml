@@ -1,0 +1,186 @@
+name: Pilot Real SFTP Acceptance
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/pilot-real-sftp-acceptance.yml"
+      - "apps/api/app/modules/external_document_sources/live_sftp_adapters.py"
+      - "apps/api/app/modules/external_document_sources/sftp_*.py"
+      - "apps/api/tests/test_external_document_source_live_sftp_real_server_acceptance.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pilot-real-sftp-acceptance-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  real-openssh-sftp:
+    name: Controlled OpenSSH SFTP runtime acceptance
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: apps/api
+    env:
+      MCRI_REAL_SFTP_ACCEPTANCE: "1"
+      MCRI_REAL_SFTP_HOST: "127.0.0.1"
+      MCRI_REAL_SFTP_PORT: "2222"
+      MCRI_REAL_SFTP_USERNAME: "mcri-sftp-ci"
+      MCRI_REAL_SFTP_ROOT: "/home/mcri-sftp-ci/evidence"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: apps/api/requirements-dev.lock
+
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --require-hashes -r requirements-dev.lock
+          python -m pip check
+
+      - name: Install and configure controlled OpenSSH server
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends openssh-server
+
+          sudo mkdir -p /run/sshd
+
+          password="$(python -c 'import secrets; print(secrets.token_urlsafe(24))')"
+          echo "::add-mask::$password"
+          echo "MCRI_REAL_SFTP_PASSWORD=$password" >> "$GITHUB_ENV"
+
+          if ! id "$MCRI_REAL_SFTP_USERNAME" >/dev/null 2>&1; then
+            sudo useradd --create-home --shell /bin/bash "$MCRI_REAL_SFTP_USERNAME"
+          fi
+          printf '%s:%s\n' "$MCRI_REAL_SFTP_USERNAME" "$password" \
+            | sudo chpasswd
+
+          sudo mkdir -p "$MCRI_REAL_SFTP_ROOT"
+          printf '%s\n' 'controlled-real-sftp-evidence' \
+            | sudo tee "$MCRI_REAL_SFTP_ROOT/survey.txt" >/dev/null
+          sudo python - <<'PY'
+          from pathlib import Path
+          Path("/home/mcri-sftp-ci/evidence/oversized.bin").write_bytes(b"x" * 128)
+          PY
+          sudo ln -s /etc/passwd "$MCRI_REAL_SFTP_ROOT/escape-link"
+          sudo chown -R "$MCRI_REAL_SFTP_USERNAME:$MCRI_REAL_SFTP_USERNAME" \
+            "/home/$MCRI_REAL_SFTP_USERNAME"
+          sudo chmod 0750 "/home/$MCRI_REAL_SFTP_USERNAME" "$MCRI_REAL_SFTP_ROOT"
+          sudo chmod 0640 "$MCRI_REAL_SFTP_ROOT/survey.txt" "$MCRI_REAL_SFTP_ROOT/oversized.bin"
+
+          host_key="${RUNNER_TEMP}/mcri-sftp-host-ed25519"
+          ssh-keygen -q -t ed25519 -N '' -f "$host_key"
+
+          config="${RUNNER_TEMP}/mcri-sshd-config"
+          cat > "$config" <<EOF
+          Port $MCRI_REAL_SFTP_PORT
+          ListenAddress 127.0.0.1
+          HostKey $host_key
+          PasswordAuthentication yes
+          KbdInteractiveAuthentication no
+          PubkeyAuthentication no
+          PermitRootLogin no
+          PermitEmptyPasswords no
+          UsePAM no
+          PrintMotd no
+          LogLevel VERBOSE
+          PidFile ${RUNNER_TEMP}/mcri-sshd.pid
+          Subsystem sftp internal-sftp
+          AllowUsers $MCRI_REAL_SFTP_USERNAME
+          Match User $MCRI_REAL_SFTP_USERNAME
+              ForceCommand internal-sftp
+              AllowTcpForwarding no
+              X11Forwarding no
+              PermitTunnel no
+          EOF
+
+          fingerprint="$(ssh-keygen -lf "${host_key}.pub" -E sha256 | awk '{print $2}')"
+          echo "MCRI_REAL_SFTP_FINGERPRINT=$fingerprint" >> "$GITHUB_ENV"
+
+          log="${RUNNER_TEMP}/mcri-sshd.log"
+          sudo /usr/sbin/sshd -f "$config" -E "$log"
+
+          ready=false
+          for _ in {1..30}; do
+            if (echo > /dev/tcp/127.0.0.1/"$MCRI_REAL_SFTP_PORT") >/dev/null 2>&1; then
+              ready=true
+              break
+            fi
+            sleep 1
+          done
+          if [[ "$ready" != "true" ]]; then
+            echo "::error::Controlled OpenSSH server did not become ready."
+            sudo cat "$log" || true
+            exit 1
+          fi
+
+      - name: Run production LiveSftpRuntime against real OpenSSH SFTP
+        run: |
+          pytest -q -vv --tb=short \
+            tests/test_external_document_source_live_sftp_real_server_acceptance.py
+
+      - name: Record privacy-safe acceptance evidence
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="${GITHUB_WORKSPACE}/real-sftp-acceptance"
+          mkdir -p "$evidence"
+          server_version="$(dpkg-query -W -f='${Version}' openssh-server 2>/dev/null || printf 'unknown')"
+          python - "$evidence/summary.json" "$server_version" "${GITHUB_SHA}" <<'PY'
+          import json
+          import sys
+
+          path, server_version, git_sha = sys.argv[1:]
+          payload = {
+              "schema_version": 1,
+              "suite": "pilot-real-openssh-sftp-runtime",
+              "server_implementation": "OpenSSH",
+              "server_package_version": server_version,
+              "git_sha": git_sha,
+              "synthetic_fixtures_only": True,
+              "customer_endpoint_used": False,
+              "customer_credentials_used": False,
+              "remote_mutation_authority_tested": False,
+          }
+          with open(path, "w", encoding="utf-8") as handle:
+              json.dump(payload, handle, sort_keys=True)
+              handle.write("\n")
+          PY
+
+      - name: Upload real-SFTP acceptance evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: pilot-real-sftp-acceptance-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ github.workspace }}/real-sftp-acceptance/summary.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Capture sanitized OpenSSH diagnostics on failure
+        if: ${{ failure() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          log="${RUNNER_TEMP}/mcri-sshd.log"
+          if [[ -f "$log" ]]; then
+            # Keep only generic server lifecycle/auth outcome lines; do not upload
+            # usernames, source addresses, paths, or raw request content.
+            grep -E 'Server listening|Accepted password|Failed password|subsystem request|session (opened|closed)' "$log" \
+              | sed -E 's/(for|user) [^ ]+/(identity redacted)/g; s/from [0-9a-fA-F:.]+/from [address redacted]/g' \
+              | tail -n 80 || true
+          fi
