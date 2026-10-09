@@ -82,6 +82,10 @@ jobs:
           sudo chmod 0750 "/home/$MCRI_REAL_SFTP_USERNAME" "$MCRI_REAL_SFTP_ROOT"
           sudo chmod 0640 "$MCRI_REAL_SFTP_ROOT/survey.txt" "$MCRI_REAL_SFTP_ROOT/oversized.bin"
 
+          # Deliberately unreadable synthetic fixture. The remote SFTP user may
+          # see its metadata but must not receive its bytes.
+          sudo install -o root -g root -m 0600 /dev/null "$MCRI_REAL_SFTP_ROOT/denied.txt"
+
           host_key="${RUNNER_TEMP}/mcri-sftp-host-ed25519"
           ssh-keygen -q -t ed25519 -N '' -f "$host_key"
 
