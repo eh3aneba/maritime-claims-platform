@@ -10,6 +10,7 @@ on:
       - "apps/api/app/modules/external_document_sources/sftp_*.py"
       - "apps/api/tests/test_external_document_source_live_sftp_real_server_acceptance.py"
       - "apps/api/tests/test_external_document_source_live_sftp_governed_postgres_acceptance.py"
+      - "apps/api/tests/test_external_document_source_live_sftp_nplus1_governed_acceptance.py"
   workflow_dispatch:
 
 permissions:
@@ -176,6 +177,11 @@ jobs:
         run: |
           pytest -q -vv --tb=short \
             tests/test_external_document_source_live_sftp_governed_postgres_acceptance.py
+
+      - name: Run human-approved real OpenSSH N+1 governed acceptance
+        run: |
+          pytest -q -vv --tb=short \
+            tests/test_external_document_source_live_sftp_nplus1_governed_acceptance.py
 
       - name: Record privacy-safe acceptance evidence
         if: ${{ always() }}
