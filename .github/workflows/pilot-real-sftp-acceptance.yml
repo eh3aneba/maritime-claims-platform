@@ -9,6 +9,7 @@ on:
       - "apps/api/app/modules/external_document_sources/live_sftp_adapters.py"
       - "apps/api/app/modules/external_document_sources/sftp_*.py"
       - "apps/api/tests/test_external_document_source_live_sftp_real_server_acceptance.py"
+      - "apps/api/tests/test_external_document_source_live_sftp_governed_postgres_acceptance.py"
   workflow_dispatch:
 
 permissions:
@@ -22,11 +23,33 @@ jobs:
   real-openssh-sftp:
     name: Controlled OpenSSH SFTP runtime acceptance
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:18.4
+        env:
+          POSTGRES_DB: mcri_real_sftp_ci
+          POSTGRES_USER: mcri_ci
+          POSTGRES_PASSWORD: mcri_ci_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U mcri_ci -d mcri_real_sftp_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
     defaults:
       run:
         working-directory: apps/api
     env:
+      APP_ENV: test
+      DATABASE_URL: postgresql+psycopg://mcri_ci:mcri_ci_password@127.0.0.1:5432/mcri_real_sftp_ci
+      MCRI_TEST_DATABASE_URL: postgresql+psycopg://mcri_ci:mcri_ci_password@127.0.0.1:5432/mcri_real_sftp_ci
+      SECRET_KEY: ci-only-real-sftp-postgres-acceptance-not-a-deployment-secret-2026
+      AI_PROVIDER: disabled
+      OPENAI_API_KEY: ""
+      LOCAL_STORAGE_PATH: /tmp/mcri-real-sftp-postgres-ci
+      MCRI_REAL_SFTP_PRIVATE_KEY_FILE: ${{ runner.temp }}/mcri-sftp-client-ed25519
       MCRI_REAL_SFTP_ACCEPTANCE: "1"
       MCRI_REAL_SFTP_HOST: "127.0.0.1"
       MCRI_REAL_SFTP_PORT: "2222"
@@ -49,6 +72,9 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install --require-hashes -r requirements-dev.lock
           python -m pip check
+
+      - name: Apply real PostgreSQL schema
+        run: alembic upgrade head
 
       - name: Install and configure controlled OpenSSH server
         shell: bash
@@ -82,6 +108,12 @@ jobs:
           sudo chmod 0750 "/home/$MCRI_REAL_SFTP_USERNAME" "$MCRI_REAL_SFTP_ROOT"
           sudo chmod 0640 "$MCRI_REAL_SFTP_ROOT/survey.txt" "$MCRI_REAL_SFTP_ROOT/oversized.bin"
 
+          # Real ephemeral SSH public-key path for governed v1 observation;
+          # private material stays local to this runner and is never uploaded.
+          ssh-keygen -q -t ed25519 -N '' -f "$MCRI_REAL_SFTP_PRIVATE_KEY_FILE"
+          sudo install -d -o "$MCRI_REAL_SFTP_USERNAME" -g "$MCRI_REAL_SFTP_USERNAME" -m 0700 "/home/$MCRI_REAL_SFTP_USERNAME/.ssh"
+          sudo install -o "$MCRI_REAL_SFTP_USERNAME" -g "$MCRI_REAL_SFTP_USERNAME" -m 0600 "${MCRI_REAL_SFTP_PRIVATE_KEY_FILE}.pub" "/home/$MCRI_REAL_SFTP_USERNAME/.ssh/authorized_keys"
+
           host_key="${RUNNER_TEMP}/mcri-sftp-host-ed25519"
           ssh-keygen -q -t ed25519 -N '' -f "$host_key"
 
@@ -92,7 +124,8 @@ jobs:
           HostKey $host_key
           PasswordAuthentication yes
           KbdInteractiveAuthentication no
-          PubkeyAuthentication no
+          PubkeyAuthentication yes
+          AuthorizedKeysFile .ssh/authorized_keys
           PermitRootLogin no
           PermitEmptyPasswords no
           UsePAM no
@@ -133,6 +166,11 @@ jobs:
           pytest -q -vv --tb=short \
             tests/test_external_document_source_live_sftp_real_server_acceptance.py
 
+      - name: Run governed PostgreSQL due-tick with production real OpenSSH stat
+        run: |
+          pytest -q -vv --tb=short \
+            tests/test_external_document_source_live_sftp_governed_postgres_acceptance.py
+
       - name: Record privacy-safe acceptance evidence
         if: ${{ always() }}
         shell: bash
@@ -148,7 +186,7 @@ jobs:
           path, server_version, git_sha = sys.argv[1:]
           payload = {
               "schema_version": 1,
-              "suite": "pilot-real-openssh-sftp-runtime",
+              "suite": "pilot-real-openssh-sftp-runtime-and-governed-postgres-observation",
               "server_implementation": "OpenSSH",
               "server_package_version": server_version,
               "git_sha": git_sha,
