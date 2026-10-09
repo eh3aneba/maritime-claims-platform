@@ -1,4 +1,4 @@
-FROM python:3.14.7-alpine3.24 AS python-builder
+FROM python:3.14.8-alpine3.24 AS python-builder
 
 WORKDIR /app
 
@@ -17,7 +17,7 @@ RUN python -m venv /opt/venv \
     && /opt/venv/bin/python -m pip check \
     && /opt/venv/bin/python -c "import alembic, fastapi, sqlalchemy; print('venv-ready')"
 
-FROM python:3.14.7-alpine3.24 AS worker-tools-builder
+FROM python:3.14.8-alpine3.24 AS worker-tools-builder
 
 ENV PKG_CONFIG_PATH="/opt/ocr/lib/pkgconfig:/opt/poppler/lib/pkgconfig" \
     CPPFLAGS="-I/opt/ocr/include" \
@@ -114,7 +114,7 @@ RUN set -eu; \
     && cmake --install /src/poppler/build \
     && rm -f /tmp/poppler.tar.xz
 
-FROM python:3.14.7-alpine3.24 AS base
+FROM python:3.14.8-alpine3.24 AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -135,7 +135,7 @@ COPY app ./app
 
 EXPOSE 8000
 
-FROM python:3.14.7-alpine3.24 AS worker
+FROM python:3.14.8-alpine3.24 AS worker
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
