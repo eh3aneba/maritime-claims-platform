@@ -77,9 +77,14 @@ class _LocalOnlyProviderBridge:
 
     adapter_kind = "controlled_openssh_postgres_metadata_bridge_v1"
 
-    def __init__(self, runtime: LiveSftpRuntime, fingerprint: str):
+    def __init__(
+        self, runtime: LiveSftpRuntime, fingerprint: str,
+        *, remote_name: str = "survey.txt",
+    ):
+        assert remote_name in {"survey.txt", "missing.txt"}
         self._adapter = _SftpExactMetadataAdapter(runtime)
         self._fingerprint = fingerprint
+        self._remote_name = remote_name
         self.calls = 0
 
     def stat_metadata(self, request):
@@ -107,8 +112,8 @@ class _LocalOnlyProviderBridge:
             reference_name="ephemeral-openssh-key",
             reference_version=None,
             remote_root_path=root,
-            entry_relative_path="survey.txt",
-            effective_remote_path=f"{root}/survey.txt",
+            entry_relative_path=self._remote_name,
+            effective_remote_path=f"{root}/{self._remote_name}",
             allow_private_destinations=True,
         )
         return self._adapter.stat_metadata(real_request)
@@ -188,5 +193,68 @@ def test_real_openssh_stat_persists_changed_observation_and_replays_without_io(
             document.version_number, document.is_current,
             document.file_hash, document.processing_status,
         ) == baseline_version
+        assert db.query(Document).count() == documents_before
+    assert bridge.calls == 1
+
+
+
+def test_real_openssh_missing_file_stays_missing_on_postgres_replay(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A real absent source remains missing, without canonical mutation or retry I/O."""
+    _chain, _fixture_adapter, execution, _binding, dispatch_id = _prepare(
+        monkeypatch, "real-openssh-postgres-missing"
+    )
+    runtime = LiveSftpRuntime(secret_runtime=_ControlledPrivateKeySecretRuntime())
+    fingerprint = _fingerprint(runtime)
+    assert fingerprint == os.environ["MCRI_REAL_SFTP_FINGERPRINT"]
+    bridge = _LocalOnlyProviderBridge(
+        runtime, fingerprint, remote_name="missing.txt"
+    )
+    register_external_document_source_sftp_exact_file_metadata_adapter(bridge)
+
+    document_id = UUID(execution["document_id"])
+    with TestingSessionLocal() as db:
+        baseline = db.get(Document, document_id)
+        assert baseline is not None
+        identity_before = (
+            baseline.version_number, baseline.is_current, baseline.file_hash
+        )
+        documents_before = db.query(Document).count()
+
+        observation, consumption, outcome = consume_due_tick_dispatch(
+            db,
+            dispatch_id=dispatch_id,
+            service_executor_id=_SERVICE_ID,
+            now=datetime(2026, 9, 28, 18, 0, tzinfo=UTC),
+        )
+        assert outcome == "consumed"
+        assert observation.result_status == "missing"
+        assert observation.observed_projection_hash is None
+        assert observation.observed_byte_size is None
+        assert consumption.status == "executed"
+        assert db.query(Document).count() == documents_before
+        original_obs_id = observation.id
+        original_consumption_id = consumption.id
+
+    assert bridge.calls == 1
+    clear_external_document_source_sftp_exact_file_metadata_adapter()
+    with TestingSessionLocal() as db:
+        replay, receipt, result = consume_due_tick_dispatch(
+            db,
+            dispatch_id=dispatch_id,
+            service_executor_id=_SERVICE_ID,
+            now=datetime(2026, 9, 28, 18, 5, tzinfo=UTC),
+        )
+        assert result == "replayed"
+        assert replay.id == original_obs_id
+        assert receipt.id == original_consumption_id
+        assert db.query(ExternalDocumentSourceDueTickObservationExecution).count() == 1
+        assert db.query(ExternalDocumentSourceDueTickObservationReceipt).count() == 1
+        assert db.query(ExternalDocumentSourceDueTickDispatchConsumption).count() == 1
+        assert db.query(ExternalDocumentSourceDueTickDispatchConsumptionReceipt).count() == 1
+        document = db.get(Document, document_id)
+        assert document is not None
+        assert (document.version_number, document.is_current, document.file_hash) == identity_before
         assert db.query(Document).count() == documents_before
     assert bridge.calls == 1
