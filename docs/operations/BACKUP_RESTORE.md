@@ -56,6 +56,37 @@ The local pilot stores evidence in the Docker named volume `local_documents`. Da
 
 Before a real-data pilot, move this baseline to an S3-compatible/private object store or establish a documented encrypted volume-backup process.
 
+## Bind one PostgreSQL dump to a separately captured Evidence archive
+
+The bounded local Pilot v1 uses the `local_documents` volume. After stopping/quiescing **all** database and Evidence writers, an authorized operator must take an independently retained Evidence archive at the **same intended recovery point** as the PostgreSQL dump. Keep archive creation and access controls under your backup procedure; do not treat an online, unquiesced tar copy as an atomic snapshot.
+
+First validate the PostgreSQL dump (requires the DB service and PostgreSQL archive parser):
+
+```bash
+./scripts/verify_postgres_backup.sh /secure/recovery/mcri.dump
+```
+
+Create a read-only **artifact-integrity binding** using the separate Evidence tar/tar.gz and an opaque reference to a human-controlled quiescence/change record (never place secrets, usernames or customer paths in the record ID):
+
+```bash
+python scripts/pilot_recovery_pair.py create \
+  --db-dump /secure/recovery/mcri.dump \
+  --evidence-archive /secure/recovery/evidence.tar.gz \
+  --release-sha "<full-exact-40-hex-commit-of-backup>" \
+  --quiescence-ref pilot-recovery-20261010-001 \
+  --output /secure/recovery/recovery-pair.json
+
+python scripts/pilot_recovery_pair.py verify \
+  --manifest /secure/recovery/recovery-pair.json \
+  --db-dump /secure/recovery/mcri.dump \
+  --evidence-archive /secure/recovery/evidence.tar.gz \
+  --release-sha "<full-exact-40-hex-commit-of-backup>"
+```
+
+The binder checks the PostgreSQL checksum and metadata sidecars against the dump, requires its recorded Git SHA to equal the independently provided commit, hashes the separate Evidence archive, and rejects unsafe archive members such as symlinks, traversal paths or duplicate names. The output is **created exclusively** (never overwritten) and contains digests, counts and an opaque operator-supplied reference—not the Evidence filenames, archive bytes, credentials or private storage paths.
+
+**Boundary:** the presence of a quiescence-record ID is *not* independent proof that quiescence actually happened. An archive checksum and tar header scan are also not a demonstrated restorable object store. The resulting record deliberately sets `same_recovery_point_verified=false`, `restore_drill_verified=false` and `pilot_authorized=false`; the tool **cannot** promote these values to PASS. An accountable operator must separately review the stop/quiescence sequence, timestamped source snapshots, DB/object correspondence, scanner readiness and destructive restore drill before any release approval. A real matched DB + Evidence restore remains **P0 OPEN** in [#653](https://github.com/eh3aneba/maritime-claims-platform/issues/653). Do not commit real backup bytes or release manifests to the public repository.
+
 ## Restore maintenance window
 
 Restore is intentionally destructive and requires explicit confirmation:
