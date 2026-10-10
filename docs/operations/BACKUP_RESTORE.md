@@ -87,6 +87,19 @@ The binder checks the PostgreSQL checksum and metadata sidecars against the dump
 
 **Boundary:** the presence of a quiescence-record ID is *not* independent proof that quiescence actually happened. An archive checksum and tar header scan are also not a demonstrated restorable object store. The resulting record deliberately sets `same_recovery_point_verified=false`, `restore_drill_verified=false` and `pilot_authorized=false`; the tool **cannot** promote these values to PASS. An accountable operator must separately review the stop/quiescence sequence, timestamped source snapshots, DB/object correspondence, scanner readiness and destructive restore drill before any release approval. A real matched DB + Evidence restore remains **P0 OPEN** in [#653](https://github.com/eh3aneba/maritime-claims-platform/issues/653). Do not commit real backup bytes or release manifests to the public repository.
 
+## Synthetic CI backup + isolated clone restore proof
+
+For relevant pull requests, the `Operational Performance Smoke` workflow first deploys the **ephemeral synthetic** stack, verifies all 11 Compose services and real ClamAV clean/EICAR behavior, then runs performance measurements. Only **after** that workflow succeeds, `scripts/pilot_ci_restore_probe.py` exercises the existing backup and archive-integrity tools on the synthetic DB and local Evidence volume:
+
+1. Refuse any environment other than `.env.performance`, `APP_ENV=test`, `POSTGRES_DB=mcri_performance`, `POSTGRES_USER=mcri_performance`, and `MCRI_CI_RESTORE_PROBE=1`.
+2. Independently observe the checked-out full git SHA (which can differ from the PR head on GitHub's temporary merge ref). Verify one synthetic MT ORION claim and a valid Alembic revision.
+3. Use the **real** `backup_postgres.sh` and `verify_postgres_backup.sh` for a custom PostgreSQL dump and validated SHA/metadata sidecars.
+4. Stream the actual synthetic Evidence volume into a PRIVATE temporary tar, refusing empty archives, symbolic links and non-regular files. Bind and reverify the dump and Evidence archive through `pilot_recovery_pair.py`. Do not publish artifact bytes or private storage paths.
+5. Create a constant, otherwise unused `mcri_ci_restore_probe` database in the same temporary PostgreSQL instance, `pg_restore` the real dump there, compare the restored synthetic claim count and Alembic revision with the original database, then drop **only** the new clone in all created-db outcomes.
+6. Save one exclusive short-lived `synthetic-db-restore-probe.json` result in the CI `operational-performance-smoke` artifact. Missing/failed steps block that workflow; stdout/stderr from underlying Docker, SQL or backup commands is never surfaced in the metadata log. The temporary dump/Evidence archive/sidecars/manifest are automatically deleted.
+
+This is **not** a production restore rehearsal. It intentionally never drops or restores the live application database, never restores Evidence to a matching new storage volume, does not pause all writers to establish a consistent multi-store point, and has no independent operator/quiescence proof. Its record always sets `matched_recovery_point_verified=false`, `evidence_restore_verified=false`, `full_restore_drill_verified=false` and `pilot_authorized=false`. These are open P0 items in #653 and must be completed through a separately authorized destructive maintenance exercise. Never repurpose the CI probe on customer records or use it to claim production RPO/RTO.
+
 ## Restore maintenance window
 
 Restore is intentionally destructive and requires explicit confirmation:
