@@ -4,6 +4,7 @@
 
 - [ ] `.env.pilot.example` copied to `.env` and placeholders replaced.
 - [ ] `docker compose config` succeeds.
+- [ ] `python scripts/pilot_compose_port_policy.py --env-file .env` passes before any stack startup; rendered DB (5432), API (8000) and Web (3000) host ports must bind **127.0.0.1 only**; no other Compose service may publish a host port or use host networking. This checks Compose port declarations, not external firewall/proxy exposure or readiness.
 - [ ] `migrate` service completes successfully.
 - [ ] `preflight` service completes successfully.
 - [ ] `clamav` is healthy and port `3310` is not published to the host/public network.

@@ -71,3 +71,6 @@ jobs:
 
       - name: Validate Pilot v1 release-candidate record and exact-head CI evidence gates
         run: python -m unittest discover -s scripts/tests -p 'test_pilot*.py' -v
+
+      - name: Validate rendered private Pilot Compose host-port policy
+        run: python scripts/pilot_compose_port_policy.py --env-file .env.pilot.example
