@@ -15,10 +15,20 @@ POSTGRES_USER="${POSTGRES_USER:-maritime}"
 POSTGRES_DB="${POSTGRES_DB:-maritime_claims}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Never infer the target's safety class from Compose defaults. Require an
+# explicit environment classification for every destructive restore.
+case "${APP_ENV:-}" in
+  development|test|pilot|staging|production) ;;
+  *)
+    echo "Refusing restore without a recognized explicit APP_ENV." >&2
+    exit 1
+    ;;
+esac
+
 # The pair is an artifact-integrity check, not a proof of a matching snapshot
 # or completed restore. A private Pilot/production run must specify the pair
 # explicitly to prevent accidentally restoring a DB without Evidence custody.
-if [[ "${APP_ENV:-development}" == "pilot" || "${APP_ENV:-development}" == "production" ]]; then
+if [[ "$APP_ENV" == "pilot" || "$APP_ENV" == "staging" || "$APP_ENV" == "production" ]]; then
   if [[ -z "${MCRI_RESTORE_PAIR_MANIFEST:-}" || -z "${MCRI_RESTORE_EVIDENCE_ARCHIVE:-}" || -z "${MCRI_RESTORE_RELEASE_SHA:-}" ]]; then
     echo "Refusing Pilot/production restore without DB/Evidence integrity pairing inputs." >&2
     exit 1
