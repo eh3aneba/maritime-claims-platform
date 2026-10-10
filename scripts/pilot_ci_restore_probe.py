@@ -14,6 +14,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -96,6 +97,53 @@ def _compose(env_file: str, *args: str) -> list[str]:
 def _query(env_file: str, env: dict[str, str], db: str, sql: str) -> str:
     return _run(_compose(env_file, "exec", "-T", "db", "psql", "-U",
                          TEST_USER, "-d", db, "-At", "-c", sql), env=env)
+
+
+def expect_integrity_rejection(command: list[str], env: dict[str, str],
+                               *, timeout: int = 60) -> None:
+    """A tampered disposable artifact MUST fail an existing read-only verifier.
+
+    Suppress raw stdout/stderr; a successful exit here is a hard failure.
+    """
+    try:
+        result = subprocess.run(command, env=env, stdout=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL, timeout=timeout,
+                                check=False)
+    except (OSError, subprocess.TimeoutExpired):
+        raise ProbeError("synthetic corruption rejection could not be observed") from None
+    if result.returncode == 0:
+        raise ProbeError("synthetic corrupted recovery artifact was accepted")
+
+
+def prove_tamper_detection(dump: Path, archive: Path, manifest: Path,
+                           release_sha: str, env: dict[str, str]) -> None:
+    """Mutate COPIES ONLY, checking production backup and pair verifiers."""
+    damaged_dir = dump.parent / "deliberately-corrupted"
+    damaged_dir.mkdir(mode=0o700)
+    corrupted_dump = damaged_dir / dump.name
+    for original, copy in (
+        (dump, corrupted_dump),
+        (Path(str(dump) + ".sha256"), Path(str(corrupted_dump) + ".sha256")),
+        (Path(str(dump) + ".meta"), Path(str(corrupted_dump) + ".meta")),
+    ):
+        shutil.copyfile(original, copy)
+    # Append after copying checksum/metadata: preserve identity/name but
+    # invalidate the protected SHA before pg_restore --list is reached.
+    with corrupted_dump.open("ab") as stream:
+        stream.write(b"synthetic-intentional-corruption")
+    expect_integrity_rejection(
+        ["bash", "scripts/verify_postgres_backup.sh", str(corrupted_dump)], env)
+
+    corrupted_archive = damaged_dir / archive.name
+    shutil.copyfile(archive, corrupted_archive)
+    # A tar reader may ignore trailing bytes; the recorded SHA still MUST
+    # reject an altered archive even when the original tar members parse.
+    with corrupted_archive.open("ab") as stream:
+        stream.write(b"synthetic-intentional-corruption")
+    expect_integrity_rejection(
+        ["python", "scripts/pilot_recovery_pair.py", "verify",
+         "--db-dump", str(dump), "--evidence-archive", str(corrupted_archive),
+         "--release-sha", release_sha, "--manifest", str(manifest)], env)
 
 
 def quiesce_compose_writers(env_file: str, env: dict[str, str]) -> None:
@@ -181,6 +229,11 @@ def observe(*, env_file: str, env: dict[str, str]) -> dict:
               "--release-sha", actual_checkout,
               "--manifest", str(manifest)], env=env)
 
+        # Deliberate tamper occurs on separate copies ONLY. The two existing
+        # read-only integrity verifiers must reject altered bytes before any
+        # clone restoration is attempted.
+        prove_tamper_detection(dump, archive, manifest, actual_checkout, env)
+
         # Target only a NEW constant name, never the running application's DB.
         # If creation fails, do not drop a pre-existing database.
         created = False
@@ -225,6 +278,8 @@ def observe(*, env_file: str, env: dict[str, str]) -> dict:
         "postgres_dump_archive_validated": True,
         "postgres_backup_sidecars_reverified": True,
         "evidence_archive_integrity_bound": True,
+        "corrupted_db_dump_rejected": True,
+        "corrupted_evidence_archive_rejected": True,
         "compose_writer_quiescence_verified": True,
         "external_writer_quiescence_verified": False,
         "isolated_db_clone_restored": True,

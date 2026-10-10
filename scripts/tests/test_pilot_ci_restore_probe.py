@@ -76,7 +76,8 @@ class RecoveryProbeTests(unittest.TestCase):
              patch.object(p.subprocess, "run", side_effect=archive), \
              patch.object(p, "restore_and_reconcile", return_value={
                  "files_restored": 2, "demo_documents_matched": 1,
-             }):
+             }), \
+             patch.object(p, "prove_tamper_detection"):
             if break_at:
                 with self.assertRaises(p.ProbeError):
                     p.observe(env_file=".env.performance", env=ENV)
@@ -144,6 +145,68 @@ class RecoveryProbeTests(unittest.TestCase):
                 p._run(["docker", "compose", "ps"], env=ENV)
         self.assertNotIn("private-credential", str(ctx.exception))
         self.assertNotIn("synthetic secret claim", str(ctx.exception))
+
+    def test_corruption_rejection_requires_a_real_nonzero_exit(self):
+        for rc in (1, 2, 7):
+            with patch.object(p.subprocess, "run", return_value=(
+                subprocess.CompletedProcess([], rc)) ) as run:
+                p.expect_integrity_rejection(["verify", "synthetic"], ENV)
+            self.assertEqual(run.call_args.kwargs["stdout"], subprocess.DEVNULL)
+            self.assertEqual(run.call_args.kwargs["stderr"], subprocess.DEVNULL)
+        with patch.object(p.subprocess, "run", return_value=(
+                subprocess.CompletedProcess([], 0))):
+            with self.assertRaisesRegex(p.ProbeError, "corrupted recovery"):
+                p.expect_integrity_rejection(["verify", "synthetic"], ENV)
+
+    def test_tamper_checks_only_mutate_disposable_copies(self):
+        with tempfile.TemporaryDirectory() as dirname:
+            root = Path(dirname)
+            dump = root / "synthetic.dump"
+            archive = root / "synthetic-evidence.tar"
+            manifest = root / "pair.json"
+            dump.write_bytes(b"PGDMP-this-is-only-a-synthetic-placeholder")
+            archive.write_bytes(b"synthetic-only-tar-placeholder")
+            manifest.write_text('{"example":"synthetic"}')
+            Path(str(dump) + ".sha256").write_text("synthetic digest placeholder")
+            Path(str(dump) + ".meta").write_text("synthetic metadata placeholder")
+            previous = [x.read_bytes() for x in (dump, archive, manifest)]
+            observed = []
+
+            def verify(cmd, env, *, timeout=60):
+                observed.append(cmd)
+                if "scripts/verify_postgres_backup.sh" in cmd:
+                    copy = Path(cmd[-1])
+                    self.assertEqual(copy.name, dump.name)
+                    self.assertNotEqual(copy, dump)
+                    self.assertEqual(copy.read_bytes(),
+                                     previous[0] + b"synthetic-intentional-corruption")
+                    self.assertTrue(Path(str(copy) + ".sha256").exists())
+                    self.assertTrue(Path(str(copy) + ".meta").exists())
+                else:
+                    copy = Path(cmd[cmd.index("--evidence-archive") + 1])
+                    self.assertNotEqual(copy, archive)
+                    self.assertEqual(copy.read_bytes(),
+                                     previous[1] + b"synthetic-intentional-corruption")
+                    self.assertEqual(cmd[cmd.index("--manifest") + 1], str(manifest))
+            with patch.object(p, "expect_integrity_rejection", side_effect=verify):
+                p.prove_tamper_detection(dump, archive, manifest, SHA, ENV)
+            self.assertEqual(len(observed), 2)
+            self.assertEqual([x.read_bytes() for x in (dump, archive, manifest)], previous)
+
+    def test_tamper_must_reject_both_db_and_evidence(self):
+        with tempfile.TemporaryDirectory() as dirname:
+            root = Path(dirname)
+            dump, archive = root / "synthetic.dump", root / "synthetic.tar"
+            dump.write_bytes(b"synthetic-db")
+            archive.write_bytes(b"synthetic-evidence")
+            Path(str(dump) + ".sha256").write_text("fake checksum")
+            Path(str(dump) + ".meta").write_text("fake metadata")
+            manifest = root / "pair.json"
+            manifest.write_text("{}")
+            with patch.object(p, "expect_integrity_rejection",
+                              side_effect=[None, p.ProbeError("corrupted recovery artifact was accepted")]):
+                with self.assertRaisesRegex(p.ProbeError, "corrupted recovery"):
+                    p.prove_tamper_detection(dump, archive, manifest, SHA, ENV)
 
     def test_cli_fail_closed_outside_test_environment(self):
         with tempfile.TemporaryDirectory() as d:
