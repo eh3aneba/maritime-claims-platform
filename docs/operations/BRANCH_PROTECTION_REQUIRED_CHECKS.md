@@ -79,3 +79,18 @@ Keep strict/up-to-date checks enabled, squash-only merging, linear history, unre
 8. Close Issue #461 only after repository readback proves enforcement is active.
 
 The current GitHub connector used for repository work does not expose ruleset administration writes, so workflow preparation and evidence can be completed here, but the final ruleset mutation must be performed through an authorized GitHub admin surface.
+
+## Read-only, independently reviewable Protect main API observation
+
+A local, standard-library helper can read the currently active repository ruleset **without modifying GitHub permissions or protection**. It produces a new exclusive JSON snapshot; failures, missing required contexts, extra contexts, policy drift, or API errors are **NO-GO**. The committed synthetic unit tests exercise full protection, today's four-context failure, tampering, malformed API data and secret-safe error output.
+
+```bash
+# Run only in a controlled operator workspace, with optional read-scoped token.
+python scripts/pilot_ruleset_evidence.py \
+  --repo eh3aneba/maritime-claims-platform \
+  --output /secure/pilot-releases/rc-001-ruleset-readback.json
+```
+
+The checker expects precisely the 11 stable target contexts above and also checks active enforcement, default-branch scoping, strict/up-to-date status checks, squash-only merges, resolved review threads, linear history, deletion and non-fast-forward protection, and zero bypass actors. It intentionally does **not** infer a PASS from successful PR workflow runs. It records no raw server payload, credentials, unexpected context names or exception text. Do not publish the generated record with sensitive operator notes.
+
+**Critical remaining proof:** even a `metadata_complete: true` snapshot is *not* evidence that a deliberately failing critical check prevents merge. Perform the separate disposable failing-check experiment through authorized GitHub surfaces, preserve the exact PR/run/context IDs, restore the check without bypass, and independently verify the result. The tool always records `failing_check_enforcement_proven: false` and `pilot_authorized: false` until a separate human-approved evidence record establishes those facts. The repository connector cannot make the required administrative ruleset update. This step is an external admin action; the current four-context ruleset must be regarded as **NO-GO**.
