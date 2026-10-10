@@ -183,8 +183,12 @@ def test_real_openssh_initial_list_content_proof_quarantine_checkpoint(
     assert staged_response.status_code == 201, staged_response.text
     staged = staged_response.json()
     assert staged["result_status"] == "staged_verified"
-    assert staged["content_sha256"] == _SHA
-    assert staged["content_byte_count"] == len(_BYTES)
+    # The governed staging API names these *expected* values and checks
+    # the stored object against them; it never returns the raw object key.
+    assert staged["expected_content_sha256"] == _SHA
+    assert staged["expected_content_byte_count"] == len(_BYTES)
+    assert staged["durable_content_staged"] is True
+    assert "storage_object_key" not in staged
     assert store.put_calls == 1
     assert tuple(store.objects.values()) == (_BYTES,)
     chain["staging_id"] = staged["id"]
