@@ -24,7 +24,7 @@ WHERE datname = current_database()
   AND pid <> pg_backend_pid()
   AND backend_type = 'client backend'
 ORDER BY pid
-LIMIT 32
+LIMIT 33
 """
 
 
