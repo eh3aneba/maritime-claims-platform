@@ -212,6 +212,10 @@ def test_real_openssh_positive_path_uses_production_runtime() -> None:
     assert entries["survey.txt"].entry_kind == "file"
     assert entries["oversized.bin"].entry_kind == "file"
     assert entries["escape-link"].entry_kind == "symlink"
+    assert entries["escape-link"].byte_size is None
+    assert entries["empty-folder"].entry_kind == "directory"
+    assert entries["empty-folder"].byte_size is None
+    assert entries["survey.txt"].byte_size == len(b"controlled-real-sftp-evidence\n")
     assert listed.remote_list_performed is True
     assert listed.remote_read_performed is False
     assert listed.remote_write_performed is False
