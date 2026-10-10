@@ -923,6 +923,7 @@ class LiveSftpRuntime:
                     else filename
                 )
                 mode = getattr(attr, "st_mode", None)
+                entry_kind = _entry_kind(mode)
                 size = getattr(attr, "st_size", None)
                 mtime = getattr(attr, "st_mtime", None)
                 uid = getattr(attr, "st_uid", None)
@@ -930,8 +931,14 @@ class LiveSftpRuntime:
                 entries.append(
                     SftpDirectoryMetadataEntry(
                         relative_path=relative,
-                        entry_kind=_entry_kind(mode),
-                        byte_size=size if isinstance(size, int) else None,
+                        entry_kind=entry_kind,
+                        # SFTP servers may report st_size for directories and
+                        # symlinks. Only regular-file sizes satisfy the governed
+                        # listing contract; preserve other metadata in the hash.
+                        byte_size=(
+                            size if entry_kind == "file" and isinstance(size, int)
+                            else None
+                        ),
                         modified_at=_modified_at(mtime),
                         metadata_id_hash=_safe_metadata_hash(
                             path=relative,
