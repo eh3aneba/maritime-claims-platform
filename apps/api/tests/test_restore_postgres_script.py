@@ -229,3 +229,19 @@ def test_mutated_evidence_archive_blocks_destructive_pilot_restore(tmp_path: Pat
     assert result.returncode != 0
     assert "NO-GO" in result.stderr
     assert "dropdb" not in log
+
+def test_missing_environment_classification_refuses_destructive_restore(tmp_path: Path) -> None:
+    result, log = _run_restore(tmp_path, app_env="")
+    assert result.returncode != 0
+    assert "recognized explicit APP_ENV" in result.stderr
+    assert log == ""
+
+
+def test_staging_and_production_refuse_unpaired_restore(tmp_path: Path) -> None:
+    for mode in ("staging", "production"):
+        case = tmp_path / mode
+        case.mkdir()
+        result, log = _run_restore(case, app_env=mode)
+        assert result.returncode != 0
+        assert "without DB/Evidence integrity pairing" in result.stderr
+        assert log == ""
