@@ -6,7 +6,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-maritime}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-in-local-env}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql
     healthcheck:
@@ -92,7 +92,7 @@ services:
       GOVERNANCE_WEBHOOK_TIMEOUT_SECONDS: ${GOVERNANCE_WEBHOOK_TIMEOUT_SECONDS:-10}
       GOVERNANCE_WEBHOOK_REPLAY_WINDOW_SECONDS: ${GOVERNANCE_WEBHOOK_REPLAY_WINDOW_SECONDS:-300}
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     volumes:
       - local_documents:/data/documents
     depends_on:
@@ -209,7 +209,7 @@ services:
       HOSTNAME: 0.0.0.0
       PORT: 3000
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     depends_on:
       api:
         condition: service_healthy
