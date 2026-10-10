@@ -47,8 +47,8 @@ class RecoveryProbeTests(unittest.TestCase):
             if cmd == p._compose(".env.performance", "ps", "--status",
                                  "running", "--services"):
                 if break_at == "unexpected_running":
-                    return "db\\nclamav\\nworker"
-                return "db\\nclamav"
+                    return "db\nclamav\nworker"
+                return "db\nclamav"
             if "psql" in cmd:
                 if "COUNT(*)" in cmd[-1]:
                     return "1"
@@ -119,7 +119,7 @@ class RecoveryProbeTests(unittest.TestCase):
 
     def test_quiescence_requires_only_two_known_services(self):
         with patch.object(p, "_run", side_effect=[
-            "", "db\\nclamav\\nunknown-service",
+            "", "db\nclamav\nunknown-service",
         ]):
             with self.assertRaises(p.ProbeError):
                 p.quiesce_compose_writers(".env.performance", ENV)
