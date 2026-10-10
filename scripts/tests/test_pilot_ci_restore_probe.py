@@ -174,7 +174,7 @@ class RecoveryProbeTests(unittest.TestCase):
 
             def verify(cmd, env, *, timeout=60):
                 observed.append(cmd)
-                if "verify_postgres_backup.sh" in cmd:
+                if "scripts/verify_postgres_backup.sh" in cmd:
                     copy = Path(cmd[-1])
                     self.assertEqual(copy.name, dump.name)
                     self.assertNotEqual(copy, dump)
