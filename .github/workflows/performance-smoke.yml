@@ -120,6 +120,19 @@ jobs:
                 -e 's/^User:.*/User: [redacted]/' \
                 -e 's/^Claim:.*/Claim: [synthetic-seed-verified]/'
 
+      # This observes the *actual synthetic CI Compose stack* after preflight.
+      # It must not start/alter services or substitute for a fresh-host Pilot drill.
+      - name: Verify live synthetic Compose service readiness
+        env:
+          CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          python scripts/pilot_compose_readiness.py \
+            --env-file .env.performance \
+            --release-sha "$CANDIDATE_SHA" \
+            --output artifacts/compose-readiness.json
+
       - name: Run bounded operational performance smoke
         run: |
           set -a
