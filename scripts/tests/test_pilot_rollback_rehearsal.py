@@ -146,6 +146,14 @@ class RollbackRehearsalTests(unittest.TestCase):
                     FROM_SHA, "--to-sha", TO_SHA]), 0)
             self.assertIn("NOT proof", out.getvalue())
 
+    def test_invalid_release_pair_does_not_create_empty_draft_file(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "should-not-exist.json"
+            with contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(p.main(["init", "--from-sha", "invalid",
+                    "--to-sha", TO_SHA, "--output", str(path)]), 2)
+            self.assertFalse(path.exists())
+
     def test_invalid_json_never_echoes_private_data(self):
         with tempfile.TemporaryDirectory() as d:
             path = Path(d) / "invalid.json"
