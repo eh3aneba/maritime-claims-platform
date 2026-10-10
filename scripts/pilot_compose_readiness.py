@@ -48,7 +48,12 @@ def parse_ps(raw: str) -> list[dict]:
             raise ReadinessError("malformed Docker Compose JSON service-status response") from None
     if isinstance(parsed, dict):
         parsed = [parsed]
-    if not isinstance(parsed, list) or not all(isinstance(x, dict) for x in parsed):
+    if not isinstance(parsed, list) or not parsed or not all(
+        isinstance(x, dict)
+        and isinstance(x.get("Service"), str)
+        and isinstance(x.get("State"), str)
+        for x in parsed
+    ):
         raise ReadinessError("unexpected Docker Compose service-status structure")
     return parsed
 
