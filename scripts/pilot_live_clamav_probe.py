@@ -16,7 +16,7 @@ import re
 import subprocess
 import sys
 
-SHA_RE = re.compile(r"[a-f0-9]{40}\\Z")
+SHA_RE = re.compile(r"[a-f0-9]{40}\Z")
 
 # Passed via stdin to the existing synthetic CI API container; no need to
 # ship an acceptance harness in the production API image.
@@ -128,7 +128,7 @@ def main(argv: list[str] | None = None) -> int:
         record = evaluate(raw, returncode=returncode, release_sha=args.release_sha)
         with args.output.open("x", encoding="utf-8") as fh:
             json.dump(record, fh, indent=2, sort_keys=True)
-            fh.write("\\n")
+            fh.write("\n")
     except ProbeError as exc:
         print(f"NO-GO: {exc}", file=sys.stderr)
         return 2
