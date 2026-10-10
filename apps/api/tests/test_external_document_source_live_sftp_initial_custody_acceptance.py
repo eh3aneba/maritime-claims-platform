@@ -157,7 +157,10 @@ def test_real_openssh_initial_list_content_proof_quarantine_checkpoint(
     entries = {x["relative_path"]: x for x in listing["entries"]}
     assert entries["survey.txt"]["entry_kind"] == "file"
     assert entries["survey.txt"]["byte_size"] == len(_BYTES)
-    assert "escape-link" in entries
+    assert entries["escape-link"]["entry_kind"] == "symlink"
+    assert entries["escape-link"]["byte_size"] is None
+    assert entries["empty-folder"]["entry_kind"] == "directory"
+    assert entries["empty-folder"]["byte_size"] is None
     chain["listing_id"] = listing["id"]
     chain["file_entry_id"] = entries["survey.txt"]["id"]
 
