@@ -20,6 +20,7 @@ import sys
 import tempfile
 
 from pilot_ci_evidence_restore import EvidenceRestoreError, restore_and_reconcile
+from pilot_ci_lineage_reconcile import LineageError, collect_lineage, reconcile
 
 SHA_RE = re.compile(r"[a-f0-9]{40}\Z")
 TEST_DB = "mcri_performance"
@@ -195,6 +196,13 @@ def observe(*, env_file: str, env: dict[str, str]) -> dict:
     source_revision = _query(env_file, env, TEST_DB, version_sql)
     if source_count != "1" or not source_revision:
         raise ProbeError("synthetic MT ORION seed or Alembic baseline unavailable")
+    # Capture source lineage only *after* synthetic Compose writers have stopped.
+    # Raw per-table SQL is private in-memory data and is never written to CI.
+    try:
+        source_lineage = collect_lineage(
+            TEST_DB, lambda database, sql: _query(env_file, env, database, sql))
+    except LineageError:
+        raise ProbeError("synthetic source claim lineage could not be validated") from None
 
     with tempfile.TemporaryDirectory(prefix="mcri-ci-recovery-") as work:
         root = Path(work)
@@ -239,6 +247,7 @@ def observe(*, env_file: str, env: dict[str, str]) -> dict:
         created = False
         verified = False
         recovered_counts = None
+        lineage_result = None
         try:
             _run(_compose(env_file, "exec", "-T", "db", "createdb",
                           "-U", TEST_USER, CLONE_DB), env=env)
@@ -251,6 +260,12 @@ def observe(*, env_file: str, env: dict[str, str]) -> dict:
             verified = clone_count == source_count and clone_revision == source_revision
             if not verified:
                 raise ProbeError("synthetic cloned database verification failed")
+            try:
+                restored_lineage = collect_lineage(
+                    CLONE_DB, lambda database, sql: _query(env_file, env, database, sql))
+                lineage_result = reconcile(source_lineage, restored_lineage)
+            except LineageError:
+                raise ProbeError("synthetic recovered DB lineage reconciliation failed") from None
             # Restore files only to a fresh isolated temp directory, NEVER the
             # application storage volume; compare bytes with the restored DB.
             restored_rows = _query(env_file, env, CLONE_DB, document_sql)
@@ -266,8 +281,8 @@ def observe(*, env_file: str, env: dict[str, str]) -> dict:
                 _run(_compose(env_file, "exec", "-T", "db", "dropdb",
                               "-U", TEST_USER, "--if-exists", "--force",
                               CLONE_DB), env=env)
-        if not verified or recovered_counts is None:
-            raise ProbeError("synthetic cloned database or Evidence verification failed")
+        if not verified or recovered_counts is None or lineage_result is None:
+            raise ProbeError("synthetic cloned database, lineage or Evidence verification failed")
 
     return {
         "schema": "mcri-synthetic-ci-recovery-probe-v1",
@@ -286,6 +301,8 @@ def observe(*, env_file: str, env: dict[str, str]) -> dict:
         "synthetic_claim_count_and_migration_matched": True,
         "isolated_evidence_files_restored": recovered_counts["files_restored"],
         "restored_demo_document_hashes_matched": recovered_counts["demo_documents_matched"],
+        "restored_claim_lineage_families_matched": lineage_result["lineage_families_compared"],
+        "restored_claim_lineage_rows_matched": lineage_result["lineage_rows_compared"],
         "active_application_db_restored_or_dropped": False,
         "matched_recovery_point_verified": False,
         "evidence_restore_verified": False,

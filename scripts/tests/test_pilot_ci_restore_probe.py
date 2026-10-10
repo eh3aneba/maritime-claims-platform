@@ -52,6 +52,10 @@ class RecoveryProbeTests(unittest.TestCase):
             if "psql" in cmd:
                 if "COUNT(*)" in cmd[-1]:
                     return "1"
+                if "jsonb_agg" in cmd[-1]:
+                    if break_at == "lineage_changed" and p.CLONE_DB in cmd:
+                        return '[{"id":"synthetic-id-001","marker":"mutated"}]'
+                    return '[{"id":"synthetic-id-001","marker":"preserved"}]'
                 if "json_agg" in cmd[-1]:
                     return '[{"key":"synthetic/item.pdf","sha256":"' + "a" * 64 + '","size":4}]'
                 return "0224_obs_refresh_recovery_anchor"
@@ -92,6 +96,8 @@ class RecoveryProbeTests(unittest.TestCase):
         self.assertFalse(record["external_writer_quiescence_verified"])
         self.assertEqual(record["isolated_evidence_files_restored"], 2)
         self.assertEqual(record["restored_demo_document_hashes_matched"], 1)
+        self.assertEqual(record["restored_claim_lineage_families_matched"], 7)
+        self.assertEqual(record["restored_claim_lineage_rows_matched"], 7)
         self.assertFalse(record["matched_recovery_point_verified"])
         self.assertFalse(record["evidence_restore_verified"])
         self.assertFalse(record["full_restore_drill_verified"])
@@ -124,6 +130,13 @@ class RecoveryProbeTests(unittest.TestCase):
         ]):
             with self.assertRaises(p.ProbeError):
                 p.quiesce_compose_writers(".env.performance", ENV)
+
+    def test_same_count_different_restored_lineage_fails_and_cleans_clone(self):
+        commands, record = self._simulate(break_at="lineage_changed")
+        self.assertIsNone(record)
+        self.assertTrue(any("createdb" in x for x in commands))
+        self.assertTrue(any("dropdb" in x for x in commands))
+        self.assertFalse(any("restore_postgres.sh" in x for x in commands))
 
     def test_createdb_failure_never_drops_someone_elses_database(self):
         commands, _ = self._simulate(break_at="createdb")
