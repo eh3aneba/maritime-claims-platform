@@ -36,6 +36,7 @@
 
 - [ ] Backup taken before schema upgrade.
 - [ ] Evidence volume backup procedure confirmed.
+- [ ] For recovery drills, PostgreSQL dump and an independently captured Evidence archive are hash-bound using `scripts/pilot_recovery_pair.py`, with the quiescence/change-record reference; a successful integrity record alone does **not** establish a consistent recovery point or successful restore.
 - [ ] Synthetic-only label shown/communicated for the demo dataset.
 - [ ] No real customer evidence is loaded without explicit approval.
 - [ ] Legacy records labelled `legacy_unscanned` are identified and accepted for the walkthrough or covered by a controlled rescan plan.
