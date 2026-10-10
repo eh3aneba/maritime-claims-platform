@@ -59,7 +59,7 @@ def _run_restore(
     tmp_path: Path,
     *,
     confirmed: bool = True,
-    running_services: str = "db\\nclamav\\n",
+    running_services: str = "db\nclamav\n",
     app_env: str = "development",
     with_pair: bool = False,
     tamper_dump: bool = False,
@@ -72,16 +72,16 @@ def _run_restore(
     dump.write_bytes(b"fake-custom-format-dump")
     sha = hashlib.sha256(dump.read_bytes()).hexdigest()
     Path(str(dump) + ".sha256").write_text(
-        f"{sha}  {dump.name}\\n", encoding="utf-8"
+        f"{sha}  {dump.name}\n", encoding="utf-8"
     )
     Path(str(dump) + ".meta").write_text(
-        "format=mcri-postgres-backup-v1\\n"
-        "created_at_utc=2026-10-10T03:00:00Z\\n"
-        f"database={'not-the-target' if wrong_database else 'maritime_claims'}\\n"
-        f"git_sha={'a' * 40}\\n"
-        "alembic_heads=0224_obs_refresh_recovery_anchor\\n"
-        f"dump_file={dump.name}\\n"
-        f"dump_sha256={sha}\\n",
+        "format=mcri-postgres-backup-v1\n"
+        "created_at_utc=2026-10-10T03:00:00Z\n"
+        f"database={'not-the-target' if wrong_database else 'maritime_claims'}\n"
+        f"git_sha={'a' * 40}\n"
+        "alembic_heads=0224_obs_refresh_recovery_anchor\n"
+        f"dump_file={dump.name}\n"
+        f"dump_sha256={sha}\n",
         encoding="utf-8",
     )
     fake_bin, log_path = _fake_docker(tmp_path)
