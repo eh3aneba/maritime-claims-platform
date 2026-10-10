@@ -43,6 +43,22 @@ python scripts/pilot_rc_gate.py check /secure/pilot-releases/rc-001.json --expec
 
 A missing/mismatched commit, unpinned image, missing recovery evidence, pending proof or malformed record returns a **nonzero** exit code and `NO-GO`. A complete record prints `RECORD COMPLETE` and explicitly warns that this is not release authorization. Cross-check the supplied SHA against the deployed artifact and linked CI run head; operator-supplied strings alone are not trustworthy evidence.
 
+## Independent exact-SHA GitHub CI metadata observation
+
+The release-record gate above accepts human-attested references and does **not** query GitHub. To reduce the risk of mistaking a stale/failed/skipped run for a PASS, collect a separate exact-head metadata observation with the standard-library helper:
+
+```bash
+# Requires GitHub Actions read permission, e.g. a scoped GITHUB_TOKEN
+python scripts/pilot_ci_evidence.py \
+  --repo eh3aneba/maritime-claims-platform \
+  --sha "<verified-exact-40-character-candidate-SHA>" \
+  --output /secure/pilot-releases/rc-001-ci.json
+```
+
+The output is created exclusively, with no overwrite. It records only the supplied full commit SHA, six required workflow names, latest matching run IDs/attempts, pass/not_pass/missing outcomes, and canonical GitHub run links. **Any missing, skipped, failed, pending or in-progress run yields an incomplete result and a nonzero exit code.** API/network failure fails closed; the token, raw API response, remote secrets and customer data are never written to the observation record. For a private repository, provide a read-scoped GitHub token as an environment variable; never commit it.
+
+**Release-identity rule:** a passing pull-request head is not automatically a passing subsequent **squash-merged main commit**; the hashes differ. Collect and verify CI evidence for the *exact deployed commit* and its corresponding images. Record the observation as an evidence reference only after a named reviewer independently checks the runs and logs. The tool cannot attest deployment, actual database migration, operational controls, backup, scanner readiness, real SFTP proof, repository protection, or human approval. **CI METADATA COMPLETE is not a Pilot GO.**
+
 ## Manual GO/NO-GO remains mandatory
 
 The accountable release owner must separately record decision, reviewer, timestamp, environment/tenant, permitted data class, limitations, backup/rollback owner and go-live/abort conditions. Keep Pilot v1 bounded to one H&M machinery claims team, 5–10 permitted claims, 30 days, mandatory human review and no autonomous claim decision. If any P0 gate is unresolved, **NO-GO**.
