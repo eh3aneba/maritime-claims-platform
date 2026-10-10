@@ -216,7 +216,15 @@ jobs:
         if: ${{ matrix.group == 'observation-due-tick' }}
         env:
           EXTERNAL_EVIDENCE_DUE_TICK_POSTGRES_TEST: "1"
-        run: pytest -q tests/test_external_document_source_due_tick_observation_concurrency_postgres.py tests/test_external_document_source_sftp_recurring_provider_lineage.py
+          PYTHONFAULTHANDLER: "1"
+        # On a stalled PostgreSQL lock/test thread, emit bounded Python stack
+        # locations (not variable values, SQL parameters or evidence bodies)
+        # before the runner's job timeout. Keep all assertions mandatory.
+        run: >
+          pytest -vv --tb=short
+          -o faulthandler_timeout=180 --durations=20
+          tests/test_external_document_source_due_tick_observation_concurrency_postgres.py
+          tests/test_external_document_source_sftp_recurring_provider_lineage.py
 
       - name: Observation — refresh execution
         if: ${{ matrix.group == 'observation-refresh' }}
