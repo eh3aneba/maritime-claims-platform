@@ -225,11 +225,22 @@ jobs:
         # On a stalled PostgreSQL lock/test thread, emit bounded Python stack
         # locations (not variable values, SQL parameters or evidence bodies)
         # before the runner's job timeout. Keep all assertions mandatory.
-        run: >
-          pytest -vv --tb=short
-          -o faulthandler_timeout=180 --durations=20
-          tests/test_external_document_source_due_tick_observation_concurrency_postgres.py
-          tests/test_external_document_source_sftp_recurring_provider_lineage.py
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s ../../scripts/tests -p 'test_pilot_pg_wait_probe.py'
+          # Observe only whitelisted pg_stat_activity metadata from the
+          # ephemeral synthetic CI DB. Kill observer on success/failure/cancel.
+          python -u ../../scripts/pilot_pg_wait_probe.py --interval-seconds 60 --max-samples 20 &
+          probe_pid=$!
+          cleanup_probe() {
+            kill "$probe_pid" 2>/dev/null || true
+            wait "$probe_pid" 2>/dev/null || true
+          }
+          trap cleanup_probe EXIT
+          pytest -vv --tb=short \
+            -o faulthandler_timeout=180 --durations=20 \
+            tests/test_external_document_source_due_tick_observation_concurrency_postgres.py \
+            tests/test_external_document_source_sftp_recurring_provider_lineage.py
 
       - name: Observation — refresh execution
         if: ${{ matrix.group == 'observation-refresh' }}
