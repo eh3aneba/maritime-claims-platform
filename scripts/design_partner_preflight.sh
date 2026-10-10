@@ -32,6 +32,7 @@ fi
 
 echo "[1/6] Validating compose configuration..."
 docker compose --env-file "$ENV_FILE" config >/dev/null
+python scripts/pilot_compose_port_policy.py --env-file "$ENV_FILE"
 
 echo "[2/6] Building and starting database/API/worker/web..."
 docker compose --env-file "$ENV_FILE" up -d --build
