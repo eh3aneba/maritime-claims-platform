@@ -20,6 +20,7 @@ from app.modules.external_document_sources.sftp_evidence_admission_execution_mod
     ExternalDocumentSourceSftpEvidenceAdmissionExecutionReceipt,
 )
 from tests.db_harness import TestingSessionLocal, client
+from tests.ci_due_tick_stage_timing import ci_due_tick_stage
 from tests.test_external_document_source_profiles import _headers
 from tests.test_external_document_source_sftp_change_detection import _StatAdapter
 from tests.test_external_document_source_sftp_evidence_admission_authorization import (
@@ -50,14 +51,17 @@ def teardown_function() -> None:
 
 
 def _authorized_phase_s(seed: str):
-    chain, adapter, r_body = _unchanged_phase_r(seed)
-    claim_id = _seed_claim(chain["requester_id"], seed)
-    authorization = _authorize(
-        chain,
-        r_body["id"],
-        claim_id,
-        key=f"{seed}-s-auth",
-    )
+    with ci_due_tick_stage("sftp_phase_r_chain"):
+        chain, adapter, r_body = _unchanged_phase_r(seed)
+    with ci_due_tick_stage("sftp_phase_s_claim"):
+        claim_id = _seed_claim(chain["requester_id"], seed)
+    with ci_due_tick_stage("sftp_phase_s_authorize"):
+        authorization = _authorize(
+            chain,
+            r_body["id"],
+            claim_id,
+            key=f"{seed}-s-auth",
+        )
     assert authorization.status_code == 201, authorization.text
     return chain, adapter, r_body, claim_id, authorization.json()
 
