@@ -33,6 +33,7 @@ from app.modules.external_document_sources.remote_file_content_read_service impo
 )
 from app.modules.processing.models import DocumentProcessingJob
 from tests.db_harness import TestingSessionLocal, client
+from tests.ci_due_tick_stage_timing import ci_due_tick_stage
 from tests.test_external_document_source_change_detection import _ChangeAdapter
 from tests.test_external_document_source_discovery import _headers, _seed_tenant
 from tests.test_external_document_source_evidence_family_binding import (
@@ -220,16 +221,18 @@ def _later_candidate(
 
 
 def _bound_v1(monkeypatch: pytest.MonkeyPatch, suffix: str):
-    actor_id, profile_id, claim_id, initial_execution, _adapter, _store = _admit(
-        monkeypatch,
-        suffix,
-    )
-    binding = _bind(
-        profile_id,
-        initial_execution["id"],
-        actor_id,
-        key=f"phase-aa-y-{suffix}",
-    )
+    with ci_due_tick_stage("sharepoint_v1_admit"):
+        actor_id, profile_id, claim_id, initial_execution, _adapter, _store = _admit(
+            monkeypatch,
+            suffix,
+        )
+    with ci_due_tick_stage("sharepoint_v1_bind"):
+        binding = _bind(
+            profile_id,
+            initial_execution["id"],
+            actor_id,
+            key=f"phase-aa-y-{suffix}",
+        )
     assert binding.status_code == 201, binding.text
     return (
         actor_id,
