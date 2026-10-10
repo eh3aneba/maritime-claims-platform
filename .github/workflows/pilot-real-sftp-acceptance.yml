@@ -104,6 +104,7 @@ jobs:
           Path("/home/mcri-sftp-ci/evidence/oversized.bin").write_bytes(b"x" * 128)
           PY
           sudo ln -s /etc/passwd "$MCRI_REAL_SFTP_ROOT/escape-link"
+          sudo mkdir -p "$MCRI_REAL_SFTP_ROOT/empty-folder"
           sudo chown -R "$MCRI_REAL_SFTP_USERNAME:$MCRI_REAL_SFTP_USERNAME" \
             "/home/$MCRI_REAL_SFTP_USERNAME"
           sudo chmod 0750 "/home/$MCRI_REAL_SFTP_USERNAME" "$MCRI_REAL_SFTP_ROOT"
