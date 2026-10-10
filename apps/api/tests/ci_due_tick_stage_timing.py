@@ -14,6 +14,8 @@ _ALLOWED = frozenset({
     "disable_race_seed", "disable_race_schedule", "disable_race_workers",
     "disable_race_verify",
     "sftp_phase_s_setup", "sftp_phase_t_admit", "sftp_phase_u_bind",
+    "sharepoint_v1_admit", "sharepoint_v1_bind",
+    "sftp_phase_r_chain", "sftp_phase_s_claim", "sftp_phase_s_authorize",
 })
 
 
