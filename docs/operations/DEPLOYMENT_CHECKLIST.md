@@ -31,6 +31,12 @@ It requires **11** known services: DB, ClamAV, API and Web must be running **and
 
 A passing observation is **only** container-status metadata, not proof that the candidate SHA is actually deployed or that the images match immutable digests. It does not establish a clean-host deployment, private firewall/proxy exposure, authenticated user journey, ClamAV scanning behavior, SFTP acceptance, matched database + Evidence recovery point, rollback rehearsal, alert ownership, human signoff or Pilot GO. All those independent P0 acceptance records under #653 remain required. A failed snapshot is a blocking operational signal, not permission to disable checks or skip a service. Keep this record in controlled operator storage, not the public repository.
 
+### Automated synthetic-stack readback in CI
+
+The `Operational Performance Smoke` workflow now runs the read-only Compose readiness checker **after** its isolated, synthetic `design_partner_preflight.sh` stack startup and **before** performance measurements. It saves `artifacts/compose-readiness.json` in the short-retention `operational-performance-smoke` artifact and fails the required operational performance gate if any one of the 11 mandated service statuses is missing, not ready, duplicated or unexpected. The script cannot make a failing stack pass by running `docker compose up` or otherwise changing state. The recorded SHA is the workflow's candidate-head SHA supplied by CI, not an independently proven running image identity.
+
+**Evidence boundary:** this is a real Docker Compose observation on an ephemeral GitHub runner using synthetic data, but **not** a fresh private host deployment rehearsal, human monitoring ownership, scanner-malware behavioral proof, externally durable storage proof, matched DB/Evidence restore, rollback or operator acceptance. An artifact-bearing green workflow is necessary code-side validation only; #653 still requires actual independent operational exercises and human signoff. Keep the CI artifact free of secrets, customer hostnames, container names, raw environment or claim/Evidence bodies.
+
 ## Demo validation
 
 - [ ] `demo-seed` completes without external AI.
