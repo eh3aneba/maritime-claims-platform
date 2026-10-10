@@ -40,6 +40,7 @@ from tests.test_external_document_source_evidence_family_binding import (
     teardown_function as _phase_y_teardown,
 )
 from tests.test_external_document_source_family_version_admission import _bound_v1
+from tests.ci_due_tick_stage_timing import ci_due_tick_stage
 from tests.test_external_document_source_generation_3_change_detection import (
     _baseline_projection,
 )
@@ -92,10 +93,11 @@ def _session_factory():
 def test_same_due_tick_concurrent_consumers_create_one_execution(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    actor_id, profile_id, _claim_id, _initial_execution, binding = _bound_v1(
-        monkeypatch,
-        "ac-pg-same-tick",
-    )
+    with ci_due_tick_stage("same_tick_seed"):
+        actor_id, profile_id, _claim_id, _initial_execution, binding = _bound_v1(
+            monkeypatch,
+            "ac-pg-same-tick",
+        )
     adapter = _ChangeAdapter()
     adapter.result = ExactItemMetadataResult(
         found=True,
@@ -151,8 +153,9 @@ def test_same_due_tick_concurrent_consumers_create_one_execution(
                     db.rollback()
                     return ("conflict", None)
 
-        with ThreadPoolExecutor(max_workers=2) as pool:
-            results = list(pool.map(consume, ("a", "b")))
+        with ci_due_tick_stage("same_tick_workers"):
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                results = list(pool.map(consume, ("a", "b")))
 
         assert sorted(result[0] for result in results) == ["conflict", "ok"]
         assert adapter.calls == 1
@@ -176,10 +179,11 @@ def test_same_due_tick_concurrent_consumers_create_one_execution(
 def test_disable_vs_consume_is_serialized_and_never_observes_after_disable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    actor_id, profile_id, _claim_id, _initial_execution, binding = _bound_v1(
-        monkeypatch,
-        "ac-pg-disable-race",
-    )
+    with ci_due_tick_stage("disable_race_seed"):
+        actor_id, profile_id, _claim_id, _initial_execution, binding = _bound_v1(
+            monkeypatch,
+            "ac-pg-disable-race",
+        )
     adapter = _ChangeAdapter()
     adapter.result = ExactItemMetadataResult(
         found=True,
@@ -253,10 +257,11 @@ def test_disable_vs_consume_is_serialized_and_never_observes_after_disable(
                     db.rollback()
                     return ("disable", "conflict", None)
 
-        with ThreadPoolExecutor(max_workers=2) as pool:
-            a = pool.submit(consume)
-            b = pool.submit(disable)
-            results = [a.result(), b.result()]
+        with ci_due_tick_stage("disable_race_workers"):
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                a = pool.submit(consume)
+                b = pool.submit(disable)
+                results = [a.result(), b.result()]
 
         disable_result = next(row for row in results if row[0] == "disable")
         consume_result = next(row for row in results if row[0] == "consume")

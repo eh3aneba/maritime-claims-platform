@@ -18,6 +18,7 @@ from app.modules.external_document_sources.sftp_evidence_admission_authorization
     ExternalDocumentSourceSftpEvidenceAdmissionAuthorization,
 )
 from tests.db_harness import TestingSessionLocal
+from tests.ci_due_tick_stage_timing import ci_due_tick_stage
 from tests.test_external_document_source_recurring_observation_schedule import (
     _authorize as _authorize_schedule,
 )
@@ -42,20 +43,23 @@ def teardown_function() -> None:
 
 
 def _bound_sftp(monkeypatch: pytest.MonkeyPatch, seed: str):
-    chain, adapter, _r_body, claim_id, authorization = _authorized_phase_s(seed)
+    with ci_due_tick_stage("sftp_phase_s_setup"):
+        chain, adapter, _r_body, claim_id, authorization = _authorized_phase_s(seed)
     _enable_clean_admission(monkeypatch)
-    admitted = _execute(
-        chain,
-        authorization["id"],
-        key=f"{seed}-t-admit",
-    )
+    with ci_due_tick_stage("sftp_phase_t_admit"):
+        admitted = _execute(
+            chain,
+            authorization["id"],
+            key=f"{seed}-t-admit",
+        )
     assert admitted.status_code == 201, admitted.text
     execution = admitted.json()
-    binding = _bind(
-        chain,
-        execution["id"],
-        key=f"{seed}-u-bind",
-    )
+    with ci_due_tick_stage("sftp_phase_u_bind"):
+        binding = _bind(
+            chain,
+            execution["id"],
+            key=f"{seed}-u-bind",
+        )
     assert binding.status_code == 201, binding.text
     return chain, adapter, claim_id, authorization, execution, binding.json()
 
