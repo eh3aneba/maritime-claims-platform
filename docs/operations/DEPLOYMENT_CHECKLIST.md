@@ -76,6 +76,30 @@ A failure to reach the daemon, scan safely, detect EICAR, or return exact metada
 - [ ] Legacy records labelled `legacy_unscanned` are identified and accepted for the walkthrough or covered by a controlled rescan plan.
 - [ ] The operator has reviewed `docs/operations/EVIDENCE_QUARANTINE.md` and assigned quarantine investigation ownership.
 
+## Pilot monitoring responsibility and alert-exercise inventory
+
+The product already exposes `/api/v1/health/live`, `/api/v1/health/ready` and tenant-scoped `/pilot-operations/monitor-runs` and incident review endpoints. **These APIs alone do not establish that independent infrastructure alerting is deployed or that a human receives and acknowledges alerts.** For the controlled Pilot #653 an operator must document coverage, primary/responder responsibilities, severity, polling interval, response target, an alert-rule reference and **one actually observed alert exercise** for all of:
+
+- API liveness/readiness; PostgreSQL availability and Alembic migration revision; document worker and queue; external-evidence scheduler, observation and review-projector workers; Evidence storage health/capacity; ClamAV; backup age and recovery readiness; authentication failure signal; bounded request error rate and latency.
+
+Use a local, controlled NO-GO draft (never commit operator identities, alarm payloads, contact details or environment secrets):
+
+```bash
+python scripts/pilot_monitoring_ownership.py init \
+  --sha "<exact-40-character-candidate-SHA>" \
+  --output /secure/pilot-releases/rc-001-monitoring-owners.json
+```
+
+An authorized operator fills the `signals` map *after* installing and exercising the real alert paths. Every signal requires `status: "verified"`, bounded `cadence_minutes` and `response_minutes` (1–1440), a role-style `owner_role` and `escalation_role`, `severity` (p0–p3), safe `monitor://`/`runbook://`/`artifact://`/`ticket://` references to its rule and alarm-exercise evidence, and an actual UTC exercise time. Then:
+
+```bash
+python scripts/pilot_monitoring_ownership.py check \
+  /secure/pilot-releases/rc-001-monitoring-owners.json \
+  --expected-sha "<independently-observed-release-SHA>"
+```
+
+A missing signal, pending owner, invalid target, absent drill evidence, bad reference, or wrong SHA is NO-GO. The checker is deliberately **read-only**: it validates operator-entered record completeness only, cannot authenticate the individuals, query the actual alert system, confirm the alert was delivered to the owner, detect external writer activity, or approve production. Even a complete 11-signal record must be independently reviewed against the linked alert logs and on-call acknowledgement by the assigned release authority. Explicit runbook and actual on-call ownership are required for #653 closure; do not substitute a passing unit test or a user-entered `verified` field.
+
 ## Go / no-go
 
 Go for a controlled design-partner walkthrough only if all checklist items pass. A private design-partner walkthrough is not equivalent to production readiness.
