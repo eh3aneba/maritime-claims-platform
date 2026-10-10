@@ -114,6 +114,37 @@ This is a non-destructive **same-version, same-host synthetic restart exercise**
 
 This is **not** a production restore rehearsal. It intentionally never drops or restores the live application database, never restores Evidence to a matching new storage volume, does not pause all writers to establish a consistent multi-store point, and has no independent operator/quiescence proof. Its record always sets `matched_recovery_point_verified=false`, `evidence_restore_verified=false`, `full_restore_drill_verified=false` and `pilot_authorized=false`. These are open P0 items in #653 and must be completed through a separately authorized destructive maintenance exercise. Never repurpose the CI probe on customer records or use it to claim production RPO/RTO.
 
+## Bounded Pilot v1 rollback rehearsal evidence gate (operator only)
+
+Restoring a PostgreSQL backup is **not** the same as rolling application images back to a previous exact release. A controlled Pilot rollback must separate these paths and explicitly refuse improvised database downgrades.
+
+Before any controlled maintenance exercise, the accountable release team identifies the failed release (from SHA), the **different** previous approved release (to SHA), full immutable image digests for API/Web/Worker on both sides, the live Alembic revision, the change ticket, approved maintenance window and an independent reviewer. Record a previous known-good image digest from the actual registry; never derive one from a mutable tag or invent it.
+
+Use the read-only standard-library gate to create a NO-GO draft in controlled operator storage:
+
+```bash
+python scripts/pilot_rollback_rehearsal.py init \
+  --from-sha "<current-exact-40-character-release-SHA>" \
+  --to-sha "<previous-known-good-exact-40-character-release-SHA>" \
+  --output /secure/pilot-releases/rc-001-rollback.json
+```
+
+**Two strictly separated rollback choices:**
+
+- `application_only`: the image release changes, but live PostgreSQL remains untouched. Require **identical independently observed Alembic revision** before/after, an approved pre-change backup and pre/post service health plus **real authenticated claim read** evidence. If revisions differ, this mode is **NO-GO**; merely hoping an older app will tolerate a newer schema is not an acceptable rollback proof.
+- `recover_paired_backup`: a separately approved, controlled DB+Evidence recovery exercise was actually performed. Require the matched recovery-pair evidence reference, bounded restore-operation evidence, post-restore Document/lineage integrity checks, migration/preflight checks, and explicit operator signoff. No ad hoc `alembic downgrade` or unreviewed database rewrites are allowed.
+
+The record additionally requires release and environment identities, two **different** operator and independent-approver roles, precise UTC start/end, `rollback_result="pass"`, `explicit_human_authorized=true`, and evidence references for the change approval, exercise log, backup, health checks, authenticated Pilot claim journey and independent review. Run a structural check **only after** those independent facts exist:
+
+```bash
+python scripts/pilot_rollback_rehearsal.py check \
+  /secure/pilot-releases/rc-001-rollback.json \
+  --from-sha "<independently-confirmed-current-SHA>" \
+  --to-sha "<independently-confirmed-previous-SHA>"
+```
+
+A missing digest, mismatched SHA/migration, unsafe downgrade, incomplete authority, absent restore-pair proof or missing post-rollback acceptance yields **NO-GO**. This tool **does not execute a rollback**, independently verify operator signatures or GitHub/host evidence, restore a DB, or authorize customer-data use. Even `ROLLBACK RECORD COMPLETE` only means operator-entered references have the required shape. A separately approved full rehearsal on the actual isolated Pilot host is still P0 under [#653](https://github.com/eh3aneba/maritime-claims-platform/issues/653); preserve evidence externally without secrets.
+
 ## Restore maintenance window
 
 Restore is intentionally destructive and requires explicit confirmation:
