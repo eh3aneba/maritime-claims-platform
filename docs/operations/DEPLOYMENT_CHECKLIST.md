@@ -16,6 +16,21 @@
 - [ ] Worker image contains `tesseract`, `eng`/`fas` language data and `pdftoppm`.
 - [ ] `OCR_ENABLED`, `OCR_LANGUAGES`, `OCR_MAX_PAGES` and `OCR_TIMEOUT_SECONDS` are explicitly reviewed.
 
+## Read-only operational service-status snapshot
+
+After an authorized operator has started a **synthetic-only** isolated Pilot stack from the reviewed candidate, collect a privacy-safe Docker Compose service observation. This tool never invokes `up`, `exec`, `stop` or `restart`; it runs only `docker compose ps --all --format json` and **does not print raw container output, configuration, environment, customer labels or error text**:
+
+```bash
+python scripts/pilot_compose_readiness.py \
+  --env-file .env \
+  --release-sha "<exact-current-candidate-40-char-SHA>" \
+  --output /secure/pilot-releases/rc-001-compose-status.json
+```
+
+It requires **11** known services: DB, ClamAV, API and Web must be running **and healthy**; the document, governance, scheduling, observation and review projector workers must be running (and not explicitly unhealthy); migration and preflight must have exited with code zero. A present optional `demo-seed` must have exited successfully. Missing, duplicate or unknown services, incomplete one-shot work, explicit unhealthy states, malformed/unavailable Docker responses or a reused output filename **fail closed**. Only fixed service names, enum states/health, zero-exit flags, counts, a supplied release SHA and the UTC observation timestamp go into the new exclusive JSON.
+
+A passing observation is **only** container-status metadata, not proof that the candidate SHA is actually deployed or that the images match immutable digests. It does not establish a clean-host deployment, private firewall/proxy exposure, authenticated user journey, ClamAV scanning behavior, SFTP acceptance, matched database + Evidence recovery point, rollback rehearsal, alert ownership, human signoff or Pilot GO. All those independent P0 acceptance records under #653 remain required. A failed snapshot is a blocking operational signal, not permission to disable checks or skip a service. Keep this record in controlled operator storage, not the public repository.
+
 ## Demo validation
 
 - [ ] `demo-seed` completes without external AI.
