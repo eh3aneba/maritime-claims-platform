@@ -69,5 +69,5 @@ jobs:
           print("Fail-closed production deployment policy examples passed.")
           PY
 
-      - name: Validate Pilot v1 release-candidate record gate
-        run: python -m unittest discover -s scripts/tests -p 'test_pilot_rc_gate.py' -v
+      - name: Validate Pilot v1 release-candidate record and exact-head CI evidence gates
+        run: python -m unittest discover -s scripts/tests -p 'test_pilot*.py' -v
