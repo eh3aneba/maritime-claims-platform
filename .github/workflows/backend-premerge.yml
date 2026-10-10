@@ -85,7 +85,10 @@ jobs:
                 ;;
               .github/workflows/postgres-concurrency-regressions.yml)
                 ;;
-              apps/api/*|.github/workflows/backend-premerge.yml)
+              # Operational Pilot restore/custody scripts and the live-stack
+              # validation workflow can affect backend safety without changing
+              # apps/api; require the actual 64-shard suite on ready PRs.
+              apps/api/*|scripts/pilot_*.py|scripts/tests/test_pilot*.py|scripts/backup_postgres.sh|scripts/verify_postgres_backup.sh|scripts/restore_postgres.sh|scripts/design_partner_preflight.sh|.github/workflows/performance-smoke.yml|.github/workflows/backend-premerge.yml)
                 backend_required=true
                 break
                 ;;
