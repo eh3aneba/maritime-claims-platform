@@ -18,6 +18,8 @@ import subprocess
 import sys
 import tempfile
 
+from pilot_ci_evidence_restore import EvidenceRestoreError, restore_and_reconcile
+
 SHA_RE = re.compile(r"[a-f0-9]{40}\Z")
 TEST_DB = "mcri_performance"
 TEST_USER = "mcri_performance"
@@ -105,6 +107,13 @@ def observe(*, env_file: str, env: dict[str, str]) -> dict:
     env = {**env, "COMPOSE_ENV_FILES": env_file}
     ref_count_sql = ("SELECT COUNT(*) FROM claims WHERE external_reference = "
                      "'MCRI-DEMO-MT-ORION';")
+    document_sql = (
+        "SELECT COALESCE(json_agg(json_build_object("
+        "'key', d.storage_key, 'sha256', d.file_hash, 'size', d.file_size_bytes"
+        ") ORDER BY d.storage_key)::text, '[]') "
+        "FROM documents d JOIN claims c ON c.id=d.claim_id "
+        "WHERE c.external_reference='MCRI-DEMO-MT-ORION';"
+    )
     version_sql = ("SELECT COALESCE(string_agg(version_num, ',' ORDER BY version_num), '') "
                    "FROM alembic_version;")
     source_count = _query(env_file, env, TEST_DB, ref_count_sql)
@@ -149,6 +158,7 @@ def observe(*, env_file: str, env: dict[str, str]) -> dict:
         # If creation fails, do not drop a pre-existing database.
         created = False
         verified = False
+        recovered_counts = None
         try:
             _run(_compose(env_file, "exec", "-T", "db", "createdb",
                           "-U", TEST_USER, CLONE_DB), env=env)
@@ -159,14 +169,25 @@ def observe(*, env_file: str, env: dict[str, str]) -> dict:
             clone_count = _query(env_file, env, CLONE_DB, ref_count_sql)
             clone_revision = _query(env_file, env, CLONE_DB, version_sql)
             verified = clone_count == source_count and clone_revision == source_revision
+            if not verified:
+                raise ProbeError("synthetic cloned database verification failed")
+            # Restore files only to a fresh isolated temp directory, NEVER the
+            # application storage volume; compare bytes with the restored DB.
+            restored_rows = _query(env_file, env, CLONE_DB, document_sql)
+            with tempfile.TemporaryDirectory(prefix="mcri-ci-evidence-restore-") as temp:
+                try:
+                    recovered_counts = restore_and_reconcile(
+                        archive, Path(temp), restored_rows)
+                except EvidenceRestoreError:
+                    raise ProbeError("synthetic Evidence-to-Document reconciliation failed") from None
         finally:
             if created:
                 # On an unsuccessful clone/cleanup the aggregate CI gate fails.
                 _run(_compose(env_file, "exec", "-T", "db", "dropdb",
                               "-U", TEST_USER, "--if-exists", "--force",
                               CLONE_DB), env=env)
-        if not verified:
-            raise ProbeError("synthetic cloned database verification failed")
+        if not verified or recovered_counts is None:
+            raise ProbeError("synthetic cloned database or Evidence verification failed")
 
     return {
         "schema": "mcri-synthetic-ci-recovery-probe-v1",
@@ -179,6 +200,8 @@ def observe(*, env_file: str, env: dict[str, str]) -> dict:
         "evidence_archive_integrity_bound": True,
         "isolated_db_clone_restored": True,
         "synthetic_claim_count_and_migration_matched": True,
+        "isolated_evidence_files_restored": recovered_counts["files_restored"],
+        "restored_demo_document_hashes_matched": recovered_counts["demo_documents_matched"],
         "active_application_db_restored_or_dropped": False,
         "matched_recovery_point_verified": False,
         "evidence_restore_verified": False,
