@@ -47,6 +47,9 @@ jobs:
           print("Production deployment policy CI attestation passed.")
           PY
 
+      - name: Run main ruleset verifier unit tests
+        run: python scripts/test_verify_main_ruleset.py
+
       - name: Verify fail-closed unsafe configuration examples
         env:
           PYTHONPATH: apps/api
