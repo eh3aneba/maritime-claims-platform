@@ -237,10 +237,20 @@ jobs:
             wait "$probe_pid" 2>/dev/null || true
           }
           trap cleanup_probe EXIT
+          # Preserve the pytest exit status; stage log never changes the gate.
+          # The stage file contains fixed labels and elapsed seconds only.
+          set +e
           pytest -vv --tb=short \
             -o faulthandler_timeout=180 --durations=20 \
             tests/test_external_document_source_due_tick_observation_concurrency_postgres.py \
             tests/test_external_document_source_sftp_recurring_provider_lineage.py
+          pytest_exit=$?
+          set -e
+          if [ -f /tmp/mcri_due_tick_stage_timings.jsonl ]; then
+            echo "CI synthetic due-tick stage durations:"
+            cat /tmp/mcri_due_tick_stage_timings.jsonl
+          fi
+          exit "$pytest_exit"
 
       - name: Observation — refresh execution
         if: ${{ matrix.group == 'observation-refresh' }}
