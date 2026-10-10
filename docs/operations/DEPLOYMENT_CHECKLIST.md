@@ -37,6 +37,19 @@ The `Operational Performance Smoke` workflow now runs the read-only Compose read
 
 **Evidence boundary:** this is a real Docker Compose observation on an ephemeral GitHub runner using synthetic data, but **not** a fresh private host deployment rehearsal, human monitoring ownership, scanner-malware behavioral proof, externally durable storage proof, matched DB/Evidence restore, rollback or operator acceptance. An artifact-bearing green workflow is necessary code-side validation only; #653 still requires actual independent operational exercises and human signoff. Keep the CI artifact free of secrets, customer hostnames, container names, raw environment or claim/Evidence bodies.
 
+### Synthetic-only live malware scanner behavior
+
+The Operational Performance Smoke workflow performs a bounded, **real ClamAV daemon** scan after confirming all 11 synthetic Compose services are ready. The CI-only helper `scripts/pilot_live_clamav_probe.py` invokes the existing API container using `docker compose exec -T api python -` and passes a fixed synthetic program through stdin; it never alters the application image. In an environment explicitly labeled `APP_ENV=test` with scanning enabled, it proves the existing production `ping_clamd` and `scan_file` functions accept one harmless text fixture (`clean`) and recognize the harmless EICAR antivirus test string (`infected`). Both temporary files are removed within the API container; the tool stores no customer bytes, filenames, scanner error details, threat names, raw Docker output or secrets.
+
+```bash
+python scripts/pilot_live_clamav_probe.py \
+  --env-file .env.performance \
+  --release-sha "<exact-ci-candidate-sha>" \
+  --output /secure/pilot-releases/rc-001-clamav-synthetic.json
+```
+
+A failure to reach the daemon, scan safely, detect EICAR, or return exact metadata fails the **required operational performance gate** before its performance budget measurement. The evidence artifact is an exclusive minimal JSON summary, not a real customer-malware report. This only validates a **synthetic CI environment**. It does **not** establish approved production malware signatures, quarantined customer files, real operator response, storage durability, backup/recovery, fresh-host deployment, or Pilot GO; those remain separate P0 operational obligations under #653. EICAR is a non-malicious scanner test signature, not an actual infection.
+
 ## Demo validation
 
 - [ ] `demo-seed` completes without external AI.

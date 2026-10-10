@@ -133,6 +133,18 @@ jobs:
             --release-sha "$CANDIDATE_SHA" \
             --output artifacts/compose-readiness.json
 
+      # Live production scanner API, synthetic clean file + harmless EICAR
+      # signature only. Fails closed and never records the bytes or response.
+      - name: Verify live synthetic ClamAV scan boundary
+        env:
+          CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          python scripts/pilot_live_clamav_probe.py \
+            --env-file .env.performance \
+            --release-sha "$CANDIDATE_SHA" \
+            --output artifacts/clamav-synthetic-probe.json
+
       - name: Run bounded operational performance smoke
         run: |
           set -a
