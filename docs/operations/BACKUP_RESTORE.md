@@ -92,19 +92,37 @@ The binder checks the PostgreSQL checksum and metadata sidecars against the dump
 Restore is intentionally destructive and requires explicit confirmation:
 
 ```bash
-MCRI_RESTORE_CONFIRM=YES ./scripts/restore_postgres.sh backups/mcri-YYYYMMDDTHHMMSSZ.dump
+APP_ENV=development MCRI_RESTORE_CONFIRM=YES \
+  ./scripts/restore_postgres.sh backups/mcri-YYYYMMDDTHHMMSSZ.dump
 ```
 
 Before running it, establish a maintenance window and stop any ingress or database clients that are not part of this Compose project. The script can quiesce and verify the Compose stack, but it cannot discover external clients connecting directly to PostgreSQL.
+
+**New pre-destruction boundary:** `APP_ENV` must be explicitly classified (`development`, `test`, `pilot`, `staging`, or `production`); it is not inferred from a Compose default. Once Compose writers are quiesced and PostgreSQL is ready, but **before** `dropdb`, the restore script calls `scripts/verify_postgres_backup.sh` to check the SHA-256 sidecar, metadata binding, intended database name and `pg_restore --list` archive readability. Any failed check leaves the original database intact and application services stopped.
+
+For `APP_ENV=pilot`, `staging` or `production`, the operation also requires all three recovery-pair inputs, verifies their contents with `pilot_recovery_pair.py verify` and refuses to reach `dropdb` if the Evidence archive or manifest has changed:
+
+```bash
+APP_ENV=pilot \
+MCRI_RESTORE_CONFIRM=YES \
+MCRI_RESTORE_PAIR_MANIFEST=/secure/recovery/recovery-pair.json \
+MCRI_RESTORE_EVIDENCE_ARCHIVE=/secure/recovery/evidence.tar.gz \
+MCRI_RESTORE_RELEASE_SHA="<full-exact-40-hex-commit-of-backup>" \
+  ./scripts/restore_postgres.sh /secure/recovery/mcri.dump
+```
+
+All input artifacts must already have been captured, protected and independently reviewed. Pair verification proves **artifact integrity only**; it does not create or restore the Evidence volume, guarantee a common snapshot time, quiesce external database connections, or approve production use. The operator must restore the matching Evidence storage point separately and check file/DB correspondence before reopening services. A simulated test of the script is not a completed destructive restore rehearsal.
+
 
 The restore script:
 
 1. stops the web/API ingress, all current workers, one-shot preflight/migration services and demo seed if present;
 2. verifies fail-closed that no Compose service other than `db` and `clamav` remains running;
 3. starts PostgreSQL if necessary and waits for the maintenance connection;
-4. force-drops/recreates the target database, restores the custom-format dump and reapplies current migrations;
-5. runs the application preflight after restore;
-6. leaves application services stopped so an operator can complete integrity checks before reopening traffic.
+4. verifies dump digest, sidecars, target database and `pg_restore --list`, plus the mandatory DB/Evidence recovery-pair binding for Pilot/staging/production;
+5. force-drops/recreates the target database, restores the custom-format dump and reapplies current migrations;
+6. runs the application preflight after restore;
+7. leaves application services stopped so an operator can complete integrity checks before reopening traffic.
 
 If a future Compose service remains running because the quiesce list was not updated, restore aborts before database destruction. If any restore step fails, application services stay stopped and must not be restarted until the failure is understood.
 
