@@ -161,6 +161,22 @@ jobs:
           export MCRI_PERF_CLAIM_LIST_P95_MS=2500
           python scripts/operational_performance_smoke.py
 
+      # This verifies a real custom-format PostgreSQL dump/sidecars, archives
+      # synthetic Evidence and restores into a NEW isolated CI-only database.
+      # Never invokes the destructive application DB restore procedure.
+      - name: Verify synthetic backup and isolated database clone restore
+        env:
+          MCRI_CI_RESTORE_PROBE: "1"
+        run: |
+          set -euo pipefail
+          set -a
+          source .env.performance
+          set +a
+          export COMPOSE_ENV_FILES=.env.performance
+          python scripts/pilot_ci_restore_probe.py \
+            --env-file .env.performance \
+            --output artifacts/synthetic-db-restore-probe.json
+
       - name: Capture bounded container diagnostics
         if: failure()
         run: |
