@@ -103,7 +103,7 @@ def check(record: object, *, expected_sha: str) -> dict[str, int | bool]:
         for label in ("owner_role", "escalation_role"):
             if not isinstance(entry[label], str) or not IDENTITY_RE.fullmatch(entry[label]):
                 raise MonitoringRecordError("monitoring ownership or escalation missing")
-        if entry["severity"] not in ALERT_SEVERITIES:
+        if not isinstance(entry["severity"], str) or entry["severity"] not in ALERT_SEVERITIES:
             raise MonitoringRecordError("monitoring severity missing or invalid")
         for label in ("cadence_minutes", "response_minutes"):
             value = entry[label]
