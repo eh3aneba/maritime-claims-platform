@@ -85,7 +85,9 @@ def evaluate(items: list[dict], *, release_sha: str) -> dict:
         state = item.get("State")
         health = item.get("Health")
         state = state if state in SAFE_STATES else "unknown"
-        health = health.lower() if isinstance(health, str) else "none"
+        health = health.strip().lower() if isinstance(health, str) else "none"
+        if not health:
+            health = "none"
         health = health if health in SAFE_HEALTH else "unknown"
         exit_code = item.get("ExitCode")
         exit_ok = type(exit_code) is int and exit_code == 0
