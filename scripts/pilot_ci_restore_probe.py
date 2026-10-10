@@ -139,15 +139,14 @@ def observe(*, env_file: str, env: dict[str, str]) -> dict:
     )
     version_sql = ("SELECT COALESCE(string_agg(version_num, ',' ORDER BY version_num), '') "
                    "FROM alembic_version;")
+    # All performance/API checks have finished. Stop every known writer
+    # *before* reading the baseline or recording backup bytes. A failed
+    # stop/verification aborts without making a database dump or archive.
+    quiesce_compose_writers(env_file, env)
     source_count = _query(env_file, env, TEST_DB, ref_count_sql)
     source_revision = _query(env_file, env, TEST_DB, version_sql)
     if source_count != "1" or not source_revision:
         raise ProbeError("synthetic MT ORION seed or Alembic baseline unavailable")
-
-    # All performance/API checks have finished. Stop every known writer
-    # *before* recording any backup bytes. A failed stop/verification aborts
-    # without creating a database dump or archive.
-    quiesce_compose_writers(env_file, env)
 
     with tempfile.TemporaryDirectory(prefix="mcri-ci-recovery-") as work:
         root = Path(work)
