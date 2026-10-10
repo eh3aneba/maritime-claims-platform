@@ -217,9 +217,11 @@ jobs:
         env:
           EXTERNAL_EVIDENCE_DUE_TICK_POSTGRES_TEST: "1"
           PYTHONFAULTHANDLER: "1"
-          # This PostgreSQL test step must fail closed on prolonged SQL or lock waits;
-          # no production connection inherits these libpq-only CI settings.
-          PGOPTIONS: "-c lock_timeout=30000 -c statement_timeout=180000"
+          # The two expected racing workers deliberately serialize on the same
+          # binding row. 30s caused false failures on slow CI runners (PR #669);
+          # 5m lock / 10m statement bounds still fail closed before the 25m job
+          # deadline. These libpq settings apply ONLY to this test step.
+          PGOPTIONS: "-c lock_timeout=300000 -c statement_timeout=600000"
         # On a stalled PostgreSQL lock/test thread, emit bounded Python stack
         # locations (not variable values, SQL parameters or evidence bodies)
         # before the runner's job timeout. Keep all assertions mandatory.
