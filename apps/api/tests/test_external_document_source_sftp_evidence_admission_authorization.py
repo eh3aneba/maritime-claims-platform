@@ -23,6 +23,7 @@ from app.modules.external_document_sources.sftp_generation3_restaging_models imp
 from app.modules.users.models import User
 from app.modules.vessels.models import Vessel
 from tests.db_harness import TestingSessionLocal, client
+from tests.ci_due_tick_stage_timing import ci_due_tick_stage
 from tests.test_external_document_source_profiles import _headers, _seed_tenant
 from tests.test_external_document_source_sftp_change_detection import _StatAdapter
 from tests.test_external_document_source_sftp_generation3_change_detection import (
@@ -73,13 +74,15 @@ def _seed_claim(actor_id: UUID, suffix: str = "s") -> UUID:
 
 
 def _unchanged_phase_r(seed: str):
-    chain = _completed_phase_q(seed)
+    with ci_due_tick_stage("sftp_q_prior_chain"):
+        chain = _completed_phase_q(seed)
     adapter = _StatAdapter(
         mode="unchanged",
         baseline=_generation_3_baseline(chain),
     )
     register_external_document_source_sftp_exact_file_metadata_adapter(adapter)
-    response = _observe(chain, key=f"{seed}-r-unchanged")
+    with ci_due_tick_stage("sftp_r_observe"):
+        response = _observe(chain, key=f"{seed}-r-unchanged")
     assert response.status_code == 201, response.text
     assert response.json()["result_status"] == "unchanged"
     chain["generation3_change_detection_id"] = response.json()["id"]
