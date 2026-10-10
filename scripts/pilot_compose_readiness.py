@@ -99,7 +99,7 @@ def evaluate(items: list[dict], *, release_sha: str) -> dict:
         if service in HEALTHY:
             passed = state == "running" and health == "healthy"
         elif service in RUNNING:
-            passed = state == "running" and health not in ("unhealthy", "unknown")
+            passed = state == "running" and health in ("healthy", "none")
         else:
             passed = state == "exited" and exit_ok
         statuses[service] = {"observed": True, "status": state, "health": health,
