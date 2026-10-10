@@ -55,6 +55,8 @@ class PilotComposeReadinessTests(unittest.TestCase):
              if x["Service"] == "migrate" else x for x in baseline],
             [{**x, "State": "restarting"}
              if x["Service"] == "worker" else x for x in baseline],
+            [{**x, "Health": "starting"}
+             if x["Service"] == "worker" else x for x in baseline],
             [*baseline, {"Service": "unknown-secret-worker", "State": "running"}],
             [*baseline, baseline[0]],
             [*baseline, {"Service": "demo-seed", "State": "running"}],
