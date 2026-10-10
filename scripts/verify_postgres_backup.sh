@@ -50,6 +50,14 @@ FORMAT="$(meta_value format)"
 META_DUMP_FILE="$(meta_value dump_file)"
 META_SHA="$(meta_value dump_sha256)"
 ALEMBIC_HEADS="$(meta_value alembic_heads)"
+META_DB="$(meta_value database)"
+
+# Optional target-db binding, supplied by the destructive restore path.
+# Standalone read-only archive verification does not require a live target.
+if [[ -n "${MCRI_VERIFY_BACKUP_EXPECTED_DB:-}" && "$META_DB" != "$MCRI_VERIFY_BACKUP_EXPECTED_DB" ]]; then
+  echo "Backup metadata database differs from the restore target." >&2
+  exit 1
+fi
 
 if [[ "$FORMAT" != "mcri-postgres-backup-v1" ]]; then
   echo "Unsupported backup metadata format." >&2
