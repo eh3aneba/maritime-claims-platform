@@ -59,6 +59,24 @@ The output is created exclusively, with no overwrite. It records only the suppli
 
 **Release-identity rule:** a passing pull-request head is not automatically a passing subsequent **squash-merged main commit**; the hashes differ. Collect and verify CI evidence for the *exact deployed commit* and its corresponding images. Record the observation as an evidence reference only after a named reviewer independently checks the runs and logs. The tool cannot attest deployment, actual database migration, operational controls, backup, scanner readiness, real SFTP proof, repository protection, or human approval. **CI METADATA COMPLETE is not a Pilot GO.**
 
+## Verify whether Full Backend really ran (without triggering it)
+
+A successful `Full Backend Pre-Merge` **workflow** can be a valid, intentional path-scoped result with **zero executed Backend test shards**. Its aggregate `Backend tests` job is green after `Record workflow-only backend bypass`. This is correct for narrow operational/documentation changes but must **never** be described as a 64/64 Backend validation.
+
+After independently recording a workflow run ID corresponding to the exact commit under review, inspect its *actual jobs and steps* (read-only; no test dispatch or re-run):
+
+```bash
+python scripts/pilot_backend_execution_evidence.py \
+  --repo eh3aneba/maritime-claims-platform \
+  --sha "<exact-40-char-candidate-SHA>" \
+  --run-id "<observed-Full-Backend-workflow-run-ID>" \
+  --output /secure/pilot-releases/rc-001-backend-jobs.json
+```
+
+The exclusive, privacy-safe metadata record distinguishes precisely `scoped_skip_verified` (**0** executed shards, intentional) from `full_64_shards_pass` (**64/64** independent successful shard jobs). It validates workflow name, exact SHA, run attempt, the success/skip status of classifier, aggregate steps, distinct shard IDs, and complete matrix. Missing, failed, cancelled, stale-attempt or malformed jobs fail closed. It does not copy raw job logs, claim data or GitHub access tokens.
+
+**For a final release-candidate record only**, when a real full Backend run is explicitly required, use the same read-only checker with `--require-full` and a new output path: an intentionally scoped skip then returns an incomplete (exit 1), not a false full-suite PASS. This does **not** change CI's selective triggers or require running expensive tests for every operational PR. A workflow-level green result from `pilot_ci_evidence.py` is *not* a substitute for this separate job-level matrix proof. Nor is 64/64 proof equivalent to Pilot release authorization or deployed-image attestation.
+
 ## Manual GO/NO-GO remains mandatory
 
 The accountable release owner must separately record decision, reviewer, timestamp, environment/tenant, permitted data class, limitations, backup/rollback owner and go-live/abort conditions. Keep Pilot v1 bounded to one H&M machinery claims team, 5–10 permitted claims, 30 days, mandatory human review and no autonomous claim decision. If any P0 gate is unresolved, **NO-GO**.
