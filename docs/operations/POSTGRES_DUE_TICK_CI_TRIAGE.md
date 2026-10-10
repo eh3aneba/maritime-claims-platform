@@ -34,3 +34,11 @@ The `observation-due-tick` PostgreSQL 18.4 matrix step retains **all five origin
 ## Closure scope
 
 The #667 incident can be operationally contained with tested CI diagnostics, bounded PostgreSQL waits, preserved regression assertions and an agreed recurrence procedure **even though attempt 1's root cause remains unproven**. Record this distinction in the closing comment; reopen or create a blocking follow-up upon recurrence with actionable evidence. Pilot v1 release readiness is tracked separately in #653 and related P0 issues.
+
+## Bounded live lock telemetry (follow-up #670)
+
+The required `observation-due-tick` CI matrix now launches a separate read-only, CI-guarded `scripts/pilot_pg_wait_probe.py` process. Before pytest, a fast network-free unit test validates the connection safety guard and metadata redaction. The observer reports up to 20 samples at 60-second intervals on **only** the ephemeral loopback database `mcri_concurrency_ci`, and is stopped when the test command exits. The observer cannot authorize, skip, retry, or turn a failing pytest/gate into PASS.
+
+Each JSON line includes only collection UTC time, a bounded sample count, backend PID, process state, PostgreSQL wait type/event, transaction age (seconds), and blocking PIDs from `pg_stat_activity` / `pg_blocking_pids`. No query text, query ID, SQL parameters, hostname, database password, customer claim, tenant identifier, Document metadata or Evidence bytes are selected or logged. Diagnostic exceptions are represented only by exception **type**, never a string containing credentials. Connection is refused unless `APP_ENV=test`, `EXTERNAL_EVIDENCE_DUE_TICK_POSTGRES_TEST=1`, and the database URI targets the synthetic loopback database.
+
+**Interpretation:** a positive `blocking_pids` array identifies a live wait dependency in that sample, **not automatically a cyclic deadlock**. Repeated lock samples with a stable blocker and a corresponding Python stack are grounds for a targeted lock-order/transaction-duration investigation. No blocked PID, but long test durations, suggests examining expensive fixture setup/teardown or runner scheduling. On a new failure preserve the exact SHA, run/attempt/job IDs and sanitized observations before retry. Original #666 cancellation remains unproven, and Pilot #653 remains an independent NO-GO gate.
