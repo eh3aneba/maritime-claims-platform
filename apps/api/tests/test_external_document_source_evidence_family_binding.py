@@ -26,6 +26,7 @@ from app.modules.processing.service import (
     process_job,
 )
 from tests.db_harness import TestingSessionLocal, client
+from tests.ci_due_tick_stage_timing import ci_due_tick_stage
 from tests.test_external_document_source_discovery import _headers
 from tests.test_external_document_source_evidence_admission_authorization import (
     _authorize,
@@ -54,26 +55,30 @@ def teardown_function() -> None:
 
 
 def _admit(monkeypatch: pytest.MonkeyPatch, suffix: str):
-    upstream, metadata_adapter, observation = _unchanged_phase_v()
+    with ci_due_tick_stage("sharepoint_v_prior_chain"):
+        upstream, metadata_adapter, observation = _unchanged_phase_v()
     actor_id = upstream[0]
     profile_id = upstream[1]
     store = upstream[14]
-    claim_id = _seed_claim(actor_id, f"y-{suffix}")
-    authorization = _authorize(
-        profile_id,
-        observation["id"],
-        claim_id,
-        actor_id,
-        key=f"phase-y-auth-{suffix}",
-    )
+    with ci_due_tick_stage("sharepoint_v_claim"):
+        claim_id = _seed_claim(actor_id, f"y-{suffix}")
+    with ci_due_tick_stage("sharepoint_v_authorize"):
+        authorization = _authorize(
+            profile_id,
+            observation["id"],
+            claim_id,
+            actor_id,
+            key=f"phase-y-auth-{suffix}",
+        )
     assert authorization.status_code == 201, authorization.text
     _enable_clean_admission(monkeypatch)
-    admitted = _execute(
-        profile_id,
-        authorization.json()["id"],
-        actor_id,
-        key=f"phase-y-admit-{suffix}",
-    )
+    with ci_due_tick_stage("sharepoint_v_execute"):
+        admitted = _execute(
+            profile_id,
+            authorization.json()["id"],
+            actor_id,
+            key=f"phase-y-admit-{suffix}",
+        )
     assert admitted.status_code == 201, admitted.text
     return (
         actor_id,
