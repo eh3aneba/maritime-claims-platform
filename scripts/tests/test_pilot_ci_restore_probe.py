@@ -101,7 +101,7 @@ class RecoveryProbeTests(unittest.TestCase):
         stop_index = next(i for i, x in enumerate(commands) if "stop" in x)
         ps_index = next(i for i, x in enumerate(commands) if "ps" in x)
         backup_index = next(i for i, x in enumerate(commands)
-                            if "backup_postgres.sh" in x)
+                            if "backup_postgres.sh" in " ".join(x))
         self.assertLess(stop_index, ps_index)
         self.assertLess(ps_index, backup_index)
         self.assertFalse(any("restore_postgres.sh" in x for x in commands))
