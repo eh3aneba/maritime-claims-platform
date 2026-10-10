@@ -177,8 +177,11 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "init":
         try:
+            # Validate before opening the exclusive destination: a bad release
+            # pair must not leave a zero-byte "record" behind.
+            record = draft(args.from_sha, args.to_sha)
             with args.output.open("x", encoding="utf-8") as stream:
-                json.dump(draft(args.from_sha, args.to_sha), stream, indent=2, sort_keys=True)
+                json.dump(record, stream, indent=2, sort_keys=True)
                 stream.write("\n")
         except RollbackEvidenceError as exc:
             print("NO-GO: " + str(exc), file=sys.stderr)
