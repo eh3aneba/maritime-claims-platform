@@ -177,6 +177,25 @@ jobs:
             --env-file .env.performance \
             --output artifacts/synthetic-db-restore-probe.json
 
+      # After the recovery checker stops writers and reconciles the synthetic
+      # DB clone/Evidence, restart the EXISTING ephemeral application writers
+      # and re-prove healthy Compose + real HTTP readiness + authenticated
+      # MT ORION API access. This is not a rollback or production deployment.
+      - name: Verify synthetic post-recovery service restart and claim read
+        env:
+          MCRI_CI_RESUME_PROBE: "1"
+          CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          set -a
+          source .env.performance
+          set +a
+          export COMPOSE_ENV_FILES=.env.performance
+          python scripts/pilot_ci_resume_probe.py \
+            --env-file .env.performance \
+            --release-sha "$CANDIDATE_SHA" \
+            --output artifacts/synthetic-post-recovery-resume.json
+
       - name: Capture bounded container diagnostics
         if: failure()
         run: |
