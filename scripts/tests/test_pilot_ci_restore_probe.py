@@ -44,6 +44,11 @@ class RecoveryProbeTests(unittest.TestCase):
             calls.append(cmd)
             if cmd == ["git", "rev-parse", "HEAD"]:
                 return SHA
+            if cmd == p._compose(".env.performance", "ps", "--status",
+                                 "running", "--services"):
+                if break_at == "unexpected_running":
+                    return "db\nclamav\nworker"
+                return "db\nclamav"
             if "psql" in cmd:
                 if "COUNT(*)" in cmd[-1]:
                     return "1"
@@ -59,8 +64,11 @@ class RecoveryProbeTests(unittest.TestCase):
             return ""
 
         def archive(cmd, *, stdout, **kwargs):
-            self.assertIn("exec", cmd)
+            self.assertIn("run", cmd)
+            self.assertIn("--no-deps", cmd)
+            self.assertIn("--rm", cmd)
             self.assertIn("api", cmd)
+            self.assertNotIn("exec", cmd)
             stdout.write(b"synthetic-test-archive")
             return subprocess.CompletedProcess(cmd, 0, stdout=None, stderr=None)
 
@@ -79,6 +87,8 @@ class RecoveryProbeTests(unittest.TestCase):
         commands, record = self._simulate()
         self.assertTrue(record["isolated_db_clone_restored"])
         self.assertTrue(record["evidence_archive_integrity_bound"])
+        self.assertTrue(record["compose_writer_quiescence_verified"])
+        self.assertFalse(record["external_writer_quiescence_verified"])
         self.assertEqual(record["isolated_evidence_files_restored"], 2)
         self.assertEqual(record["restored_demo_document_hashes_matched"], 1)
         self.assertFalse(record["matched_recovery_point_verified"])
@@ -88,11 +98,31 @@ class RecoveryProbeTests(unittest.TestCase):
         self.assertFalse(record["active_application_db_restored_or_dropped"])
         self.assertTrue(any("createdb" in x for x in commands))
         self.assertTrue(any("dropdb" in x for x in commands))
+        stop_index = next(i for i, x in enumerate(commands) if "stop" in x)
+        ps_index = next(i for i, x in enumerate(commands) if "ps" in x)
+        backup_index = next(i for i, x in enumerate(commands)
+                            if "backup_postgres.sh" in " ".join(x))
+        self.assertLess(stop_index, ps_index)
+        self.assertLess(ps_index, backup_index)
         self.assertFalse(any("restore_postgres.sh" in x for x in commands))
         database_mutations = [x for x in commands
                               if "createdb" in x or "dropdb" in x or "pg_restore" in x]
         self.assertTrue(all(p.CLONE_DB in x for x in database_mutations))
         self.assertNotIn("synthetic-test-archive", json.dumps(record))
+
+    def test_quiescence_failure_aborts_before_any_backup_or_clone(self):
+        commands, _ = self._simulate(break_at="unexpected_running")
+        self.assertTrue(any("stop" in x for x in commands))
+        self.assertFalse(any("backup_postgres.sh" in x for x in commands))
+        self.assertFalse(any("createdb" in x for x in commands))
+        self.assertFalse(any("dropdb" in x for x in commands))
+
+    def test_quiescence_requires_only_two_known_services(self):
+        with patch.object(p, "_run", side_effect=[
+            "", "db\nclamav\nunknown-service",
+        ]):
+            with self.assertRaises(p.ProbeError):
+                p.quiesce_compose_writers(".env.performance", ENV)
 
     def test_createdb_failure_never_drops_someone_elses_database(self):
         commands, _ = self._simulate(break_at="createdb")

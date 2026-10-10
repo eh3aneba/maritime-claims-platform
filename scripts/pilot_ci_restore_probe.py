@@ -25,6 +25,14 @@ TEST_DB = "mcri_performance"
 TEST_USER = "mcri_performance"
 CLONE_DB = "mcri_ci_restore_probe"
 SYNTHETIC_REF = "MCRI-DEMO-MT-ORION"
+COMPOSE_WRITERS = (
+    "web", "api", "worker", "governance-webhook-worker",
+    "external-evidence-scheduler-worker",
+    "external-evidence-observation-worker",
+    "external-evidence-review-projector-worker",
+    "demo-seed", "preflight", "migrate",
+)
+EXPECTED_RUNNING_AFTER_STOP = frozenset(("db", "clamav"))
 
 # Streams the actual synthetic Evidence volume into an ephemeral PRIVATE tar.
 # No path/bytes printed. Reject non-regular file and symlink members.
@@ -90,6 +98,21 @@ def _query(env_file: str, env: dict[str, str], db: str, sql: str) -> str:
                          TEST_USER, "-d", db, "-At", "-c", sql), env=env)
 
 
+def quiesce_compose_writers(env_file: str, env: dict[str, str]) -> None:
+    """Stop every application writer, then independently inspect running services.
+
+    This is allowed ONLY by the synthetic environment guard in observe().
+    Never use this helper on a real/customer data Compose environment.
+    """
+    _run(_compose(env_file, "stop", *COMPOSE_WRITERS), env=env, timeout=90)
+    running = _run(_compose(env_file, "ps", "--status", "running", "--services"),
+                   env=env, timeout=30)
+    names = running.splitlines()
+    if (len(names) != len(set(names))
+        or set(names) != EXPECTED_RUNNING_AFTER_STOP):
+        raise ProbeError("synthetic Compose writer quiescence not independently verified")
+
+
 def validate_guard(env_file: str, environ: dict[str, str]) -> None:
     if (env_file != ".env.performance"
         or environ.get("APP_ENV") != "test"
@@ -116,6 +139,10 @@ def observe(*, env_file: str, env: dict[str, str]) -> dict:
     )
     version_sql = ("SELECT COALESCE(string_agg(version_num, ',' ORDER BY version_num), '') "
                    "FROM alembic_version;")
+    # All performance/API checks have finished. Stop every known writer
+    # *before* reading the baseline or recording backup bytes. A failed
+    # stop/verification aborts without making a database dump or archive.
+    quiesce_compose_writers(env_file, env)
     source_count = _query(env_file, env, TEST_DB, ref_count_sql)
     source_revision = _query(env_file, env, TEST_DB, version_sql)
     if source_count != "1" or not source_revision:
@@ -134,8 +161,8 @@ def observe(*, env_file: str, env: dict[str, str]) -> dict:
         try:
             with archive.open("xb") as destination:
                 proc = subprocess.run(
-                    _compose(env_file, "exec", "-T", "api", "python", "-c",
-                             ARCHIVE_PROG),
+                    _compose(env_file, "run", "--rm", "--no-deps", "-T",
+                             "--entrypoint", "python", "api", "-c", ARCHIVE_PROG),
                     env=env, stdout=destination, stderr=subprocess.DEVNULL,
                     timeout=120, check=False,
                 )
@@ -147,7 +174,7 @@ def observe(*, env_file: str, env: dict[str, str]) -> dict:
         _run(["python", "scripts/pilot_recovery_pair.py", "create",
               "--db-dump", str(dump), "--evidence-archive", str(archive),
               "--release-sha", actual_checkout,
-              "--quiescence-ref", "synthetic-ci-not-quiescence",
+              "--quiescence-ref", "synthetic-ci-compose-writers-stopped",
               "--output", str(manifest)], env=env)
         _run(["python", "scripts/pilot_recovery_pair.py", "verify",
               "--db-dump", str(dump), "--evidence-archive", str(archive),
@@ -198,6 +225,8 @@ def observe(*, env_file: str, env: dict[str, str]) -> dict:
         "postgres_dump_archive_validated": True,
         "postgres_backup_sidecars_reverified": True,
         "evidence_archive_integrity_bound": True,
+        "compose_writer_quiescence_verified": True,
+        "external_writer_quiescence_verified": False,
         "isolated_db_clone_restored": True,
         "synthetic_claim_count_and_migration_matched": True,
         "isolated_evidence_files_restored": recovered_counts["files_restored"],
