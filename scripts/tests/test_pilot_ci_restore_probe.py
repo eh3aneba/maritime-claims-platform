@@ -47,6 +47,8 @@ class RecoveryProbeTests(unittest.TestCase):
             if "psql" in cmd:
                 if "COUNT(*)" in cmd[-1]:
                     return "1"
+                if "json_agg" in cmd[-1]:
+                    return '[{"key":"synthetic/item.pdf","sha256":"' + "a" * 64 + '","size":4}]'
                 return "0224_obs_refresh_recovery_anchor"
             if "backup_postgres.sh" in " ".join(cmd):
                 Path(cmd[-1]).write_bytes(b"PGDMP-synthetic")
@@ -63,7 +65,10 @@ class RecoveryProbeTests(unittest.TestCase):
             return subprocess.CompletedProcess(cmd, 0, stdout=None, stderr=None)
 
         with patch.object(p, "_run", side_effect=command), \
-             patch.object(p.subprocess, "run", side_effect=archive):
+             patch.object(p.subprocess, "run", side_effect=archive), \
+             patch.object(p, "restore_and_reconcile", return_value={
+                 "files_restored": 2, "demo_documents_matched": 1,
+             }):
             if break_at:
                 with self.assertRaises(p.ProbeError):
                     p.observe(env_file=".env.performance", env=ENV)
@@ -74,6 +79,8 @@ class RecoveryProbeTests(unittest.TestCase):
         commands, record = self._simulate()
         self.assertTrue(record["isolated_db_clone_restored"])
         self.assertTrue(record["evidence_archive_integrity_bound"])
+        self.assertEqual(record["isolated_evidence_files_restored"], 2)
+        self.assertEqual(record["restored_demo_document_hashes_matched"], 1)
         self.assertFalse(record["matched_recovery_point_verified"])
         self.assertFalse(record["evidence_restore_verified"])
         self.assertFalse(record["full_restore_drill_verified"])
