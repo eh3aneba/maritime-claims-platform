@@ -64,8 +64,11 @@ Exact content read performs:
 2. one `lstat` no-follow preflight;
 3. rejection unless the entry is a regular file;
 4. one bounded read;
-5. **exact byte-count verification**: the received total must equal the verified opened-handle regular-file `st_size`. A partial read followed by an apparent EOF is rejected with `read_failed`, and no partial Evidence bytes are returned; a real zero-byte file remains valid;
-6. immediate handle/session/transport closure.
+5. **post-read opened-handle consistency check**: while the SFTP handle is still open, re-read its metadata and compare mode, byte size, mtime, UID, and GID with the identity verified before reading. Any changed identity fails closed with `opened_file_changed`, and an unavailable post-read stat fails closed with `opened_file_stat_failed`. No remote bytes are returned in either case;
+6. **exact byte-count verification**: the received total must equal the verified opened-handle regular-file `st_size`. A partial read followed by an apparent EOF is rejected with `read_failed`, and no partial Evidence bytes are returned; a real zero-byte file remains valid;
+7. immediate handle/session/transport closure.
+
+**Limit of detection:** the post-read identity check can catch changes that affect the reported metadata (including in-place same-size writes with an updated mtime); it is not an atomic remote snapshot or a cryptographic content signature. A source that modifies content while preserving all reported metadata can still evade this check. Downstream content hashing and human approval remain separate controls.
 
 ## Operational telemetry
 
