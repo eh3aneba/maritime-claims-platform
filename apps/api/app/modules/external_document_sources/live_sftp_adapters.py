@@ -1253,6 +1253,9 @@ class LiveSftpRuntime:
                     raise _SftpRuntimeFailure("symlink_escape_detected")
                 if _stat_identity(opened_attr) != _stat_identity(attr):
                     raise _SftpRuntimeFailure("opened_file_changed")
+                expected_size = getattr(opened_attr, "st_size", None)
+                if type(expected_size) is not int or expected_size < 0:
+                    raise _SftpRuntimeFailure("opened_file_stat_failed")
                 while True:
                     chunk = handle.read(request.max_chunk_bytes)
                     if not chunk:
@@ -1262,6 +1265,11 @@ class LiveSftpRuntime:
                     if total > request.max_content_bytes:
                         raise _SftpRuntimeFailure("content_too_large")
                     chunks.append(bytes(chunk))
+            # A transport can close after a partial read and some SFTP
+            # libraries return EOF rather than raising. Never release those
+            # partial bytes as a successfully verified Evidence object.
+            if total != expected_size:
+                raise _SftpRuntimeFailure("read_failed")
             content = b"".join(chunks)
             if not remote_read_performed and content == b"":
                 remote_read_performed = True
