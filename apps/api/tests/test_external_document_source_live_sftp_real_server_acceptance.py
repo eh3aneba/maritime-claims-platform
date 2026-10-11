@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import os
 import socket
+import threading
+import time
 
 import pytest
 
@@ -308,6 +310,100 @@ def test_real_openssh_missing_traversal_symlink_and_oversize_are_rejected() -> N
     assert oversized.remote_read_performed is True
     assert oversized.content_read_count == 0
 
+
+
+def test_real_tcp_peer_abrupt_disconnect_before_ssh_banner_fails_closed() -> None:
+    """Accepted real TCP connection then peer closes before SSH negotiation.
+
+    This is a controlled kernel-socket failure injection, NOT a mid-session
+    disconnect of the production OpenSSH server or a governed DB mutation.
+    """
+    host, _port, _user, _password, _root = _settings()
+    assert host == "127.0.0.1"
+    accepted = threading.Event()
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+        listener.bind((host, 0))
+        listener.listen(1)
+        port = listener.getsockname()[1]
+        listener.settimeout(4)
+
+        def serve_disconnect() -> None:
+            try:
+                with listener.accept()[0]:
+                    accepted.set()
+                    # Closing without a banner forces a real SSH negotiation
+                    # error; no username, password, path or file is transmitted.
+            except OSError:
+                pass
+
+        peer = threading.Thread(target=serve_disconnect, daemon=True)
+        peer.start()
+        result = _runtime().probe_host_key(
+            SftpTransportHostKeyProbeRequest(
+                hostname=host, port=port, connect_timeout_seconds=1,
+                handshake_timeout_seconds=1, allow_private_destinations=True,
+            )
+        )
+        peer.join(timeout=4)
+
+    assert accepted.is_set()
+    assert not peer.is_alive()
+    assert result.failure_code == "ssh_negotiation_failed"
+    assert result.authentication_performed is False
+    assert result.sftp_session_opened is False
+    assert result.remote_operation_performed is False
+
+
+def test_real_tcp_peer_ssh_banner_stall_has_bounded_failure() -> None:
+    """A peer that accepts TCP but never responds must never pass handshake.
+
+    This is a controlled TCP black-hole test, not a complete production SSH
+    server timeout and NOT an authenticated session disconnect scenario.
+    """
+    host, _port, _user, _password, _root = _settings()
+    assert host == "127.0.0.1"
+    accepted = threading.Event()
+    release_peer = threading.Event()
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+        listener.bind((host, 0))
+        listener.listen(1)
+        listener.settimeout(4)
+        port = listener.getsockname()[1]
+
+        def serve_stall() -> None:
+            try:
+                with listener.accept()[0]:
+                    accepted.set()
+                    release_peer.wait(timeout=4)
+            except OSError:
+                pass
+
+        peer = threading.Thread(target=serve_stall, daemon=True)
+        peer.start()
+        started = time.monotonic()
+        try:
+            result = _runtime().probe_host_key(
+                SftpTransportHostKeyProbeRequest(
+                    hostname=host, port=port, connect_timeout_seconds=1,
+                    handshake_timeout_seconds=1, allow_private_destinations=True,
+                )
+            )
+        finally:
+            release_peer.set()
+            peer.join(timeout=4)
+        elapsed = time.monotonic() - started
+
+    assert accepted.is_set()
+    assert not peer.is_alive()
+    # Paramiko's banner timeout commonly maps to ssh_negotiation_failed;
+    # socket.timeout may map to connection_timeout. Both are bounded failures.
+    assert result.failure_code in {"connection_timeout", "ssh_negotiation_failed"}
+    assert elapsed < 8
+    assert result.authentication_performed is False
+    assert result.sftp_session_opened is False
+    assert result.remote_operation_performed is False
 
 
 def test_real_openssh_unavailable_port_fails_closed_without_authentication() -> None:
