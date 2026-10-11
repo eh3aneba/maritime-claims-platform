@@ -30,9 +30,11 @@ def fixture(contexts=None):
             {"type": "pull_request", "parameters": {
                 "allowed_merge_methods": ["squash"],
                 "required_review_thread_resolution": True,
+                "require_extra_approval_for_unattributed_changes": True,
             }},
             {"type": "required_status_checks", "parameters": {
                 "strict_required_status_checks_policy": True,
+                "do_not_enforce_on_create": False,
                 "required_status_checks": [{"context": x} for x in contexts],
             }},
         ]
@@ -49,6 +51,8 @@ class ProtectMainEvidenceTests(unittest.TestCase):
         self.assertIs(result["failing_check_enforcement_proven"], False)
         self.assertEqual(result["required_context_count"], 11)
         self.assertEqual(result["missing_expected_contexts"], [])
+        self.assertTrue(result["safety_properties"]["enforces_checks_on_creation"])
+        self.assertTrue(result["safety_properties"]["unattributed_changes_approval_required"])
 
     def test_actual_four_required_contexts_fails_closed(self):
         present = ["Backend tests", "PostgreSQL migration chain",
@@ -64,10 +68,17 @@ class ProtectMainEvidenceTests(unittest.TestCase):
             lambda d: d.update(enforcement="evaluate"),
             lambda d: d["rules"][-1]["parameters"].update(
                 strict_required_status_checks_policy=False),
+            lambda d: d["rules"][-1]["parameters"].update(
+                do_not_enforce_on_create=True),
+            lambda d: d["rules"][-1]["parameters"].pop("do_not_enforce_on_create"),
             lambda d: d["rules"][-2]["parameters"].update(
                 allowed_merge_methods=["squash", "merge"]),
             lambda d: d["rules"][-2]["parameters"].update(
                 required_review_thread_resolution=False),
+            lambda d: d["rules"][-2]["parameters"].update(
+                require_extra_approval_for_unattributed_changes=False),
+            lambda d: d["rules"][-2]["parameters"].pop(
+                "require_extra_approval_for_unattributed_changes"),
             lambda d: d["conditions"]["ref_name"].update(include=["refs/heads/main"]),
             lambda d: d["rules"].pop(0),
         ):
