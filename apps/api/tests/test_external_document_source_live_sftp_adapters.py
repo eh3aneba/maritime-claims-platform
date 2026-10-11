@@ -252,6 +252,79 @@ def test_live_sftp_complete_empty_file_can_be_accepted(
     assert session.closed is True
 
 
+def test_live_sftp_content_read_rejects_same_size_file_change_during_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A metadata change after an otherwise complete read is not Evidence."""
+    runtime = LiveSftpRuntime(secret_runtime=_SecretRuntime({}))
+    sftp = _FakeSftp(body=b"same-size-evidence")
+    session = _FakeSession(sftp)
+    monkeypatch.setattr(runtime, "_open_session", lambda **_kwargs: session)
+    original_read = sftp.handle.read
+    observed_stats = []
+    original_stat = sftp.handle.stat
+
+    def record_stat():
+        attr = original_stat()
+        observed_stats.append(attr.st_mtime)
+        return attr
+
+    def rewrite_during_read(size):
+        chunk = original_read(size)
+        if chunk:
+            # The remote file's size is unchanged, but mtime now differs.
+            sftp.handle.stat_result = SimpleNamespace(
+                st_mode=stat.S_IFREG | 0o640,
+                st_size=len(sftp.body),
+                st_mtime=1_796_000_001,
+                st_uid=1000,
+                st_gid=1000,
+            )
+        return chunk
+
+    monkeypatch.setattr(sftp.handle, "read", rewrite_during_read)
+    monkeypatch.setattr(sftp.handle, "stat", record_stat)
+    result = runtime.read_content(_read_request())
+
+    assert observed_stats == [1_796_000_000, 1_796_000_001]
+    assert result.failure_code == "opened_file_changed"
+    assert result.content is None
+    assert result.content_read_count == 0
+    assert result.remote_stat_performed is True
+    assert result.remote_read_performed is True
+    assert session.closed is True
+
+
+def test_live_sftp_content_read_requires_successful_postread_handle_stat(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A dropped handle cannot be treated as verified merely because EOF arrived."""
+    runtime = LiveSftpRuntime(secret_runtime=_SecretRuntime({}))
+    sftp = _FakeSftp(body=b"synthetic-evidence")
+    session = _FakeSession(sftp)
+    monkeypatch.setattr(runtime, "_open_session", lambda **_kwargs: session)
+    real_stat = sftp.handle.stat
+    calls = 0
+
+    def stat_before_but_not_after():
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise OSError("synthetic disconnected handle")
+        return real_stat()
+
+    monkeypatch.setattr(sftp.handle, "stat", stat_before_but_not_after)
+    result = runtime.read_content(_read_request())
+
+    assert calls == 2
+    assert result.failure_code == "opened_file_stat_failed"
+    assert result.content is None
+    assert result.content_read_count == 0
+    assert result.remote_stat_performed is True
+    assert result.remote_read_performed is True
+    assert session.closed is True
+
+
 def test_live_sftp_content_read_rejects_opened_handle_metadata_drift_before_read(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
