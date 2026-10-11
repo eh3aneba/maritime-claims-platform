@@ -65,8 +65,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - name: Check out repository
+      - name: Check out exact candidate commit
         uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Set up Python
         uses: actions/setup-python@v7
@@ -164,6 +166,7 @@ jobs:
       - name: Verify synthetic backup and isolated database clone restore
         env:
           MCRI_CI_RESTORE_PROBE: "1"
+          MCRI_CI_CROSS_RUNNER_EXPORT: "1"
         run: |
           set -euo pipefail
           set -a
@@ -172,7 +175,8 @@ jobs:
           export COMPOSE_ENV_FILES=.env.performance
           python scripts/pilot_ci_restore_probe.py \
             --env-file .env.performance \
-            --output artifacts/synthetic-db-restore-probe.json
+            --output artifacts/synthetic-db-restore-probe.json \
+            --cross-runner-output synthetic-recovery-transfer
 
       # After the recovery checker stops writers and reconciles the synthetic
       # DB clone/Evidence, restart the EXISTING ephemeral application writers
@@ -193,6 +197,17 @@ jobs:
             --release-sha "$CANDIDATE_SHA" \
             --output artifacts/synthetic-post-recovery-resume.json
 
+      # All bytes are CI-only synthetic fixtures and this archive is short lived.
+      # Upload only after full local verification and post-recovery API success.
+      # A DIFFERENT GitHub-hosted job will download it onto a separate VM.
+      - name: Transfer synthetic recovery pair to fresh CI runner
+        uses: actions/upload-artifact@v4
+        with:
+          name: synthetic-recovery-transfer
+          path: synthetic-recovery-transfer/
+          if-no-files-found: error
+          retention-days: 1
+
       - name: Capture bounded container diagnostics
         if: failure()
         run: |
@@ -212,11 +227,67 @@ jobs:
         if: always()
         run: docker compose --env-file .env.performance down -v --remove-orphans || true
 
+  cross-runner-restore:
+    name: Fresh CI runner synthetic recovery gate
+    needs:
+      - classify
+      - performance-smoke
+    if: ${{ needs.classify.outputs.performance_required == 'true' && needs.performance-smoke.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Check out exact candidate commit
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Download transferred synthetic recovery pair
+        uses: actions/download-artifact@v4
+        with:
+          name: synthetic-recovery-transfer
+          path: synthetic-recovery-transfer
+
+      - name: Independently verify and restore on distinct ephemeral runner
+        shell: bash
+        env:
+          APP_ENV: test
+          POSTGRES_DB: mcri_performance
+          POSTGRES_USER: mcri_performance
+          MCRI_CI_RESTORE_PROBE: "1"
+          MCRI_CI_CROSS_RUNNER_RESTORE: "1"
+          CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p artifacts
+          POSTGRES_PASSWORD="$(python -c 'import secrets; print(secrets.token_urlsafe(24))')"
+          echo "::add-mask::$POSTGRES_PASSWORD"
+          export POSTGRES_PASSWORD
+          python scripts/pilot_ci_cross_runner_transfer.py \
+            --sha "$CANDIDATE_SHA" \
+            --input synthetic-recovery-transfer \
+            --output artifacts/cross-runner-restore.json
+
+      - name: Upload bounded distinct-runner recovery result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: synthetic-cross-runner-recovery-proof
+          path: artifacts/cross-runner-restore.json
+          if-no-files-found: ignore
+          retention-days: 7
+
   performance-gate:
     name: Operational performance gate
     needs:
       - classify
       - performance-smoke
+      - cross-runner-restore
     if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 2
@@ -227,6 +298,7 @@ jobs:
           CLASSIFIER_RESULT: ${{ needs.classify.result }}
           PERFORMANCE_REQUIRED: ${{ needs.classify.outputs.performance_required }}
           PERFORMANCE_RESULT: ${{ needs.performance-smoke.result }}
+          CROSS_RUNNER_RESULT: ${{ needs.cross-runner-restore.result }}
         run: |
           set -euo pipefail
 
@@ -240,7 +312,15 @@ jobs:
               echo "::error::Live-stack performance smoke was required but finished with result: $PERFORMANCE_RESULT"
               exit 1
             fi
+            if [ "$CROSS_RUNNER_RESULT" != "success" ]; then
+              echo "::error::Cross-runner synthetic DB/Evidence recovery was required but finished with result: $CROSS_RUNNER_RESULT"
+              exit 1
+            fi
           else
+            if [ "$CROSS_RUNNER_RESULT" != "skipped" ]; then
+              echo "::error::Cross-runner restore unexpectedly ran or failed for a scope-skipped PR: $CROSS_RUNNER_RESULT"
+              exit 1
+            fi
             case "$PERFORMANCE_RESULT" in
               skipped|success)
                 ;;

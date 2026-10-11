@@ -22,6 +22,7 @@ import tempfile
 from pilot_ci_evidence_restore import EvidenceRestoreError, restore_and_reconcile
 from pilot_ci_lineage_reconcile import LineageError, collect_lineage, reconcile
 from pilot_ci_independent_postgres import IndependentRestoreError, restore_and_verify
+from pilot_ci_cross_runner_transfer import CrossRunnerError, export_pair
 
 SHA_RE = re.compile(r"[a-f0-9]{40}\Z")
 TEST_DB = "mcri_performance"
@@ -172,7 +173,8 @@ def validate_guard(env_file: str, environ: dict[str, str]) -> None:
         raise ProbeError("CI-only synthetic environment guard not satisfied")
 
 
-def observe(*, env_file: str, env: dict[str, str]) -> dict:
+def observe(*, env_file: str, env: dict[str, str],
+            cross_runner_output: Path | None = None) -> dict:
     validate_guard(env_file, env)
     actual_checkout = _run(["git", "rev-parse", "HEAD"], env=env)
     if not SHA_RE.fullmatch(actual_checkout):
@@ -297,6 +299,19 @@ def observe(*, env_file: str, env: dict[str, str]) -> dict:
         except IndependentRestoreError:
             raise ProbeError("isolated second-engine PostgreSQL/Evidence restore failed") from None
 
+        # Export ONLY after both DB engines, lineage, paired artifact identity
+        # and Evidence bytes have succeeded. This is a distinct GH job's input,
+        # never an approved off-host production backup.
+        if cross_runner_output is not None:
+            try:
+                export_pair(
+                    root=cross_runner_output, dump=dump, archive=archive,
+                    manifest=manifest, sha=actual_checkout,
+                    claim_count=source_count, revision=source_revision,
+                    source_lineage=source_lineage, env=env)
+            except (CrossRunnerError, OSError):
+                raise ProbeError("synthetic CI cross-runner export failed") from None
+
     return {
         "schema": "mcri-synthetic-ci-recovery-probe-v1",
         "observed_at_utc": datetime.now(timezone.utc).isoformat(
@@ -333,9 +348,11 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--env-file", required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--cross-runner-output", type=Path)
     args = parser.parse_args(argv)
     try:
-        result = observe(env_file=args.env_file, env=dict(os.environ))
+        result = observe(env_file=args.env_file, env=dict(os.environ),
+                         cross_runner_output=args.cross_runner_output)
         with args.output.open("x", encoding="utf-8") as stream:
             json.dump(result, stream, indent=2, sort_keys=True)
             stream.write("\n")
