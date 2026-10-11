@@ -64,7 +64,8 @@ Exact content read performs:
 2. one `lstat` no-follow preflight;
 3. rejection unless the entry is a regular file;
 4. one bounded read;
-5. immediate handle/session/transport closure.
+5. **exact byte-count verification**: the received total must equal the verified opened-handle regular-file `st_size`. A partial read followed by an apparent EOF is rejected with `read_failed`, and no partial Evidence bytes are returned; a real zero-byte file remains valid;
+6. immediate handle/session/transport closure.
 
 ## Operational telemetry
 
@@ -83,6 +84,8 @@ Operational counts and latency summaries should be derived from these structured
 ## Controlled real-TCP failure acceptance (Pilot #652)
 
 The opt-in real-OpenSSH acceptance suite also exercises two **real loopback socket** failures using the production `LiveSftpRuntime.probe_host_key` operation, independently of the OpenSSH server: a peer that accepts the TCP connection and closes without sending an SSH banner, and a peer that accepts but withholds the SSH banner until the client's bounded handshake fails. Both must fail closed **before authentication or an SFTP session** and must never be interpreted as an accepted host-key probe. The test peer is a disposable socket bound to `127.0.0.1` on a kernel-assigned port, never a customer server or credential backend; no secret/file/remote path is sent.
+
+An additional **actual authenticated OpenSSH read-interruption scenario** establishes a real SFTP session, verifies the opened file, reads its first genuine chunk, then deliberately closes only that client's transport before the next read. The expected fail-closed result is `read_failed`, with `content=None`, `content_read_count=0` and no remote write. It is a **client-injected post-auth transport teardown**, not a server-initiated network outage, so no real customer endpoint is touched. A separate deterministic unit regression forces **short data followed by apparent EOF**, proving the new exact-length safeguard rejects truncated files even without a socket exception. Full OpenSSH server-side mid-session fault and complete canonical v1→N+1 production acceptance remain separate controlled tests/NO-GO conditions.
 
 These scenarios complement the existing controlled actual OpenSSH checks (wrong host pin, failed authentication, missing files, symlink/traversal, oversize and permissions). They prove real transport refusal/handshake behavior against a test socket, **not** in-session disconnect or large-file read timeout against the actual OpenSSH subsystem. A successful CI run must be tied to its exact PR SHA and named SFTP workflow; an optional SFTP test being skipped by generic CI is not evidence of live-server acceptance. End-to-end real initial-v1→N+1 governance, real production scanner/durable store and accountable operator acceptance remain separate NO-GO criteria in #652/#656.
 
