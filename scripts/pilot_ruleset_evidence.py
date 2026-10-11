@@ -93,9 +93,13 @@ def evaluate(listed: object, detail: object, *, repo: str) -> dict:
             and detail.get("target") == "branch"
         ),
         "strict_up_to_date_checks": checks.get("strict_required_status_checks_policy") is True,
+        "enforces_checks_on_creation": checks.get("do_not_enforce_on_create") is False,
         "no_bypass_actors": len(bypass) == 0,
         "squash_only": prs.get("allowed_merge_methods") == ["squash"],
         "thread_resolution_required": prs.get("required_review_thread_resolution") is True,
+        "unattributed_changes_approval_required": (
+            prs.get("require_extra_approval_for_unattributed_changes") is True
+        ),
         "linear_history": any(r.get("type") == "required_linear_history" for r in rules),
         "deletion_protected": any(r.get("type") == "deletion" for r in rules),
         "non_fast_forward_protected": any(r.get("type") == "non_fast_forward" for r in rules),

@@ -65,7 +65,7 @@ After the workflow changes are merged and exact check names are verified on a fr
 10. `Container image vulnerability scan`
 11. `Production environment policy`
 
-Keep strict/up-to-date checks enabled, squash-only merging, linear history, unresolved-thread blocking, deletion/non-fast-forward protection, and an empty bypass list.
+Keep strict/up-to-date checks enabled, **enforce required checks on creation** (`do_not_enforce_on_create=false`), **require extra approval for unattributed changes** (`require_extra_approval_for_unattributed_changes=true`), squash-only merging, linear history, unresolved-thread blocking, deletion/non-fast-forward protection, and an empty bypass list.
 
 ## Activation sequence
 
@@ -91,6 +91,6 @@ python scripts/pilot_ruleset_evidence.py \
   --output /secure/pilot-releases/rc-001-ruleset-readback.json
 ```
 
-The checker expects precisely the 11 stable target contexts above and also checks active enforcement, default-branch scoping, strict/up-to-date status checks, squash-only merges, resolved review threads, linear history, deletion and non-fast-forward protection, and zero bypass actors. It intentionally does **not** infer a PASS from successful PR workflow runs. It records no raw server payload, credentials, unexpected context names or exception text. Do not publish the generated record with sensitive operator notes.
+The checker expects precisely the 11 stable target contexts above and also checks active enforcement, default-branch scoping, strict/up-to-date status checks, enforcement on creation, extra approval for unattributed changes, squash-only merges, resolved review threads, linear history, deletion and non-fast-forward protection, and zero bypass actors. It intentionally does **not** infer a PASS from successful PR workflow runs. It records no raw server payload, credentials, unexpected context names or exception text. Do not publish the generated record with sensitive operator notes.
 
 **Critical remaining proof:** even a `metadata_complete: true` snapshot is *not* evidence that a deliberately failing critical check prevents merge. Perform the separate disposable failing-check experiment through authorized GitHub surfaces, preserve the exact PR/run/context IDs, restore the check without bypass, and independently verify the result. The tool always records `failing_check_enforcement_proven: false` and `pilot_authorized: false` until a separate human-approved evidence record establishes those facts. The repository connector cannot make the required administrative ruleset update. This step is an external admin action; the current four-context ruleset must be regarded as **NO-GO**.
