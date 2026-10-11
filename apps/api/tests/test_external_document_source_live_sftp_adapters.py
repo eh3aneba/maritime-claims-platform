@@ -206,6 +206,52 @@ def test_live_sftp_content_read_performs_lstat_before_single_bounded_read(
     ]
 
 
+def test_live_sftp_partial_file_eof_must_not_be_successful_evidence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """EOF after only the first chunk is data loss, never a verified file."""
+    runtime = LiveSftpRuntime(secret_runtime=_SecretRuntime({}))
+    sftp = _FakeSftp(body=b"synthetic-complete-evidence")
+    session = _FakeSession(sftp)
+    monkeypatch.setattr(runtime, "_open_session", lambda **_kwargs: session)
+    read_calls = 0
+
+    def truncated_then_eof(size):
+        nonlocal read_calls
+        read_calls += 1
+        if read_calls == 1:
+            return b"first-chunk"
+        return b""
+
+    monkeypatch.setattr(sftp.handle, "read", truncated_then_eof)
+    result = runtime.read_content(_read_request())
+
+    assert read_calls == 2
+    assert result.failure_code == "read_failed"
+    assert result.content is None
+    assert result.content_read_count == 0
+    assert result.remote_stat_performed is True
+    assert result.remote_read_performed is True
+    assert session.closed is True
+
+
+def test_live_sftp_complete_empty_file_can_be_accepted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A genuinely zero-byte regular file is not a truncated response."""
+    runtime = LiveSftpRuntime(secret_runtime=_SecretRuntime({}))
+    sftp = _FakeSftp(body=b"")
+    session = _FakeSession(sftp)
+    monkeypatch.setattr(runtime, "_open_session", lambda **_kwargs: session)
+
+    result = runtime.read_content(_read_request())
+
+    assert result.failure_code is None
+    assert result.content == b""
+    assert result.content_read_count == 1
+    assert session.closed is True
+
+
 def test_live_sftp_content_read_rejects_opened_handle_metadata_drift_before_read(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
