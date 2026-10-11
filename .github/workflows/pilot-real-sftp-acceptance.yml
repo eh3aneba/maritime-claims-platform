@@ -119,7 +119,7 @@ jobs:
           sudo chown -R "$MCRI_REAL_SFTP_USERNAME:$MCRI_REAL_SFTP_USERNAME" \
             "/home/$MCRI_REAL_SFTP_USERNAME"
           sudo chmod 0750 "/home/$MCRI_REAL_SFTP_USERNAME" "$MCRI_REAL_SFTP_ROOT"
-          sudo chmod 0640 "$MCRI_REAL_SFTP_ROOT/survey.txt" "$MCRI_REAL_SFTP_ROOT/oversized.bin "$MCRI_REAL_SFTP_ROOT/inplace-drift.txt"
+          sudo chmod 0640 "$MCRI_REAL_SFTP_ROOT/survey.txt" "$MCRI_REAL_SFTP_ROOT/oversized.bin" "$MCRI_REAL_SFTP_ROOT/inplace-drift.txt"
 
           # Deliberately unreadable synthetic fixture. The remote SFTP user may
           # see its metadata but must not receive its bytes.
