@@ -406,6 +406,79 @@ def test_real_tcp_peer_ssh_banner_stall_has_bounded_failure() -> None:
     assert result.remote_operation_performed is False
 
 
+def test_real_openssh_authenticated_partial_read_transport_drop_discards_all_bytes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Fail closed after real OpenSSH authentication and the first real file chunk.
+
+    An isolated client transport is intentionally dropped after the first
+    server-served chunk, before the exact-file read can finish. No server
+    process, other session, remote fixture or customer data is modified.
+    This proves read interruption handling, not server-originated failure.
+    """
+    runtime = _runtime()
+    fingerprint = _fingerprint(runtime)
+    original_session = runtime._open_session
+    observation = {
+        "session_opened": False,
+        "first_chunk_read": False,
+        "transport_closed": False,
+        "next_read_attempted": False,
+    }
+
+    def open_with_single_session_fault(**kwargs):
+        session = original_session(**kwargs)
+        assert session.transport.is_authenticated()
+        observation["session_opened"] = True
+        original_open = session.sftp.open
+
+        def open_with_one_chunk(*args, **kwargs):
+            handle = original_open(*args, **kwargs)
+            actual_read = handle.read
+
+            def read_with_disconnect(size):
+                if observation["transport_closed"]:
+                    observation["next_read_attempted"] = True
+                    # Let the real Paramiko file handle see the closed
+                    # transport; never substitute a synthetic successful EOF.
+                    return actual_read(size)
+                chunk = actual_read(size)
+                if chunk:
+                    observation["first_chunk_read"] = True
+                    # Close only this authenticated client session, not
+                    # sshd, the controlled fixture or any other connection.
+                    session.transport.close()
+                    observation["transport_closed"] = True
+                return chunk
+
+            monkeypatch.setattr(handle, "read", read_with_disconnect)
+            return handle
+
+        monkeypatch.setattr(session.sftp, "open", open_with_one_chunk)
+        return session
+
+    monkeypatch.setattr(runtime, "_open_session", open_with_single_session_fault)
+    result = runtime.read_content(
+        _read_request(fingerprint, relative="survey.txt", max_content_bytes=1024)
+    )
+
+    assert observation == {
+        "session_opened": True,
+        "first_chunk_read": True,
+        "transport_closed": True,
+        "next_read_attempted": True,
+    }
+    assert result.failure_code == "read_failed"
+    assert result.content is None
+    assert result.content_read_count == 0
+    assert result.remote_stat_performed is True
+    assert result.remote_read_performed is True
+    assert result.remote_write_performed is False
+    assert result.remote_rename_performed is False
+    assert result.remote_delete_performed is False
+    assert result.command_executed is False
+
+
 def test_real_openssh_unavailable_port_fails_closed_without_authentication() -> None:
     """Network outage before the SSH banner is not interpreted as SFTP success."""
     host, _port, _user, _password, _root = _settings()
