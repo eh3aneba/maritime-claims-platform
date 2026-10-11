@@ -81,7 +81,14 @@ class RecoveryProbeTests(unittest.TestCase):
              patch.object(p, "restore_and_reconcile", return_value={
                  "files_restored": 2, "demo_documents_matched": 1,
              }), \
-             patch.object(p, "prove_tamper_detection"):
+             patch.object(p, "prove_tamper_detection"), \
+             patch.object(p, "restore_and_verify", return_value={
+                 "separate_postgres_engine_restored": True,
+                 "isolated_container_network_disabled": True,
+                 "separate_engine_lineage_families_matched": 7,
+                 "separate_engine_lineage_rows_matched": 7,
+                 "separate_engine_documents_matched": 1,
+             }):
             if break_at:
                 with self.assertRaises(p.ProbeError):
                     p.observe(env_file=".env.performance", env=ENV)
@@ -98,6 +105,10 @@ class RecoveryProbeTests(unittest.TestCase):
         self.assertEqual(record["restored_demo_document_hashes_matched"], 1)
         self.assertEqual(record["restored_claim_lineage_families_matched"], 7)
         self.assertEqual(record["restored_claim_lineage_rows_matched"], 7)
+        self.assertTrue(record["separate_postgres_engine_restored"])
+        self.assertTrue(record["isolated_container_network_disabled"])
+        self.assertEqual(record["separate_engine_documents_matched"], 1)
+        self.assertEqual(record["separate_engine_lineage_families_matched"], 7)
         self.assertFalse(record["matched_recovery_point_verified"])
         self.assertFalse(record["evidence_restore_verified"])
         self.assertFalse(record["full_restore_drill_verified"])
