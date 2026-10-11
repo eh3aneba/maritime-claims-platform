@@ -21,6 +21,7 @@ import tempfile
 
 from pilot_ci_evidence_restore import EvidenceRestoreError, restore_and_reconcile
 from pilot_ci_lineage_reconcile import LineageError, collect_lineage, reconcile
+from pilot_ci_independent_postgres import IndependentRestoreError, restore_and_verify
 
 SHA_RE = re.compile(r"[a-f0-9]{40}\Z")
 TEST_DB = "mcri_performance"
@@ -284,6 +285,18 @@ def observe(*, env_file: str, env: dict[str, str]) -> dict:
         if not verified or recovered_counts is None or lineage_result is None:
             raise ProbeError("synthetic cloned database, lineage or Evidence verification failed")
 
+        # A second physical PostgreSQL engine/anonymous data volume must also
+        # independently restore this verified dump without any network access.
+        # This is still one ephemeral CI HOST, not a fresh-host release drill.
+        try:
+            independent = restore_and_verify(
+                dump=dump, archive=archive, release_sha=actual_checkout,
+                expected_claim_count=source_count,
+                expected_revision=source_revision,
+                source_lineage=source_lineage, env=env)
+        except IndependentRestoreError:
+            raise ProbeError("isolated second-engine PostgreSQL/Evidence restore failed") from None
+
     return {
         "schema": "mcri-synthetic-ci-recovery-probe-v1",
         "observed_at_utc": datetime.now(timezone.utc).isoformat(
@@ -303,6 +316,11 @@ def observe(*, env_file: str, env: dict[str, str]) -> dict:
         "restored_demo_document_hashes_matched": recovered_counts["demo_documents_matched"],
         "restored_claim_lineage_families_matched": lineage_result["lineage_families_compared"],
         "restored_claim_lineage_rows_matched": lineage_result["lineage_rows_compared"],
+        "separate_postgres_engine_restored": independent["separate_postgres_engine_restored"],
+        "isolated_container_network_disabled": independent["isolated_container_network_disabled"],
+        "separate_engine_lineage_families_matched": independent["separate_engine_lineage_families_matched"],
+        "separate_engine_lineage_rows_matched": independent["separate_engine_lineage_rows_matched"],
+        "separate_engine_documents_matched": independent["separate_engine_documents_matched"],
         "active_application_db_restored_or_dropped": False,
         "matched_recovery_point_verified": False,
         "evidence_restore_verified": False,
