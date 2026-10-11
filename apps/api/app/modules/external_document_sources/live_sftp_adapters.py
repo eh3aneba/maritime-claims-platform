@@ -1265,6 +1265,17 @@ class LiveSftpRuntime:
                     if total > request.max_content_bytes:
                         raise _SftpRuntimeFailure("content_too_large")
                     chunks.append(bytes(chunk))
+                # Exact byte length alone cannot detect an in-place rewrite
+                # with equal size. Re-stat the SAME opened file handle before
+                # releasing any bytes, while the session is still alive.
+                # This is a post-read consistency check, not a cryptographic
+                # attestation or protection against same-timestamp rewrites.
+                try:
+                    completed_attr = handle.stat()
+                except Exception as exc:
+                    raise _SftpRuntimeFailure("opened_file_stat_failed") from exc
+                if _stat_identity(completed_attr) != _stat_identity(opened_attr):
+                    raise _SftpRuntimeFailure("opened_file_changed")
             # A transport can close after a partial read and some SFTP
             # libraries return EOF rather than raising. Never release those
             # partial bytes as a successfully verified Evidence object.
