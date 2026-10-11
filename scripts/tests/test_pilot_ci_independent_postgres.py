@@ -113,7 +113,7 @@ class IndependentPostgresTests(unittest.TestCase):
                 {**ENV, "POSTGRES_DB": "customer-db"},
                 {**ENV, "MCRI_CI_RESTORE_PROBE": "0"},
                 {**ENV, "POSTGRES_PASSWORD": "short"},
-                {**ENV, "POSTGRES_PASSWORD": "contains\\nline"},
+                {**ENV, "POSTGRES_PASSWORD": "contains" + chr(10) + "line"},
             ):
                 with patch.object(p, "_run") as process:
                     with self.assertRaises(p.IndependentRestoreError):
