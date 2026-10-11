@@ -128,7 +128,11 @@ def export_pair(*, root: Path, dump: Path, archive: Path, manifest: Path,
         check_record(supplied, actual, sha)
     except (OSError, ValueError, KeyError, RecoveryEvidenceError):
         raise CrossRunnerError("synthetic source recovery pair unavailable") from None
-    root.mkdir(mode=0o700, exist_ok=False)
+    try:
+        root.mkdir(mode=0o700, exist_ok=False)
+    except OSError:
+        # Never overwrite, re-use or delete an existing transfer directory.
+        raise CrossRunnerError("exclusive synthetic transfer directory unavailable") from None
     try:
         for item in src:
             with item.open("rb") as stream, (root / item.name).open("xb") as target:
