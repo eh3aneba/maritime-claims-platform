@@ -101,14 +101,17 @@ jobs:
             | sudo tee "$MCRI_REAL_SFTP_ROOT/survey.txt" >/dev/null
           sudo python - <<'PY'
           from pathlib import Path
-          Path("/home/mcri-sftp-ci/evidence/oversized.bin").write_bytes(b"x" * 128)
+          root = Path("/home/mcri-sftp-ci/evidence")
+          (root / "oversized.bin").write_bytes(b"x" * 128)
+          # Same-size in-place server mutation acceptance fixture.
+          (root / "inplace-drift.txt").write_bytes(b"A" * 64)
           PY
           sudo ln -s /etc/passwd "$MCRI_REAL_SFTP_ROOT/escape-link"
           sudo mkdir -p "$MCRI_REAL_SFTP_ROOT/empty-folder"
           sudo chown -R "$MCRI_REAL_SFTP_USERNAME:$MCRI_REAL_SFTP_USERNAME" \
             "/home/$MCRI_REAL_SFTP_USERNAME"
           sudo chmod 0750 "/home/$MCRI_REAL_SFTP_USERNAME" "$MCRI_REAL_SFTP_ROOT"
-          sudo chmod 0640 "$MCRI_REAL_SFTP_ROOT/survey.txt" "$MCRI_REAL_SFTP_ROOT/oversized.bin"
+          sudo chmod 0640 "$MCRI_REAL_SFTP_ROOT/survey.txt" "$MCRI_REAL_SFTP_ROOT/oversized.bin" "$MCRI_REAL_SFTP_ROOT/inplace-drift.txt"
 
           # Deliberately unreadable synthetic fixture. The remote SFTP user may
           # see its metadata but must not receive its bytes.
