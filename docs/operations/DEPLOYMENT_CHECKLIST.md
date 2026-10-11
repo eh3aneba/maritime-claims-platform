@@ -1,5 +1,7 @@
 # Design Partner Deployment Checklist
 
+Pilot v1 organization admission and exit must follow the controlled [tenant onboarding/offboarding runbook](PILOT_TENANT_LIFECYCLE.md). This checklist alone does not establish initial organization provisioning, MFA/role isolation, legal-hold custody or session/integration revocation. #653 remains NO-GO without independent operator evidence.
+
 ## Build and configuration
 
 - [ ] `.env.pilot.example` copied to `.env` and placeholders replaced.
