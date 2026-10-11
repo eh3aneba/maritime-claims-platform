@@ -30,3 +30,11 @@ The complete tested trajectory, if CI confirms success, is:
 ## Pilot exit not yet satisfied
 
 Issue #656 remains open until all its complete real-environment v1 → N+1, restart/replay, failure, isolation and privacy acceptance criteria are verified. The production-readiness checklist (#653) and mandatory main branch protection (#461) also remain open. No authorized use of live customer claim data follows from this isolated test.
+
+## Exact-head CI step-outcome evidence (2026-10-11 hardening)
+
+The named `Pilot Real SFTP Acceptance` workflow now checks out the **PR head SHA** on pull requests (and the dispatch SHA on manual runs), rather than silently treating the GitHub-generated PR merge ref as the tested head. It verifies `git rev-parse HEAD` against that exact candidate SHA when writing an exclusive `summary.json` through `scripts/pilot_real_sftp_ci_evidence.py`.
+
+The evidence contains only the run identity, synthetic OpenSSH package version when observed, and **six fixed step outcomes**: PostgreSQL schema; OpenSSH setup; direct real-SFTP runtime; real PostgreSQL due-tick; synthetic human-authorized N+1; and real-SFTP initial custody. Each outcome is one of `success`, `failure`, `cancelled`, `skipped`, or sanitized `not_reported`. It records `all_six_ci_steps_passed=true` **only** if every phase succeeded. An `if: always()` artifact from a failed or skipped acceptance run must display `incomplete_or_failed`, not an implied PASS. Output never includes credentials, customer hostnames, evidence bytes, unredacted exceptions or raw paths.
+
+This is **CI step-outcome metadata**, not independent proof of production SFTP, human review, malware scanning, immutable backing storage, real-host recovery, or the full continuous real-provider v1-to-N+1 lineage. The record always retains `pilot_go=false` and `customer_data_authorized=false`. Check the referenced GitHub job logs and exact released SHA independently; the generated summary cannot close #652/#653 or authorize customer claims. The CI helper has offline negative regressions for missing/failed/skipped phase outcomes, invalid checkout SHA, malformed run identity and exclusive evidence writes.
