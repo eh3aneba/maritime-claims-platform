@@ -80,6 +80,12 @@ Never add hostname, address, path, username, credential reference, fingerprint, 
 
 Operational counts and latency summaries should be derived from these structured events in the deployment log pipeline.
 
+## Controlled real-TCP failure acceptance (Pilot #652)
+
+The opt-in real-OpenSSH acceptance suite also exercises two **real loopback socket** failures using the production `LiveSftpRuntime.probe_host_key` operation, independently of the OpenSSH server: a peer that accepts the TCP connection and closes without sending an SSH banner, and a peer that accepts but withholds the SSH banner until the client's bounded handshake fails. Both must fail closed **before authentication or an SFTP session** and must never be interpreted as an accepted host-key probe. The test peer is a disposable socket bound to `127.0.0.1` on a kernel-assigned port, never a customer server or credential backend; no secret/file/remote path is sent.
+
+These scenarios complement the existing controlled actual OpenSSH checks (wrong host pin, failed authentication, missing files, symlink/traversal, oversize and permissions). They prove real transport refusal/handshake behavior against a test socket, **not** in-session disconnect or large-file read timeout against the actual OpenSSH subsystem. A successful CI run must be tied to its exact PR SHA and named SFTP workflow; an optional SFTP test being skipped by generic CI is not evidence of live-server acceptance. End-to-end real initial-v1→N+1 governance, real production scanner/durable store and accountable operator acceptance remain separate NO-GO criteria in #652/#656.
+
 ## Incident signals
 
 Treat these as operator-visible failures:
