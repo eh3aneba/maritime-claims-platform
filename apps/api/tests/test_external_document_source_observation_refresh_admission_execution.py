@@ -1068,6 +1068,10 @@ def test_phase_aj_database_failure_rolls_back_document_and_canonical_storage(
         _fail_after_transition,
     )
 
+    # A failed flush/commit invalidates the transactional unit of work.
+    # Close that Session before verifying persisted rows: validation in a new
+    # Session prevents identity-map state or a restarted transaction from
+    # masquerading as durable rollback/recovery.
     with TestingSessionLocal() as db:
         with pytest.raises(
             ExternalDocumentSourceConflictError,
@@ -1085,18 +1089,21 @@ def test_phase_aj_database_failure_rolls_back_document_and_canonical_storage(
             )
         db.rollback()
 
-        prior = db.get(Document, prior_document_id)
+    # The object-store cleanup is in-memory and must have occurred regardless
+    # of how SQLAlchemy reconnects for the independent persisted-row checks.
+    assert local_store.objects == {}
+    assert len(local_store.deleted) == 1
+
+    with TestingSessionLocal() as verifier:
+        prior = verifier.get(Document, prior_document_id)
         assert prior is not None
         assert prior.is_current is True
         assert prior.superseded_at is None
         assert prior.superseded_by_id is None
-        assert db.query(Document).count() == 1
+        assert verifier.query(Document).count() == 1
         assert (
-            db.query(
+            verifier.query(
                 ExternalDocumentSourceObservationRefreshAdmissionExecution
             ).count()
             == 0
         )
-
-    assert local_store.objects == {}
-    assert len(local_store.deleted) == 1
