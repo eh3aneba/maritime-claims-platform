@@ -48,18 +48,15 @@ jobs:
             exit 0
           fi
 
-          performance_required=false
-          while IFS= read -r changed_path; do
-            case "$changed_path" in
-              apps/api/*|apps/web/*|scripts/*|docker-compose*.yml|.github/workflows/performance-smoke.yml)
-                performance_required=true
-                break
-                ;;
-            esac
-          done < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
-
-          echo "performance_required=$performance_required" >> "$GITHUB_OUTPUT"
-          echo "Operational performance validation required: $performance_required"
+          # Fail-closed, auditable path classification. Standalone offline
+          # release/monitoring/rollback evidence-record helpers need focused
+          # tests but do not need to boot the full Docker+ClamAV stack.
+          # Any mixed, unknown, runtime, dependency, Compose, or workflow
+          # change still requires the real synthetic stack validation.
+          python scripts/pilot_performance_scope.py \
+            --base "$BASE_SHA" \
+            --head "$HEAD_SHA" \
+            --output "$GITHUB_OUTPUT"
 
   performance-smoke:
     name: Live-stack performance smoke
