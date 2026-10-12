@@ -127,6 +127,82 @@ The emitted record always includes
 and `pilot_authorized=false`. If another commit lands on the proof PR,
 discard the old readback and rerun with its new head.
 
+
+## Controlled red→blocked→green proof snapshots after Admin activation
+
+**Only after the repository Admin independently confirms 11/11 active
+required contexts** and preserves all branch safety properties, open a
+temporary **same-repository synthetic-only PR** to `main`. Do not use
+production data and do not weaken the ruleset for the exercise.
+
+1. Deliberately make **exactly one newly required stable aggregate
+   context** fail on the disposable PR. Check that the other ten required
+   contexts succeed, no other optional check fails, the PR has no merge
+   conflicts and no draft/review issue. Choose a deterministic failure
+   that remains isolated to the disposable synthetic test branch.
+   Capture the exact *red* PR HEAD SHA from GitHub.
+2. Let GitHub complete status propagation, then use the read-only
+   observer. It requires live **11/11 active Ruleset** and exact
+   GitHub Actions check-run names and identities. The target must
+   actually be `completed/failure`; all other ten must be green;
+   GitHub PR merge metadata must be `mergeable=true` and
+   `mergeable_state=blocked`. This is metadata, **not a merge
+   attempt or independent causal proof**:
+
+```bash
+python scripts/pilot_ruleset_negative_enforcement.py capture \
+  --pr "<disposable-PR-number>" \
+  --sha "<red-full-40-character-PR-head>" \
+  --target-check "Operational performance gate" \
+  --phase red \
+  --output /secure/pilot-releases/required-red-blocked.json
+```
+
+3. Correct the **same** disposable PR so a **new SHA** has all 11
+   checks green. Verify `mergeable_state=clean` and no unrelated
+   security, operational or reviewer blockers. Collect the new green
+   record:
+
+```bash
+python scripts/pilot_ruleset_negative_enforcement.py capture \
+  --pr "<same-disposable-PR-number>" \
+  --sha "<green-full-40-character-PR-head>" \
+  --target-check "Operational performance gate" \
+  --phase green \
+  --output /secure/pilot-releases/required-green-clean.json
+```
+
+4. Compare the **two private exact-HEAD snapshots**; the checker
+   requires the same PR, base SHA, HEAD branch and unchanged ruleset
+   `updated_at`, the same failing-then-restored required context,
+   two distinct check run IDs and SHA values, and ordered UTC captures.
+
+```bash
+python scripts/pilot_ruleset_negative_enforcement.py compare \
+  --red /secure/pilot-releases/required-red-blocked.json \
+  --green /secure/pilot-releases/required-green-clean.json \
+  --output /secure/pilot-releases/required-check-contrast.json
+```
+
+This is **strictly read-only**: it never calls a GitHub merge endpoint,
+creates a PR, modifies a ruleset, or changes a test. It is intentionally
+conservative, and the outputs **always** say
+`github_merge_api_refusal_actually_observed=false`,
+`enforcement_causality_independently_verified=false`,
+`actual_required_check_merge_refusal_independently_verified=false`
+and `pilot_authorized=false` where applicable.
+
+**Mandatory independent closeout**: a separately authorized operator
+must confirm the red merge was unavailable *because the newly required
+check failed*, not because of another restriction, preserve an approved
+GitHub UI/API merge-block receipt (without forcing or attempting a
+potentially valid merge), and then verify green eligibility returned
+without bypass. Store the reviewer, approved change ticket, exact PR,
+ruleset and context/run references privately. No actual failing-check
+refusal has been independently observed until that operator exercise.
+Only then may #461 be reviewed for closure. `metadata_complete`
+alone is insufficient for Pilot GO.
+
 ### Admin-only changes (not executed by this repository tool)
 
 1. Through authorized GitHub repository **Settings → Rules → Rulesets →
