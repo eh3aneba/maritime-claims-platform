@@ -120,3 +120,22 @@ Disable:
 `EXTERNAL_EVIDENCE_LIVE_SFTP_ADAPTERS_ENABLED=false`
 
 This prevents live SFTP adapter registration on restart. It does not delete profiles, Evidence, checkpoints, schedules or audit history.
+
+## Controlled live OpenSSH same-size rewrite negative exercise
+
+The opt-in `Pilot Real SFTP Acceptance` workflow now includes an actual SFTP
+handle read against a disposable local OpenSSH server while a **test-only
+server-host fixture** is changed in place *after* its first genuine chunk.
+The file remains 64 bytes with the same inode and a deliberately advanced
+modification time. This verifies the production `LiveSftpRuntime.read_content`
+post-read **same-opened-handle** metadata check with real Paramiko/OpenSSH
+operations: the result must be `opened_file_changed`, with zero accepted
+content and no remote mutation method issued by the SFTP client.
+
+Only the ephemeral CI fixture is modified using local runner privileges.
+There are no customer file paths, credentials or production writes. The
+scenario demonstrates detectable metadata drift, **not** cryptographic
+content authenticity, atomic source snapshots, or detection of a malicious
+rewrite preserving every exposed identity field. The broader governed
+v1-to-N+1 real-source lifecycle, production scanner/store, operations and
+human release evidence under #652/#653 remain outstanding.
