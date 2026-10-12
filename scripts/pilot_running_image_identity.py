@@ -78,8 +78,11 @@ def _service_ids(items: object) -> dict[str, str]:
 def evaluate_images(*, before: list[dict], after: list[dict],
                     observed_image_ids: dict[str, str], expected: dict[str, str],
                     release_sha: str) -> dict:
-    readiness_before = evaluate(before, release_sha=release_sha)
-    readiness_after = evaluate(after, release_sha=release_sha)
+    try:
+        readiness_before = evaluate(before, release_sha=release_sha)
+        readiness_after = evaluate(after, release_sha=release_sha)
+    except ReadinessError:
+        raise ImageIdentityError("Compose readiness observation invalid") from None
     if not readiness_before["compose_status_complete"] or not readiness_after["compose_status_complete"]:
         raise ImageIdentityError("Compose readiness changed or incomplete")
     ids_before = _service_ids(before)
