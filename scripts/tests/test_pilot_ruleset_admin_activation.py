@@ -215,5 +215,34 @@ class RulesetAdminActivationTests(unittest.TestCase):
                 )
 
 
+    def test_changed_exact_proof_head_prevents_admin_write(self):
+        listed, detail, record = sample()
+        with patch.object(gate, "fetch_checks", return_value=({}, [])), \
+             patch.object(gate, "evaluate_checks",
+                          side_effect=[record, gate.GatePreflightError("PR changed")]), \
+             patch.object(gate, "fetch_ruleset", return_value=(listed, detail)), \
+             patch.object(gate, "_write_ruleset") as writing:
+            with self.assertRaises(gate.ActivationError):
+                gate.execute(pr=PR, sha=SHA, apply=True,
+                             ticket="ticket://approved-change",
+                             confirmed_id=gate.RULESET_ID, token="dummy")
+        writing.assert_not_called()
+
+    def test_changed_check_run_identity_prevents_admin_write(self):
+        listed, detail, record = sample()
+        modified = deepcopy(record)
+        modified["expected_checks"]["Backend tests"]["check_run_id"] = 99999
+        with patch.object(gate, "fetch_checks", return_value=({}, [])), \
+             patch.object(gate, "evaluate_checks", side_effect=[record, modified]), \
+             patch.object(gate, "fetch_ruleset", return_value=(listed, detail)), \
+             patch.object(gate, "_write_ruleset") as writing:
+            with self.assertRaises(gate.ActivationError):
+                gate.execute(pr=PR, sha=SHA, apply=True,
+                             ticket="ticket://approved-change",
+                             confirmed_id=gate.RULESET_ID, token="dummy")
+        writing.assert_not_called()
+
+
+
 if __name__ == "__main__":
     unittest.main()
