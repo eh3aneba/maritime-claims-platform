@@ -128,3 +128,37 @@ storage and malware verdict, replay and negative controls, then record an
 explicit scoped sign-off. Keep #652 open and SFTP/customer Pilot **NO-GO** until
 that independent review is complete.
 
+
+## Real server-side least privilege for controlled CI (#652)
+
+The disposable OpenSSH fixture must enforce **read-only filesystem
+permissions on the SFTP principal**, independently of the production
+`LiveSftpRuntime` returning `remote_write_performed=false`.
+A client that simply chooses not to write does not demonstrate a
+read-only server credential.
+
+The synthetic `evidence` and nested `empty-folder` directories and
+synthetic readable files are now root-owned, group-readable to the
+`mcri-sftp-ci` account, and **not group-writable**. Its own login
+home/`.ssh` remains correctly owned for ephemeral SSH authentication.
+The unreadable fixture remains root-only. The same-size in-place
+rewrite negative test intentionally uses `sudo` on the *local runner
+host*; no remote SFTP write capability is granted.
+
+The exact-head real-OpenSSH suite includes
+`test_real_openssh_sftp_principal_cannot_write_rename_delete_or_mkdir`.
+It establishes a separate authenticated, host-key-pinned SFTP client
+session, proves a known synthetic file remains readable, then verifies
+that direct SFTP **create, opening for write, mkdir, nested-file create,
+delete and rename** requests are **actually rejected by OpenSSH**.
+It checks the original bytes/metadata and absence of created objects.
+The named-test JUnit gate requires this test to run and pass rather than
+accepting skipped/omitted results.
+
+This protects the **local disposable test fixture**, not remote customer
+servers. Before #652 real-provider acceptance can pass, an independent
+operator must examine the *actual* provider account's read-only ACL,
+server-side effective permissions and absence of write/rename/delete
+authority, record bounded receipts, and review credentials and limits.
+Neither this synthetic denial nor a completed operator evidence draft
+authorizes production/customer SFTP use.
