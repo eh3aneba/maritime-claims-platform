@@ -38,3 +38,29 @@ The named `Pilot Real SFTP Acceptance` workflow now checks out the **PR head SHA
 The evidence contains only the run identity, synthetic OpenSSH package version when observed, and **six fixed step outcomes**: PostgreSQL schema; OpenSSH setup; direct real-SFTP runtime; real PostgreSQL due-tick; synthetic human-authorized N+1; and real-SFTP initial custody. Each outcome is one of `success`, `failure`, `cancelled`, `skipped`, or sanitized `not_reported`. It records `all_six_ci_steps_passed=true` **only** if every phase succeeded. An `if: always()` artifact from a failed or skipped acceptance run must display `incomplete_or_failed`, not an implied PASS. Output never includes credentials, customer hostnames, evidence bytes, unredacted exceptions or raw paths.
 
 This is **CI step-outcome metadata**, not independent proof of production SFTP, human review, malware scanning, immutable backing storage, real-host recovery, or the full continuous real-provider v1-to-N+1 lineage. The record always retains `pilot_go=false` and `customer_data_authorized=false`. Check the referenced GitHub job logs and exact released SHA independently; the generated summary cannot close #652/#653 or authorize customer claims. The CI helper has offline negative regressions for missing/failed/skipped phase outcomes, invalid checkout SHA, malformed run identity and exclusive evidence writes.
+
+## Required named-test execution proof (2026-10-12)
+
+The `Pilot Real SFTP Acceptance` CI job now generates four **runner-private**
+pytest JUnit XML files (direct OpenSSH runtime, governed PostgreSQL due-tick,
+human-authorized N+1 and initial custody). Before each of the four phase steps
+can report `success`, `scripts/pilot_real_sftp_junit_evidence.py` checks:
+
+- every fixed, security-relevant test name for that phase was actually
+  collected and executed **once** (including the real same-size in-place
+  metadata-drift negative case);
+- no collected test is `skipped`, `failed` or `errored`;
+- declared JUnit counts agree with the actual cases; missing/malformed or
+  oversized reports fail closed.
+
+The checker prints **only** a bounded phase name and executed test count.
+Raw JUnit XML and assertion details stay inside the ephemeral runner and are
+not included in the public-facing `summary.json` artifact. The existing
+six-phase exact-checkout-SHA metadata record from #695 reports phase
+success only after the new named-test checks pass.
+
+This prevents a fully skipped or silently de-selected pytest phase from
+masquerading as successful real-provider acceptance. It is still **synthetic
+CI evidence**: not production SFTP authentication/storage credentials, true
+initial real-provider canonical v1→N+1 admission, independent operator
+rehearsal, verified customer data permission, or Pilot GO.
