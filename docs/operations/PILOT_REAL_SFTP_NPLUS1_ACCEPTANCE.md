@@ -64,3 +64,67 @@ masquerading as successful real-provider acceptance. It is still **synthetic
 CI evidence**: not production SFTP authentication/storage credentials, true
 initial real-provider canonical v1→N+1 admission, independent operator
 rehearsal, verified customer data permission, or Pilot GO.
+
+## Independent real-provider operator evidence packet (#652)
+
+Controlled GitHub CI tests against local OpenSSH + synthetic PostgreSQL are
+not the independently observed, approved provider and host acceptance required
+by #652. This additional **offline-only** operator tool prepares a constrained
+checklist for a bounded real SFTP server exercise. It does **not** contact any
+server, fetch source credentials, perform a backup, scan Evidence, execute a
+provider mutation or authorize a Pilot:
+
+```bash
+python scripts/pilot_real_sftp_operator_evidence.py init \
+  --sha "<independently-reviewed-deployed-release-SHA>" \
+  --output /secure/pilot-releases/sftp-real-provider-acceptance-draft.json
+```
+
+A named operator and a **different independent reviewer** complete the
+private draft against reviewed observations and link only bounded
+`artifact://`, `ticket://`, `runbook://` or `monitor://`
+references. The packet requires:
+
+- **16 positive cases:** real provider secret-reference resolution and
+  destination policy; host-key pin; authentication/subsystem; bounded directory
+  listing; lstat and opened-handle checks; exact content read; quarantine and
+  checkpoint; actual initial canonical v1 admission; metadata-only observation;
+  separately human-approved N+1; idempotent replay and next unchanged tick;
+  and no remote mutation permission
+- **10 negative cases:** wrong pin/password, weak negotiation, missing file,
+  traversal, symlink, metadata drift/replacement, oversize, timeout and
+  mid-read disconnect
+- exact release SHA, real server/version and enabled-algorithm evidence,
+  approved pin, credential/permission boundary, immutable image evidence,
+  approved ticket, privacy/cleanup review, UTC observation and independent
+  reviewer references
+
+Every positive case **must** have a real-provider artifact. Negative cases must
+be marked `pass` with a real-server proof; a genuine server-side limitation
+may instead be marked `unreproducible`, but **only** with both an explicit
+limitation-ticket reference and a deterministic-CI fallback proof. The
+result separately counts these exceptions so they cannot be reported as
+real-server passes. Blank, skipped, errored, invented, non-UTC, mismatched
+or unreferenced results are not accepted. No customer files or production
+credentials, no remote writes and no invented release authorization are
+permitted in this synthetic rehearsal.
+
+```bash
+python scripts/pilot_real_sftp_operator_evidence.py check \
+  /secure/pilot-releases/sftp-real-provider-acceptance-draft.json \
+  --sha "<independently-reviewed-exact-release-SHA>" \
+  --output /secure/pilot-releases/sftp-real-provider-acceptance-readback.json
+```
+
+Output is exclusive and contains only fixed case counts, exact operator-supplied
+SHA and deliberately false `actual_server_exercise_independently_verified`,
+`credentials_and_data_compliance_independently_verified`,
+`pilot_sftp_go_authorized` and `pilot_authorized` values. A structurally
+complete record is **not evidence that the referenced artifacts are authentic**
+or that a real SFTP server was actually exercised. An authorized release owner
+must separately verify the immutable logs, server protocol/version/algorithms,
+credentials isolation, no secret leakage, actual v1→N+1 lineage, synthetic
+storage and malware verdict, replay and negative controls, then record an
+explicit scoped sign-off. Keep #652 open and SFTP/customer Pilot **NO-GO** until
+that independent review is complete.
+
