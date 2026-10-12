@@ -33,6 +33,55 @@ It requires **11** known services: DB, ClamAV, API and Web must be running **and
 
 A passing observation is **only** container-status metadata, not proof that the candidate SHA is actually deployed or that the images match immutable digests. It does not establish a clean-host deployment, private firewall/proxy exposure, authenticated user journey, ClamAV scanning behavior, SFTP acceptance, matched database + Evidence recovery point, rollback rehearsal, alert ownership, human signoff or Pilot GO. All those independent P0 acceptance records under #653 remain required. A failed snapshot is a blocking operational signal, not permission to disable checks or skip a service. Keep this record in controlled operator storage, not the public repository.
 
+### Read-only running-image ID verification (operator host)
+
+The service-status checker above intentionally **does not** verify what immutable
+Docker images the containers actually run. After a separately approved
+**synthetic-only** deployment, create a **private** operator manifest for the
+11 required Compose services (the value of every `expected_image_ids` entry
+must be an independently approved Docker *image config ID* in
+`sha256:<64 lowercase hex>` form, not an unpinned tag):
+
+```bash
+python scripts/pilot_running_image_identity.py \
+  --init \
+  --release-sha "<reviewed-exact-40-character-source-SHA>" \
+  --output /secure/pilot-releases/rc-001-expected-image-ids.json
+```
+
+An authorized operator populates the template **only after independently
+correlating the approved build records and intended release images**. Then
+verify the existing Compose stack without changing any container:
+
+```bash
+python scripts/pilot_running_image_identity.py \
+  --verify \
+  --release-sha "<reviewed-exact-40-character-source-SHA>" \
+  --manifest /secure/pilot-releases/rc-001-expected-image-ids.json \
+  --env-file .env \
+  --output /secure/pilot-releases/rc-001-running-image-observation.json
+```
+
+The helper makes **read-only** `docker compose ps --all --format json`
+observations before and after `docker inspect --type container` for each
+of the eleven known service container IDs. It refuses a changed/missing,
+duplicate, failed-health or unknown service; checks the immutable Docker
+image IDs returned by *running containers*, compares all eleven to the frozen
+manifest, and fails closed if any differ. It never runs `up`, `exec`,
+`pull`, `build`, `start`, `stop` or `restart` and does not log raw
+Docker output, container IDs, image names, host details or secrets. Only
+eleven service names and Boolean matches are written to the exclusive result.
+
+**Important distinctions:** a Docker **image config ID** is not the same
+thing as a registry `name@sha256:manifest-digest`; the release-candidate
+image-digest requirements still apply. The source SHA in this record is
+operator-supplied, and the checker **cannot** independently prove that the
+image was built from that SHA or that the supplied manifest was approved.
+It also cannot prove fresh-host cleanliness, off-host backups, scanner behavior,
+network policy, migrations, alert delivery or human signoff. A passing
+11/11 live-container image-ID observation is a useful extra independent
+readback on an actual reviewed host, **not** a Pilot GO.
+
 ### Automated synthetic-stack readback in CI
 
 The `Operational Performance Smoke` workflow now runs the read-only Compose readiness checker **after** its isolated, synthetic `design_partner_preflight.sh` stack startup and **before** performance measurements. It saves `artifacts/compose-readiness.json` in the short-retention `operational-performance-smoke` artifact and fails the required operational performance gate if any one of the 11 mandated service statuses is missing, not ready, duplicated or unexpected. The script cannot make a failing stack pass by running `docker compose up` or otherwise changing state. The recorded SHA is the workflow's candidate-head SHA supplied by CI, not an independently proven running image identity.
