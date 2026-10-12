@@ -1,3 +1,4 @@
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
@@ -21,3 +22,23 @@ class UserRead(BaseModel):
     full_name: str
     role: UserRole
     is_active: bool
+
+
+class UserDeactivateRequest(BaseModel):
+    """Explicit, privacy-safe human change ticket; never a free-text secret."""
+
+    change_ticket_ref: str = Field(
+        min_length=6, max_length=64, pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]*$"
+    )
+    confirmation: Literal["DEACTIVATE_USER"]
+
+
+class UserDeactivateRead(BaseModel):
+    id: UUID
+    is_active: Literal[False] = False
+    newly_deactivated: bool
+    sessions_revoked: int = Field(ge=0)
+    # External IdP/provider credentials and background integrations are NOT
+    # deprovisioned by this app-local action; operators must handle separately.
+    external_identity_deprovisioned: Literal[False] = False
+    external_integrations_disabled: Literal[False] = False

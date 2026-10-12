@@ -94,3 +94,72 @@ python scripts/pilot_ruleset_evidence.py \
 The checker expects precisely the 11 stable target contexts above and also checks active enforcement, default-branch scoping, strict/up-to-date status checks, enforcement on creation, extra approval for unattributed changes, squash-only merges, resolved review threads, linear history, deletion and non-fast-forward protection, and zero bypass actors. It intentionally does **not** infer a PASS from successful PR workflow runs. It records no raw server payload, credentials, unexpected context names or exception text. Do not publish the generated record with sensitive operator notes.
 
 **Critical remaining proof:** even a `metadata_complete: true` snapshot is *not* evidence that a deliberately failing critical check prevents merge. Perform the separate disposable failing-check experiment through authorized GitHub surfaces, preserve the exact PR/run/context IDs, restore the check without bypass, and independently verify the result. The tool always records `failing_check_enforcement_proven: false` and `pilot_authorized: false` until a separate human-approved evidence record establishes those facts. The repository connector cannot make the required administrative ruleset update. This step is an external admin action; the current four-context ruleset must be regarded as **NO-GO**.
+
+## Read-only exact-PR-head context-emission preflight
+
+Before a repository Admin updates `Protect main`, confirm that all **11**
+required context names are actually emitted and successful on the **exact head**
+of one current, open, same-repository PR targeting `main`. A successful
+workflow-name row is not sufficient evidence that the stable job/context
+existed: e.g. a green `PostgreSQL Concurrency Regression Suite` is *not* by
+itself a `PostgreSQL concurrency gate` check run.
+
+Use the standard-library read-only checker (requires only a read-scoped GitHub
+token for private repositories; creates a local exclusive non-secret record):
+
+```bash
+python scripts/pilot_required_check_preflight.py \
+  --repo eh3aneba/maritime-claims-platform \
+  --pr "<reviewed-open-proof-PR-number>" \
+  --sha "<independently-verified-PR-head-40-character-SHA>" \
+  --output /secure/pilot-releases/check-contexts-before-admin-change.json
+```
+
+The program reads only `GET /pulls/{number}` and paginated
+`GET /commits/{sha}/check-runs`; it verifies PR ownership/base, current exact
+head SHA, `github-actions` application identity, **one unambiguous** check run
+per expected stable name, and `completed/success` for all eleven. Missing,
+in-progress, failed, skipped, renamed, duplicated, wrong-SHA or third-party
+check identities cause **NO-GO**, rather than guessing what a ruleset can
+require. Unknown unrelated check names are never copied into evidence.
+The emitted record always includes
+`ruleset_mutated=false`, `failing_required_check_enforcement_proven=false`
+and `pilot_authorized=false`. If another commit lands on the proof PR,
+discard the old readback and rerun with its new head.
+
+### Admin-only changes (not executed by this repository tool)
+
+1. Through authorized GitHub repository **Settings → Rules → Rulesets →
+   Protect main**, review the active ruleset and its present four required
+   check contexts. Do not create a duplicate or loosen bypass/review settings.
+2. If the exact-PR preflight passed, add only these seven **stable** contexts
+   to the existing four: `Scoped CI gate`,
+   `PostgreSQL concurrency gate`, `Operational performance gate`,
+   `Production dependency audit and SBOM`, `Secret history scan`,
+   `Container image vulnerability scan` and `Production environment policy`.
+   Choose each exact context supplied by GitHub's checks picker. Never add
+   optional/path-selected matrix jobs in their place.
+3. Preserve **strict/up-to-date required checks**, the required checks on
+   branch creation, extra approval for unattributed changes, squash-only,
+   linear history, resolved review threads, non-fast-forward/deletion
+   protection, and **zero** bypass actors. Save through the Admin UI only
+   with an approved change ticket.
+4. Re-run `scripts/pilot_ruleset_evidence.py` against the live ruleset and
+   require exact **11/11** readback. Store the new record with the approved
+   change ticket. Do not treat a healthy PR as proof that the settings changed.
+5. Use a disposable, **synthetic-only** PR to intentionally fail **one now
+   required stable check** without touching customer data or weakening branch
+   settings. Confirm through the UI/API that GitHub refuses protected-main
+   merge. Repair the disposable test on that PR, confirm its exact-head
+   check turns green and that merge eligibility returns **without a bypass**.
+   Record PR/check run IDs, the before/after state and independent Admin
+   approval in controlled operator storage; don't merge the intentionally
+   broken test.
+6. Mark #461 complete only after the verified live readback and negative
+   enforcement experiment. The preflight checker **never** changes repository
+   settings or performs the negative exercise, and a merely user-entered
+   attestation does not establish the protection actually operated.
+
+This is a gating dependency for #647/#653 and controlled Pilot v1. A
+successful 11/11 check-run **emission** preflight is not a live 11/11
+ruleset, and neither alone authorizes customer claims.
