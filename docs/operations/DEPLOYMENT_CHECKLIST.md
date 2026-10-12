@@ -1,5 +1,7 @@
 # Design Partner Deployment Checklist
 
+For a controlled **fresh-host, synthetic-only** deployment rehearsal and the required independent proof sequence, follow [Pilot Fresh-Host Rehearsal](PILOT_FRESH_HOST_REHEARSAL.md). This checklist alone must not be treated as release authorization or a real-customer tenant bootstrap.
+
 Pilot v1 organization admission and exit must follow the controlled [tenant onboarding/offboarding runbook](PILOT_TENANT_LIFECYCLE.md). This checklist alone does not establish initial organization provisioning, MFA/role isolation, legal-hold custody or session/integration revocation. #653 remains NO-GO without independent operator evidence.
 
 ## Build and configuration
