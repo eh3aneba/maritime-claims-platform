@@ -23,6 +23,7 @@ REQUIRED_CASES = {
         "test_real_openssh_same_size_inplace_rewrite_during_read_fails_closed",
         "test_real_openssh_unavailable_port_fails_closed_without_authentication",
         "test_real_openssh_permission_denied_read_fails_closed",
+        "test_real_openssh_sftp_principal_cannot_write_rename_delete_or_mkdir",
     )),
     "postgres_due_tick": frozenset((
         "test_real_openssh_stat_persists_changed_observation_and_replays_without_io",
