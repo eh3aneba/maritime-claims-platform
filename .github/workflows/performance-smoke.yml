@@ -100,6 +100,8 @@ jobs:
           SECRET_KEY=$PERF_SECRET_KEY
           STORAGE_BACKEND=local
           LOCAL_STORAGE_PATH=/data/documents
+          MALWARE_SCAN_ENABLED=true
+          MCRI_SYNTHETIC_ONLY_CONFIRM=YES
           PROCESSING_MAX_ATTEMPTS=1
           AI_PROVIDER=disabled
           AI_MODEL=
