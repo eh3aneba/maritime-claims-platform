@@ -78,7 +78,9 @@ jobs:
           python -m pip check
 
       - name: Verify SFTP CI evidence generator regression cases
-        run: python -m unittest discover -s ../../scripts/tests -p 'test_pilot_real_sftp_ci_evidence.py' -v
+        run: |
+          python -m unittest discover -s ../../scripts/tests -p 'test_pilot_real_sftp_ci_evidence.py' -v
+          python -m unittest discover -s ../../scripts/tests -p 'test_pilot_real_sftp_junit_evidence.py' -v
 
       - name: Apply real PostgreSQL schema
         id: postgres_schema
@@ -185,25 +187,41 @@ jobs:
         id: live_runtime
         run: |
           pytest -q -vv --tb=short \
+            --junitxml="${RUNNER_TEMP}/mcri-sftp-runtime.xml" \
             tests/test_external_document_source_live_sftp_real_server_acceptance.py
+          python ../../scripts/pilot_real_sftp_junit_evidence.py \
+            --suite live_runtime \
+            --report "${RUNNER_TEMP}/mcri-sftp-runtime.xml"
 
       - name: Run governed PostgreSQL due-tick with production real OpenSSH stat
         id: postgres_due_tick
         run: |
           pytest -q -vv --tb=short \
+            --junitxml="${RUNNER_TEMP}/mcri-sftp-due-tick.xml" \
             tests/test_external_document_source_live_sftp_governed_postgres_acceptance.py
+          python ../../scripts/pilot_real_sftp_junit_evidence.py \
+            --suite postgres_due_tick \
+            --report "${RUNNER_TEMP}/mcri-sftp-due-tick.xml"
 
       - name: Run human-approved real OpenSSH N+1 governed acceptance
         id: governed_nplus1
         run: |
           pytest -q -vv --tb=short \
+            --junitxml="${RUNNER_TEMP}/mcri-sftp-nplus1.xml" \
             tests/test_external_document_source_live_sftp_nplus1_governed_acceptance.py
+          python ../../scripts/pilot_real_sftp_junit_evidence.py \
+            --suite governed_nplus1 \
+            --report "${RUNNER_TEMP}/mcri-sftp-nplus1.xml"
 
       - name: Run real OpenSSH governed initial content custody against PostgreSQL
         id: initial_custody
         run: |
           pytest -q -vv --tb=short \
+            --junitxml="${RUNNER_TEMP}/mcri-sftp-initial-custody.xml" \
             tests/test_external_document_source_live_sftp_initial_custody_acceptance.py
+          python ../../scripts/pilot_real_sftp_junit_evidence.py \
+            --suite initial_custody \
+            --report "${RUNNER_TEMP}/mcri-sftp-initial-custody.xml"
 
       - name: Record outcome-aware, exact-checkout real-SFTP CI evidence
         if: ${{ always() }}
