@@ -88,3 +88,11 @@ class PilotRCGateTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# Disposable, synthetic-only test of required-check enforcement for #461.
+# This deliberately fails ONLY the "Production environment policy" stable gate.
+# Never merge this red-state commit into main.
+class DisposableRequiredCheckRedProof(unittest.TestCase):
+    def test_pilot_461_required_protection_rejects_red(self):
+        self.fail("Synthetic required-check red/blocked enforcement exercise (PR #707)")
