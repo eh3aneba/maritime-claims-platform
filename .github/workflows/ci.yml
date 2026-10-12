@@ -280,6 +280,8 @@ jobs:
           SECRET_KEY=ci-only-not-a-deployment-secret-change-on-every-run-2026
           STORAGE_BACKEND=local
           LOCAL_STORAGE_PATH=/data/documents
+          MALWARE_SCAN_ENABLED=true
+          MCRI_SYNTHETIC_ONLY_CONFIRM=YES
           PROCESSING_MAX_ATTEMPTS=1
           AI_PROVIDER=disabled
           AI_MODEL=
