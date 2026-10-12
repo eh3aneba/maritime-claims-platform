@@ -30,7 +30,7 @@ The file is created exclusively, without overwriting a previous release record. 
 | Controlled real SFTP | Governed real OpenSSH + real PostgreSQL v1→N+1→next unchanged observation, plus restart/replay (#652/#656) |
 | Fresh host | Clean deployment, migrations/preflight, browser/operator H&M machinery-claim journey |
 | Recovery | Validated database backup, **matching evidence/storage recovery point**, full restore drill, rollback drill |
-| Operations | Named owner and escalation for worker/queue/scanner/storage/backup-age monitoring; tenant onboarding/offboarding |
+| Operations | Named owner and escalation for worker/queue/scanner/storage/backup-age monitoring; independently exercised [tenant onboarding/offboarding](PILOT_TENANT_LIFECYCLE.md) including MFA/role isolation, legal holds, external integrations and revocation |
 | Exact-head build gates | Full Backend, CI, PostgreSQL concurrency, Supply Chain, Operational Performance and Production Deployment Policy on exact candidate SHA |
 
 Each individual proof must include `result: pass`, an immutable/accessible `evidence_ref`, a responsible `owner`, and UTC `observed_at_utc` in `YYYY-MM-DDTHH:MM:SSZ`. These are human attestations; the command does not attest to their truth.
