@@ -8,6 +8,9 @@ The standard-library `scripts/pilot_rc_gate.py` tool creates a NO-GO draft and v
 
 ## Prepare the release candidate
 
+The operator should first follow the [fresh-host synthetic deployment rehearsal](PILOT_FRESH_HOST_REHEARSAL.md) for the exact released SHA, validated image identity, recovery and monitoring evidence. A linked runbook is **not** proof that the operations actually occurred.
+
+
 1. Freeze **one exact full commit SHA** for the release (not an approximate branch name), images and allowed controlled test environment.
 2. Observe the actual Alembic revision of the deployed database and compare it to the repository migration head. The current main migration code has revision `0224_obs_refresh_recovery_anchor`, but the record must use the deployed release's verified revision.
 3. Record immutable image references for API, Web, Worker, Postgres and ClamAV, using `repository/image@sha256:<64 lowercase hex>`. A mutable tag or a local unqualified image ID is insufficient. Do not invent a digest.
