@@ -67,6 +67,24 @@ class PilotRCGateTests(unittest.TestCase):
         data["proofs"]["rollback_drill"]["observed_at_utc"] = "2026-10-09T12:30:00+03:00"
         self.assertTrue(validate(data, SHA))
 
+    def test_proof_timestamp_requires_canonical_utc_seconds(self):
+        invalid_timestamps = (
+            "2026-10-09T09:30:00.123Z",  # fractional seconds
+            "2026-10-09T09:30Z",  # no seconds
+            "2026-10-09 09:30:00Z",  # noncanonical separator
+            "2026-10-09T09:30:00+00:00",  # UTC but not the required Z suffix
+            "2026-1-9T9:30:00Z",  # noncanonical zero padding
+            "2026-02-30T09:30:00Z",  # impossible calendar date
+        )
+        for stamp in invalid_timestamps:
+            with self.subTest(stamp=stamp):
+                data = complete_record()
+                data["proofs"]["rollback_drill"]["observed_at_utc"] = stamp
+                self.assertTrue(
+                    any("rollback_drill.observed_at_utc" in problem
+                        for problem in validate(data, SHA))
+                )
+
     def test_missing_and_extra_top_level_keys_fail(self):
         data = complete_record()
         data["unexpected"] = "pretend success"
