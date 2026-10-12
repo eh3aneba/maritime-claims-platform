@@ -80,6 +80,78 @@ Keep strict/up-to-date checks enabled, **enforce required checks on creation** (
 
 The current GitHub connector used for repository work does not expose ruleset administration writes, so workflow preparation and evidence can be completed here, but the final ruleset mutation must be performed through an authorized GitHub admin surface.
 
+## Optional guarded Admin CLI for the 4→11 change (local operator only)
+
+GitHub [documents](https://docs.github.com/en/rest/repos/rules?apiVersion=2022-11-28)
+the repository-ruleset `PUT /repos/{owner}/{repo}/rulesets/{ruleset_id}`
+API with repository **Administration (write)** permission. The connected
+assistant GitHub integration does **not** have a ruleset-write action.
+The following script is intended for an **authorized repository Admin to
+run locally**, never in public CI. It defaults to **read-only dry run** and
+only targets the existing `Protect main` ruleset ID `20842512`.
+
+First identify a **fresh, open, same-repository PR** to `main` with
+all 11 expected exact-head GitHub Actions check contexts green. Use a
+short-lived Admin token only in the controlled shell's environment.
+Do not put the token in command arguments, log artifacts, Git, or Issue
+comments. For example:
+
+```bash
+# GITHUB_TOKEN is supplied through a secure local credential facility,
+# NOT assigned in source code or entered in a command transcript.
+python scripts/pilot_ruleset_admin_activation.py \
+  --pr "<fresh-open-proof-PR-number>" \
+  --sha "<independently-confirmed-exact-40-character-PR-head>" \
+  --output /secure/pilot-releases/main-protect-admin-preview.json
+```
+
+The **preview** re-fetches the exact current open PR and complete
+paginated check-run metadata; checks all 11 unique green names and
+the pre-existing active four-context protection with zero bypass,
+strict checks, squash-only, linear history, deletion/non-fast-forward
+protections and attribution/review constraints. It emits a **private,
+exclusive non-secret record** with `ruleset_update_sent=false`.
+It does **not** call `PUT`.
+
+After obtaining an approved change ticket, an authorized Admin may
+choose to run the following explicit **write** operation during a
+controlled repository-change window, with no concurrent branch-policy
+edits:
+
+```bash
+python scripts/pilot_ruleset_admin_activation.py \
+  --pr "<same-fresh-current-open-proof-PR-number>" \
+  --sha "<independently-confirmed-current-PR-head>" \
+  --apply \
+  --confirm-ruleset-id 20842512 \
+  --ticket "ticket://approved-internal-change-reference" \
+  --output /secure/pilot-releases/main-protect-admin-activation.json
+```
+
+The Admin tool refuses an unknown ruleset, unexpected number/names of
+existing required checks, unsafe existing policy, non-green exact
+open-PR evidence, unexpected additional checks, reused output path,
+invalid ticket or wrong explicit ID. It adds **only the seven** stable
+contexts to the existing four, copies **all other rules and settings
+unchanged**, re-fetches the live ruleset immediately before writing
+and rejects observed drift. Because the GitHub PUT endpoint is not an
+atomic compare-and-swap, execute within an authorized Admin freeze
+window with no concurrent ruleset editors.
+
+A successful PUT must be followed by a fresh independent `GET`
+readback confirming all 11 required contexts and unchanged safety
+properties. If write/readback fails, the tool reports **NO-GO**;
+the Admin must review live settings manually before retrying; do
+**not** blindly retry or create a duplicate ruleset. The tool never
+reports `customer_pilot_authorized=true` or asserts that a deliberately
+failing required check has been blocked.
+
+Finally run the existing independent `pilot_ruleset_evidence.py`
+readback and the disposable **red→blocked→green** enforcement test
+described above. **Until both succeed, Issue #461 and real-data Pilot
+remain NO-GO**. Prefer the GitHub Admin web UI instead if your
+organization forbids privileged local API scripts.
+
 ## Read-only, independently reviewable Protect main API observation
 
 A local, standard-library helper can read the currently active repository ruleset **without modifying GitHub permissions or protection**. It produces a new exclusive JSON snapshot; failures, missing required contexts, extra contexts, policy drift, or API errors are **NO-GO**. The committed synthetic unit tests exercise full protection, today's four-context failure, tampering, malformed API data and secret-safe error output.
