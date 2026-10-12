@@ -21,7 +21,13 @@ from pilot_ruleset_evidence import (
     EXPECTED_CONTEXTS, EvidenceError, evaluate as evaluate_ruleset,
     fetch as fetch_ruleset,
 )
-from pilot_ruleset_admin_activation import REPO, RULESET_ID, ORIGINAL
+# Keep this reader independent of the unmerged Admin write utility (#705).
+REPO = "eh3aneba/maritime-claims-platform"
+RULESET_ID = 20842512
+ORIGINAL = frozenset((
+    "Backend tests", "PostgreSQL migration chain",
+    "Frontend typecheck and build", "Docker Compose validation",
+))
 
 NEW_CONTEXTS = frozenset(EXPECTED_CONTEXTS - ORIGINAL)
 SCHEMA = "mcri-pilot-required-check-negative-observation-v1"
