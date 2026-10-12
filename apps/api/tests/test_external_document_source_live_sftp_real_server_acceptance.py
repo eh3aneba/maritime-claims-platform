@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import os
 import socket
@@ -7,6 +9,7 @@ import subprocess
 import threading
 import time
 
+import paramiko
 import pytest
 
 from app.modules.external_document_sources.live_sftp_adapters import LiveSftpRuntime
@@ -614,3 +617,67 @@ def test_real_openssh_permission_denied_read_fails_closed() -> None:
     assert read.remote_write_performed is False
     assert read.remote_delete_performed is False
     assert read.command_executed is False
+
+
+def test_real_openssh_sftp_principal_cannot_write_rename_delete_or_mkdir() -> None:
+    """Actual server-side ACL, not just a client-side read-only flag.
+
+    Against the controlled *ephemeral loopback-only* OpenSSH server, use
+    the exact synthetic password identity to request forbidden remote
+    mutations. Every mutation must be rejected at the server filesystem
+    permission boundary, including in the nested directory. The original
+    synthetic content must remain readable and unchanged.
+    """
+    host, port, username, password, root = _settings()
+    assert (host, port, username, root) == (
+        "127.0.0.1", 2222, "mcri-sftp-ci", "/home/mcri-sftp-ci/evidence"
+    )
+    expected_pin = os.environ["MCRI_REAL_SFTP_FINGERPRINT"]
+    # The independent test client also validates the exact OpenSSH server key
+    # before authenticating. No AutoAddPolicy or disabling host-key checks.
+    with paramiko.Transport((host, port)) as transport:
+        transport.start_client(timeout=3)
+        key = transport.get_remote_server_key()
+        assert key.get_name() == "ssh-ed25519"
+        observed_pin = "SHA256:" + base64.b64encode(
+            hashlib.sha256(key.asbytes()).digest()
+        ).decode("ascii").rstrip("=")
+        assert observed_pin == expected_pin
+        transport.auth_password(username=username, password=password)
+        assert transport.is_authenticated()
+        sftp = paramiko.SFTPClient.from_transport(transport)
+        assert sftp is not None
+        try:
+            source = f"{root}/survey.txt"
+            expected_bytes = b"controlled-real-sftp-evidence\n"
+            with sftp.open(source, "rb") as handle:
+                assert handle.read() == expected_bytes
+            original = sftp.stat(source)
+            for mutation in (
+                lambda: sftp.open(f"{root}/forbidden-created.txt", "wb"),
+                lambda: sftp.open(source, "r+b"),
+                lambda: sftp.mkdir(f"{root}/forbidden-directory"),
+                lambda: sftp.open(
+                    f"{root}/empty-folder/forbidden-created.txt", "wb"
+                ),
+                lambda: sftp.remove(source),
+                lambda: sftp.rename(
+                    source, f"{root}/forbidden-renamed.txt"
+                ),
+            ):
+                with pytest.raises(OSError):
+                    mutation()
+                with sftp.open(source, "rb") as handle:
+                    assert handle.read() == expected_bytes
+            still_there = sftp.stat(source)
+            assert still_there.st_size == original.st_size
+            assert still_there.st_mtime == original.st_mtime
+            # No failure attempt may create a file in either read-only dir.
+            assert "forbidden-created.txt" not in sftp.listdir(root)
+            assert "forbidden-directory" not in sftp.listdir(root)
+            assert "forbidden-renamed.txt" not in sftp.listdir(root)
+            assert "forbidden-created.txt" not in sftp.listdir(
+                f"{root}/empty-folder"
+            )
+        finally:
+            sftp.close()
