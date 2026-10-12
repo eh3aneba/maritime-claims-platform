@@ -127,6 +127,24 @@ The emitted record always includes
 and `pilot_authorized=false`. If another commit lands on the proof PR,
 discard the old readback and rerun with its new head.
 
+### GitHub check-run pagination: observed 101 jobs on #703 (2026-10-12)
+
+The merged #703 exact PR head `72ef8704ff53eb20d8c2d7cf558141a44cfa41b3`
+had **101** `/commits/{sha}/check-runs` records. GitHub's
+`per_page=100` response omitted **`PostgreSQL migration chain`** from
+page 1; its sole successful exact-head check was on page 2. A manual
+first-page-only readback would incorrectly report **10/11**, or a checker
+could silently miss a duplicate required name on a subsequent page.
+The bounded `pilot_required_check_preflight.py` reads until its declared
+total count is fully retrieved and fails closed on missing pages. Its offline
+tests cover the 101-record positive case, truncated second page and
+cross-page duplicate required context.
+
+That merged PR is historical proof of *emission*, not a live-open-PR
+preactivation artifact: before changing the ruleset, use a fresh
+**open** current-main PR and independently check its exact HEAD, then
+verify the actual ruleset after the Admin edit.
+
 ### Admin-only changes (not executed by this repository tool)
 
 1. Through authorized GitHub repository **Settings → Rules → Rulesets →
