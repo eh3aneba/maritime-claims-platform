@@ -153,6 +153,21 @@ def execute(*, pr: int, sha: str, apply: bool, ticket: str | None,
         if (_fingerprint(fresh_detail) != _fingerprint(detail)
                 or make_proposal(fresh_list, fresh_detail, check_record) != proposal):
             raise ActivationError("ruleset drifted before proposed update")
+        # Also recheck that the exact proof PR remains open and on the
+        # identical head after the Admin approval/review window.
+        try:
+            fresh_pr, fresh_runs = fetch_checks(
+                repo=REPO, pr_number=pr, sha=sha, token=token,
+            )
+            fresh_record = evaluate_checks(
+                fresh_pr, fresh_runs, repo=REPO, pr_number=pr,
+                exact_sha=sha,
+            )
+        except GatePreflightError:
+            raise ActivationError("open proof PR changed before update") from None
+        if (not fresh_record["all_required_checks_green"]
+                or fresh_record["expected_checks"] != check_record["expected_checks"]):
+            raise ActivationError("proof check identities changed before update")
         _write_ruleset(proposal, token or "")
         changed = True
         # Successful PUT by itself is not 11/11 proof: read back separately.
