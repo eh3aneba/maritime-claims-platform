@@ -73,7 +73,10 @@ def _timestamp(value: str) -> bool:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
         return False
-    return parsed.tzinfo == timezone.utc and parsed.isoformat(timespec="seconds").endswith("+00:00")
+    return (
+        parsed.tzinfo == timezone.utc
+        and parsed.strftime("%Y-%m-%dT%H:%M:%SZ") == value
+    )
 
 
 def validate(record: object, expected_sha: str) -> list[str]:
