@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import socket
+import subprocess
 import threading
 import time
 
@@ -469,6 +470,90 @@ def test_real_openssh_authenticated_partial_read_transport_drop_discards_all_byt
         "next_read_attempted": True,
     }
     assert result.failure_code == "read_failed"
+    assert result.content is None
+    assert result.content_read_count == 0
+    assert result.remote_stat_performed is True
+    assert result.remote_read_performed is True
+    assert result.remote_write_performed is False
+    assert result.remote_rename_performed is False
+    assert result.remote_delete_performed is False
+    assert result.command_executed is False
+
+
+def test_real_openssh_same_size_inplace_rewrite_during_read_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Detect a genuine OpenSSH opened-file metadata drift during streaming.
+
+    A CI-only local-host fixture write is injected after the FIRST genuine
+    server-served chunk. The production SFTP client itself has read-only
+    authority and must not return any bytes after the SAME opened handle's
+    post-read fstat discovers a changed mtime. This is a reproducible
+    controlled server-side change, not a proof against unchanged metadata.
+    """
+    runtime = _runtime()
+    fingerprint = _fingerprint(runtime)
+    host, _port, username, _password, root = _settings()
+    assert host == "127.0.0.1"
+    assert username == "mcri-sftp-ci"
+    assert root == "/home/mcri-sftp-ci/evidence"
+    fixture_path = root + "/inplace-drift.txt"
+    observed = {"opened": False, "first_chunk": False, "fixture_rewritten": False}
+    original_open_session = runtime._open_session
+
+    def open_with_fixture_mutation(**kwargs):
+        session = original_open_session(**kwargs)
+        assert session.transport.is_authenticated()
+        original_open = session.sftp.open
+
+        def open_with_first_chunk_mutation(*args, **kwargs):
+            handle = original_open(*args, **kwargs)
+            observed["opened"] = True
+            real_read = handle.read
+
+            def read_and_rewrite(size):
+                chunk = real_read(size)
+                if chunk and not observed["fixture_rewritten"]:
+                    observed["first_chunk"] = True
+                    # Root fixture modification occurs ONLY on the disposable
+                    # runner host, never via the production SFTP connection.
+                    # Preserve inode and byte length; force an unambiguous
+                    # mtime difference independent of timestamp granularity.
+                    local_mutation = (
+                        "import os, sys\n"
+                        "p = sys.argv[1]\n"
+                        "before = os.stat(p)\n"
+                        "assert before.st_size == 64\n"
+                        "with open(p, 'r+b') as stream:\n"
+                        "    stream.write(b'Z' * 64)\n"
+                        "    stream.flush()\n"
+                        "    os.fsync(stream.fileno())\n"
+                        "os.utime(p, ns=(before.st_atime_ns, before.st_mtime_ns + 120_000_000_000))\n"
+                    )
+                    subprocess.run(
+                        ["sudo", "python3", "-c", local_mutation, fixture_path],
+                        check=True, capture_output=True, timeout=10,
+                    )
+                    observed["fixture_rewritten"] = True
+                return chunk
+
+            monkeypatch.setattr(handle, "read", read_and_rewrite)
+            return handle
+
+        monkeypatch.setattr(session.sftp, "open", open_with_first_chunk_mutation)
+        return session
+
+    monkeypatch.setattr(runtime, "_open_session", open_with_fixture_mutation)
+    result = runtime.read_content(
+        _read_request(fingerprint, relative="inplace-drift.txt",
+                      max_content_bytes=1024)
+    )
+    assert observed == {
+        "opened": True,
+        "first_chunk": True,
+        "fixture_rewritten": True,
+    }
+    assert result.failure_code == "opened_file_changed"
     assert result.content is None
     assert result.content_read_count == 0
     assert result.remote_stat_performed is True
