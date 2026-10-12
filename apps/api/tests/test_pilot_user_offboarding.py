@@ -1,10 +1,12 @@
 """Tenant-scoped pilot user deactivation acceptance (synthetic identities)."""
 from __future__ import annotations
 
+from app.core.security import create_access_token
 from app.modules.audit.models import AuditLog
 from app.modules.auth import mfa
 from app.modules.auth.models import AuthSession
-from app.modules.users.models import User
+from app.modules.auth.service import create_auth_session
+from app.modules.users.models import User, UserRole
 from tests.db_harness import TestingSessionLocal, client, reset_database
 from tests.test_auth_session_assurance import _login, _seed_users, _test_password
 
@@ -139,3 +141,54 @@ def test_cross_tenant_self_unprivileged_and_unconfirmed_denied(monkeypatch):
         assert db.get(User, outside_id).is_active is True
         assert db.get(AuthSession, sid).revoked_at is None
         assert db.get(AuthSession, admin_sid).revoked_at is None
+
+
+def test_external_identity_session_and_delayed_token_fail_after_deactivation(monkeypatch):
+    org_id, _admin, target_id, _other_org, _other_admin = _seed_users()
+    headers, _admin_sid = _verified_admin(monkeypatch)
+    with TestingSessionLocal() as db:
+        target = db.get(User, target_id)
+        assert target is not None
+        external = create_auth_session(
+            db, user=target, identity_source="oidc", auth_method="oidc"
+        )
+        db.commit()
+        external_sid = external.id
+    external_token = create_access_token(
+        user_id=target_id, organization_id=org_id,
+        role=UserRole.CLAIMS_HANDLER.value, session_id=external_sid,
+        identity_source="oidc", auth_method="oidc",
+    )
+    response = _deactivate(headers, target_id)
+    assert response.status_code == 200, response.text
+    assert response.json()["sessions_revoked"] == 1
+    assert response.json()["external_identity_deprovisioned"] is False
+    with TestingSessionLocal() as db:
+        assert db.get(AuthSession, external_sid).revoked_at is not None
+    assert client.get(
+        "/api/v1/auth/me",
+        headers={"Authorization": f"Bearer {external_token}"},
+    ).status_code == 401
+
+    # Even if a delayed callback created a server-side session after the
+    # deactivation commit, inactive app membership denies the new token.
+    with TestingSessionLocal() as db:
+        target = db.get(User, target_id)
+        delayed = create_auth_session(db, user=target)
+        db.commit()
+        delayed_sid = delayed.id
+    delayed_token = create_access_token(
+        user_id=target_id, organization_id=org_id,
+        role=UserRole.CLAIMS_HANDLER.value, session_id=delayed_sid,
+        identity_source="local", auth_method="password",
+    )
+    assert client.get(
+        "/api/v1/auth/me",
+        headers={"Authorization": f"Bearer {delayed_token}"},
+    ).status_code == 401
+    replay = _deactivate(headers, target_id, ticket="pilot-offboard-004")
+    assert replay.status_code == 200
+    assert replay.json()["newly_deactivated"] is False
+    assert replay.json()["sessions_revoked"] == 1
+    with TestingSessionLocal() as db:
+        assert db.get(AuthSession, delayed_sid).revoked_at is not None
