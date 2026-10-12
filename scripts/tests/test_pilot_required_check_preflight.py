@@ -133,5 +133,85 @@ class CheckNamesPreflightTests(unittest.TestCase):
         self.assertTrue(record["all_required_checks_green"])
 
 
+    def test_101_check_runs_with_required_migration_on_page_two(self):
+        """The exact #703 check list had 101 entries, including a page-2 gate."""
+        from unittest.mock import patch
+        pr, checks = sample()
+        migration = next(x for x in checks if x["name"] == "PostgreSQL migration chain")
+        first = [x for x in checks if x is not migration]
+        first += [{"name": f"Backend tests shard {i}"} for i in range(90)]
+        self.assertEqual(len(first), 100)
+        called = []
+
+        def request(url, *, token):
+            called.append(url)
+            if url.endswith(f"/pulls/{NUMBER}"):
+                return pr
+            if "page=1" in url:
+                return {"total_count": 101, "check_runs": first}
+            if "page=2" in url:
+                return {"total_count": 101, "check_runs": [migration]}
+            self.fail("unexpected API page")
+
+        with patch.object(proof, "_request_json", side_effect=request):
+            observed_pr, runs = proof.fetch(
+                repo=REPO, pr_number=NUMBER, sha=SHA, token=None,
+            )
+        result = proof.evaluate(
+            observed_pr, runs, repo=REPO, pr_number=NUMBER, exact_sha=SHA,
+        )
+        self.assertEqual(len(called), 3)
+        self.assertEqual(len(runs), 101)
+        self.assertEqual(result["exact_name_contexts_present"], 11)
+        self.assertTrue(result["all_required_checks_green"])
+
+    def test_truncated_second_page_rejected(self):
+        from unittest.mock import patch
+        pr, checks = sample()
+        first = list(checks) + [{"name": f"optional-{i}"} for i in range(89)]
+        self.assertEqual(len(first), 100)
+
+        def request(url, *, token):
+            if url.endswith(f"/pulls/{NUMBER}"):
+                return pr
+            if "page=1" in url:
+                return {"total_count": 101, "check_runs": first}
+            if "page=2" in url:
+                return {"total_count": 101, "check_runs": []}
+            self.fail("unexpected API page")
+
+        with patch.object(proof, "_request_json", side_effect=request):
+            with self.assertRaises(proof.GatePreflightError):
+                proof.fetch(repo=REPO, pr_number=NUMBER, sha=SHA, token=None)
+
+    def test_duplicate_required_context_hidden_on_second_page_fails_closed(self):
+        from unittest.mock import patch
+        pr, checks = sample()
+        first = list(checks) + [{"name": f"optional-{i}"} for i in range(89)]
+        dup = deepcopy(checks[0])
+        dup["id"] = 100001
+
+        def request(url, *, token):
+            if url.endswith(f"/pulls/{NUMBER}"):
+                return pr
+            if "page=1" in url:
+                return {"total_count": 101, "check_runs": first}
+            if "page=2" in url:
+                return {"total_count": 101, "check_runs": [dup]}
+            self.fail("unexpected API page")
+
+        with patch.object(proof, "_request_json", side_effect=request):
+            observed_pr, runs = proof.fetch(
+                repo=REPO, pr_number=NUMBER, sha=SHA, token=None,
+            )
+        result = proof.evaluate(
+            observed_pr, runs, repo=REPO, pr_number=NUMBER, exact_sha=SHA,
+        )
+        self.assertFalse(result["all_required_checks_green"])
+        self.assertEqual(
+            result["expected_checks"][checks[0]["name"]]["outcome"], "ambiguous"
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
