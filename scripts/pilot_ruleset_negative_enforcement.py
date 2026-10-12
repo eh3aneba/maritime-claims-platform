@@ -50,8 +50,12 @@ def evaluate(*, listed: object, ruleset: object, pr: object, runs: object,
             or pr.get("draft") is not False
             or pr.get("mergeable") is not True
             or pr.get("mergeable_state") != ("blocked" if phase == "red" else "clean")
+            or not isinstance(ruleset, dict)
+            or not isinstance(ruleset.get("updated_at"), str)
+            or not ruleset["updated_at"]
             or not isinstance(pr.get("base"), dict)
-            or not SHA.fullmatch(pr["base"].get("sha", ""))
+            or not isinstance(pr["base"].get("sha"), str)
+            or not SHA.fullmatch(pr["base"]["sha"])
             or not isinstance(pr.get("head"), dict)
             or not isinstance(pr["head"].get("ref"), str)
             or not pr["head"]["ref"]):
@@ -121,6 +125,10 @@ def compare(red: object, green: object) -> dict:
                 or record["target_check_run_id"] < 1
                 or not isinstance(record["pr_head_ref"], str)
                 or not record["pr_head_ref"]
+                or not isinstance(record["ruleset_updated_at"], str)
+                or not record["ruleset_updated_at"]
+                or not isinstance(record["pr_head_sha"], str)
+                or not isinstance(record["pr_base_sha"], str)
                 or not SHA.fullmatch(record["pr_head_sha"])
                 or not SHA.fullmatch(record["pr_base_sha"])
                 or record["eleven_required_contexts_observed"] is not True
