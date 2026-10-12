@@ -147,9 +147,9 @@ class CheckNamesPreflightTests(unittest.TestCase):
             called.append(url)
             if url.endswith(f"/pulls/{NUMBER}"):
                 return pr
-            if "page=1" in url:
+            if url.endswith("&page=1"):
                 return {"total_count": 101, "check_runs": first}
-            if "page=2" in url:
+            if url.endswith("&page=2"):
                 return {"total_count": 101, "check_runs": [migration]}
             self.fail("unexpected API page")
 
@@ -174,9 +174,9 @@ class CheckNamesPreflightTests(unittest.TestCase):
         def request(url, *, token):
             if url.endswith(f"/pulls/{NUMBER}"):
                 return pr
-            if "page=1" in url:
+            if url.endswith("&page=1"):
                 return {"total_count": 101, "check_runs": first}
-            if "page=2" in url:
+            if url.endswith("&page=2"):
                 return {"total_count": 101, "check_runs": []}
             self.fail("unexpected API page")
 
@@ -194,9 +194,9 @@ class CheckNamesPreflightTests(unittest.TestCase):
         def request(url, *, token):
             if url.endswith(f"/pulls/{NUMBER}"):
                 return pr
-            if "page=1" in url:
+            if url.endswith("&page=1"):
                 return {"total_count": 101, "check_runs": first}
-            if "page=2" in url:
+            if url.endswith("&page=2"):
                 return {"total_count": 101, "check_runs": [dup]}
             self.fail("unexpected API page")
 
