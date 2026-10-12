@@ -120,8 +120,20 @@ jobs:
           sudo mkdir -p "$MCRI_REAL_SFTP_ROOT/empty-folder"
           sudo chown -R "$MCRI_REAL_SFTP_USERNAME:$MCRI_REAL_SFTP_USERNAME" \
             "/home/$MCRI_REAL_SFTP_USERNAME"
-          sudo chmod 0750 "/home/$MCRI_REAL_SFTP_USERNAME" "$MCRI_REAL_SFTP_ROOT"
-          sudo chmod 0640 "$MCRI_REAL_SFTP_ROOT/survey.txt" "$MCRI_REAL_SFTP_ROOT/oversized.bin" "$MCRI_REAL_SFTP_ROOT/inplace-drift.txt"
+          # Leave only the login home/.ssh with the SFTP account. Readable
+          # synthetic Evidence belongs to root, grouped for read-only access.
+          # This prevents writes even if a future client accidentally sends
+          # write, remove, rename or mkdir operations over SFTP.
+          sudo chown root:"$MCRI_REAL_SFTP_USERNAME" \
+            "$MCRI_REAL_SFTP_ROOT" "$MCRI_REAL_SFTP_ROOT/empty-folder" \
+            "$MCRI_REAL_SFTP_ROOT/survey.txt" \
+            "$MCRI_REAL_SFTP_ROOT/oversized.bin" \
+            "$MCRI_REAL_SFTP_ROOT/inplace-drift.txt"
+          sudo chmod 0750 "/home/$MCRI_REAL_SFTP_USERNAME" \
+            "$MCRI_REAL_SFTP_ROOT" "$MCRI_REAL_SFTP_ROOT/empty-folder"
+          sudo chmod 0640 "$MCRI_REAL_SFTP_ROOT/survey.txt" \
+            "$MCRI_REAL_SFTP_ROOT/oversized.bin" \
+            "$MCRI_REAL_SFTP_ROOT/inplace-drift.txt"
 
           # Deliberately unreadable synthetic fixture. The remote SFTP user may
           # see its metadata but must not receive its bytes.
