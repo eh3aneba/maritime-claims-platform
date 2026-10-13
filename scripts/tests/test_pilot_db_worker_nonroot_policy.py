@@ -16,7 +16,7 @@ class WorkerRuntimeTests(unittest.TestCase):
         content = (ROOT / "docker-compose.yml").read_text()
         for name in NAMES:
             with self.subTest(name=name):
-                section = re.split(r"(?m)^  [a-z][a-z0-9-]*:\\s*$", content.split("  " + name + ":\n", 1)[1], maxsplit=1)[0]
+                section = re.split(r"(?m)^  [a-z][a-z0-9-]*:$", content.split("  " + name + ":\n", 1)[1], maxsplit=1)[0]
                 self.assertIn('user: "1000:1000"', section)
                 self.assertIn("cap_drop:\n      - ALL", section)
                 self.assertIn("no-new-privileges:true", section)
