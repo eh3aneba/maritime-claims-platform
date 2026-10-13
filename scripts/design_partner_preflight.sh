@@ -19,10 +19,18 @@ if grep -q 'REPLACE_WITH_' "$ENV_FILE"; then
   exit 1
 fi
 
-set -a
-# shellcheck disable=SC1090
-source "$ENV_FILE"
-set +a
+# Never 'source' an operator .env: that evaluates shell expressions before
+# the demo seed gate can reject them. The restricted Python loader validates
+# the private file and emits NUL-delimited literal assignments.
+umask 077
+MCRI_ENV_ASSIGNMENTS="$(mktemp)"
+trap 'rm -f -- "$MCRI_ENV_ASSIGNMENTS"' EXIT
+python scripts/pilot_demo_env_loader.py "$ENV_FILE" > "$MCRI_ENV_ASSIGNMENTS"
+while IFS= read -r -d '' assignment; do
+  export "$assignment"
+done < "$MCRI_ENV_ASSIGNMENTS"
+rm -f -- "$MCRI_ENV_ASSIGNMENTS"
+trap - EXIT
 
 : "${MCRI_DEMO_PASSWORD:?MCRI_DEMO_PASSWORD must be set in $ENV_FILE}"
 if [[ ${#MCRI_DEMO_PASSWORD} -lt 12 ]]; then
