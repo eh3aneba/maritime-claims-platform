@@ -90,7 +90,7 @@ def main(argv: list[str] | None = None) -> int:
                 for key, value in values.items():
                     # Parser rejects quotes, backslashes, dollars, controls.
                     # Double-quoting all values retains literal whitespace/#.
-                    stream.write(f'{key}="{value}"\\n')
+                    stream.write(f'{key}="{value}"\n')
     except (SyntheticEnvError, DemoSeedGuardError) as exc:
         print("NO-GO: " + str(exc), file=sys.stderr)
         return 2
@@ -100,7 +100,7 @@ def main(argv: list[str] | None = None) -> int:
     # A NUL delimiter makes shell parsing non-evaluating and unambiguous.
     # stdout is secret-bearing: callers MUST NOT log or upload it.
     sys.stdout.buffer.write(b"".join(
-        (key + "=" + value).encode("utf-8") + b"\\0"
+        (key + "=" + value).encode("utf-8") + b"\0"
         for key, value in values.items()
     ))
     return 0
