@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import asyncio
 from io import BytesIO
-import os
 from pathlib import Path
 import stat
 
