@@ -212,6 +212,55 @@ jobs:
           echo "PASS: actual migration image runs as UID/GID 1000 with CapEff=0 and NoNewPrivs=1."
           echo "Not evidence of existing-volume ownership or a real customer host."
 
+      # Use the actual seeded synthetic Evidence volume to prove the
+      # read-only UID 1000 precheck's behavior before any API/OCR user change.
+      # A declared NO-GO for a root-owned legacy mount is the EXPECTED safe
+      # outcome, not permission to chown it or bypass the check.
+      - name: Verify mounted synthetic Evidence volume UID precheck without mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose --env-file .env.performance exec -T api python - <<'PY'
+          try:
+              import stat
+              from pathlib import Path
+              from app.core.config import get_settings
+              from app.core.evidence_volume_uid_audit import (
+                  EvidencePermissionAuditError, _mode_allows, audit_evidence_tree,
+              )
+              settings = get_settings()
+              assert settings.storage_backend.strip().lower() == "local"
+              root = Path(settings.local_storage_path)
+              before = root.lstat()
+              assert stat.S_ISDIR(before.st_mode)
+              root_permissions_compatible = _mode_allows(before, 1000, 1000, 7)
+              result = "pass"
+              try:
+                  assert audit_evidence_tree(root) >= 1
+              except EvidencePermissionAuditError as exc:
+                  result = str(exc)
+              valid_reasons = {
+                  "directory_permissions", "file_permissions",
+                  "unsafe_ancestor", "symlink_detected",
+                  "world_writable_entry", "unsupported_entry",
+                  "scan_limit_exceeded",
+              }
+              assert result == "pass" or result in valid_reasons
+              # If the actual mount is not writable by the proposed UID,
+              # the audit MUST NOT misreport it as compatible.
+              if not root_permissions_compatible:
+                  assert result == "directory_permissions"
+              after = root.lstat()
+              assert (before.st_dev, before.st_ino, before.st_mode,
+                      before.st_uid, before.st_gid) == (
+                      after.st_dev, after.st_ino, after.st_mode,
+                      after.st_uid, after.st_gid)
+              print("PASS: mounted synthetic Evidence metadata precheck is fail-closed.")
+              print("Neither actual UID access nor legacy customer migration is approved.")
+          except Exception:
+              raise SystemExit("NO-GO: mounted synthetic Evidence precheck contract failed")
+          PY
+
       # The real synthetic project is now populated; prove the read-only
       # admission check DENIES it. Never rerun side-effecting demo seed.
       - name: Reject re-seed against live populated Compose project
