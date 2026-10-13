@@ -113,17 +113,32 @@ def restore_and_verify(*, dump: Path, archive: Path, release_sha: str,
                 POSTGRES_IMAGE,
             ], timeout=120)
             started = True
-            ready = False
+            # pg_isready can succeed against the temporary server used by
+            # postgres' entrypoint during initdb. That server is shut down
+            # before PID 1 execs the final postgres daemon; a pg_restore
+            # launched between those two servers can fail spuriously.
+            # Require the final PID 1 executable and two successive SQL
+            # readbacks with a bounded gap. Never retry a failed pg_restore
+            # against a potentially partially written database.
+            consecutive_ready = 0
             for iteration in range(READY_ATTEMPTS):
                 try:
-                    _run(["docker", "exec", name, "pg_isready",
-                          "-U", DB_USER, "-d", DB_NAME], timeout=5)
-                    ready = True
-                    break
+                    is_final_daemon = (
+                        _run(["docker", "exec", name, "cat", "/proc/1/comm"],
+                             timeout=5) == "postgres"
+                    )
+                    if is_final_daemon:
+                        _run(["docker", "exec", name, "pg_isready",
+                              "-U", DB_USER, "-d", DB_NAME], timeout=5)
+                        is_final_daemon = (_query(name, "SELECT 1;") == "1")
+                    consecutive_ready = consecutive_ready + 1 if is_final_daemon else 0
+                    if consecutive_ready >= 2:
+                        break
                 except IndependentRestoreError:
-                    if iteration + 1 < READY_ATTEMPTS:
-                        time.sleep(1)
-            if not ready:
+                    consecutive_ready = 0
+                if iteration + 1 < READY_ATTEMPTS:
+                    time.sleep(1)
+            if consecutive_ready < 2:
                 raise IndependentRestoreError("independent PostgreSQL engine did not become ready")
 
             # pg_restore runs in a completely distinct PostgreSQL process and
