@@ -95,7 +95,7 @@ def observe(*, env_file: Path) -> None:
         raise ExistingStackError("rendered Compose configuration unavailable") from None
     raw_ps = _command([
         "docker", "compose", "--env-file", str(env_file),
-        "ps", "--all", "--format", "json",
+        "-f", "docker-compose.yml", "ps", "--all", "--format", "json",
     ])
     containers = _parse_containers(raw_ps)
     raw_volumes = _command(["docker", "volume", "ls", "--format", "{{.Name}}"])
