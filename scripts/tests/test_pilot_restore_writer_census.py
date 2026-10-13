@@ -183,6 +183,9 @@ class RestoreWriterCensusTests(unittest.TestCase):
         self.assertIn("pid <> pg_backend_pid()", trace)
         self.assertIn("-d mcri_restore_unit_test", trace)
         self.assertIn("dropdb", trace)
+        drop_command = next(line for line in trace.splitlines() if "dropdb" in line)
+        self.assertIn("--if-exists", drop_command)
+        self.assertNotIn("--force", drop_command)
         self.assertLess(trace.index("compose ps --status running --services"), trace.index("dropdb"))
         self.assertIn("pg_restore --list", trace)
 
