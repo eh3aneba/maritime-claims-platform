@@ -30,8 +30,24 @@ class IndependentRestoreError(RuntimeError):
     """Private and bounded; do not expose Postgres diagnostics or credentials."""
 
 
+def _fixed_phase(command: list[str]) -> str:
+    """Derive one bounded operation stage, never expose argv/SQL/secrets."""
+    if command[:2] == ["docker", "run"]:
+        return "container_start"
+    if command[:2] == ["docker", "rm"]:
+        return "container_cleanup"
+    if "pg_isready" in command:
+        return "database_ready"
+    if "pg_restore" in command:
+        return "archive_restore"
+    if "psql" in command:
+        return "sql_readback"
+    return "operation"
+
+
 def _run(command: list[str], *, stdin_file: Path | None = None,
          timeout: int = 120) -> str:
+    phase = _fixed_phase(command)
     try:
         if stdin_file is None:
             result = subprocess.run(command, text=True, capture_output=True,
@@ -42,9 +58,9 @@ def _run(command: list[str], *, stdin_file: Path | None = None,
                                         capture_output=True, timeout=timeout,
                                         check=False)
     except (OSError, subprocess.TimeoutExpired):
-        raise IndependentRestoreError("isolated PostgreSQL operation unavailable") from None
+        raise IndependentRestoreError(f"isolated PostgreSQL {phase} unavailable") from None
     if result.returncode != 0:
-        raise IndependentRestoreError("isolated PostgreSQL operation failed")
+        raise IndependentRestoreError(f"isolated PostgreSQL {phase} failed")
     return result.stdout.strip()
 
 

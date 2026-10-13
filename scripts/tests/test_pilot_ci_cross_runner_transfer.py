@@ -146,6 +146,34 @@ class CrossRunnerTransferTests(unittest.TestCase):
             with self.assertRaises(t.CrossRunnerError):
                 t.pair_valid(t.FIXED_TRANSFER, "b" * 40)
 
+    def test_recovery_error_code_is_allowlisted_and_never_leaks_sensitive_text(self):
+        self.assertEqual(
+            t.safe_restore_reason(t.IndependentRestoreError(
+                "isolated PostgreSQL container_start failed")),
+            "container_start_failed")
+        self.assertEqual(
+            t.safe_restore_reason(t.IndependentRestoreError(
+                "independent PostgreSQL Evidence mismatch")),
+            "evidence_integrity_mismatch")
+        self.assertEqual(
+            t.safe_restore_reason(t.IndependentRestoreError(
+                "private-claim-body /secret/db/password")),
+            "unclassified_error")
+        with fixture() as (dump, archive, manifest):
+            export(dump, archive, manifest)
+            with patch.object(t, "restore_and_verify", side_effect=
+                t.IndependentRestoreError("isolated PostgreSQL archive_restore failed")):
+                with self.assertRaises(t.CrossRunnerError) as caught:
+                    t.verify(root=t.FIXED_TRANSFER, sha=SHA, env=ENV)
+                self.assertIn("archive_restore_failed", str(caught.exception))
+            with patch.object(t, "restore_and_verify", side_effect=
+                t.IndependentRestoreError("private-claim-body /secret/db/password")):
+                with self.assertRaises(t.CrossRunnerError) as caught:
+                    t.verify(root=t.FIXED_TRANSFER, sha=SHA, env=ENV)
+                self.assertIn("unclassified_error", str(caught.exception))
+                self.assertNotIn("private-claim-body", str(caught.exception))
+                self.assertNotIn("/secret/db", str(caught.exception))
+
     def test_synthetic_ci_markers_and_destination_required(self):
         with fixture() as (dump, archive, manifest):
             for field, value in (

@@ -35,6 +35,36 @@ MAX_DUMP = 128 * 1024 * 1024
 MAX_EVIDENCE = 128 * 1024 * 1024
 
 
+# An explicit allowlist of known, locally-authored exception messages. We
+# never print arbitrary exception text, Docker stderr, SQL, or private paths.
+# This preserves the fail-closed gate while distinguishing transient Engine
+# startup from real restored-Document or audit-lineage integrity failure.
+_SAFE_RESTORE_ERRORS = {
+    **{
+        f"isolated PostgreSQL {phase} {outcome}": f"{phase}_{outcome}"
+        for phase in (
+            "container_start", "container_cleanup", "database_ready",
+            "archive_restore", "sql_readback", "operation",
+        )
+        for outcome in ("failed", "unavailable")
+    },
+    "isolated CI PostgreSQL environment guard failed": "environment_guard",
+    "isolated recovery artifacts unavailable": "input_artifacts",
+    "independent PostgreSQL engine did not become ready": "readiness_timeout",
+    "independent PostgreSQL claim or migration changed": "claim_revision_mismatch",
+    "independent PostgreSQL lineage mismatch": "lineage_integrity_mismatch",
+    "independent PostgreSQL Evidence mismatch": "evidence_integrity_mismatch",
+    "no synthetic Documents reconciled independently": "missing_documents",
+}
+
+
+def safe_restore_reason(error: Exception) -> str:
+    """No exception repr, subprocess text, paths or raw SQL cross this bound."""
+    if type(error) is not IndependentRestoreError:
+        return "unclassified_error"
+    return _SAFE_RESTORE_ERRORS.get(str(error), "unclassified_error")
+
+
 class CrossRunnerError(ValueError):
     """Always a fixed private-data-safe message."""
 
@@ -167,8 +197,15 @@ def verify(*, root: Path, sha: str, env: dict[str, str]) -> dict:
             source_lineage=checked_lineage(record["source_lineage"]),
             env=env,
         )
-    except (OSError, ValueError, UnicodeError, IndependentRestoreError):
-        raise CrossRunnerError("separate CI runner recovery verification failed") from None
+    except IndependentRestoreError as exc:
+        raise CrossRunnerError(
+            "separate CI runner recovery verification failed: "
+            + safe_restore_reason(exc)
+        ) from None
+    except (OSError, ValueError, UnicodeError):
+        raise CrossRunnerError(
+            "separate CI runner recovery verification failed: unclassified_error"
+        ) from None
     if (result.get("separate_postgres_engine_restored") is not True
         or result.get("isolated_container_network_disabled") is not True
         or result.get("separate_engine_lineage_families_matched") != len(ALL_TABLES)

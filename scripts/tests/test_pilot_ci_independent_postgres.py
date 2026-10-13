@@ -123,6 +123,33 @@ class IndependentPostgresTests(unittest.TestCase):
                             source_lineage={}, env=env)
                     process.assert_not_called()
 
+    def test_docker_failure_codes_identify_safe_fixed_phase(self):
+        for command, expected in (
+            (["docker", "run", "-d", "postgres:18.4"], "container_start"),
+            (["docker", "exec", "fixed", "pg_isready"], "database_ready"),
+            (["docker", "exec", "fixed", "pg_restore"], "archive_restore"),
+            (["docker", "exec", "fixed", "psql"], "sql_readback"),
+            (["docker", "rm", "-f", "fixed"], "container_cleanup"),
+        ):
+            with self.subTest(expected=expected):
+                response = subprocess.CompletedProcess(
+                    command, 1, "secret-synthetic-sql", "private-password-canary")
+                with patch.object(p.subprocess, "run", return_value=response):
+                    with self.assertRaises(p.IndependentRestoreError) as caught:
+                        p._run(command)
+                self.assertEqual(str(caught.exception),
+                    f"isolated PostgreSQL {expected} failed")
+                self.assertNotIn("private-password-canary", str(caught.exception))
+                self.assertNotIn("secret-synthetic-sql", str(caught.exception))
+
+    def test_unavailable_docker_operation_keeps_safe_phase_only(self):
+        with patch.object(p.subprocess, "run",
+            side_effect=subprocess.TimeoutExpired(["private"], 3)):
+            with self.assertRaises(p.IndependentRestoreError) as caught:
+                p._run(["docker", "exec", "x", "pg_restore"])
+        self.assertEqual(str(caught.exception),
+            "isolated PostgreSQL archive_restore unavailable")
+
     def test_private_docker_failure_text_never_escapes(self):
         completed = subprocess.CompletedProcess(
             ["docker"], 17, stdout="secret-claim-body",

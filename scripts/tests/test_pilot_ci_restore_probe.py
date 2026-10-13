@@ -37,7 +37,7 @@ class RecoveryProbeTests(unittest.TestCase):
                 p.validate_guard(bad_file, bad_env)
         p.validate_guard(".env.performance", ENV)
 
-    def _simulate(self, *, break_at: str = ""):
+    def _simulate(self, *, break_at: str = "", independent_failure: str = ""):
         calls = []
 
         def command(cmd, *, env, stdin_file=None, timeout=180):
@@ -88,11 +88,14 @@ class RecoveryProbeTests(unittest.TestCase):
                  "separate_engine_lineage_families_matched": 7,
                  "separate_engine_lineage_rows_matched": 7,
                  "separate_engine_documents_matched": 1,
-             }):
-            if break_at:
-                with self.assertRaises(p.ProbeError):
+             }) as isolated_restore:
+            if independent_failure:
+                isolated_restore.side_effect = p.IndependentRestoreError(
+                    independent_failure)
+            if break_at or independent_failure:
+                with self.assertRaises(p.ProbeError) as caught:
                     p.observe(env_file=".env.performance", env=ENV)
-                return calls, None
+                return calls, str(caught.exception) if independent_failure else None
             return calls, p.observe(env_file=".env.performance", env=ENV)
 
     def test_synthetic_restore_does_not_change_active_database(self):
@@ -127,6 +130,23 @@ class RecoveryProbeTests(unittest.TestCase):
                               if "createdb" in x or "dropdb" in x or "pg_restore" in x]
         self.assertTrue(all(p.CLONE_DB in x for x in database_mutations))
         self.assertNotIn("synthetic-test-archive", json.dumps(record))
+
+    def test_independent_restore_phase_is_bounded_and_never_leaks(self):
+        for injected, expected in (
+            ("isolated PostgreSQL container_start failed", "container_start_failed"),
+            ("isolated PostgreSQL archive_restore unavailable", "archive_restore_unavailable"),
+            ("independent PostgreSQL lineage mismatch", "lineage_integrity_mismatch"),
+            ("independent PostgreSQL Evidence mismatch", "evidence_integrity_mismatch"),
+            ("credential=supersecret /customer/private/claim", "unclassified_error"),
+        ):
+            with self.subTest(expected=expected):
+                commands, error = self._simulate(independent_failure=injected)
+                self.assertIn("isolated second-engine", error)
+                self.assertIn(expected, error)
+                self.assertNotIn("supersecret", error)
+                self.assertNotIn("/customer", error)
+                self.assertTrue(any("dropdb" in command for command in commands))
+                self.assertFalse(any("restore_postgres.sh" in command for command in commands))
 
     def test_quiescence_failure_aborts_before_any_backup_or_clone(self):
         commands, _ = self._simulate(break_at="unexpected_running")
