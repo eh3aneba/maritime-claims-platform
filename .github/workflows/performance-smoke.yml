@@ -121,6 +121,23 @@ jobs:
                 -e 's/^User:.*/User: [redacted]/' \
                 -e 's/^Claim:.*/Claim: [synthetic-seed-verified]/'
 
+      # The real synthetic project is now populated; prove the read-only
+      # admission check DENIES it. Never rerun side-effecting demo seed.
+      - name: Reject re-seed against live populated Compose project
+        run: |
+          set -euo pipefail
+          set +e
+          outcome="$(python scripts/pilot_demo_empty_stack.py --env-file .env.performance 2>&1)"
+          exit_status=$?
+          set -e
+          if [ "$exit_status" -ne 2 ] || \
+             [ "$outcome" != "NO-GO: Compose project already contains containers" ]; then
+            echo "::error::Live synthetic pre-seed refusal was not proven (unexpected result)."
+            exit 1
+          fi
+          echo "PASS: already-populated synthetic project rejected by read-only seed guard."
+          echo "Not a proof of host isolation, restore, rollback or Pilot GO."
+
       # This observes the *actual synthetic CI Compose stack* after preflight.
       # It must not start/alter services or substitute for a fresh-host Pilot drill.
       - name: Verify live synthetic Compose service readiness
