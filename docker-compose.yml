@@ -141,6 +141,13 @@ services:
     build:
       context: ./apps/api
       target: base
+    # These database-only workers have no Evidence volume or OCR dependencies.
+    # Do not apply this contract to API, migrate, preflight or document-worker.
+    user: "1000:1000"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     command: ["python", "-m", "app.workers.governance_webhook_worker"]
     environment:
       APP_ENV: ${APP_ENV:-development}
@@ -159,6 +166,13 @@ services:
     build:
       context: ./apps/api
       target: base
+    # These database-only workers have no Evidence volume or OCR dependencies.
+    # Do not apply this contract to API, migrate, preflight or document-worker.
+    user: "1000:1000"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     command: ["python", "-m", "app.workers.external_evidence_scheduler_worker"]
     environment:
       APP_ENV: ${APP_ENV:-development}
@@ -173,6 +187,13 @@ services:
     build:
       context: ./apps/api
       target: base
+    # These database-only workers have no Evidence volume or OCR dependencies.
+    # Do not apply this contract to API, migrate, preflight or document-worker.
+    user: "1000:1000"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     command: ["python", "-m", "app.workers.external_evidence_observation_worker"]
     environment:
       APP_ENV: ${APP_ENV:-development}
@@ -188,6 +209,13 @@ services:
     build:
       context: ./apps/api
       target: base
+    # These database-only workers have no Evidence volume or OCR dependencies.
+    # Do not apply this contract to API, migrate, preflight or document-worker.
+    user: "1000:1000"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     command: ["python", "-m", "app.workers.external_evidence_review_projector_worker"]
     environment:
       APP_ENV: ${APP_ENV:-development}
