@@ -50,14 +50,27 @@ Before any destructive PostgreSQL restore, `scripts/restore_postgres.sh`
 stops the enumerated application services and checks the running Compose
 service inventory. A **nonzero or unavailable `docker compose ps` result**
 is a hard NO-GO; it must **never** be interpreted as “no workers running.”
-The script checks the inventory after stopping writers, after bringing up the
-PostgreSQL maintenance connection, and immediately before `dropdb`.
-Any unexpected service or loss of the required DB process stops the restore
-without dropping the database. Diagnostics intentionally omit raw Docker
-output, hostnames or service names.
+The script checks the Compose inventory after stopping writers, after bringing
+up the PostgreSQL maintenance connection, and immediately before `dropdb`.
+**It also queries PostgreSQL's `pg_stat_activity` directly within the target
+database, excluding only its own read-only inspection session**, after DB
+readiness and again immediately before `dropdb`. Any other connection —
+including clients outside Compose — blocks deletion. A failed, malformed or
+unavailable SQL census is also NO-GO, as is an unexpected Compose service
+or missing DB container. Diagnostics intentionally omit raw Docker/PostgreSQL
+output, connection metadata, hostnames, service names and credentials.
+
+This remains an observation, **not an atomic lock** against a new external
+connection after the final read. Importantly, the destructive `dropdb` also
+runs **without `--force`**, so PostgreSQL itself refuses deletion if a
+new client races in after inspection; the script leaves writers stopped on
+that error. Authorized operators must still control database ingress,
+externally managed workers and maintenance access throughout the restore
+interval. Do not use `dropdb --force` to bypass a live-session refusal.
 
 The accompanying `test_pilot_restore_writer_census.py` uses a fake Docker
-executable and a synthetic archive to cover failures at all three checkpoints.
+executable and a synthetic archive to cover failures at all three Compose checkpoints,
+including foreign PostgreSQL connections and fail-closed SQL inspection failures.
 It does **not** exercise a real host or prove that external writers,
 independent connections or non-Compose applications are quiesced. An operator
 must separately enforce the approved maintenance window and verify actual
