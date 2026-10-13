@@ -37,6 +37,15 @@ if [[ "${*:-}" == "ps --status running --services" && "${1:-}" == "ps" ]]; then
   exit 0
 fi
 
+if [[ " ${*:-} " == *" psql "* && " ${*:-} " == *" pg_stat_activity "* ]]; then
+  if [[ "${FAKE_DB_SESSION_CENSUS_FAIL:-0}" == "1" ]]; then
+    printf 'private-connection-identity-must-never-leak\\n' >&2
+    exit 42
+  fi
+  printf '%s\\n' "${FAKE_DB_SESSION_COUNT:-0}"
+  exit 0
+fi
+
 if [[ " ${*:-} " == *" pg_restore --list "* ]]; then
   cat >/dev/null
   if [[ "${FAKE_ARCHIVE_INVALID:-0}" == "1" ]]; then
@@ -67,6 +76,8 @@ def _run_restore(
     missing_metadata: bool = False,
     wrong_database: bool = False,
     invalid_archive: bool = False,
+    foreign_db_sessions: int = 0,
+    session_census_fails: bool = False,
 ) -> tuple[subprocess.CompletedProcess[str], str]:
     dump = tmp_path / "backup.dump"
     dump.write_bytes(b"fake-custom-format-dump")
@@ -91,6 +102,8 @@ def _run_restore(
     env["FAKE_RUNNING_SERVICES"] = running_services
     env["APP_ENV"] = app_env
     env["POSTGRES_DB"] = "maritime_claims"
+    env["FAKE_DB_SESSION_COUNT"] = str(foreign_db_sessions)
+    env["FAKE_DB_SESSION_CENSUS_FAIL"] = "1" if session_census_fails else "0"
     env.pop("MCRI_RESTORE_PAIR_MANIFEST", None)
     env.pop("MCRI_RESTORE_EVIDENCE_ARCHIVE", None)
     env.pop("MCRI_RESTORE_RELEASE_SHA", None)
@@ -159,6 +172,9 @@ def test_restore_quiesces_all_current_application_services(tmp_path: Path) -> No
     assert " db" not in stop_line
     assert " clamav" not in stop_line
     assert "compose exec -T db dropdb" in log
+    assert log.count("compose exec -T db psql") == 2
+    drop_command = next(line for line in log.splitlines() if " dropdb " in line)
+    assert "--force" not in drop_command
     assert "compose run --rm migrate" in log
     assert "compose run --rm preflight" in log
 
@@ -170,9 +186,28 @@ def test_restore_fails_closed_if_unknown_service_is_still_running(tmp_path: Path
     )
 
     assert result.returncode != 0
-    assert "unexpected Compose services are still running" in result.stderr
-    assert "future-db-writer" in result.stderr
+    assert "Refusing restore: an unapproved Compose writer is running." in result.stderr
+    # Never leak foreign Compose service names or raw Docker diagnostics.
+    assert "future-db-writer" not in result.stderr
     assert "dropdb" not in log
+
+
+def test_external_database_session_refuses_drop_without_forced_disconnect(tmp_path: Path) -> None:
+    result, log = _run_restore(tmp_path, foreign_db_sessions=1)
+    assert result.returncode != 0
+    assert "target database has active sessions or invalid session census" in result.stderr
+    assert log.count("compose exec -T db psql") == 1
+    assert "dropdb" not in log
+    assert "createdb" not in log
+
+
+def test_unavailable_session_census_fails_closed_and_hides_diagnostics(tmp_path: Path) -> None:
+    result, log = _run_restore(tmp_path, session_census_fails=True)
+    assert result.returncode != 0
+    assert "cannot independently check target database sessions" in result.stderr
+    assert "private-connection-identity" not in result.stderr
+    assert "dropdb" not in log
+    assert "createdb" not in log
 
 
 def test_restore_requires_explicit_destructive_confirmation(tmp_path: Path) -> None:
