@@ -92,6 +92,25 @@ require_quiesced_services() {
   done <<< "$observed"
 }
 
+# Compose container inventory alone cannot identify non-Compose SQL clients
+# attached to the target database. Query *within* that DB and exclude ONLY
+# this one read-only inspection backend. Errors/malformed output and any
+# other connection must abort before dropdb; never show raw SQL/PG diagnostics.
+require_no_foreign_db_sessions() {
+  local count
+  if ! count="$(docker compose exec -T db psql \
+      -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At \
+      -c 'SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid();' \
+      2>/dev/null)"; then
+    echo "Refusing restore: cannot independently check target database sessions." >&2
+    return 1
+  fi
+  if [[ "$count" != "0" ]]; then
+    echo "Refusing restore: target database has active sessions or invalid session census." >&2
+    return 1
+  fi
+}
+
 require_quiesced_services
 
 if [[ "$db_running" != "true" ]]; then
@@ -120,6 +139,7 @@ if [[ "$db_running" != "true" ]]; then
   echo "Refusing restore: PostgreSQL is no longer in the approved maintenance set." >&2
   exit 1
 fi
+require_no_foreign_db_sessions
 
 # The database still exists here. Reject tampering, missing sidecars,
 # mismatched target database and invalid pg_restore archive before ANY dropdb.
@@ -136,12 +156,15 @@ if [[ -n "${MCRI_RESTORE_PAIR_MANIFEST:-}" ]]; then
     --manifest "$MCRI_RESTORE_PAIR_MANIFEST"
 fi
 
-# Final writer census immediately before the first destructive database call.
+# Final Compose and PostgreSQL session censuses before ANY destructive call.
+# Maintenance/firewall and outside-Compose ingress must remain controlled by
+# the operator: neither census is an atomic exclusion lock against new writers.
 require_quiesced_services
 if [[ "$db_running" != "true" ]]; then
   echo "Refusing restore: PostgreSQL is no longer in the approved maintenance set." >&2
   exit 1
 fi
+require_no_foreign_db_sessions
 
 echo "Recreating database $POSTGRES_DB..."
 docker compose exec -T db dropdb -U "$POSTGRES_USER" --if-exists --force "$POSTGRES_DB"
