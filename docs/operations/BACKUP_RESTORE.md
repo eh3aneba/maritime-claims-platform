@@ -61,10 +61,12 @@ or missing DB container. Diagnostics intentionally omit raw Docker/PostgreSQL
 output, connection metadata, hostnames, service names and credentials.
 
 This remains an observation, **not an atomic lock** against a new external
-connection after the final read. Authorized operators must additionally
-control database ingress, externally managed workers and maintenance access
-for the entire restore interval; do not rely on `dropdb --force` to
-disconnect unknown clients.
+connection after the final read. Importantly, the destructive `dropdb` also
+runs **without `--force`**, so PostgreSQL itself refuses deletion if a
+new client races in after inspection; the script leaves writers stopped on
+that error. Authorized operators must still control database ingress,
+externally managed workers and maintenance access throughout the restore
+interval. Do not use `dropdb --force` to bypass a live-session refusal.
 
 The accompanying `test_pilot_restore_writer_census.py` uses a fake Docker
 executable and a synthetic archive to cover failures at all three Compose checkpoints,
