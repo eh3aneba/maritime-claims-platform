@@ -42,7 +42,7 @@ def test_save_upload_collision_preserves_original_and_closes_upload(local_store)
     existing = local_store.root / key
     existing.parent.mkdir(parents=True)
     existing.write_bytes(b"historic-claim-evidence")
-    stream = BytesIO(b"new-bytes")
+    stream = BytesIO(b"fresh")
     with pytest.raises(FileExistsError):
         asyncio.run(local_store.save_upload(UploadFile(file=stream, filename="new.pdf"), key))
     assert existing.read_bytes() == b"historic-claim-evidence"
@@ -69,10 +69,10 @@ def test_late_publish_collision_never_overwrites_other_writer(
     monkeypatch.setattr(storage_module.os, "link", concurrent_writer)
     with pytest.raises(FileExistsError):
         if method == "save_bytes":
-            local_store.save_bytes(b"later-write", key)
+            local_store.save_bytes(b"later", key)
         else:
             asyncio.run(local_store.save_upload(
-                UploadFile(file=BytesIO(b"later-write"), filename="raced.pdf"), key
+                UploadFile(file=BytesIO(b"later"), filename="raced.pdf"), key
             ))
     assert injected == [True]
     assert target.read_bytes() == b"concurrent-publisher-wins"
