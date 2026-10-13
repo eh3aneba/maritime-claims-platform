@@ -167,7 +167,9 @@ fi
 require_no_foreign_db_sessions
 
 echo "Recreating database $POSTGRES_DB..."
-docker compose exec -T db dropdb -U "$POSTGRES_USER" --if-exists --force "$POSTGRES_DB"
+# Without --force, PostgreSQL itself refuses a drop if a new client
+# connects after the final read-only census; never kill unknown sessions.
+docker compose exec -T db dropdb -U "$POSTGRES_USER" --if-exists "$POSTGRES_DB"
 docker compose exec -T db createdb -U "$POSTGRES_USER" "$POSTGRES_DB"
 
 echo "Restoring $DUMP..."
