@@ -15,7 +15,8 @@ import re
 import subprocess
 import sys
 
-SCHEMA = "mcri-pilot-rc-v1"
+SCHEMA = "mcri-pilot-rc-v2"
+SFTP_MODES = frozenset(("enabled", "disabled"))
 IMAGES = ("api", "web", "worker", "postgres", "clamav")
 PROOFS = (
     "branch_protection_fail_closed",
@@ -50,6 +51,8 @@ def draft(sha: str) -> dict:
         "environment_id": "",
         "configuration_contract_ref": "",
         "known_limitations_ref": "",
+        # Intentional NO-GO until an operator selects the actual ingestion mode.
+        "features": {"sftp_ingestion": "pending"},
         "images": {key: "" for key in IMAGES},
         "proofs": {
             key: {"result": "pending", "evidence_ref": "", "owner": "", "observed_at_utc": ""}
@@ -85,7 +88,8 @@ def validate(record: object, expected_sha: str) -> list[str]:
         return ["record: JSON object required"]
     expected_keys = {
         "schema", "release_sha", "alembic_head", "environment_id",
-        "configuration_contract_ref", "known_limitations_ref", "images", "proofs",
+        "configuration_contract_ref", "known_limitations_ref", "features",
+        "images", "proofs",
     }
     if set(record) != expected_keys:
         errors.append("record: missing or unexpected top-level fields")
@@ -102,6 +106,13 @@ def validate(record: object, expected_sha: str) -> list[str]:
         errors.append("alembic_head: expected a revision such as 0224_obs_refresh_recovery_anchor")
     for key in ("environment_id", "configuration_contract_ref", "known_limitations_ref"):
         _text(record, key, errors)
+
+    features = record.get("features")
+    if (not isinstance(features, dict) or set(features) != {"sftp_ingestion"}
+        or type(features["sftp_ingestion"]) is not str
+        or features["sftp_ingestion"] not in SFTP_MODES):
+        errors.append("features.sftp_ingestion: explicitly enabled or disabled required")
+    sftp_mode = features.get("sftp_ingestion") if isinstance(features, dict) else None
 
     images = record.get("images")
     if not isinstance(images, dict) or set(images) != set(IMAGES):
@@ -127,8 +138,10 @@ def validate(record: object, expected_sha: str) -> list[str]:
             }:
                 errors.append(f"proofs.{key}: invalid evidence entry")
                 continue
-            if entry["result"] != "pass":
-                errors.append(f"proofs.{key}: independently verified 'pass' required")
+            expected_result = ("not_applicable" if key == "real_sftp_governed_lifecycle"
+                               and sftp_mode == "disabled" else "pass")
+            if entry["result"] != expected_result:
+                errors.append(f"proofs.{key}: '{expected_result}' required for selected feature mode")
             for field in ("evidence_ref", "owner"):
                 if not isinstance(entry[field], str) or not entry[field].strip():
                     errors.append(f"proofs.{key}.{field}: required")
