@@ -204,6 +204,13 @@ services:
       context: ./apps/web
       args:
         NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000/api/v1}
+    # Web listens on unprivileged port 3000 and requires no Linux
+    # capabilities or privilege escalation at runtime. Scoped to Web only;
+    # API/Worker/Evidence-volume UID migration is tracked separately in #487.
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     environment:
       NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000/api/v1}
       HOSTNAME: 0.0.0.0

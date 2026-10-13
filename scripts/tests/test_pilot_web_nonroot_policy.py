@@ -7,6 +7,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[2]
 DOCKERFILE = ROOT / "apps" / "web" / "Dockerfile"
 PERF = ROOT / ".github" / "workflows" / "performance-smoke.yml"
+COMPOSE = ROOT / "docker-compose.yml"
 
 
 class WebLeastPrivilegeContractTests(unittest.TestCase):
@@ -23,6 +24,23 @@ class WebLeastPrivilegeContractTests(unittest.TestCase):
         self.assertIn("chown 1000:1000 /app/.next/cache", runtime)
         self.assertIn("chmod 0700 /app/.next/cache", runtime)
         self.assertNotIn("chown -R 1000:1000 /app", runtime)
+
+    def test_compose_restricts_only_web_linux_privileges(self):
+        source = COMPOSE.read_text(encoding="utf-8")
+        before, web = source.split("\n  web:\n", 1)
+        web = web.split("\n  demo-seed:\n", 1)[0]
+        self.assertIn("    cap_drop:\n      - ALL\n", web)
+        self.assertIn("    security_opt:\n      - no-new-privileges:true\n", web)
+        # This rollout is Web-only: do not suggest other services are hardened.
+        self.assertNotIn("no-new-privileges:true", before)
+        self.assertNotIn("cap_drop:", before)
+
+    def test_live_smoke_inspects_actual_main_process_privileges(self):
+        source = PERF.read_text(encoding="utf-8")
+        self.assertIn("CapEff:", source)
+        self.assertIn("NoNewPrivs:", source)
+        self.assertIn('0000000000000000', source)
+        self.assertGreaterEqual(source.count("/proc/1/status"), 2)
 
     def test_required_live_smoke_checks_effective_uid_and_write_scope(self):
         workflow = PERF.read_text(encoding="utf-8")
