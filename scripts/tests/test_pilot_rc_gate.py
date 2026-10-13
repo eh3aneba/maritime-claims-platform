@@ -15,6 +15,7 @@ STAMP = "2026-10-09T09:30:00Z"
 def complete_record():
     record = draft(SHA)
     record["alembic_head"] = "0224_obs_refresh_recovery_anchor"
+    record["features"]["sftp_ingestion"] = "enabled"
     record["environment_id"] = "synthetic-private-pilot"
     record["configuration_contract_ref"] = "secure-change-record-rc-001"
     record["known_limitations_ref"] = "reviewed-limitations-record-rc-001"
@@ -36,6 +37,52 @@ class PilotRCGateTests(unittest.TestCase):
 
     def test_complete_record_is_structurally_valid_only(self):
         self.assertEqual([], validate(complete_record(), SHA))
+
+    def test_sftp_disabled_requires_explicit_checked_disablement_record(self):
+        record = complete_record()
+        record["features"]["sftp_ingestion"] = "disabled"
+        self.assertTrue(any("real_sftp_governed_lifecycle" in error
+                            for error in validate(record, SHA)))
+        proof = record["proofs"]["real_sftp_governed_lifecycle"]
+        proof["result"] = "not_applicable"
+        # This is only a reviewable operator reference, not host proof.
+        proof["evidence_ref"] = "reviewed-disabled-sftp-config-and-ingestion-controls"
+        self.assertEqual(validate(record, SHA), [])
+        proof["evidence_ref"] = ""
+        self.assertTrue(any("real_sftp_governed_lifecycle.evidence_ref" in error
+                            for error in validate(record, SHA)))
+        proof["evidence_ref"] = "reviewed-disabled-sftp-config-and-ingestion-controls"
+        proof["owner"] = ""
+        self.assertTrue(any("real_sftp_governed_lifecycle.owner" in error
+                            for error in validate(record, SHA)))
+
+    def test_sftp_enabled_never_accepts_not_applicable(self):
+        record = complete_record()
+        record["proofs"]["real_sftp_governed_lifecycle"]["result"] = "not_applicable"
+        self.assertTrue(any("real_sftp_governed_lifecycle" in error
+                            for error in validate(record, SHA)))
+
+    def test_missing_unselected_or_malformed_feature_mode_fails_closed(self):
+        for bad in (
+            "pending", "unknown", "", None, True,
+            "disabled;enabled",
+        ):
+            with self.subTest(bad=bad):
+                record = complete_record()
+                record["features"]["sftp_ingestion"] = bad
+                self.assertTrue(any("features.sftp_ingestion" in error
+                                    for error in validate(record, SHA)))
+        for bad in (None, {}, {"sftp_ingestion": "disabled", "future": "x"}, "disabled"):
+            with self.subTest(malformed=bad):
+                record = complete_record()
+                record["features"] = bad
+                self.assertTrue(any("features.sftp_ingestion" in error
+                                    for error in validate(record, SHA)))
+
+    def test_old_schema_is_rejected_without_migration(self):
+        record = complete_record()
+        record["schema"] = "mcri-pilot-rc-v1"
+        self.assertTrue(any("schema:" in error for error in validate(record, SHA)))
 
     def test_wrong_or_short_commit_fails(self):
         self.assertTrue(validate(complete_record(), "c" * 40))

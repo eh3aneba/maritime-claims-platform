@@ -23,20 +23,37 @@ The operator should first follow the [fresh-host synthetic deployment rehearsal]
 python scripts/pilot_rc_gate.py init --output /secure/pilot-releases/rc-001.json --release-sha "$(git rev-parse HEAD)"
 ```
 
-The file is created exclusively, without overwriting a previous release record. Every proof begins as `pending`, and all image digests, reviewer identities, timestamps and evidence references remain empty until **observed**. Keep the actual record in an access-controlled location, not automatically in the repository.
+The file is created exclusively, without overwriting a previous release record. Every proof begins as `pending`, and all image digests, reviewer identities, timestamps and evidence references remain empty until **observed**. The record now uses schema `mcri-pilot-rc-v2`, with `features.sftp_ingestion=pending` until an authorized operator explicitly selects `enabled` or `disabled`; v1 records cannot be silently reused. Keep the actual record in an access-controlled location, not automatically in the repository.
 
 ## Evidence required before record completion
 
 | Group | Required independent evidence |
 |---|---|
 | Repository protection | Active main ruleset readback **and** disposable failing-required-check proof (#461), not merely merged documentation |
-| Controlled real SFTP | Governed real OpenSSH + real PostgreSQL v1→N+1→next unchanged observation, plus restart/replay (#652/#656) |
+| Controlled real SFTP (conditional) | **If SFTP enabled:** real OpenSSH + PostgreSQL acceptance, changed-file observation and replay (#652/#656) must have `result=pass`. **If SFTP disabled:** use `result=not_applicable` for `real_sftp_governed_lifecycle` with a reviewed **disablement/configuration evidence reference**, owner and UTC observation; never claim live SFTP acceptance. An unset mode remains NO-GO. |
 | Fresh host | Clean deployment, migrations/preflight, browser/operator H&M machinery-claim journey |
 | Recovery | Validated database backup, **matching evidence/storage recovery point**, full restore drill, rollback drill |
 | Operations | Named owner and escalation for worker/queue/scanner/storage/backup-age monitoring; independently exercised [tenant onboarding/offboarding](PILOT_TENANT_LIFECYCLE.md) including MFA/role isolation, legal holds, external integrations and revocation |
 | Exact-head build gates | Full Backend, CI, PostgreSQL concurrency, Supply Chain, Operational Performance and Production Deployment Policy on exact candidate SHA |
 
-Each individual proof must include `result: pass`, an immutable/accessible `evidence_ref`, a responsible `owner`, and UTC `observed_at_utc` in `YYYY-MM-DDTHH:MM:SSZ`. These are human attestations; the command does not attest to their truth.
+Every required proof must include `result: pass`, an immutable/accessible `evidence_ref`, a responsible `owner`, and UTC `observed_at_utc` in `YYYY-MM-DDTHH:MM:SSZ`. **The only exception** is the `real_sftp_governed_lifecycle` proof when `features.sftp_ingestion=disabled`: it must instead be `result: not_applicable` with an independently reviewed **SFTP-disablement** reference and the same owner/timestamp fields. These are human attestations; the command does not attest to their truth.
+
+## Choose the pilot ingestion contract (SFTP disabled or enabled)
+
+Record **explicitly** whether the *specific selected Pilot* enables SFTP.
+After independently reviewing the feature configuration and customer requirements,
+set `features.sftp_ingestion` to `"disabled"` or `"enabled"`.
+
+For **disabled** pilots only, set the SFTP proof's `result` to
+`"not_applicable"` and populate the `evidence_ref`, `owner` and
+`observed_at_utc` fields from the independently reviewed deployment
+configuration/ingestion-scope decision. Do **not** invent a `pass` for real
+OpenSSH testing or treat the record validator as proof the feature is off.
+For an **enabled** pilot, the live SFTP acceptance proof must be
+`"pass"`; `"not_applicable"` is rejected. Any blank, unexpected or missing
+selection, or a mismatched evidence result, is NO-GO. The rest of the
+fresh-host, backup, restore, monitoring, tenant, and governance gates are
+**always required**.
 
 ## Fail-closed completeness check
 
