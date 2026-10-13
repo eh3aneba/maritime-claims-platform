@@ -14,6 +14,10 @@ if ! docker compose version >/dev/null 2>&1; then
   echo "ERROR: Docker Compose v2 is required." >&2
   exit 1
 fi
+# Confirm Docker CLI targets a local socket/pipe and no inherited Compose
+# override can redirect the demo to a different project or remote Engine.
+# Read-only; MUST run before any build, migration, or seed.
+python scripts/pilot_demo_docker_target.py
 if grep -q 'REPLACE_WITH_' "$ENV_FILE"; then
   echo "ERROR: $ENV_FILE still contains REPLACE_WITH_* placeholders." >&2
   exit 1

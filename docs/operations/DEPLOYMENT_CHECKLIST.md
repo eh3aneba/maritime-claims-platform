@@ -6,6 +6,7 @@ Pilot v1 organization admission and exit must follow the controlled [tenant onbo
 
 ## Build and configuration
 
+- [ ] Verify `python scripts/pilot_demo_docker_target.py` uses a local Docker socket/pipe and no inherited `DOCKER_HOST`, `DOCKER_CONTEXT` or Compose destination overrides. A local socket check is not independently verified Docker-host ownership/isolation.
 - [ ] Before the synthetic-only `design_partner_preflight.sh` (which builds/starts containers and seeds MT ORION), an authorized operator independently verifies the host/volumes contain **no customer data** and explicitly adds `MCRI_SYNTHETIC_ONLY_CONFIRM=YES` to the private test environment. `pilot_demo_seed_guard.py` and the read-only `pilot_demo_empty_stack.py` must pass before any Docker-side effects. The latter rejects an existing Compose project container or an existing PostgreSQL/ClamAV/Evidence named volume; it cannot prove the entire host is empty.
 
 - [ ] `.env.pilot.example` copied to `.env` and placeholders replaced.
