@@ -22,7 +22,7 @@ import tempfile
 from pilot_ci_evidence_restore import EvidenceRestoreError, restore_and_reconcile
 from pilot_ci_lineage_reconcile import LineageError, collect_lineage, reconcile
 from pilot_ci_independent_postgres import IndependentRestoreError, restore_and_verify
-from pilot_ci_cross_runner_transfer import CrossRunnerError, export_pair
+from pilot_ci_cross_runner_transfer import CrossRunnerError, export_pair, safe_restore_reason
 
 SHA_RE = re.compile(r"[a-f0-9]{40}\Z")
 TEST_DB = "mcri_performance"
@@ -296,8 +296,13 @@ def observe(*, env_file: str, env: dict[str, str],
                 expected_claim_count=source_count,
                 expected_revision=source_revision,
                 source_lineage=source_lineage, env=env)
-        except IndependentRestoreError:
-            raise ProbeError("isolated second-engine PostgreSQL/Evidence restore failed") from None
+        except IndependentRestoreError as exc:
+            # Same allowlisted, privacy-safe phase mapping as the distinct
+            # runner. Do not echo raw Docker/SQL/stderr or claim data.
+            raise ProbeError(
+                "isolated second-engine PostgreSQL/Evidence restore failed: "
+                + safe_restore_reason(exc)
+            ) from None
 
         # Export ONLY after both DB engines, lineage, paired artifact identity
         # and Evidence bytes have succeeded. This is a distinct GH job's input,
