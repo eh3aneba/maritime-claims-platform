@@ -1,5 +1,6 @@
 """Static policy coverage for selected database-only background services."""
 from pathlib import Path
+import re
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -15,7 +16,7 @@ class WorkerRuntimeTests(unittest.TestCase):
         content = (ROOT / "docker-compose.yml").read_text()
         for name in NAMES:
             with self.subTest(name=name):
-                section = content.split("  " + name + ":\n", 1)[1].split("\n  ", 1)[0]
+                section = re.split(r"(?m)^  [a-z][a-z0-9-]*:\\s*$", content.split("  " + name + ":\n", 1)[1], maxsplit=1)[0]
                 self.assertIn('user: "1000:1000"', section)
                 self.assertIn("cap_drop:\n      - ALL", section)
                 self.assertIn("no-new-privileges:true", section)
