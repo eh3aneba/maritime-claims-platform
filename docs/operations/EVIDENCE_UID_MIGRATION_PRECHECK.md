@@ -34,6 +34,18 @@ quiesced and reversible operator runbook with custody/backups and operator
 signoff, plus real API quarantine/upload/download and OCR Eng/Fas functional
 checks against new and legacy data.
 
+**Synthetic live-stack regression:** The required `Operational Performance Smoke`
+also executes the *same metadata-only audit* inside the actual running API
+container against its mounted, seeded, disposable CI Evidence volume. It
+asserts that a proposed UID/GID 1000 cannot receive a false PASS if the
+actual volume root lacks directory write/traverse permissions, and that
+the root directory's device, inode, mode and owner remain unchanged.
+An explicit fail-closed `directory_permissions` finding is **a successful
+test of the refusal**, not an accepted operational migration or a reason
+to bypass the check. No paths, Evidence filenames or file contents are
+printed. This CI exercise is **not** a customer-host test; it does not
+change the target runtime user or prove the effective UID's real access.
+
 **Limitations:** This is a necessary POSIX mode-bit screening check, **not**
 an effective-UID permissions test. POSIX/NFS ACLs, SELinux/AppArmor,
 supplemental group memberships, mount/idmap policy and race conditions cannot
