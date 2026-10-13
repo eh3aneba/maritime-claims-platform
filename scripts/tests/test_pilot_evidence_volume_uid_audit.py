@@ -29,6 +29,33 @@ class EvidenceUidPrecheckTests(unittest.TestCase):
             entry_limit=limit,
         )
 
+    def test_live_compose_probe_observes_actual_mount_without_chown(self):
+        workflow = (
+            Path(__file__).resolve().parents[2]
+            / ".github/workflows/performance-smoke.yml"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            "Verify mounted synthetic Evidence volume UID precheck without mutation",
+            workflow,
+        )
+        self.assertIn("docker compose --env-file .env.performance exec -T api python -", workflow)
+        for marker in (
+            "Path(settings.local_storage_path)",
+            "audit_evidence_tree(root)",
+            "_mode_allows(before, 1000, 1000, 7)",
+            'result == "directory_permissions"',
+            "before.st_dev, before.st_ino, before.st_mode",
+            "after.st_dev, after.st_ino, after.st_mode",
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, workflow)
+        block = workflow.split(
+            "- name: Verify mounted synthetic Evidence volume UID precheck without mutation",
+            1,
+        )[1].split("\n      - name:", 1)[0]
+        for forbidden in ("chown ", "chmod ", "chown(", "chmod(", "unlink(", "write_bytes("):
+            self.assertNotIn(forbidden, block)
+
     def test_compatible_directory_tree_only_reads_metadata(self):
         sub = self.root / "claim"
         sub.mkdir(mode=0o700)
