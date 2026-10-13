@@ -28,7 +28,7 @@ The rendered Compose ports 5432, 8000 and 3000 must remain loopback-only, and Cl
 
 ## 3. Clean-host startup and bounded synthetic journey
 
-Only after the preceding controls and operator authorization:
+Only after the preceding controls and operator authorization, add `MCRI_SYNTHETIC_ONLY_CONFIRM=YES` **only** to the authorized synthetic rehearsal environment; never add it to customer/production configuration. The `pilot_demo_seed_guard.py` preflight refuses unsafe environment class, remote DB URL, non-loopback API URL, external AI, disabled malware scanning or remote storage. It still cannot establish that existing volumes contain no customer data, so the independently verified **empty-host** prerequisite remains mandatory.
 
 ```bash
 # This command BUILDS/STARTS services and seeds MT ORION.

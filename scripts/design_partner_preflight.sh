@@ -30,6 +30,10 @@ if [[ ${#MCRI_DEMO_PASSWORD} -lt 12 ]]; then
   exit 1
 fi
 
+# No Docker build/start, database migration or MT ORION seed is allowed before
+# explicit synthetic-only confirmation and local, safe test configuration.
+python scripts/pilot_demo_seed_guard.py
+
 echo "[1/6] Validating compose configuration..."
 docker compose --env-file "$ENV_FILE" config >/dev/null
 python scripts/pilot_compose_port_policy.py --env-file "$ENV_FILE"
