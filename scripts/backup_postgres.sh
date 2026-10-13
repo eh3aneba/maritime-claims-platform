@@ -13,26 +13,49 @@ mkdir -p "$OUT_DIR"
 
 SHA_FILE="${OUT}.sha256"
 META_FILE="${OUT}.meta"
-PARTIAL_DUMP="${OUT}.partial.$$"
-PARTIAL_SHA="${SHA_FILE}.partial.$$"
-PARTIAL_META="${META_FILE}.partial.$$"
 
-PUBLISH_STARTED=false
-
-cleanup_partials() {
-  rm -f "$PARTIAL_DUMP" "$PARTIAL_SHA" "$PARTIAL_META"
-  if [[ "$PUBLISH_STARTED" == "true" && ! -e "$OUT" ]]; then
-    rm -f "$SHA_FILE" "$META_FILE"
-  fi
-}
-trap cleanup_partials EXIT
-
+# The early collision check is user feedback, NOT an overwrite guarantee.
+# Publish with atomic same-filesystem hard links below: unlike mv, ln refuses
+# an existing destination even if it appeared after the initial check.
 for target in "$OUT" "$SHA_FILE" "$META_FILE"; do
-  if [[ -e "$target" ]]; then
-    echo "Refusing to overwrite existing backup artifact: $target" >&2
+  if [[ -e "$target" || -L "$target" ]]; then
+    echo "Refusing to overwrite an existing backup artifact." >&2
     exit 1
   fi
 done
+
+PARTIAL_DUMP=""
+PARTIAL_SHA=""
+PARTIAL_META=""
+PUBLISHED_SHA=false
+PUBLISHED_META=false
+PUBLISHED_DUMP=false
+cleanup_partials() {
+  local status=$?
+  # If the final dump is not published, remove ONLY sidecars we created
+  # during this invocation; never delete raced-in unrelated files.
+  if [[ "$PUBLISHED_DUMP" != "true" ]]; then
+    if [[ "$PUBLISHED_SHA" == "true" ]]; then
+      rm -f -- "$SHA_FILE"
+    fi
+    if [[ "$PUBLISHED_META" == "true" ]]; then
+      rm -f -- "$META_FILE"
+    fi
+  fi
+  for partial in "$PARTIAL_DUMP" "$PARTIAL_SHA" "$PARTIAL_META"; do
+    if [[ -n "$partial" ]]; then
+      rm -f -- "$partial"
+    fi
+  done
+  exit "$status"
+}
+trap cleanup_partials EXIT
+
+# mktemp uses exclusive creation and umask 077; predictable PID-based names
+# could otherwise truncate somebody else's earlier interrupted backup.
+PARTIAL_DUMP="$(mktemp "${OUT}.partial.XXXXXXXX")"
+PARTIAL_SHA="$(mktemp "${SHA_FILE}.partial.XXXXXXXX")"
+PARTIAL_META="$(mktemp "${META_FILE}.partial.XXXXXXXX")"
 
 read_alembic_heads() {
   docker compose exec -T db psql \
@@ -109,11 +132,18 @@ dump_file=$DUMP_BASENAME
 dump_sha256=$DUMP_SHA256
 EOF
 
-PUBLISH_STARTED=true
-mv "$PARTIAL_SHA" "$SHA_FILE"
-mv "$PARTIAL_META" "$META_FILE"
-mv "$PARTIAL_DUMP" "$OUT"
+# Same-directory hard-link creation is atomic and refuses any destination
+# that already exists (including a symlink or a file raced in during pg_dump).
+# Publish dump LAST: it is the completion marker for the two sidecars.
+ln -- "$PARTIAL_SHA" "$SHA_FILE"
+PUBLISHED_SHA=true
+ln -- "$PARTIAL_META" "$META_FILE"
+PUBLISHED_META=true
+ln -- "$PARTIAL_DUMP" "$OUT"
+PUBLISHED_DUMP=true
 
+# Remove exclusive temp links but keep all three finished artifacts.
+rm -f -- "$PARTIAL_DUMP" "$PARTIAL_SHA" "$PARTIAL_META"
 trap - EXIT
 
 cat <<EOF
