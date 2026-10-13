@@ -57,6 +57,58 @@ class SafeDemoEnvImportTests(unittest.TestCase):
             self.assertIn(b"MCRI_SYNTHETIC_ONLY_CONFIRM=YES", values)
             self.assertIn(b"OPENAI_API_KEY=", values)
 
+    def test_one_read_produces_private_frozen_compose_snapshot(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "mutable.env"
+            frozen = Path(directory) / "frozen.env"
+            source.write_text(valid_lines(), encoding="utf-8")
+            buffer = io.BytesIO()
+            writer = io.TextIOWrapper(buffer, encoding="utf-8")
+            with patch.object(loader.sys, "stdout", writer):
+                self.assertEqual(
+                    loader.main([str(source), "--snapshot", str(frozen)]), 0
+                )
+            writer.flush()
+            self.assertIn(b"APP_ENV=test\0", buffer.getvalue())
+            self.assertEqual(
+                loader.parse_env(frozen.read_text(encoding="utf-8")),
+                loader.parse_env(valid_lines()),
+            )
+            self.assertEqual(frozen.stat().st_mode & 0o777, 0o600)
+            self.assertIn(
+                'APP_NAME="Maritime Claims & Risk Intelligence Platform"',
+                frozen.read_text(),
+            )
+            source.write_text(valid_lines().replace("APP_ENV=test", "APP_ENV=production"))
+            # Docker and Bash now consume the SAME frozen, verified content.
+            self.assertEqual(loader.load(frozen)["APP_ENV"], "test")
+
+    def test_invalid_or_existing_snapshot_never_emits_untrusted_secrets(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "source.env"
+            frozen = Path(directory) / "frozen.env"
+            source.write_text(valid_lines() + "SECRET_KEY=$(private_token)\n")
+            out = io.BytesIO()
+            writer = io.TextIOWrapper(out, encoding="utf-8")
+            errors = io.StringIO()
+            with patch.object(loader.sys, "stdout", writer), patch.object(
+                loader.sys, "stderr", errors
+            ):
+                self.assertEqual(
+                    loader.main([str(source), "--snapshot", str(frozen)]), 2
+                )
+            writer.flush()
+            self.assertFalse(frozen.exists())
+            self.assertEqual(out.getvalue(), b"")
+            self.assertNotIn("private_token", errors.getvalue())
+            source.write_text(valid_lines())
+            frozen.write_text("protected-original-record")
+            with patch.object(loader.sys, "stderr", io.StringIO()):
+                self.assertEqual(
+                    loader.main([str(source), "--snapshot", str(frozen)]), 2
+                )
+            self.assertEqual(frozen.read_text(), "protected-original-record")
+
     def test_shell_expression_and_unsafe_environment_entries_never_accepted(self):
         for bad in (
             "HOOK=$(touch /tmp/synthetic-danger)",
@@ -75,6 +127,7 @@ class SafeDemoEnvImportTests(unittest.TestCase):
             "POSTGRES_DB= duplicate",
             "POSTGRES_DB=mcri_ci",  # duplicate key
             "not-an-assignment",
+            'UNQUOTED=value"danger',
         ):
             with self.subTest(bad=bad.split("=")[0]):
                 with self.assertRaises(loader.SyntheticEnvError):

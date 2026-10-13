@@ -9,6 +9,7 @@ Redirect stdout into a temporary operator-private file, never CI logs.
 from __future__ import annotations
 
 from pathlib import Path
+import os
 import re
 import sys
 
@@ -49,7 +50,7 @@ def parse_env(text: str) -> dict[str, str]:
             value = value[1:-1]
         elif any(c.isspace() for c in value):
             raise SyntheticEnvError("unquoted whitespace in synthetic environment")
-        if (any(c in value for c in ("$", "`", "\\"))
+        if (any(c in value for c in ("$", "`", "\\", '"', "'"))
                 or any(ord(c) < 32 or ord(c) == 127 for c in value)):
             raise SyntheticEnvError("unsupported synthetic environment interpolation")
         env[name] = value
@@ -71,14 +72,30 @@ def load(path: Path) -> dict[str, str]:
 
 def main(argv: list[str] | None = None) -> int:
     args = sys.argv[1:] if argv is None else argv
-    if len(args) != 1:
-        print("NO-GO: exactly one private synthetic env-file path required", file=sys.stderr)
+    if len(args) == 1:
+        source, snapshot = Path(args[0]), None
+    elif len(args) == 3 and args[1] == "--snapshot":
+        source, snapshot = Path(args[0]), Path(args[2])
+    else:
+        print("NO-GO: one source and optional exclusive --snapshot path required",
+              file=sys.stderr)
         return 2
     try:
-        values = load(Path(args[0]))
+        values = load(source)
+        if snapshot is not None:
+            # One parsed source, one immutable-for-this-run Compose snapshot.
+            # Exclusive create + private mode: no overwrite or symlink target.
+            fd = os.open(snapshot, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(fd, "w", encoding="utf-8") as stream:
+                for key, value in values.items():
+                    # Parser rejects quotes, backslashes, dollars, controls.
+                    # Double-quoting all values retains literal whitespace/#.
+                    stream.write(f'{key}="{value}"\n')
     except (SyntheticEnvError, DemoSeedGuardError) as exc:
-        # Both exception types use fixed messages without copying private input.
         print("NO-GO: " + str(exc), file=sys.stderr)
+        return 2
+    except OSError:
+        print("NO-GO: cannot create exclusive private Compose snapshot", file=sys.stderr)
         return 2
     # A NUL delimiter makes shell parsing non-evaluating and unambiguous.
     # stdout is secret-bearing: callers MUST NOT log or upload it.
@@ -87,7 +104,6 @@ def main(argv: list[str] | None = None) -> int:
         for key, value in values.items()
     ))
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

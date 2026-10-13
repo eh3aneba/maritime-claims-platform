@@ -78,7 +78,7 @@ class EmptyComposeSafetyTests(unittest.TestCase):
                 gate.observe(env_file=Path(".env.ci"))
             calls = [c.args[0] for c in proc.call_args_list]
             self.assertEqual(calls[0], ["docker", "compose", "--env-file", ".env.ci",
-                                         "ps", "--all", "--format", "json"])
+                                         "-f", "docker-compose.yml", "ps", "--all", "--format", "json"])
             self.assertEqual(calls[1], ["docker", "volume", "ls", "--format", "{{.Name}}"])
         with patch.object(gate, "render_compose", return_value=config()):
             with patch.object(gate.subprocess, "run", return_value=CompletedProcess(
