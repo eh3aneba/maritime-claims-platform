@@ -20,6 +20,7 @@ From the *exact frozen checkout*, run checks that do not start the stack:
 
 ```bash
 docker compose version
+python scripts/pilot_demo_docker_target.py
 docker compose --env-file .env config >/dev/null
 python scripts/pilot_compose_port_policy.py --env-file .env
 python scripts/pilot_demo_empty_stack.py --env-file .env
