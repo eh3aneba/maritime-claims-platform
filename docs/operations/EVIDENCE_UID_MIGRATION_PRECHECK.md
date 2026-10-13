@@ -46,6 +46,28 @@ to bypass the check. No paths, Evidence filenames or file contents are
 printed. This CI exercise is **not** a customer-host test; it does not
 change the target runtime user or prove the effective UID's real access.
 
+**Disposable effective-UID rehearsal (CI only):** after the read-only
+metadata check, the required Operational Performance workflow creates a fresh
+randomized scratch directory on the disposable GitHub runner, owns **only that
+directory** as UID/GID `1000:1000`, and mounts it at
+`/mnt/mcri-ci-uid-probe` in one-shot API and document-worker containers.
+Those temporary processes actually run as UID/GID 1000. The API creates a
+synthetic marker with private permissions; the OCR worker must read, rename
+and delete that marker, and execute Tesseract with both `eng+fas` languages
+and the Poppler utility binaries. The test verifies that no probe files remain,
+then deletes the temporary scratch. It does **not** bind scratch over
+`/data/documents`, reconfigure the production service's default user,
+read/write the existing Evidence tree, run an authenticated upload transaction,
+or modify customer host or filesystem metadata. Failure of any real UID access
+or OCR utility step fails the mandatory Operational Performance gate.
+
+A pass establishes only that the selected API/worker images and **new,
+properly owned synthetic scratch** support non-root access. It is not proof
+that existing root-created customer Evidence folders, ACLs, scan quarantine
+directories or database/document lifecycle behave under a migrated non-root
+runtime. These require a separate approved cloned-volume integration and
+rollback rehearsal before any changes to a real deployment.
+
 **Limitations:** This is a necessary POSIX mode-bit screening check, **not**
 an effective-UID permissions test. POSIX/NFS ACLs, SELinux/AppArmor,
 supplemental group memberships, mount/idmap policy and race conditions cannot

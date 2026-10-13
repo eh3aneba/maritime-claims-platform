@@ -261,6 +261,79 @@ jobs:
               raise SystemExit("NO-GO: mounted synthetic Evidence precheck contract failed")
           PY
 
+      # Proof of actual UID 1000 cross-service write/read/rename/unlink
+      # on a NEW CI-only scratch bind mount. Do NOT change or probe-write the
+      # existing local_documents volume; existing customer volumes remain NO-GO.
+      - name: Verify unprivileged API and OCR worker synthetic scratch custody
+        shell: bash
+        run: |
+          set -euo pipefail
+          scratch="$(mktemp -d "$RUNNER_TEMP/mcri-uid-scratch.XXXXXXXX")"
+          trap 'sudo rm -rf -- "$scratch"' EXIT
+          sudo chown 1000:1000 "$scratch"
+          sudo chmod 0700 "$scratch"
+          docker compose --env-file .env.performance run --rm --no-deps -T \
+            --user 1000:1000 -v "$scratch:/mnt/mcri-ci-uid-probe:rw" \
+            api python - <<'PY'
+          import os
+          from pathlib import Path
+          from stat import S_IMODE
+          root = Path("/mnt/mcri-ci-uid-probe")
+          assert os.geteuid() == os.getegid() == 1000
+          assert root.is_dir() and root.stat().st_uid == 1000
+          assert S_IMODE(root.stat().st_mode) == 0o700
+          assert not os.access("/app/app", os.W_OK)
+          marker = root / "cross-service-synthetic-marker"
+          fd = os.open(marker, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+          with os.fdopen(fd, "wb") as dest:
+              dest.write(b"synthetic-noncustomer-evidence")
+          assert marker.read_bytes() == b"synthetic-noncustomer-evidence"
+          assert S_IMODE(marker.stat().st_mode) & 0o077 == 0
+          PY
+          docker compose --env-file .env.performance run --rm --no-deps -T \
+            --user 1000:1000 -v "$scratch:/mnt/mcri-ci-uid-probe:rw" \
+            worker python - <<'PY'
+          import os
+          import struct
+          import subprocess
+          import zlib
+          from pathlib import Path
+          root = Path("/mnt/mcri-ci-uid-probe")
+          assert os.geteuid() == os.getegid() == 1000
+          assert not os.access("/app/app", os.W_OK)
+          marker = root / "cross-service-synthetic-marker"
+          assert marker.read_bytes() == b"synthetic-noncustomer-evidence"
+          moved = root / "cross-service-synthetic-processed"
+          marker.rename(moved)
+          assert moved.read_bytes() == b"synthetic-noncustomer-evidence"
+          moved.unlink()
+          def chunk(kind, data):
+              blob = kind + data
+              return struct.pack(">I", len(data)) + blob + struct.pack(">I", zlib.crc32(blob) & 0xffffffff)
+          rows = b"".join(b"\x00" + b"\xff\xff\xff" * 80 for _ in range(64))
+          png = (b"\x89PNG\r\n\x1a\n"
+                 + chunk(b"IHDR", struct.pack(">IIBBBBB", 80, 64, 8, 2, 0, 0, 0))
+                 + chunk(b"IDAT", zlib.compress(rows))
+                 + chunk(b"IEND", b""))
+          image = root / "synthetic-ci-ocr.png"
+          with image.open("xb") as out:
+              out.write(png)
+          for args in (
+              ["tesseract", str(image), "stdout", "-l", "eng+fas"],
+              ["pdftotext", "-v"],
+              ["pdftoppm", "-v"],
+          ):
+              result = subprocess.run(args, capture_output=True, timeout=45, check=False)
+              assert result.returncode == 0
+          image.unlink()
+          PY
+          if [ -n "$(sudo find "$scratch" -mindepth 1 -maxdepth 1 -print -quit)" ]; then
+            echo "::error::Synthetic UID scratch custody was not cleaned up."
+            exit 1
+          fi
+          echo "PASS: API and OCR worker UID 1000 can exchange, rename and delete synthetic bytes on isolated scratch; eng+fas OCR tools execute."
+          echo "NOT a legacy Evidence volume migration, API upload transaction, or customer-host permission approval."
+
       # The real synthetic project is now populated; prove the read-only
       # admission check DENIES it. Never rerun side-effecting demo seed.
       - name: Reject re-seed against live populated Compose project
