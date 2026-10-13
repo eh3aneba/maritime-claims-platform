@@ -197,6 +197,8 @@ def test_backup_refuses_to_overwrite_existing_artifact(tmp_path: Path) -> None:
     )
 
     assert result.returncode != 0
-    assert "Refusing to overwrite existing backup artifact" in result.stderr
+    # Privacy-safe message deliberately omits the operator's backup path.
+    assert "Refusing to overwrite an existing backup artifact." in result.stderr
+    assert str(output) not in result.stderr
     assert output.read_bytes() == b"preserve-me"
     assert not log_path.exists() or log_path.read_text(encoding="utf-8") == ""

@@ -31,9 +31,17 @@ class IndependentPostgresTests(unittest.TestCase):
             dump.write_bytes(b"PGDMP-synthetic-placeholder")
             archive.write_bytes(b"synthetic-tar-placeholder")
             source = collect_lineage("source", lambda _, sql: ROW)
+            pid1_observations = [0]
 
             def command(args, *, stdin_file=None, timeout=120):
                 calls.append(args)
+                if args[-2:] == ["cat", "/proc/1/comm"]:
+                    pid1_observations[0] += 1
+                    if break_at == "bootstrap_never":
+                        return "docker-entrypoint"
+                    if break_at == "bootstrap" and pid1_observations[0] <= 2:
+                        return "docker-entrypoint"
+                    return "postgres"
                 if args[:2] == ["docker", "run"] and break_at == "start":
                     raise p.IndependentRestoreError("start failed")
                 if "pg_restore" in args and break_at == "restore":
@@ -44,6 +52,9 @@ class IndependentPostgresTests(unittest.TestCase):
 
             def query(name, sql):
                 self.assertEqual(name, "mcri-ci-independent-" + SHA[:16])
+                if sql == "SELECT 1;":
+                    calls.append(["sql_readiness_probe", sql])
+                    return "0" if break_at == "sql_not_ready" else "1"
                 if "COUNT(*)" in sql:
                     return "1"
                 if "alembic_version" in sql:
@@ -66,7 +77,7 @@ class IndependentPostgresTests(unittest.TestCase):
                               expected_claim_count="1",
                               expected_revision="0224_obs_refresh_recovery_anchor",
                               source_lineage=source, env=ENV)
-                if break_at:
+                if break_at and break_at != "bootstrap":
                     with self.assertRaises(p.IndependentRestoreError):
                         p.restore_and_verify(**kwargs)
                     return calls, None
@@ -90,6 +101,30 @@ class IndependentPostgresTests(unittest.TestCase):
             "docker", "rm", "-f", "-v",
             "mcri-ci-independent-" + SHA[:16],
         ])
+
+    def test_final_pid1_and_consecutive_sql_ready_precede_restore(self):
+        calls, result = self._exercise(break_at="bootstrap")
+        self.assertTrue(result["separate_postgres_engine_restored"])
+        pid1 = [i for i, x in enumerate(calls) if x[-2:] == ["cat", "/proc/1/comm"]]
+        sql = [i for i, x in enumerate(calls) if x[0] == "sql_readiness_probe"]
+        restore = next(i for i, x in enumerate(calls) if "pg_restore" in x)
+        self.assertGreaterEqual(len(pid1), 4)
+        self.assertEqual(len(sql), 2)
+        self.assertLess(sql[-1], restore)
+
+    def test_incomplete_bootstrap_or_missing_sql_never_runs_pg_restore(self):
+        for case in ("bootstrap_never", "sql_not_ready"):
+            with self.subTest(case=case):
+                calls, result = self._exercise(break_at=case)
+                self.assertIsNone(result)
+                self.assertFalse(any("pg_restore" in command for command in calls))
+                self.assertEqual(calls[-1][:4], ["docker", "rm", "-f", "-v"])
+
+    def test_failed_archive_restore_is_not_retried_into_partial_database(self):
+        calls, result = self._exercise(break_at="restore")
+        self.assertIsNone(result)
+        self.assertEqual(sum("pg_restore" in cmd for cmd in calls), 1)
+        self.assertEqual(calls[-1][:4], ["docker", "rm", "-f", "-v"])
 
     def test_restore_and_lineage_failures_cleanup_own_container(self):
         for failure in ("restore", "lineage", "ready"):
