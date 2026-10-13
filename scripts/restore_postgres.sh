@@ -66,28 +66,33 @@ trap restore_exit EXIT
 echo "Entering restore maintenance window and stopping application services..."
 docker compose stop "${APPLICATION_SERVICES[@]}"
 
-mapfile -t running_services < <(docker compose ps --status running --services)
-unexpected_services=()
-db_running=false
-for service in "${running_services[@]}"; do
-  case "$service" in
-    db)
-      db_running=true
-      ;;
-    clamav)
-      ;;
-    *)
-      unexpected_services+=("$service")
-      ;;
-  esac
-done
+# Unlike process substitution, command substitution propagates a nonzero
+# Docker exit status. NEVER interpret a failed writer census as an empty list:
+# that could allow dropdb while unexpected workers remain active.
+require_quiesced_services() {
+  local observed service
+  if ! observed="$(docker compose ps --status running --services 2>/dev/null)"; then
+    echo "Refusing restore: cannot verify running Compose services." >&2
+    return 1
+  fi
+  db_running=false
+  if [[ -z "$observed" ]]; then
+    return 0
+  fi
+  while IFS= read -r service; do
+    case "$service" in
+      db) db_running=true ;;
+      clamav) ;;
+      *)
+        # Never leak raw Docker output or unexpected service names to logs.
+        echo "Refusing restore: an unapproved Compose writer is running." >&2
+        return 1
+        ;;
+    esac
+  done <<< "$observed"
+}
 
-if (( ${#unexpected_services[@]} > 0 )); then
-  printf 'Refusing restore because unexpected Compose services are still running:' >&2
-  printf ' %s' "${unexpected_services[@]}" >&2
-  printf '\nUpdate the restore quiesce list before retrying.\n' >&2
-  exit 1
-fi
+require_quiesced_services
 
 if [[ "$db_running" != "true" ]]; then
   echo "Starting PostgreSQL for restore..."
@@ -108,6 +113,14 @@ if [[ "$ready" != "true" ]]; then
   exit 1
 fi
 
+# Recheck after DB startup and before any archive verification or destructive
+# operation, including races where a service restarted during readiness wait.
+require_quiesced_services
+if [[ "$db_running" != "true" ]]; then
+  echo "Refusing restore: PostgreSQL is no longer in the approved maintenance set." >&2
+  exit 1
+fi
+
 # The database still exists here. Reject tampering, missing sidecars,
 # mismatched target database and invalid pg_restore archive before ANY dropdb.
 echo "Verifying PostgreSQL archive and metadata before destructive restore..."
@@ -121,6 +134,13 @@ if [[ -n "${MCRI_RESTORE_PAIR_MANIFEST:-}" ]]; then
     --evidence-archive "$MCRI_RESTORE_EVIDENCE_ARCHIVE" \
     --release-sha "$MCRI_RESTORE_RELEASE_SHA" \
     --manifest "$MCRI_RESTORE_PAIR_MANIFEST"
+fi
+
+# Final writer census immediately before the first destructive database call.
+require_quiesced_services
+if [[ "$db_running" != "true" ]]; then
+  echo "Refusing restore: PostgreSQL is no longer in the approved maintenance set." >&2
+  exit 1
 fi
 
 echo "Recreating database $POSTGRES_DB..."
