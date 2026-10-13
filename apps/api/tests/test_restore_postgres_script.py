@@ -39,10 +39,10 @@ fi
 
 if [[ " ${*:-} " == *" psql "* && " ${*:-} " == *" pg_stat_activity "* ]]; then
   if [[ "${FAKE_DB_SESSION_CENSUS_FAIL:-0}" == "1" ]]; then
-    printf 'private-connection-identity-must-never-leak\\n' >&2
+    echo 'private-connection-identity-must-never-leak' >&2
     exit 42
   fi
-  printf '%s\\n' "${FAKE_DB_SESSION_COUNT:-0}"
+  echo "${FAKE_DB_SESSION_COUNT:-0}"
   exit 0
 fi
 
