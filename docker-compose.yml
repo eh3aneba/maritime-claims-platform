@@ -26,6 +26,13 @@ services:
   migrate:
     build:
       context: ./apps/api
+    # Alembic requires database access, not root, an Evidence mount, or
+    # Linux capabilities. Existing DB migrations remain fail-closed.
+    user: "1000:1000"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     command: ["alembic", "upgrade", "head"]
     environment:
       APP_ENV: ${APP_ENV:-development}
