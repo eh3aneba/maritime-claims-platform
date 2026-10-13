@@ -18,11 +18,13 @@ Optional output path:
 
 The backup is published fail-closed:
 
-1. `pg_dump` writes to a private temporary path rather than the final operator-facing filename;
+1. `pg_dump` writes to an exclusively created `mktemp` file in the destination directory (mode `0600` under `umask 077`), rather than a predictable PID-suffixed temporary or final file;
 2. the custom-format archive must parse successfully through `pg_restore --list`;
 3. the script records the current database Alembic revision(s);
-4. SHA-256 and bounded metadata sidecars are prepared;
-5. only after those checks pass is the final dump path published.
+4. SHA-256 and bounded metadata sidecars are prepared in independently exclusive temporary files;
+5. only after those checks pass are both sidecars and finally the dump **published using atomic, same-filesystem no-clobber hard links**. An unexpected late collision at **any** final filename aborts the publication and preserves the other file. Sidecars created by the failed attempt are cleaned up; foreign files are never deliberately overwritten.
+
+The no-clobber rule is enforced at the **publish operation itself**, not merely through an earlier `test -e`. An offline fake-Docker regression exercises competing final dump, digest and metadata files, pre-existing symlinks, malformed archive failure and the normal case. This protects against accidental same-directory backup naming races; it does **not** make PostgreSQL and Evidence snapshots atomic or protect an operator-writable backup directory against a malicious account with write access. Protect that directory and retain the verified dump/sidecars together.
 
 A successful backup produces:
 
