@@ -40,7 +40,7 @@ class WebLeastPrivilegeContractTests(unittest.TestCase):
         self.assertIn("CapEff:", source)
         self.assertIn("NoNewPrivs:", source)
         self.assertIn('0000000000000000', source)
-        self.assertIn('"/proc/1/status"', source.replace(" /proc/1/status", ' "/proc/1/status"'))
+        self.assertGreaterEqual(source.count("/proc/1/status"), 2)
 
     def test_required_live_smoke_checks_effective_uid_and_write_scope(self):
         workflow = PERF.read_text(encoding="utf-8")
