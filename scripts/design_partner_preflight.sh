@@ -23,14 +23,17 @@ fi
 # the demo seed gate can reject them. The restricted Python loader validates
 # the private file and emits NUL-delimited literal assignments.
 umask 077
-MCRI_ENV_ASSIGNMENTS="$(mktemp)"
-trap 'rm -f -- "$MCRI_ENV_ASSIGNMENTS"' EXIT
-python scripts/pilot_demo_env_loader.py "$ENV_FILE" > "$MCRI_ENV_ASSIGNMENTS"
+MCRI_PRIVATE_TMP="$(mktemp -d)"
+trap 'rm -f -- "$MCRI_PRIVATE_TMP/assignments" "$MCRI_PRIVATE_TMP/frozen.env"; rmdir -- "$MCRI_PRIVATE_TMP"' EXIT
+# One validated read produces BOTH Bash literal assignments and one frozen
+# Compose dotenv file; no further reads of the mutable original after this.
+python scripts/pilot_demo_env_loader.py "$ENV_FILE" \
+  --snapshot "$MCRI_PRIVATE_TMP/frozen.env" > "$MCRI_PRIVATE_TMP/assignments"
 while IFS= read -r -d '' assignment; do
   export "$assignment"
-done < "$MCRI_ENV_ASSIGNMENTS"
-rm -f -- "$MCRI_ENV_ASSIGNMENTS"
-trap - EXIT
+done < "$MCRI_PRIVATE_TMP/assignments"
+rm -f -- "$MCRI_PRIVATE_TMP/assignments"
+ENV_FILE="$MCRI_PRIVATE_TMP/frozen.env"
 
 : "${MCRI_DEMO_PASSWORD:?MCRI_DEMO_PASSWORD must be set in $ENV_FILE}"
 if [[ ${#MCRI_DEMO_PASSWORD} -lt 12 ]]; then
@@ -43,23 +46,23 @@ fi
 python scripts/pilot_demo_seed_guard.py
 
 echo "[1/6] Validating compose configuration..."
-docker compose --env-file "$ENV_FILE" config >/dev/null
+docker compose --env-file "$ENV_FILE" -f docker-compose.yml config >/dev/null
 python scripts/pilot_compose_port_policy.py --env-file "$ENV_FILE"
 # Fail closed before Docker up/migrations/demo seed if any target project
 # container or persistent named Evidence/Postgres/ClamAV volume already exists.
 python scripts/pilot_demo_empty_stack.py --env-file "$ENV_FILE"
 
 echo "[2/6] Building and starting database/API/worker/web..."
-docker compose --env-file "$ENV_FILE" up -d --build
+docker compose --env-file "$ENV_FILE" -f docker-compose.yml up -d --build
 
 echo "[3/6] Running application preflight inside the API image..."
-docker compose --env-file "$ENV_FILE" exec -T api python -m app.core.preflight
+docker compose --env-file "$ENV_FILE" -f docker-compose.yml exec -T api python -m app.core.preflight
 
 echo "[4/6] Seeding the deterministic MT ORION demo..."
-docker compose --env-file "$ENV_FILE" --profile demo run --rm demo-seed
+docker compose --env-file "$ENV_FILE" -f docker-compose.yml --profile demo run --rm demo-seed
 
 echo "[5/6] Checking service health..."
-docker compose --env-file "$ENV_FILE" ps
+docker compose --env-file "$ENV_FILE" -f docker-compose.yml ps
 python - <<'PY'
 import urllib.request
 for url in ("http://127.0.0.1:8000/api/v1/health", "http://127.0.0.1:3000/login"):
