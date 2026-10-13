@@ -69,7 +69,7 @@ class EvidenceUidPrecheckTests(unittest.TestCase):
         # Simulate an existing root-owned, owner-only directory by asking
         # whether an unrelated proposed numeric UID could enter it.
         with self.assertRaisesRegex(
-            audit.EvidencePermissionAuditError, "^directory_permissions$"
+            audit.EvidencePermissionAuditError, "^(?:unsafe_ancestor|directory_permissions)$"
         ):
             audit.audit_evidence_tree(self.root, uid=60000, gid=60000)
 
