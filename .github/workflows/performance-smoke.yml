@@ -143,6 +143,43 @@ jobs:
           echo "PASS: Web is non-root, has no effective Linux capabilities, and cannot gain new privileges; application files are read-only."
           echo "Does not attest API, Worker, host mount or external pilot security."
 
+      # DB-only workers have no Evidence volume or OCR needs. Assert the
+      # effective main process security boundary AND real read-only SQL access.
+      # Do not claim API/document worker or host custody are hardened.
+      - name: Verify live non-root governance and Evidence worker DB access
+        shell: bash
+        run: |
+          set -euo pipefail
+          for service in \
+              governance-webhook-worker \
+              external-evidence-scheduler-worker \
+              external-evidence-observation-worker \
+              external-evidence-review-projector-worker; do
+            docker compose --env-file .env.performance exec -T "$service" python - <<'PY'
+          try:
+              import os
+              from pathlib import Path
+              from sqlalchemy import text
+              from app.db.session import create_session
+              pairs = {}
+              for line in Path("/proc/1/status").read_text().splitlines():
+                  if ":" in line:
+                      name, value = line.split(":", 1)
+                      pairs[name] = value.split()
+              assert pairs["Uid"] == ["1000"] * 4
+              assert pairs["Gid"] == ["1000"] * 4
+              assert pairs["CapEff"] == ["0000000000000000"]
+              assert pairs["NoNewPrivs"] == ["1"]
+              assert os.geteuid() == 1000 and os.getegid() == 1000
+              assert not os.access("/app/app", os.W_OK)
+              with create_session() as db:
+                  assert db.execute(text("SELECT 1")).scalar_one() == 1
+          except Exception:
+              raise SystemExit("NO-GO: DB-only worker runtime or read-only SQL check failed")
+          PY
+          done
+          echo "PASS: four DB-only workers run as UID/GID 1000 with CapEff=0, NoNewPrivs=1 and read-only SQL."
+
       # The real synthetic project is now populated; prove the read-only
       # admission check DENIES it. Never rerun side-effecting demo seed.
       - name: Reject re-seed against live populated Compose project
