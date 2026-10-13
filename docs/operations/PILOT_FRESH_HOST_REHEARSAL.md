@@ -22,7 +22,10 @@ From the *exact frozen checkout*, run checks that do not start the stack:
 docker compose version
 docker compose --env-file .env config >/dev/null
 python scripts/pilot_compose_port_policy.py --env-file .env
+python scripts/pilot_demo_empty_stack.py --env-file .env
 ```
+
+The read-only `pilot_demo_empty_stack.py` guard aborts if the **selected Compose project** already has any container (even stopped) or any of its three named persistent volumes (PostgreSQL, ClamAV, Evidence). It deliberately **does not clean up** state and does not certify that the entire host, external storage or a differently named Compose project is empty. An authorized operator must still independently verify that the entire controlled host is fresh and synthetic-only.
 
 The rendered Compose ports 5432, 8000 and 3000 must remain loopback-only, and ClamAV port 3310 must not be published. Verify host firewall/proxy/TLS separately: passing the port-policy script does **not** prove network isolation. Never publish `.env`, `docker compose config` output, authentication tokens, container inspection output or raw claims in a GitHub comment/artifact.
 
