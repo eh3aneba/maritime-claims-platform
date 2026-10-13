@@ -180,6 +180,38 @@ jobs:
           done
           echo "PASS: four DB-only workers run as UID/GID 1000 with CapEff=0, NoNewPrivs=1 and read-only SQL."
 
+      # Alembic already ran at bootstrap. Verify the one-shot migration image
+      # under the same Compose security context without rerunning migrations,
+      # modifying the database, or touching any Evidence volume.
+      - name: Verify unprivileged migration image and read-only DB access
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose --env-file .env.performance run --rm --no-deps -T migrate python - <<'PY'
+          try:
+              import os
+              from pathlib import Path
+              from sqlalchemy import text
+              from app.db.session import create_session
+              fields = {}
+              for line in Path("/proc/1/status").read_text().splitlines():
+                  if ":" in line:
+                      key, value = line.split(":", 1)
+                      fields[key] = value.split()
+              assert fields["Uid"] == ["1000"] * 4
+              assert fields["Gid"] == ["1000"] * 4
+              assert fields["CapEff"] == ["0000000000000000"]
+              assert fields["NoNewPrivs"] == ["1"]
+              assert os.geteuid() == 1000 and os.getegid() == 1000
+              assert not os.access("/app/alembic", os.W_OK)
+              with create_session() as db:
+                  assert db.execute(text("SELECT 1")).scalar_one() == 1
+          except Exception:
+              raise SystemExit("NO-GO: migration user privileges or read-only DB check failed")
+          PY
+          echo "PASS: actual migration image runs as UID/GID 1000 with CapEff=0 and NoNewPrivs=1."
+          echo "Not evidence of existing-volume ownership or a real customer host."
+
       # The real synthetic project is now populated; prove the read-only
       # admission check DENIES it. Never rerun side-effecting demo seed.
       - name: Reject re-seed against live populated Compose project

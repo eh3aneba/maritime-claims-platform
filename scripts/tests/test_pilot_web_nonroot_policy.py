@@ -35,7 +35,7 @@ class WebLeastPrivilegeContractTests(unittest.TestCase):
         # Additional DB-only services are intentionally hardened separately.
         # Ensure only the still-unmigrated Evidence/DB/bootstrap services lack
         # these Web-only constraints, rather than forbidding all earlier peers.
-        for service in ("db", "clamav", "migrate", "preflight", "api", "worker"):
+        for service in ("db", "clamav", "preflight", "api", "worker"):
             with self.subTest(service=service):
                 block = before.split("\n  " + service + ":\n", 1)[1]
                 block = re.split(r"(?m)^  [a-z][a-z0-9-]*:$", block, maxsplit=1)[0]
