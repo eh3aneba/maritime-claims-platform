@@ -32,8 +32,15 @@ class WebLeastPrivilegeContractTests(unittest.TestCase):
         self.assertIn("    cap_drop:\n      - ALL\n", web)
         self.assertIn("    security_opt:\n      - no-new-privileges:true\n", web)
         # This rollout is Web-only: do not suggest other services are hardened.
-        self.assertNotIn("no-new-privileges:true", before)
-        self.assertNotIn("cap_drop:", before)
+        # Additional DB-only services are intentionally hardened separately.
+        # Ensure only the still-unmigrated Evidence/DB/bootstrap services lack
+        # these Web-only constraints, rather than forbidding all earlier peers.
+        for service in ("db", "clamav", "migrate", "preflight", "api", "worker"):
+            with self.subTest(service=service):
+                block = before.split("\n  " + service + ":\n", 1)[1]
+                block = re.split(r"(?m)^  [a-z][a-z0-9-]*:$", block, maxsplit=1)[0]
+                self.assertNotIn("no-new-privileges:true", block)
+                self.assertNotIn("cap_drop:", block)
 
     def test_live_smoke_inspects_actual_main_process_privileges(self):
         source = PERF.read_text(encoding="utf-8")
