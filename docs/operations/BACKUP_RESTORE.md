@@ -44,6 +44,25 @@ The SHA-256 sidecar is an integrity/copy-consistency control, not a digital sign
 
 Store production/pilot backups off-host and encrypted according to the organization's retention policy.
 
+### Restore writer-census fail-closed boundary
+
+Before any destructive PostgreSQL restore, `scripts/restore_postgres.sh`
+stops the enumerated application services and checks the running Compose
+service inventory. A **nonzero or unavailable `docker compose ps` result**
+is a hard NO-GO; it must **never** be interpreted as “no workers running.”
+The script checks the inventory after stopping writers, after bringing up the
+PostgreSQL maintenance connection, and immediately before `dropdb`.
+Any unexpected service or loss of the required DB process stops the restore
+without dropping the database. Diagnostics intentionally omit raw Docker
+output, hostnames or service names.
+
+The accompanying `test_pilot_restore_writer_census.py` uses a fake Docker
+executable and a synthetic archive to cover failures at all three checkpoints.
+It does **not** exercise a real host or prove that external writers,
+independent connections or non-Compose applications are quiesced. An operator
+must separately enforce the approved maintenance window and verify actual
+writer isolation before executing a destructive restore.
+
 ### Recovery-point consistency boundary
 
 The PostgreSQL checksum/metadata sidecars prove the database dump artifact itself; they do **not** prove that Evidence/storage bytes belong to the same recovery point.
