@@ -69,7 +69,7 @@ class SafeDemoEnvImportTests(unittest.TestCase):
                     loader.main([str(source), "--snapshot", str(frozen)]), 0
                 )
             writer.flush()
-            self.assertIn(b"APP_ENV=test\\0", buffer.getvalue())
+            self.assertIn(b"APP_ENV=test\0", buffer.getvalue())
             self.assertEqual(
                 loader.parse_env(frozen.read_text(encoding="utf-8")),
                 loader.parse_env(valid_lines()),
@@ -87,7 +87,7 @@ class SafeDemoEnvImportTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory) / "source.env"
             frozen = Path(directory) / "frozen.env"
-            source.write_text(valid_lines() + "SECRET_KEY=$(private_token)\\n")
+            source.write_text(valid_lines() + "SECRET_KEY=$(private_token)\n")
             out = io.BytesIO()
             writer = io.TextIOWrapper(out, encoding="utf-8")
             errors = io.StringIO()
