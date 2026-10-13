@@ -121,6 +121,24 @@ jobs:
                 -e 's/^User:.*/User: [redacted]/' \
                 -e 's/^Claim:.*/Claim: [synthetic-seed-verified]/'
 
+      # Check the effective identity of the RUNNING web process, not merely
+      # the image Dockerfile. Verify only the Next cache is writable to UID
+      # 1000; server.js, prerendered server files and public assets stay read-only.
+      - name: Verify live Web container non-root runtime and write boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose --env-file .env.performance exec -T web sh -eu -c '
+            [ "$(id -u)" = "1000" ]
+            [ "$(id -g)" = "1000" ]
+            [ -w /app/.next/cache ]
+            [ ! -w /app/server.js ]
+            [ ! -w /app/.next/server ]
+            [ ! -w /app/public ]
+          '
+          echo "PASS: running Web container is UID/GID 1000 with read-only application files."
+          echo "Does not attest API, Worker, host mount or external pilot security."
+
       # The real synthetic project is now populated; prove the read-only
       # admission check DENIES it. Never rerun side-effecting demo seed.
       - name: Reject re-seed against live populated Compose project

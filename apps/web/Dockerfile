@@ -21,8 +21,17 @@ RUN /sbin/apk upgrade --no-cache libssl3 libcrypto3 zlib \
     && rm -f /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack \
         /usr/local/bin/pnpm /usr/local/bin/pnpx /usr/local/bin/yarn /usr/local/bin/yarnpkg \
     && node --version
+# Keep the application and bundled server code root-owned/read-only to the
+# runtime. Only Next's bounded image/cache directory needs write access.
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/public ./public
+RUN mkdir -p /app/.next/cache \
+    && chown 1000:1000 /app/.next/cache \
+    && chmod 0700 /app/.next/cache
+
+# node:22-alpine includes the stable node UID/GID 1000; use numeric IDs
+# explicitly so production container identity cannot change with defaults.
+USER 1000:1000
 EXPOSE 3000
 CMD ["node", "server.js"]
