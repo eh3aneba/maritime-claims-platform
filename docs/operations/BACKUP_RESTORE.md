@@ -150,9 +150,15 @@ a failed PostgreSQL operation into a fixed, allowlisted code, such as
 `evidence_integrity_mismatch`. The applicable recovery job and stable operational performance gate remain **failed** and
 never retries or ignores an integrity mismatch. Docker stderr, SQL, endpoints,
 credentials, Evidence paths and exception text outside the allowlist must
-never appear in GitHub logs. A transient failure followed by a successful
-manual rerun is evidence of *successful retry*, not proof of the original
-root cause or of customer-host recovery.
+never appear in GitHub logs. The isolated second-runner engine also
+requires the **final PostgreSQL PID 1** (`/proc/1/comm=postgres`) and two
+consecutive successful SQL `SELECT 1` readbacks after `pg_isready` before the
+one and only `pg_restore` attempt. This avoids mistaking the entrypoint's
+temporary initialization server for the final database. The gate still fails
+on a restore error and never retries `pg_restore` against a partially
+restored target. A transient failure followed by a successful manual rerun
+is evidence of *successful retry*, not proof of the original root cause
+or of customer-host recovery.
 
 A **different GitHub-hosted CI job/ephemeral runner** checks out the precise PR head SHA, downloads the original artifact by name, rejects missing/extra/symlinked/tampered files and pair mismatch, generates its own short-lived synthetic password, and restores the received dump into a new `postgres:18.4` container with `--network none` and no published ports. It rechecks source MT ORION claim count, migration revision, all seven complete canonical table fingerprints, and separately unpacks/reconciles Evidence against restored Document sizes/hashes. The new `cross-runner-restore` job is mandatory in the stable `Operational performance gate` **whenever the live smoke is scope-required**; if a code/docs-only change legitimately skips live smoke, the cross-runner job must also be skipped. A separate minimal boolean/count-only result is retained for seven days. No secrets or actual customer Evidence should ever be uploaded.
 
