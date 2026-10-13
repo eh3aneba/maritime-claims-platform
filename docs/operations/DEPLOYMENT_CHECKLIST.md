@@ -20,6 +20,7 @@ Pilot v1 organization admission and exit must follow the controlled [tenant onbo
 - [ ] API health is `200` at `/api/v1/health`.
 - [ ] Web login returns `200`.
 - [ ] Inspect the actual running **Web** process UID/GID: both must be `1000` (`docker compose exec -T web id`). Confirm the Node process cannot write `/app/server.js`, `/app/.next/server` or `/app/public`, while `/app/.next/cache` is writable only to its non-root owner. The required synthetic live-stack workflow asserts this on its ephemeral CI runner. Check your reviewed image and runtime separately: a static `USER` line is not a deployed-host readback.
+- [ ] Inspect the running Web's PID 1 `/proc/1/status` (not only `docker compose config`): effective Linux capabilities `CapEff` must be all zeros and `NoNewPrivs` must equal `1`. The Web Compose service uses `cap_drop: [ALL]` and `no-new-privileges:true`; its login and performance smoke must still work. This bounds only the Web container and does not imply rootless Docker, host isolation, or API/Worker hardening.
 - [ ] **Security #487 is partial:** API, migrations, preflight and the document/governance/external-Evidence workers remain outside this Web-only change. They must not be claimed non-root without their own reviewed UID/GID, volume and OCR functional tests.
 - [ ] Worker is running.
 - [ ] Worker image contains `tesseract`, `eng`/`fas` language data and `pdftoppm`.
