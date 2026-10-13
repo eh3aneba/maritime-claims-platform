@@ -135,8 +135,12 @@ jobs:
             [ ! -w /app/server.js ]
             [ ! -w /app/.next/server ]
             [ ! -w /app/public ]
+            # Check process 1, not just the shell used by docker exec.
+            # Drop all Linux capabilities; forbid gaining privileges at exec.
+            awk '\''$1 == "CapEff:" {seen=1; if ($2 != "0000000000000000") exit 1} END {if (!seen) exit 1}'\'' /proc/1/status
+            awk '\''$1 == "NoNewPrivs:" {seen=1; if ($2 != "1") exit 1} END {if (!seen) exit 1}'\'' /proc/1/status
           '
-          echo "PASS: running Web container is UID/GID 1000 with read-only application files."
+          echo "PASS: Web is non-root, has no effective Linux capabilities, and cannot gain new privileges; application files are read-only."
           echo "Does not attest API, Worker, host mount or external pilot security."
 
       # The real synthetic project is now populated; prove the read-only
