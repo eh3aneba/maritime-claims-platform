@@ -148,6 +148,26 @@ document upload, a database-committed quarantine/scan/OCR transaction,
 production API/worker user changes, any customer Evidence volume migration,
 or Pilot GO.
 
+**Restricted worker with live ClamAV (CI only):** the same synthetic
+API scratch rehearsal uses the real `LocalDocumentStorage.save_upload` method
+to quarantine a clean test PDF and the harmless standard EICAR antivirus test
+signature under UID/GID 1000. The **separate** restricted document-worker
+container connects to the existing live CI ClamAV daemon over the Compose
+network, obtains actual `CLEAN` and `INFECTED` verdicts via the production
+`scan_file` streaming interface, and verifies an unreachable scanner
+raises `MalwareScannerError` rather than being interpreted as clean. Only
+the clean PDF follows the existing synthetic Quarantine → Evidence promotion
+rehearsal. The infected test signature must stay outside the Evidence
+namespace; its quarantine digest is verified and the synthetic copy is
+deleted afterward. There are no new published ports, no real malware, no
+customer files, no changes to the production worker user, and no DB write.
+
+This verifies **real scanner transport and verdict behavior under non-root
+worker credentials**, not an authenticated document upload, persisted
+`QuarantinedUpload` or `Document` record, database/scan transaction
+atomicity, automatic quarantining of actual customer uploads, or Pilot GO.
+All of those require independent integrated application acceptance.
+
 A pass establishes only that the selected API/worker images and **new,
 properly owned synthetic scratch** support non-root access. It is not proof
 that existing root-created customer Evidence folders, ACLs, scan quarantine
