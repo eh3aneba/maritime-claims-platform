@@ -174,6 +174,19 @@ class NonrootIsolatedAuthClonePolicy(unittest.TestCase):
         self.assertNotIn('docker volume rm', script)
         self.assertNotIn('chown -R', script)
 
+    def test_worker_has_readable_font_fallback_for_scanned_pdf_fixture(self):
+        dockerfile = (ROOT / "apps" / "api" / "Dockerfile").read_text(encoding="utf-8")
+        worker = dockerfile.split("FROM python:3.14.8-alpine3.24 AS worker\\n", 1)[1].split(
+            "\\nFROM base AS api", 1
+        )[0]
+        self.assertIn("        font-liberation \\", worker)
+        self.assertIn("test -r /usr/share/fonts/liberation/LiberationSans-Regular.ttf", worker)
+        self.assertIn("fc-match -f '%{family}' Helvetica | grep -F 'Liberation Sans'", worker)
+        self.assertIn("RUN python --version", worker)
+        self.assertNotIn("font-liberation", dockerfile.split(
+            "FROM python:3.14.8-alpine3.24 AS base", 1
+        )[1].split("FROM python:3.14.8-alpine3.24 AS worker\\n", 1)[0])
+
     def test_scanned_image_only_pdf_requires_genuine_tesseract_eng_fas(self):
         script = SCRIPT.read_text(encoding="utf-8")
         for marker in (
