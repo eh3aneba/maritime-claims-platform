@@ -106,8 +106,8 @@ class NonrootIsolatedAuthClonePolicy(unittest.TestCase):
             'clone_jobs_after=',
             'source_documents_after=',
             'source_jobs_after=',
-            '[ "$clone_documents_after" -eq "$((clone_documents_before + 1))" ]',
-            '[ "$clone_jobs_after" -eq "$((clone_jobs_before + 1))" ]',
+            '[ "$clone_documents_after" -eq "$((clone_documents_before + 2))" ]',
+            '[ "$clone_jobs_after" -eq "$((clone_jobs_before + 2))" ]',
             '[ "$source_documents_before" = "$source_documents_after" ]',
             '[ "$source_jobs_before" = "$source_jobs_after" ]',
         ):
@@ -160,7 +160,7 @@ class NonrootIsolatedAuthClonePolicy(unittest.TestCase):
         ):
             self.assertIn(marker, script)
         self.assertIn(
-            '[ "$clone_extractions_after" -eq "$((clone_extractions_before + 1))" ]',
+            '[ "$clone_extractions_after" -eq "$((clone_extractions_before + 2))" ]',
             script,
         )
         self.assertIn(
@@ -223,13 +223,67 @@ class NonrootIsolatedAuthClonePolicy(unittest.TestCase):
             'roundtrip_pgm.unlink()',
             'scanned_pdf.unlink()',
             'pgm_path.unlink()',
-            'Not a scanned-PDF HTTP upload, scanned document DB job',
+            'PASS: image-only scanned PDF authenticated HTTP admission',
         ):
             self.assertIn(marker, script)
         self.assertIn('rb"P5\\s+(\\d+)\\s+(\\d+)\\s+(\\d+)\\s"', script)
         self.assertEqual(script.count("MCRI_SYNTHETIC_ONLY_CONFIRM=YES worker python -"), 1)
         self.assertNotIn('docker volume rm', script)
         self.assertNotIn('--network host', script)
+
+    def test_scanned_pdf_authenticated_http_clamav_fenced_ocr_db_commit(self):
+        script = SCRIPT.read_text(encoding="utf-8")
+        for marker in (
+            '-e MCRI_DEMO_ORG_SLUG -e MCRI_DEMO_EMAIL -e MCRI_DEMO_PASSWORD',
+            '"--host", "127.0.0.1", "--port", "18082", "--no-access-log"',
+            'base + "/health/ready"',
+            'base + "/auth/login"',
+            'scan_blob = scanned_pdf.read_bytes()',
+            'scan_hash = hashlib.sha256(scan_blob).hexdigest()',
+            'b"--" + boundary + b"\\r\\n"',
+            'filename="ci-scanned-only.pdf"',
+            'data=body, method="POST"',
+            'assert response.status == 201',
+            'admitted_scan["file_hash"] == scan_hash',
+            'admitted_scan["malware_scan_status"] == "clean"',
+            'admitted_scan["malware_scanned_at"]',
+            'response.read() == scan_blob',
+            'api.terminate()',
+            'scanned_document = session.get(Document, scanned_id)',
+            'scanned_document.claim_id == UUID(details["claim_id"])',
+            'scanned_document.organization_id == session.get(Document, doc_id).organization_id',
+            'scanned_document.malware_scan_status == DocumentMalwareScanStatus.CLEAN',
+            'stat.S_IMODE(scanned_storage.stat().st_mode) == 0o600',
+            'QuarantinedUpload.file_hash == scan_hash',
+            'DocumentProcessingJob.document_id == scanned_id',
+            'DocumentProcessingJob.status == ProcessingJobStatus.PENDING',
+            'scanned_job.status = ProcessingJobStatus.RUNNING',
+            'scanned_job.attempt_count += 1',
+            'process_job_with_lease(session, job=scanned_job, processor=process_job)',
+            'scanned_job.status == ProcessingJobStatus.COMPLETED',
+            'scanned_document.processing_status == DocumentProcessingStatus.PROCESSED',
+            'extraction_scan.extraction_method == "pypdf+selective-tesseract:eng+fas"',
+            'extraction_scan.requires_ocr is False',
+            'DocumentTextSegment.document_id == scanned_id',
+            'segment_scan.extraction_id == extraction_scan.id',
+            'segment_scan.locator_value == "1"',
+            '"synthetic marine claims evidence" in segment_scan.text.casefold()',
+            'scanned_storage.unlink()',
+            'assert not any(root.iterdir())',
+            '[ "$clone_documents_after" -eq "$((clone_documents_before + 2))" ]',
+            '[ "$clone_jobs_after" -eq "$((clone_jobs_before + 2))" ]',
+            '[ "$clone_extractions_after" -eq "$((clone_extractions_before + 2))" ]',
+            '[ "$clone_segments_after" -eq "$((clone_segments_before + 2))" ]',
+            '[ "$source_documents_before" = "$source_documents_after" ]',
+            '[ "$source_jobs_before" = "$source_jobs_after" ]',
+            '[ "$source_extractions_before" = "$source_extractions_after" ]',
+            '[ "$source_segments_before" = "$source_segments_after" ]',
+        ):
+            self.assertIn(marker, script)
+        self.assertEqual(script.count('worker python -'), 1)
+        self.assertNotIn('docker volume rm', script)
+        self.assertNotIn('docker compose down -v', script)
+        self.assertNotIn('chown -R', script)
 
     def test_required_live_stack_step_is_wired(self):
         workflow = WORKFLOW.read_text(encoding="utf-8")
