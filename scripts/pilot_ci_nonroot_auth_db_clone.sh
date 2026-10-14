@@ -296,13 +296,17 @@ compose -f docker-compose.yml -f docker-compose.ci-nonroot-custody.yml \
   -e "MCRI_CI_AUTH_DB_NAME=$clone" \
   -e OCR_ENABLED=true -e OCR_LANGUAGES=eng+fas \
   -e MCRI_SYNTHETIC_ONLY_CONFIRM=YES worker python - <<'PY'
-import hashlib, json, os, stat
+import hashlib, json, os, re, stat, subprocess
+from io import BytesIO
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID
 from sqlalchemy import select
+from pypdf import PdfWriter
+from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject, NumberObject
 from app.db import metadata as _all_model_metadata  # noqa: F401
 from app.db.session import create_session
+from app.modules.processing.extractors import extract_document_text
 from app.modules.documents.models import Document, DocumentProcessingStatus
 from app.modules.processing.models import (
     DocumentProcessingJob, DocumentTextExtraction, DocumentTextSegment,
@@ -376,6 +380,68 @@ with create_session() as session:
     assert job.result["segment_count"] == 1
     assert job.result["requires_ocr"] is False
     session.rollback()
+
+# Real scanned-PDF OCR proof on a second **private ephemeral file**, no DB
+# admission. Convert the already-admitted synthetic text PDF to a grayscale
+# image and re-embed those pixels in a PDF with NO native text stream.
+# This is not an OCR mock: it invokes actual Poppler and Tesseract eng+fas.
+pgm_prefix = root / "ci-ocr-source"
+pgm_path = pgm_prefix.with_suffix(".pgm")
+scanned_pdf = root / "ci-scanned-only.pdf"
+result = subprocess.run(
+    ["pdftoppm", "-f", "1", "-l", "1", "-singlefile",
+     "-r", "200", "-gray", str(stored), str(pgm_prefix)],
+    capture_output=True, timeout=35, check=False,
+)
+assert result.returncode == 0 and pgm_path.is_file(), "scanner rasterization unavailable"
+raster = pgm_path.read_bytes()
+header = re.match(rb"P5\\s+(\\d+)\\s+(\\d+)\\s+(\\d+)\\s", raster)
+assert header is not None, "scanner raster has an unexpected PGM header"
+width, height, max_value = map(int, header.groups())
+assert 1000 <= width <= 2500 and 1000 <= height <= 3500 and max_value == 255
+pixels = raster[header.end():]
+assert len(pixels) == width * height and len(pixels) < 9_000_000
+writer = PdfWriter()
+page = writer.add_blank_page(width=612, height=792)
+image = DecodedStreamObject()
+image.set_data(pixels)
+image = image.flate_encode()
+image.update(DictionaryObject({
+    NameObject("/Type"): NameObject("/XObject"),
+    NameObject("/Subtype"): NameObject("/Image"),
+    NameObject("/Width"): NumberObject(width),
+    NameObject("/Height"): NumberObject(height),
+    NameObject("/ColorSpace"): NameObject("/DeviceGray"),
+    NameObject("/BitsPerComponent"): NumberObject(8),
+}))
+page[NameObject("/Resources")] = DictionaryObject({
+    NameObject("/XObject"): DictionaryObject({
+        NameObject("/Im1"): writer._add_object(image),
+    }),
+})
+stream = DecodedStreamObject()
+stream.set_data(b"q 612 0 0 792 0 0 cm /Im1 Do Q")
+page[NameObject("/Contents")] = writer._add_object(stream)
+with scanned_pdf.open("xb") as output:
+    writer.write(output)
+assert scanned_pdf.stat().st_size < 1_000_000
+native = extract_document_text(scanned_pdf, enable_ocr=False)
+assert native.method == "pypdf" and native.requires_ocr
+assert len(native.segments) == 1 and not native.combined_text.strip()
+recovered = extract_document_text(
+    scanned_pdf, enable_ocr=True, ocr_languages="eng+fas",
+    ocr_max_pages=1, ocr_timeout_seconds=90,
+)
+assert recovered.method == "pypdf+selective-tesseract:eng+fas"
+assert recovered.requires_ocr is False and len(recovered.segments) == 1
+assert recovered.text_hash is not None
+assert recovered.segments[0].locator_type == "page"
+assert recovered.segments[0].locator_value == "1"
+assert "synthetic marine claims evidence" in recovered.combined_text.casefold()
+assert "nonroot worker processing" in recovered.combined_text.casefold()
+assert any("recovered 1" in warning for warning in recovered.warnings)
+scanned_pdf.unlink()
+pgm_path.unlink()
 stored.unlink()
 marker.unlink()
 for directory in sorted(
@@ -385,7 +451,8 @@ for directory in sorted(
     directory.rmdir()
 assert not any(root.iterdir()), "restricted worker left synthetic Evidence behind"
 print("PASS: restricted real worker committed a fenced processing lease, native PDF text and matching extracted DB records.")
-print("Not scanned-page OCR, host migration or Pilot GO.")
+print("A genuine image-only PDF required selective Tesseract eng+fas OCR; no customer file or DB record was used for the raster fixture.")
+print("Not a scanned-PDF HTTP upload, scanned document DB job, host migration or Pilot GO.")
 PY
 clone_after="$(compose exec -T db psql -U "$POSTGRES_USER" -d "$clone" -At \
   -c 'SELECT COUNT(*) FROM auth_sessions;')"
