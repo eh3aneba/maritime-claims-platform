@@ -672,6 +672,12 @@ jobs:
           echo "PASS: restricted worker scanned API-quarantined clean/EICAR files with real ClamAV, denied EICAR/unavailable scanner admission, preserved custody, and completed OCR."
           echo "NOT a real authenticated API upload, scanner admission, legacy Evidence volume migration or customer-host approval."
 
+      # Authenticate against a disposable COPY of the seeded synthetic
+      # PostgreSQL database. Never write auth sessions to the source database.
+      - name: Verify isolated synthetic PostgreSQL clone real non-root authentication
+        shell: bash
+        run: bash scripts/pilot_ci_nonroot_auth_db_clone.sh
+
       # The real synthetic project is now populated; prove the read-only
       # admission check DENIES it. Never rerun side-effecting demo seed.
       - name: Reject re-seed against live populated Compose project
