@@ -127,6 +127,27 @@ scratch cleanup. This is a controlled copy-level permission rollback
 regression, **not** a database/application rollback, production filesystem
 remediation, customer-storage migration or restore of a real backup.
 
+**Synthetic byte-corruption and atomic restore rehearsal (CI only):** the
+existing UID-1000 API one-shot fixture also creates an exclusive private
+mode-0600 backup of the known synthetic copied legacy Evidence bytes in
+**its own disposable scratch**. It deliberately corrupts *only the cloned
+copy*, confirms that the metadata permission audit still passes while the
+SHA-256 digest changes, and verifies the separate backup digest remains
+unchanged. The original root-owned source is mounted **read-only** and is
+never modified. From the private backup, the API writes a mode-0600
+temporary restoration file, syncs it and uses an atomic `os.replace` to
+restore **only the disposable copied Evidence file**. It then verifies
+exact bytes, digest, UID/GID 1000, mode-0600 and the permission audit
+before deleting the backup. The subsequent independent worker still
+reads the restored bytes, while the runner rechecks the source hash,
+root ownership and original mode before final cleanup.
+
+This closes a byte-level regression missing from the permission-only
+test, but it is **not** independent evidence-volume recovery, database
+point-in-time restore, snapshot consistency, production backup validity,
+customer migration or operator authorization. Those still need a
+separate quiesced and approved host rehearsal.
+
 **Actual restricted API HTTP readiness (CI only):** after proving the
 synthetic clone, the one-shot UID/GID 1000 API container explicitly overrides
 `LOCAL_STORAGE_PATH` to its *isolated scratch mount* and requires
