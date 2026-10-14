@@ -285,6 +285,48 @@ class NonrootIsolatedAuthClonePolicy(unittest.TestCase):
         self.assertNotIn('docker compose down -v', script)
         self.assertNotIn('chown -R', script)
 
+    def test_authenticated_infected_and_scanner_outage_http_quarantine_is_durable(self):
+        script = SCRIPT.read_text(encoding="utf-8")
+        for marker in (
+            "source_quarantine_before=",
+            "clone_quarantine_before=",
+            "source_quarantine_after=",
+            "clone_quarantine_after=",
+            "MALWARE_SCAN_ENABLED=true -e CLAMAV_HOST=clamav -e CLAMAV_PORT=3310",
+            'assert os.geteuid() == os.getegid() == 1000',
+            'proc["NoNewPrivs"].strip() == "1"',
+            'from app.modules.documents.malware import MalwareScanVerdict, scan_file',
+            'assert len(eicar) == 68',
+            'infected_pdf = b"%PDF-1.4',
+            'verdict.verdict == MalwareScanVerdict.INFECTED',
+            'with isolated_api(18084, scanner_port=3310)',
+            'with isolated_api(18085, scanner_port=1)',
+            'filename.encode("ascii")',
+            'urllib.error.HTTPError',
+            'response.code == status_code',
+            'QuarantineStatus.INFECTED',
+            'QuarantineStatus.SCAN_ERROR',
+            'quarantine_key.startswith("_quarantine/")',
+            'record.scanned_at is not None',
+            'record.file_size_bytes == len(raw)',
+            'record.threat_name and not record.scan_error',
+            'record.scan_error and not record.threat_name',
+            'Document.file_hash == digest',
+            'stat.S_IMODE(location.stat().st_mode) == 0o600',
+            'response.code == 404',
+            'assert infected_path != outage_path',
+            'location.unlink()',
+            'assert not any(root.iterdir()), "NO-GO isolated quarantine Evidence residue"',
+            '[ "$clone_quarantine_after" -eq "$((clone_quarantine_before + 2))" ]',
+            '[ "$source_quarantine_before" = "$source_quarantine_after" ]',
+        ):
+            self.assertIn(marker, script)
+        self.assertEqual(script.count('MCRI_SYNTHETIC_ONLY_CONFIRM=YES api python -'), 2)
+        self.assertNotIn("docker volume rm", script)
+        self.assertNotIn("chown -R", script)
+        self.assertNotIn("docker compose down -v", script)
+        self.assertNotIn("DROP DATABASE \"mcri_performance\"", script)
+
     def test_required_live_stack_step_is_wired(self):
         workflow = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn(
