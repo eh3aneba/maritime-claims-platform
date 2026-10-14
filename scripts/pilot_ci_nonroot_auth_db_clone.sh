@@ -834,7 +834,7 @@ office.save(buffer)
 with ZipFile(buffer, "a") as archive:
     archive.writestr("ci-av-test/eicar-test.txt", eicar, compress_type=ZIP_STORED)
 infected_docx = buffer.getvalue()
-assert infected_docx.startswith(b"PK\\x03\\x04")
+assert infected_docx.startswith(b"PK\x03\x04")
 assert eicar in infected_docx and len(infected_docx) < 100000
 with ZipFile(BytesIO(infected_docx), "r") as archive:
     assert archive.read("ci-av-test/eicar-test.txt") == eicar
