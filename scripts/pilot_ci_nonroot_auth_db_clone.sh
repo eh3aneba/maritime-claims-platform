@@ -675,7 +675,10 @@ compose -f docker-compose.yml -f docker-compose.ci-nonroot-custody.yml \
 import hashlib, json, os, stat, subprocess, sys, time
 import urllib.error, urllib.request
 from contextlib import contextmanager
+from io import BytesIO
 from pathlib import Path
+from zipfile import ZIP_STORED, ZipFile
+from docx import Document as OfficeDocument
 from sqlalchemy import select
 from app.db import metadata as _all_model_metadata  # noqa: F401
 from app.db.session import create_session
@@ -721,11 +724,13 @@ def login(base):
 
 def blocked_upload(base, token, filename, raw, status_code):
     boundary = b"mcri-quarantine-ci-boundary"
+    assert filename.endswith((".pdf", ".docx"))
+    mime = b"application/vnd.openxmlformats-officedocument.wordprocessingml.document" if filename.endswith(".docx") else b"application/pdf"
     multipart = (
         b"--" + boundary + b"\r\n"
         + b'Content-Disposition: form-data; name="file"; filename="' +
         filename.encode("ascii") + b'"\r\n'
-        + b"Content-Type: application/pdf\r\n\r\n"
+        + b"Content-Type: " + mime + b"\r\n\r\n"
         + raw + b"\r\n--" + boundary + b"--\r\n"
     )
     req = urllib.request.Request(
@@ -746,7 +751,7 @@ def blocked_upload(base, token, filename, raw, status_code):
         assert "quarantined" in detail.casefold()
     return hashlib.sha256(raw).hexdigest()
 
-def verify_quarantine(digest, raw, expected_status, token, base):
+def verify_quarantine(digest, raw, expected_status, token, base, filename):
     with create_session() as session:
         matches = list(session.scalars(select(QuarantinedUpload).where(
             QuarantinedUpload.claim_id == claim_id,
@@ -757,7 +762,7 @@ def verify_quarantine(digest, raw, expected_status, token, base):
         assert record.status == expected_status and record.scanned_at is not None
         assert record.file_size_bytes == len(raw)
         assert record.quarantine_key.startswith("_quarantine/")
-        assert record.quarantine_key.endswith(".pdf")
+        assert record.quarantine_key.endswith(Path(filename).suffix)
         assert session.scalar(select(Document).where(
             Document.claim_id == claim_id,
             Document.file_hash == digest,
@@ -818,18 +823,32 @@ def isolated_api(port, scanner_port):
 eicar = (b"X5O!P%@AP[4" + bytes([92]) +
          b"PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*")
 assert len(eicar) == 68
-infected_pdf = b"%PDF-1.4\n" + eicar + b"\n%%EOF\n"
-preflight = root / "ci-eicar-preflight.pdf"
+# The scanner did NOT flag EICAR when it was merely appended to arbitrary
+# PDF-signature bytes. Use an actual DOCX (ZIP container) and store the
+# harmless test signature as a separate uncompressed ZIP member instead:
+# ClamAV can inspect the archive entry, and the HTTP API validates DOCX PK.
+office = OfficeDocument()
+office.add_paragraph("Synthetic ClamAV archive quarantine boundary check")
+buffer = BytesIO()
+office.save(buffer)
+with ZipFile(buffer, "a") as archive:
+    archive.writestr("ci-av-test/eicar-test.txt", eicar, compress_type=ZIP_STORED)
+infected_docx = buffer.getvalue()
+assert infected_docx.startswith(b"PK\\x03\\x04")
+assert eicar in infected_docx and len(infected_docx) < 100000
+with ZipFile(BytesIO(infected_docx), "r") as archive:
+    assert archive.read("ci-av-test/eicar-test.txt") == eicar
+preflight = root / "ci-eicar-preflight.docx"
 with preflight.open("xb") as handle:
-    handle.write(infected_pdf)
+    handle.write(infected_docx)
 preflight.chmod(0o600)
 verdict = scan_file(preflight, host="clamav", port=3310, timeout_seconds=20)
 assert verdict.verdict == MalwareScanVerdict.INFECTED, "NO-GO EICAR scan fixture not detected"
 preflight.unlink()
 with isolated_api(18084, scanner_port=3310) as (base, token):
-    infected_hash = blocked_upload(base, token, "ci-eicar.pdf", infected_pdf, 422)
+    infected_hash = blocked_upload(base, token, "ci-eicar.docx", infected_docx, 422)
     infected_path = verify_quarantine(
-        infected_hash, infected_pdf, QuarantineStatus.INFECTED, token, base
+        infected_hash, infected_docx, QuarantineStatus.INFECTED, token, base, "ci-eicar.docx"
     )
 
 # The outage is scoped to this short-lived API process only. The synthetic
@@ -844,7 +863,7 @@ assert hashlib.sha256(outage_pdf).hexdigest() != infected_hash
 with isolated_api(18085, scanner_port=1) as (base, token):
     outage_hash = blocked_upload(base, token, "ci-scan-unavailable.pdf", outage_pdf, 503)
     outage_path = verify_quarantine(
-        outage_hash, outage_pdf, QuarantineStatus.SCAN_ERROR, token, base
+        outage_hash, outage_pdf, QuarantineStatus.SCAN_ERROR, token, base, "ci-scan-unavailable.pdf"
     )
 
 # Delete only two newly owned quarantine files after verifying their exact
