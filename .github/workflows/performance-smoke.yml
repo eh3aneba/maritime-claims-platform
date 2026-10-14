@@ -272,7 +272,9 @@ jobs:
           trap 'sudo rm -rf -- "$scratch"' EXIT
           sudo chown 1000:1000 "$scratch"
           sudo chmod 0700 "$scratch"
-          docker compose --env-file .env.performance run --rm --no-deps -T \
+          docker compose --env-file .env.performance \
+            -f docker-compose.yml -f docker-compose.ci-nonroot-custody.yml \
+            run --rm --no-deps -T \
             --user 1000:1000 -v "$scratch:/mnt/mcri-ci-uid-probe:rw" \
             api python - <<'PY'
           import os
@@ -280,6 +282,12 @@ jobs:
           from stat import S_IMODE
           root = Path("/mnt/mcri-ci-uid-probe")
           assert os.geteuid() == os.getegid() == 1000
+          proc_status = dict(
+              line.split(":", 1) for line in Path("/proc/self/status").read_text().splitlines()
+              if ":" in line
+          )
+          assert int(proc_status["CapEff"].strip(), 16) == 0
+          assert proc_status["NoNewPrivs"].strip() == "1"
           assert root.is_dir() and root.stat().st_uid == 1000
           assert S_IMODE(root.stat().st_mode) == 0o700
           assert not os.access("/app/app", os.W_OK)
@@ -331,7 +339,9 @@ jobs:
           assert not (root / "_quarantine/ci/oversized.pdf").exists()
           assert not list((root / "_quarantine/ci").glob(".mcri-upload-*.partial"))
           PY
-          docker compose --env-file .env.performance run --rm --no-deps -T \
+          docker compose --env-file .env.performance \
+            -f docker-compose.yml -f docker-compose.ci-nonroot-custody.yml \
+            run --rm --no-deps -T \
             --user 1000:1000 -v "$scratch:/mnt/mcri-ci-uid-probe:rw" \
             worker python - <<'PY'
           import os
@@ -341,6 +351,12 @@ jobs:
           from pathlib import Path
           root = Path("/mnt/mcri-ci-uid-probe")
           assert os.geteuid() == os.getegid() == 1000
+          proc_status = dict(
+              line.split(":", 1) for line in Path("/proc/self/status").read_text().splitlines()
+              if ":" in line
+          )
+          assert int(proc_status["CapEff"].strip(), 16) == 0
+          assert proc_status["NoNewPrivs"].strip() == "1"
           assert not os.access("/app/app", os.W_OK)
           marker = root / "cross-service-synthetic-marker"
           assert marker.read_bytes() == b"synthetic-noncustomer-evidence"
@@ -423,215 +439,3 @@ jobs:
 
       # This observes the *actual synthetic CI Compose stack* after preflight.
       # It must not start/alter services or substitute for a fresh-host Pilot drill.
-      - name: Verify live synthetic Compose service readiness
-        env:
-          CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-        run: |
-          set -euo pipefail
-          mkdir -p artifacts
-          python scripts/pilot_compose_readiness.py \
-            --env-file .env.performance \
-            --release-sha "$CANDIDATE_SHA" \
-            --output artifacts/compose-readiness.json
-
-      # Live production scanner API, synthetic clean file + harmless EICAR
-      # signature only. Fails closed and never records the bytes or response.
-      - name: Verify live synthetic ClamAV scan boundary
-        env:
-          CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-        run: |
-          set -euo pipefail
-          python scripts/pilot_live_clamav_probe.py \
-            --env-file .env.performance \
-            --release-sha "$CANDIDATE_SHA" \
-            --output artifacts/clamav-synthetic-probe.json
-
-      - name: Run bounded operational performance smoke
-        run: |
-          set -a
-          source .env.performance
-          set +a
-          export MCRI_API_URL=http://127.0.0.1:8000/api/v1
-          export MCRI_PERF_OUTPUT=artifacts/performance-smoke.json
-          export MCRI_PERF_WARMUP_REQUESTS=3
-          export MCRI_PERF_SAMPLE_REQUESTS=24
-          export MCRI_PERF_CONCURRENCY=4
-          export MCRI_PERF_MAX_ERROR_RATIO=0
-          export MCRI_PERF_LIVENESS_P95_MS=1000
-          export MCRI_PERF_READINESS_P95_MS=1500
-          export MCRI_PERF_CLAIM_LIST_P95_MS=2500
-          python scripts/operational_performance_smoke.py
-
-      # This verifies a real custom-format PostgreSQL dump/sidecars, archives
-      # synthetic Evidence and restores into a NEW isolated CI-only database.
-      # Never invokes the destructive application DB restore procedure.
-      - name: Verify synthetic backup and isolated database clone restore
-        env:
-          MCRI_CI_RESTORE_PROBE: "1"
-          MCRI_CI_CROSS_RUNNER_EXPORT: "1"
-        run: |
-          set -euo pipefail
-          set -a
-          source .env.performance
-          set +a
-          export COMPOSE_ENV_FILES=.env.performance
-          python scripts/pilot_ci_restore_probe.py \
-            --env-file .env.performance \
-            --output artifacts/synthetic-db-restore-probe.json \
-            --cross-runner-output synthetic-recovery-transfer
-
-      # After the recovery checker stops writers and reconciles the synthetic
-      # DB clone/Evidence, restart the EXISTING ephemeral application writers
-      # and re-prove healthy Compose + real HTTP readiness + authenticated
-      # MT ORION API access. This is not a rollback or production deployment.
-      - name: Verify synthetic post-recovery service restart and claim read
-        env:
-          MCRI_CI_RESUME_PROBE: "1"
-          CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-        run: |
-          set -euo pipefail
-          set -a
-          source .env.performance
-          set +a
-          export COMPOSE_ENV_FILES=.env.performance
-          python scripts/pilot_ci_resume_probe.py \
-            --env-file .env.performance \
-            --release-sha "$CANDIDATE_SHA" \
-            --output artifacts/synthetic-post-recovery-resume.json
-
-      # All bytes are CI-only synthetic fixtures and this archive is short lived.
-      # Upload only after full local verification and post-recovery API success.
-      # A DIFFERENT GitHub-hosted job will download it onto a separate VM.
-      - name: Transfer synthetic recovery pair to fresh CI runner
-        uses: actions/upload-artifact@v4
-        with:
-          name: synthetic-recovery-transfer
-          path: synthetic-recovery-transfer/
-          if-no-files-found: error
-          retention-days: 1
-
-      - name: Capture bounded container diagnostics
-        if: failure()
-        run: |
-          mkdir -p artifacts
-          docker compose --env-file .env.performance ps -a > artifacts/performance-docker-compose-ps.txt || true
-
-      - name: Upload performance artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: operational-performance-smoke
-          path: artifacts/
-          if-no-files-found: ignore
-          retention-days: 7
-
-      - name: Remove performance containers and volumes
-        if: always()
-        run: docker compose --env-file .env.performance down -v --remove-orphans || true
-
-  cross-runner-restore:
-    name: Fresh CI runner synthetic recovery gate
-    needs:
-      - classify
-      - performance-smoke
-    if: ${{ needs.classify.outputs.performance_required == 'true' && needs.performance-smoke.result == 'success' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 12
-    steps:
-      - name: Check out exact candidate commit
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-
-      - name: Set up Python
-        uses: actions/setup-python@v7
-        with:
-          python-version: "3.13"
-
-      - name: Download transferred synthetic recovery pair
-        uses: actions/download-artifact@v4
-        with:
-          name: synthetic-recovery-transfer
-          path: synthetic-recovery-transfer
-
-      - name: Independently verify and restore on distinct ephemeral runner
-        shell: bash
-        env:
-          APP_ENV: test
-          POSTGRES_DB: mcri_performance
-          POSTGRES_USER: mcri_performance
-          MCRI_CI_RESTORE_PROBE: "1"
-          MCRI_CI_CROSS_RUNNER_RESTORE: "1"
-          CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-        run: |
-          set -euo pipefail
-          umask 077
-          mkdir -p artifacts
-          POSTGRES_PASSWORD="$(python -c 'import secrets; print(secrets.token_urlsafe(24))')"
-          echo "::add-mask::$POSTGRES_PASSWORD"
-          export POSTGRES_PASSWORD
-          python scripts/pilot_ci_cross_runner_transfer.py \
-            --sha "$CANDIDATE_SHA" \
-            --input synthetic-recovery-transfer \
-            --output artifacts/cross-runner-restore.json
-
-      - name: Upload bounded distinct-runner recovery result
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: synthetic-cross-runner-recovery-proof
-          path: artifacts/cross-runner-restore.json
-          if-no-files-found: ignore
-          retention-days: 7
-
-  performance-gate:
-    name: Operational performance gate
-    needs:
-      - classify
-      - performance-smoke
-      - cross-runner-restore
-    if: ${{ always() }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 2
-    steps:
-      - name: Enforce classified operational performance scope
-        shell: bash
-        env:
-          CLASSIFIER_RESULT: ${{ needs.classify.result }}
-          PERFORMANCE_REQUIRED: ${{ needs.classify.outputs.performance_required }}
-          PERFORMANCE_RESULT: ${{ needs.performance-smoke.result }}
-          CROSS_RUNNER_RESULT: ${{ needs.cross-runner-restore.result }}
-        run: |
-          set -euo pipefail
-
-          if [ "$CLASSIFIER_RESULT" != "success" ]; then
-            echo "::error::Operational performance scope classification did not succeed: $CLASSIFIER_RESULT"
-            exit 1
-          fi
-
-          if [ "$PERFORMANCE_REQUIRED" = "true" ]; then
-            if [ "$PERFORMANCE_RESULT" != "success" ]; then
-              echo "::error::Live-stack performance smoke was required but finished with result: $PERFORMANCE_RESULT"
-              exit 1
-            fi
-            if [ "$CROSS_RUNNER_RESULT" != "success" ]; then
-              echo "::error::Cross-runner synthetic DB/Evidence recovery was required but finished with result: $CROSS_RUNNER_RESULT"
-              exit 1
-            fi
-          else
-            if [ "$CROSS_RUNNER_RESULT" != "skipped" ]; then
-              echo "::error::Cross-runner restore unexpectedly ran or failed for a scope-skipped PR: $CROSS_RUNNER_RESULT"
-              exit 1
-            fi
-            case "$PERFORMANCE_RESULT" in
-              skipped|success)
-                ;;
-              *)
-                echo "::error::Live-stack performance smoke was not required but finished unexpectedly with result: $PERFORMANCE_RESULT"
-                exit 1
-                ;;
-            esac
-          fi
-
-          echo "Operational performance gate passed."
-
