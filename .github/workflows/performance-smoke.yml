@@ -477,6 +477,45 @@ jobs:
                   raise AssertionError("NO-GO: unauthenticated Evidence access")
               except urllib.error.HTTPError as exc:
                   assert exc.code == 401
+              # Actual HTTP multipart routes must reject both an anonymous
+              # upload and an invalid bearer before any quarantine file exists.
+              # Verify the entire synthetic scratch namespace is unchanged.
+              def custody_snapshot():
+                  return sorted(
+                      (
+                          str(path.relative_to(root)),
+                          "file" if path.is_file() else "directory",
+                          hashlib.sha256(path.read_bytes()).hexdigest()
+                          if path.is_file() else "",
+                      )
+                      for path in root.rglob("*")
+                  )
+              baseline = custody_snapshot()
+              boundary = b"mcri-nonroot-ci-denied"
+              for candidate in (payload, eicar):
+                  form = (
+                      b"--" + boundary + b"\\r\\n"
+                      + b'Content-Disposition: form-data; name="file"; filename="denied.pdf"\\r\\n'
+                      + b"Content-Type: application/pdf\\r\\n\\r\\n"
+                      + candidate + b"\\r\\n--" + boundary + b"--\\r\\n"
+                  )
+                  for authorization in ("", "Bearer invalid.invalid.invalid"):
+                      headers = {
+                          "Content-Type": "multipart/form-data; boundary=" + boundary.decode(),
+                          "Accept": "application/json",
+                      }
+                      if authorization:
+                          headers["Authorization"] = authorization
+                      attempt = urllib.request.Request(
+                          base + "/claims/00000000-0000-0000-0000-000000000000/documents",
+                          data=form, headers=headers, method="POST",
+                      )
+                      try:
+                          urllib.request.urlopen(attempt, timeout=3)
+                          raise AssertionError("NO-GO: unauthorized upload succeeded")
+                      except urllib.error.HTTPError as exc:
+                          assert exc.code == 401
+                      assert custody_snapshot() == baseline
               child = dict(
                   line.split(":", 1) for line in Path(
                       f"/proc/{server.pid}/status"
