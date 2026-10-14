@@ -116,6 +116,64 @@ class NonrootIsolatedAuthClonePolicy(unittest.TestCase):
         self.assertNotIn('STORAGE_BACKEND=s3', script)
         self.assertNotIn('docker volume rm', script)
 
+    def test_real_nonroot_worker_completes_exact_cloned_processing_job(self):
+        script = SCRIPT.read_text(encoding="utf-8")
+        for marker in (
+            'from pypdf import PdfWriter',
+            'writer.add_blank_page(width=612, height=792)',
+            'text_stream.set_data(',
+            'writer.write(output)',
+            'target_marker = root / "ci-processing-target.json"',
+            '"job_id": processing_id',
+            'target_marker.chmod(0o600)',
+            '-e LOCAL_STORAGE_PATH=/mnt/mcri-ci-auth-probe',
+            '-e OCR_ENABLED=true -e OCR_LANGUAGES=eng+fas',
+            'MCRI_SYNTHETIC_ONLY_CONFIRM=YES worker python -',
+            'assert os.geteuid() == os.getegid() == 1000',
+            'proc["NoNewPrivs"].strip() == "1"',
+            'from app.db import metadata as _all_model_metadata',
+            'from app.modules.processing.lease_recovery import process_job_with_lease',
+            'DocumentProcessingJob.id == job_id',
+            'DocumentProcessingJob.document_id == doc_id',
+            '.with_for_update(skip_locked=True)',
+            'assert job.status == ProcessingJobStatus.PENDING',
+            'job.status = ProcessingJobStatus.RUNNING',
+            'job.attempt_count += 1',
+            'process_job_with_lease(session, job=job, processor=process_job)',
+            'job.status == ProcessingJobStatus.COMPLETED',
+            'document.processing_status == DocumentProcessingStatus.PROCESSED',
+            'extraction.extraction_method == "pypdf"',
+            'extraction.char_count >= 60 and extraction.segment_count == 1',
+            'segment.extraction_id == extraction.id',
+            'os.environ["MCRI_CI_AUTH_DB_NAME"] in segment.text',
+            'clone_extractions_before=',
+            'clone_segments_before=',
+            'clone_extractions_after=',
+            'clone_segments_after=',
+            'source_extractions_before=',
+            'source_segments_before=',
+            'source_extractions_after=',
+            'source_segments_after=',
+            'stored.unlink()',
+            'marker.unlink()',
+            'assert not any(root.iterdir())',
+        ):
+            self.assertIn(marker, script)
+        self.assertIn(
+            '[ "$clone_extractions_after" -eq "$((clone_extractions_before + 1))" ]',
+            script,
+        )
+        self.assertIn(
+            '[ "$source_extractions_before" = "$source_extractions_after" ]',
+            script,
+        )
+        self.assertIn(
+            '[ "$source_segments_before" = "$source_segments_after" ]',
+            script,
+        )
+        self.assertNotIn('docker volume rm', script)
+        self.assertNotIn('chown -R', script)
+
     def test_required_live_stack_step_is_wired(self):
         workflow = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn(
