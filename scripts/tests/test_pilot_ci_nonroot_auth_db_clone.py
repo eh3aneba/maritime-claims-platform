@@ -321,7 +321,7 @@ class NonrootIsolatedAuthClonePolicy(unittest.TestCase):
             '[ "$source_quarantine_before" = "$source_quarantine_after" ]',
         ):
             self.assertIn(marker, script)
-        self.assertEqual(script.count('MCRI_SYNTHETIC_ONLY_CONFIRM=YES api python -'), 2)
+        self.assertEqual(script.count("api python - <<'PY'"), 2)
         self.assertNotIn("docker volume rm", script)
         self.assertNotIn("chown -R", script)
         self.assertNotIn("docker compose down -v", script)
