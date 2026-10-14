@@ -48,7 +48,8 @@ class SyntheticNonrootCustodyPolicyTests(unittest.TestCase):
         self.assertNotIn('docker compose down -v', section)
         self.assertNotIn('chmod 777', section)
         self.assertNotIn('chown -R', section)
-        self.assertIn('NOT a legacy Evidence volume migration', section)
+        self.assertIn('legacy Evidence volume migration or customer-host approval', section)
+        self.assertIn('NOT a real authenticated API upload, scanner admission', section)
 
 
 if __name__ == "__main__":
