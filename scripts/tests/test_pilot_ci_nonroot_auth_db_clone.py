@@ -82,7 +82,7 @@ class NonrootIsolatedAuthClonePolicy(unittest.TestCase):
             'source_jobs_before=',
             'clone_documents_before=',
             'clone_jobs_before=',
-            'clean_pdf = (b"%PDF-1.4',
+            'clean_pdf = output.getvalue()',
             'digest = hashlib.sha256(clean_pdf).hexdigest()',
             'multipart/form-data; boundary=',
             'data=form, method="POST"',
