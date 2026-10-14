@@ -578,7 +578,7 @@ with create_session() as session:
     scanned_document = session.get(Document, scanned_id)
     assert scanned_document is not None
     assert scanned_document.claim_id == UUID(details["claim_id"])
-    assert scanned_document.organization_id == document.organization_id
+    assert scanned_document.organization_id == session.get(Document, doc_id).organization_id
     assert scanned_document.file_hash == scan_hash
     assert scanned_document.malware_scan_status == DocumentMalwareScanStatus.CLEAN
     scanned_storage = root / scanned_document.storage_key
