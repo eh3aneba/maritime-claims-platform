@@ -285,13 +285,16 @@ is not proven.
 **Authenticated HTTP infection and scanner-outage quarantine proof (CI only):**
 After the two clean synthetic documents are successfully processed and
 their scratch files removed, a new restricted UID/GID-1000 API process
-authenticates a synthetic user and uploads a PDF-signature test fixture
-containing only the harmless standard EICAR antivirus test string. The
-real live ClamAV service must first independently label those exact bytes
-`INFECTED`. The authenticated HTTP POST must then return **422**, with
-one durable `QuarantinedUpload` row at status `infected` and a matching
-private mode-`0600` file under `_quarantine`, without creating a
-`Document` or allowing a document download.
+authenticates a synthetic user and uploads a **valid DOCX ZIP archive**
+containing the harmless EICAR test signature as a separate uncompressed
+member. Appending the signature to a synthetic PDF header did **not** trigger
+the real scanner and is therefore not a valid infection fixture. The
+actual DOCX ZIP entry is verified byte-for-byte and the real ClamAV service
+must first independently identify the archive as `INFECTED`. The
+authenticated HTTP POST must then return **422**, with one durable
+`QuarantinedUpload` row at status `infected` and matching private
+mode-`0600` bytes under `_quarantine`, without creating a `Document`
+or allowing a document download.
 
 A *separate* isolated API process receives a different synthetic PDF
 with only its own `CLAMAV_PORT=1` environment override; the central
