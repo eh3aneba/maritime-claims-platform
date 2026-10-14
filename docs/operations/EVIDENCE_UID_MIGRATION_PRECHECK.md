@@ -199,14 +199,29 @@ not change, the runner terminates Uvicorn, drops only the freshly created
 clone, and removes the private temporary dump and scratch. A preexisting
 clone name is never reused, overwritten or dropped.
 
-This proves authenticated read paths under actual non-root Linux credentials
-with a database write confined to a **separate CI database**, not a separate
-PostgreSQL engine or real-host restore. This test does **not** authenticate
-against customer data, verify a full upload, commit an admitted Document or
-Quarantine record, process an OCR job, switch production runtime users, or
-authorize a live Pilot. The still-needed mutating authenticated upload
-acceptance must stay on an equally disposable clone and use auditable
-cleanup/rollback.
+**Authenticated clean HTTP admission on this disposable database (CI only):**
+after the successful login and document-metadata read, the same non-root
+Uvicorn API now receives an authenticated multipart POST with a uniquely
+generated **synthetic** PDF. It uses the *real* application
+`create_document_from_upload` path and the live CI ClamAV scanner. The test
+requires HTTP 201, an exact payload SHA-256 and length, an authoritative
+`CLEAN` malware verdict and timestamp, and an admitted private mode-`0600`
+file with matching bytes. It checks the newly committed `Document`, its
+pending `DocumentProcessingJob`, the absence of a same-hash
+`QuarantinedUpload`, and the real authenticated HTTP download. Only the
+new scratch file is deleted, with no staging or Quarantine leftovers.
+The disposable database must gain **exactly one Document and one processing
+job**, while the seeded source database's counts for sessions, Documents and
+processing jobs stay unchanged. The database clone is then dropped using
+the existing guarded cleanup trap. This is **not** a separate PostgreSQL
+engine or a real-host restore.
+
+This proves a bounded authenticated **clean** upload and DB job-queue
+transaction with the real scanner under a non-root API process. It does
+**not** run the OCR worker against the newly queued job, test EICAR-driven
+HTTP quarantine persistence on the cloned DB, authenticate against customer
+data, change production API/Worker users, verify customer-host volume ACLs,
+or authorize Pilot GO. Those remain separately gated requirements.
 
 A pass establishes only that the selected API/worker images and **new,
 properly owned synthetic scratch** support non-root access. It is not proof
