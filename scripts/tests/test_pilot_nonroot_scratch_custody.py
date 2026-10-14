@@ -26,6 +26,16 @@ class SyntheticNonrootCustodyPolicyTests(unittest.TestCase):
         self.assertIn('["pdftotext", "-v"]', section)
         self.assertIn('["pdftoppm", "-v"]', section)
         self.assertIn('image.unlink()', section)
+        self.assertIn("LocalDocumentStorage(str(root), max_upload_bytes=1024)", section)
+        self.assertIn("asyncio.run(store.save_upload(", section)
+        self.assertIn('UploadFile(file=BytesIO(payload), filename="synthetic.pdf")', section)
+        self.assertIn('stored.file_hash == hashlib.sha256(payload).hexdigest()', section)
+        self.assertIn('store.promote(source_key, existing_key)', section)
+        self.assertIn('store.promote(source_key, target_key)', section)
+        self.assertIn('store.save_bytes(b"unsafe-collision", target_key)', section)
+        self.assertIn('store.delete_physical(target_key)', section)
+        self.assertIn('store.delete_physical(existing_key)', section)
+        self.assertIn('("_quarantine/ci", "_quarantine", "tenant/claim", "tenant")', section)
         self.assertIn('sudo find "$scratch" -mindepth 1 -maxdepth 1', section)
 
     def test_no_legacy_volume_mutation_or_security_bypass(self):
@@ -38,7 +48,8 @@ class SyntheticNonrootCustodyPolicyTests(unittest.TestCase):
         self.assertNotIn('docker compose down -v', section)
         self.assertNotIn('chmod 777', section)
         self.assertNotIn('chown -R', section)
-        self.assertIn('NOT a legacy Evidence volume migration', section)
+        self.assertIn('legacy Evidence volume migration or customer-host approval', section)
+        self.assertIn('NOT a real authenticated API upload, scanner admission', section)
 
 
 if __name__ == "__main__":

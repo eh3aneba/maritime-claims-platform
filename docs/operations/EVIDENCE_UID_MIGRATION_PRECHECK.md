@@ -61,6 +61,18 @@ read/write the existing Evidence tree, run an authenticated upload transaction,
 or modify customer host or filesystem metadata. Failure of any real UID access
 or OCR utility step fails the mandatory Operational Performance gate.
 
+The follow-up synthetic check also runs the **actual**
+`LocalDocumentStorage.save_upload`, `save_bytes`, `promote` and
+`delete_physical` methods as UID/GID 1000, with two separate one-shot
+containers sharing the *scratch-only* mount. It checks the recorded SHA-256,
+private mode-0600 uploaded PDF, Quarantine → Evidence promotion, refusal to
+overwrite an already-present Evidence key, preservation of existing bytes,
+and cleanup of all synthetic files/directories. This is a filesystem-level
+custody regression, **not** a full HTTP upload/DB transaction, malware scan,
+tenant authorization or legacy-volume migration. In particular, never use
+this scratch test to approve an in-place ownership change on the mounted
+`local_documents` volume.
+
 A pass establishes only that the selected API/worker images and **new,
 properly owned synthetic scratch** support non-root access. It is not proof
 that existing root-created customer Evidence folders, ACLs, scan quarantine
