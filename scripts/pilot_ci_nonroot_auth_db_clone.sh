@@ -395,7 +395,7 @@ result = subprocess.run(
 )
 assert result.returncode == 0 and pgm_path.is_file(), "scanner rasterization unavailable"
 raster = pgm_path.read_bytes()
-header = re.match(rb"P5\\s+(\\d+)\\s+(\\d+)\\s+(\\d+)\\s", raster)
+header = re.match(rb"P5\s+(\d+)\s+(\d+)\s+(\d+)\s", raster)
 assert header is not None, "scanner raster has an unexpected PGM header"
 width, height, max_value = map(int, header.groups())
 assert 1000 <= width <= 2500 and 1000 <= height <= 3500 and max_value == 255
