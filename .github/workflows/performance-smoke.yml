@@ -278,10 +278,12 @@ jobs:
           sudo chown 0:0 "$legacy" "$legacy/readonly-legacy.pdf"
           sudo chmod 0755 "$legacy"
           sudo chmod 0600 "$legacy/readonly-legacy.pdf"
+          original_sha="$(sudo sha256sum "$legacy/readonly-legacy.pdf" | cut -d ' ' -f1)"
           # This is a disposable synthetic COPY, not an Evidence volume migration.
           sudo install -d -o 1000 -g 1000 -m 0700 "$scratch/cloned-legacy"
           sudo install -o 1000 -g 1000 -m 0600 \
             "$legacy/readonly-legacy.pdf" "$scratch/cloned-legacy/readonly-legacy.pdf"
+          test "$(sha256sum "$scratch/cloned-legacy/readonly-legacy.pdf" | cut -d ' ' -f1)" = "$original_sha"
           docker compose --env-file .env.performance \
             -f docker-compose.yml -f docker-compose.ci-nonroot-custody.yml \
             run --rm --no-deps -T \
@@ -338,8 +340,30 @@ jobs:
           assert S_IMODE(cloned_root.stat().st_mode) == 0o700
           assert cloned_file.stat().st_uid == cloned_file.stat().st_gid == 1000
           assert S_IMODE(cloned_file.stat().st_mode) == 0o600
+          import hashlib
+          expected_sha = hashlib.sha256(expected).hexdigest()
           assert cloned_file.read_bytes() == expected
+          assert hashlib.sha256(cloned_file.read_bytes()).hexdigest() == expected_sha
+          assert not cloned_file.samefile(legacy_file)
           assert audit_evidence_tree(cloned_root) == 2
+          # Exercise a synthetic permission regression + rollback on the
+          # COPY ONLY; never alter the original read-only source.
+          cloned_file.chmod(0o000)
+          try:
+              try:
+                  audit_evidence_tree(cloned_root)
+                  raise AssertionError("NO-GO: unreadable clone was accepted")
+              except EvidencePermissionAuditError as exc:
+                  assert str(exc) == "file_permissions"
+              try:
+                  cloned_file.read_bytes()
+                  raise AssertionError("NO-GO: unreadable clone was readable")
+              except PermissionError:
+                  pass
+          finally:
+              cloned_file.chmod(0o600)
+          assert audit_evidence_tree(cloned_root) == 2
+          assert hashlib.sha256(cloned_file.read_bytes()).hexdigest() == expected_sha
           assert not os.access("/app/app", os.W_OK)
           marker = root / "cross-service-synthetic-marker"
           fd = os.open(marker, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
@@ -424,7 +448,10 @@ jobs:
           cloned_key = "cloned-legacy/readonly-legacy.pdf"
           created_key = "cloned-legacy/new-evidence.pdf"
           assert audit_evidence_tree(root / "cloned-legacy") == 2
-          assert store.path_for(cloned_key).read_bytes() == b"synthetic-legacy-custody"
+          import hashlib
+          assert hashlib.sha256(store.path_for(cloned_key).read_bytes()).hexdigest() == hashlib.sha256(
+              b"synthetic-legacy-custody"
+          ).hexdigest()
           store.save_bytes(b"synthetic-clone-new-evidence", created_key)
           assert store.path_for(created_key).read_bytes() == b"synthetic-clone-new-evidence"
           assert audit_evidence_tree(root / "cloned-legacy") == 3
@@ -478,13 +505,14 @@ jobs:
           PY
           # Original untouched; the modified-permission copy was removed.
           test "$(sudo cat "$legacy/readonly-legacy.pdf")" = "synthetic-legacy-custody"
+          test "$(sudo sha256sum "$legacy/readonly-legacy.pdf" | cut -d ' ' -f1)" = "$original_sha"
           test "$(sudo stat -c '%u:%g:%a' "$legacy")" = "0:0:755"
           test "$(sudo stat -c '%u:%g:%a' "$legacy/readonly-legacy.pdf")" = "0:0:600"
           if [ -n "$(sudo find "$scratch" -mindepth 1 -maxdepth 1 -print -quit)" ]; then
             echo "::error::Synthetic UID scratch custody was not cleaned up."
             exit 1
           fi
-          echo "PASS: original synthetic root-owned legacy refused and unchanged; UID 1000 compatible COPY accepted by real API/worker storage, then removed; eng+fas OCR passed."
+          echo "PASS: original synthetic source SHA and metadata unchanged; nonroot clone permission regression was refused and rolled back; API/worker custody and eng+fas OCR pass."
           echo "NOT a real authenticated API upload, scanner admission, legacy Evidence volume migration or customer-host approval."
 
       # The real synthetic project is now populated; prove the read-only
