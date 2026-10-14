@@ -289,6 +289,7 @@ jobs:
             run --rm --no-deps -T \
             --user 1000:1000 -v "$scratch:/mnt/mcri-ci-uid-probe:rw" \
             -v "$legacy:/mnt/mcri-ci-legacy:ro" \
+            -e MCRI_SYNTHETIC_ONLY_CONFIRM=YES \
             api python - <<'PY'
           import os
           from pathlib import Path
@@ -412,6 +413,75 @@ jobs:
               pass
           assert not (root / "_quarantine/ci/oversized.pdf").exists()
           assert not list((root / "_quarantine/ci").glob(".mcri-upload-*.partial"))
+          # Prove a real, loopback-only HTTP API process can start as UID 1000,
+          # reach the live synthetic DB and scanner, and still enforce auth.
+          # Do not publish a port, enable external AI, or touch customer storage.
+          import json
+          import subprocess
+          import sys
+          import time
+          import urllib.error
+          import urllib.request
+          from app.core.config import get_settings
+          from app.core.preflight import run_preflight
+          assert os.environ.get("APP_ENV") == "test"
+          assert os.environ.get("MCRI_SYNTHETIC_ONLY_CONFIRM") == "YES"
+          assert os.environ.get("AI_PROVIDER") == "disabled"
+          os.environ["LOCAL_STORAGE_PATH"] = str(root)
+          get_settings.cache_clear()
+          errors, _warnings = run_preflight(require_db=True)
+          assert not errors, "NO-GO: restricted API synthetic preflight failed"
+          assert not (root / ".mcri-write-probe").exists()
+          server = subprocess.Popen(
+              [sys.executable, "-m", "uvicorn", "app.main:app",
+               "--host", "127.0.0.1", "--port", "18080", "--no-access-log"],
+              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+          )
+          base = "http://127.0.0.1:18080/api/v1"
+          try:
+              ready = None
+              for _ in range(40):
+                  assert server.poll() is None, "NO-GO: restricted API exited"
+                  try:
+                      with urllib.request.urlopen(base + "/health/ready", timeout=2) as response:
+                          assert response.status == 200
+                          ready = json.load(response)
+                      break
+                  except (urllib.error.URLError, TimeoutError):
+                      time.sleep(0.5)
+              assert ready is not None, "NO-GO: restricted API readiness timeout"
+              assert ready["status"] == "ready"
+              assert ready["dependencies"]["database"] == "ok"
+              assert ready["dependencies"]["sftp_runtime"] == "disabled"
+              with urllib.request.urlopen(base + "/health/live", timeout=3) as response:
+                  assert response.status == 200
+                  assert json.load(response)["status"] == "ok"
+              try:
+                  urllib.request.urlopen(
+                      base + "/claims/00000000-0000-0000-0000-000000000000/documents",
+                      timeout=3,
+                  )
+                  raise AssertionError("NO-GO: unauthenticated Evidence access")
+              except urllib.error.HTTPError as exc:
+                  assert exc.code == 401
+              child = dict(
+                  line.split(":", 1) for line in Path(
+                      f"/proc/{server.pid}/status"
+                  ).read_text().splitlines() if ":" in line
+              )
+              assert child["Uid"].split() == ["1000"] * 4
+              assert child["Gid"].split() == ["1000"] * 4
+              assert int(child["CapEff"].strip(), 16) == 0
+              assert child["NoNewPrivs"].strip() == "1"
+          finally:
+              if server.poll() is None:
+                  server.terminate()
+              try:
+                  server.wait(timeout=5)
+              except subprocess.TimeoutExpired:
+                  server.kill()
+                  server.wait(timeout=5)
+          assert not (root / ".mcri-write-probe").exists()
           PY
           docker compose --env-file .env.performance \
             -f docker-compose.yml -f docker-compose.ci-nonroot-custody.yml \

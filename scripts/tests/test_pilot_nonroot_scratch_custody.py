@@ -75,6 +75,32 @@ class SyntheticNonrootCustodyPolicyTests(unittest.TestCase):
         self.assertIn('("_quarantine/ci", "_quarantine", "tenant/claim", "tenant")', section)
         self.assertIn('sudo find "$scratch" -mindepth 1 -maxdepth 1', section)
 
+    def test_real_nonroot_api_http_readiness_is_synthetic_and_loopback_only(self):
+        source = WORKFLOW.read_text(encoding="utf-8")
+        name = "Verify unprivileged API and OCR worker synthetic scratch custody"
+        section = source.split("- name: " + name, 1)[1].split("\n      - name:", 1)[0]
+        self.assertEqual(section.count("-e MCRI_SYNTHETIC_ONLY_CONFIRM=YES"), 1)
+        self.assertIn('os.environ.get("APP_ENV") == "test"', section)
+        self.assertIn('os.environ.get("AI_PROVIDER") == "disabled"', section)
+        self.assertIn('os.environ["LOCAL_STORAGE_PATH"] = str(root)', section)
+        self.assertIn("get_settings.cache_clear()", section)
+        self.assertIn("run_preflight(require_db=True)", section)
+        self.assertIn('not (root / ".mcri-write-probe").exists()', section)
+        self.assertIn('"app.main:app"', section)
+        self.assertIn('"--host", "127.0.0.1"', section)
+        self.assertIn('"--no-access-log"', section)
+        self.assertIn('base + "/health/ready"', section)
+        self.assertIn('ready["dependencies"]["database"] == "ok"', section)
+        self.assertIn('base + "/health/live"', section)
+        self.assertIn('exc.code == 401', section)
+        self.assertIn('child["Uid"].split() == ["1000"] * 4', section)
+        self.assertIn('int(child["CapEff"].strip(), 16) == 0', section)
+        self.assertIn('child["NoNewPrivs"].strip() == "1"', section)
+        self.assertIn("server.terminate()", section)
+        self.assertIn("server.wait(timeout=5)", section)
+        self.assertNotIn("--publish", section)
+        self.assertNotIn("--network host", section)
+
     def test_ci_override_only_confines_disposable_api_and_worker(self):
         override = (ROOT / "docker-compose.ci-nonroot-custody.yml").read_text(encoding="utf-8")
         self.assertIn('user: "1000:1000"', override)
