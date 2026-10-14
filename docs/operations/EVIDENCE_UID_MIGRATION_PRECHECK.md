@@ -184,6 +184,30 @@ or demonstrate rollback on a production database. Those remain separately
 gated steps and require an independently isolated disposable database before
 any mutating acceptance test. This is **not** customer Pilot GO.
 
+**Authenticated real API on a separate disposable synthetic database
+(CI only):** the Operational Performance Smoke workflow now creates a
+private PostgreSQL custom dump of the *synthetic seeded test database*, creates
+a randomly named **new database in the same disposable PostgreSQL server**,
+restores the dump into that database, and points a separate UID/GID 1000,
+zero-capability, no-new-privileges one-shot API solely at this clone. It uses
+private scratch storage, an internal `127.0.0.1` Uvicorn listener without
+Docker port publication, and the real preflight and live DB/ClamAV services.
+A seeded synthetic user logs in through the real HTTP endpoint, creating a
+session **in the clone only**, then performs authenticated claim and document
+metadata reads. After verifying the source authentication-session count did
+not change, the runner terminates Uvicorn, drops only the freshly created
+clone, and securely deletes the temporary dump and scratch. A preexisting
+clone name is never reused, overwritten or dropped.
+
+This proves authenticated read paths under actual non-root Linux credentials
+with a database write confined to a **separate CI database**, not a separate
+PostgreSQL engine or real-host restore. This test does **not** authenticate
+against customer data, verify a full upload, commit an admitted Document or
+Quarantine record, process an OCR job, switch production runtime users, or
+authorize a live Pilot. The still-needed mutating authenticated upload
+acceptance must stay on an equally disposable clone and use auditable
+cleanup/rollback.
+
 A pass establishes only that the selected API/worker images and **new,
 properly owned synthetic scratch** support non-root access. It is not proof
 that existing root-created customer Evidence folders, ACLs, scan quarantine
