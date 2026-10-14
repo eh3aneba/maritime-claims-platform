@@ -196,7 +196,7 @@ class NonrootIsolatedAuthClonePolicy(unittest.TestCase):
             'enable_ocr=True, ocr_languages="eng+fas"',
             'ocr_max_pages=1, ocr_timeout_seconds=90',
             'recovered.method == "pypdf+selective-tesseract:eng+fas"',
-            'recovered.requires_ocr is False',
+            'if recovered.requires_ocr or len(recovered.segments) != 1:',
             'recovered.text_hash is not None',
             'recovered.segments[0].locator_value == "1"',
             '"synthetic marine claims evidence" in recovered.combined_text.casefold()',
