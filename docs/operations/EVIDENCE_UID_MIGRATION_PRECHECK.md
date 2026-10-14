@@ -234,7 +234,12 @@ UID/GID 1000 worker, now creates a private image-only PDF without a text
 stream: Poppler renders the already verified **large-font, three-line** synthetic
 one-page PDF to a grayscale PGM, keeping all expected text well within the
 page crop boundary; pypdf then embeds those pixels as a compressed PDF Image
-XObject. First, native-only extraction must report **no text** and
+XObject. The probe first checks that the initial grayscale raster contains real
+ink and that **the installed Tesseract** recognizes its synthetic phrase.
+It then rasterizes the generated scanned-only PDF independently and requires
+the pixel dimensions and visible ink to survive re-embedding. A blank or
+invisible intermediate image is an explicit NO-GO rather than an OCR success.
+First, native-only extraction must report **no text** and
 `requires_ocr=True`. Next, the real `extract_document_text` pipeline with
 `enable_ocr=True`, `eng+fas`, a one-page cap and bounded timeout must call
 Poppler/Tesseract, return `pypdf+selective-tesseract:eng+fas`, recover the
