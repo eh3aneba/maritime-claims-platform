@@ -100,6 +100,20 @@ Only those synthetic fixture files receive root ownership; it never changes
 `local_documents`, performs a customer-volume probe, or authorizes a
 permission conversion on a cloned/production Evidence volume.
 
+**Synthetic permission-remapped copy rehearsal (CI only):** after the
+negative root-owned fixture, the disposable runner creates a **separate copy**
+of those known synthetic bytes inside the UID/GID 1000-owned scratch mount,
+with private `0700` directory and `0600` file modes. The original root-owned
+fixture stays independently mounted read-only. The real non-root API process
+must read the copy and receive an `audit_evidence_tree` PASS; the independent
+non-root OCR worker must read and write through the actual
+`LocalDocumentStorage` contract, then remove **only** the copied synthetic
+files. The runner rechecks the original source bytes, ownership and modes,
+and requires full scratch cleanup. This exercises **known synthetic copied
+layout only**: it is **not** a customer-data clone, DB/storage recovery-point
+reconciliation, audited production migration, ACL or mount-policy proof,
+operator sign-off, or an authorized API/Worker production UID change.
+
 A pass establishes only that the selected API/worker images and **new,
 properly owned synthetic scratch** support non-root access. It is not proof
 that existing root-created customer Evidence folders, ACLs, scan quarantine
