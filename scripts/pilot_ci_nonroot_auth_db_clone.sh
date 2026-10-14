@@ -407,6 +407,20 @@ width, height, max_value = map(int, header.groups())
 assert 1000 <= width <= 2500 and 1000 <= height <= 3500 and max_value == 255
 pixels = raster[header.end():]
 assert len(pixels) == width * height and len(pixels) < 9_000_000
+source_ink = sum(pixel < 180 for pixel in pixels)
+assert source_ink > 3000, "NO-GO synthetic source page is blank"
+# Before checking the PDF wrapper, prove the actual pinned ENG+FAS OCR
+# engine can recognize this input raster. Never log document bytes/text.
+ocr_source = subprocess.run(
+    ["tesseract", str(pgm_path), "stdout", "-l", "eng+fas"],
+    capture_output=True, text=True, timeout=45, check=False,
+)
+assert ocr_source.returncode == 0, "NO-GO source-raster Tesseract exited nonzero"
+if "synthetic marine claims evidence" not in ocr_source.stdout.casefold():
+    raise AssertionError(
+        "NO-GO source-raster OCR did not read the synthetic phrase "
+        f"(pixels={len(pixels)}, ink={source_ink}, chars={len(ocr_source.stdout)})"
+    )
 writer = PdfWriter()
 page = writer.add_blank_page(width=612, height=792)
 image = DecodedStreamObject()
@@ -431,6 +445,32 @@ page[NameObject("/Contents")] = writer._add_object(stream)
 with scanned_pdf.open("xb") as output:
     writer.write(output)
 assert scanned_pdf.stat().st_size < 1_000_000
+# Verify the image survived PDF re-embedding, not just that a pypdf
+# Image XObject was present. In particular catch an empty/inverted/
+# invisible PDF image before blaming the OCR engine or its language data.
+roundtrip_prefix = root / "ci-scanned-roundtrip"
+roundtrip_pgm = roundtrip_prefix.with_suffix(".pgm")
+raster_check = subprocess.run(
+    ["pdftoppm", "-f", "1", "-l", "1", "-singlefile",
+     "-r", "200", "-gray", str(scanned_pdf), str(roundtrip_prefix)],
+    capture_output=True, timeout=35, check=False,
+)
+assert raster_check.returncode == 0 and roundtrip_pgm.is_file(), (
+    "NO-GO scanned PDF cannot render as a raster"
+)
+roundtrip = roundtrip_pgm.read_bytes()
+rt_header = re.match(rb"P5\s+(\d+)\s+(\d+)\s+(\d+)\s", roundtrip)
+assert rt_header is not None and tuple(map(int, rt_header.groups())) == (
+    width, height, 255,
+), "NO-GO scanned PDF rendered unexpected dimensions"
+rt_pixels = roundtrip[rt_header.end():]
+assert len(rt_pixels) == len(pixels), "NO-GO scanned PDF raster byte length changed"
+roundtrip_ink = sum(pixel < 180 for pixel in rt_pixels)
+if roundtrip_ink < 3000:
+    raise AssertionError(
+        "NO-GO scanned PDF image content did not survive round-trip "
+        f"(source_ink={source_ink}, roundtrip_ink={roundtrip_ink})"
+    )
 native = extract_document_text(scanned_pdf, enable_ocr=False)
 assert native.method == "pypdf" and native.requires_ocr
 assert len(native.segments) == 1 and not native.combined_text.strip()
@@ -455,6 +495,7 @@ assert "nonroot worker processing" in recovered.combined_text.casefold()
 assert any("recovered 1" in warning for warning in recovered.warnings)
 scanned_pdf.unlink()
 pgm_path.unlink()
+roundtrip_pgm.unlink()
 stored.unlink()
 marker.unlink()
 for directory in sorted(
