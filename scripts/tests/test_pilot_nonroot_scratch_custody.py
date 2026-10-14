@@ -101,6 +101,29 @@ class SyntheticNonrootCustodyPolicyTests(unittest.TestCase):
         self.assertNotIn("--publish", section)
         self.assertNotIn("--network host", section)
 
+    def test_live_scanner_verdicts_block_synthetic_infected_admission(self):
+        source = WORKFLOW.read_text(encoding="utf-8")
+        name = "Verify unprivileged API and OCR worker synthetic scratch custody"
+        section = source.split("- name: " + name, 1)[1].split("\n      - name:", 1)[0]
+        self.assertIn('bytes([92])', section)
+        self.assertIn('assert len(eicar) == 68', section)
+        self.assertIn('filename="eicar-test.txt"', section)
+        self.assertIn('"_quarantine/ci/eicar-test.txt"', section)
+        self.assertIn('rejected.file_hash == hashlib.sha256(eicar).hexdigest()', section)
+        self.assertIn('scanner_host == "clamav" and scanner_port == 3310', section)
+        self.assertIn('ping_clamd(host=scanner_host, port=scanner_port, timeout_seconds=20)', section)
+        self.assertIn('clean_verdict.verdict == MalwareScanVerdict.CLEAN', section)
+        self.assertIn('infected_verdict.verdict == MalwareScanVerdict.INFECTED', section)
+        self.assertIn('port=0, timeout_seconds=1', section)
+        self.assertIn('except MalwareScannerError:', section)
+        self.assertIn('assert not (root / infected_evidence_key).exists()', section)
+        self.assertIn('store.delete_physical(infected_key)', section)
+        self.assertIn('hashlib.sha256(infected_path.read_bytes()).hexdigest() == infected_sha', section)
+        self.assertIn('store.promote(source_key, target_key)', section)
+        self.assertNotIn('store.promote(infected_key,', section)
+        self.assertNotIn(':/data/documents', section)
+        self.assertNotIn('docker volume rm', section)
+
     def test_ci_override_only_confines_disposable_api_and_worker(self):
         override = (ROOT / "docker-compose.ci-nonroot-custody.yml").read_text(encoding="utf-8")
         self.assertIn('user: "1000:1000"', override)
