@@ -494,10 +494,10 @@ jobs:
               boundary = b"mcri-nonroot-ci-denied"
               for candidate in (payload, eicar):
                   form = (
-                      b"--" + boundary + b"\\r\\n"
-                      + b'Content-Disposition: form-data; name="file"; filename="denied.pdf"\\r\\n'
-                      + b"Content-Type: application/pdf\\r\\n\\r\\n"
-                      + candidate + b"\\r\\n--" + boundary + b"--\\r\\n"
+                      b"--" + boundary + b"\r\n"
+                      + b'Content-Disposition: form-data; name="file"; filename="denied.pdf"\r\n'
+                      + b"Content-Type: application/pdf\r\n\r\n"
+                      + candidate + b"\r\n--" + boundary + b"--\r\n"
                   )
                   for authorization in ("", "Bearer invalid.invalid.invalid"):
                       headers = {
