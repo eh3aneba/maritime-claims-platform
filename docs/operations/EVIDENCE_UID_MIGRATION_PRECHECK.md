@@ -114,6 +114,19 @@ layout only**: it is **not** a customer-data clone, DB/storage recovery-point
 reconciliation, audited production migration, ACL or mount-policy proof,
 operator sign-off, or an authorized API/Worker production UID change.
 
+**Synthetic permission-failure rollback (CI only):** the runner also records a
+SHA-256 checksum of the disposable root-owned source before copying it and
+requires the private UID/GID 1000 copy to match. The non-root API process
+temporarily removes read permission from **only its own copied file**, proves
+the real permission audit rejects that copy (`file_permissions`) and that
+the file cannot be read, then restores the copy's mode to `0600` and verifies
+the audit and digest succeed again. The independent non-root worker verifies
+the copied digest before its existing custody operations. Finally the runner
+rechecks the original source SHA-256, ownership and mode and requires complete
+scratch cleanup. This is a controlled copy-level permission rollback
+regression, **not** a database/application rollback, production filesystem
+remediation, customer-storage migration or restore of a real backup.
+
 A pass establishes only that the selected API/worker images and **new,
 properly owned synthetic scratch** support non-root access. It is not proof
 that existing root-created customer Evidence folders, ACLs, scan quarantine
