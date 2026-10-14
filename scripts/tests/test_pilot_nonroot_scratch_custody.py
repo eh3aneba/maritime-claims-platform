@@ -124,6 +124,25 @@ class SyntheticNonrootCustodyPolicyTests(unittest.TestCase):
         self.assertNotIn(':/data/documents', section)
         self.assertNotIn('docker volume rm', section)
 
+    def test_restricted_http_upload_rejects_anonymous_and_invalid_bearer_without_custody_write(self):
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        section = workflow.split(
+            "- name: Verify unprivileged API and OCR worker synthetic scratch custody", 1
+        )[1].split("\n      - name:", 1)[0]
+        self.assertIn("def custody_snapshot():", section)
+        self.assertIn('for path in root.rglob("*")', section)
+        self.assertIn("hashlib.sha256(path.read_bytes()).hexdigest()", section)
+        self.assertIn("for candidate in (payload, eicar):", section)
+        self.assertIn('b"mcri-nonroot-ci-denied"', section)
+        self.assertIn("multipart/form-data; boundary=", section)
+        self.assertIn('for authorization in ("", "Bearer invalid.invalid.invalid"):', section)
+        self.assertIn("data=form, headers=headers, method=\"POST\"", section)
+        self.assertIn('assert exc.code == 401', section)
+        self.assertIn("assert custody_snapshot() == baseline", section)
+        self.assertIn('b"\\r\\n"', section)
+        self.assertNotIn(':/data/documents', section)
+        self.assertNotIn('docker volume rm', section)
+
     def test_ci_override_only_confines_disposable_api_and_worker(self):
         override = (ROOT / "docker-compose.ci-nonroot-custody.yml").read_text(encoding="utf-8")
         self.assertIn('user: "1000:1000"', override)

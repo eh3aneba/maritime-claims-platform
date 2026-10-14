@@ -168,6 +168,22 @@ worker credentials**, not an authenticated document upload, persisted
 atomicity, automatic quarantining of actual customer uploads, or Pilot GO.
 All of those require independent integrated application acceptance.
 
+**Unauthorized HTTP upload fail-closed proof (CI only):** the real
+loopback-only Uvicorn API process under UID/GID 1000 receives multipart POST
+requests carrying a harmless synthetic PDF and EICAR test signature, first
+without authentication and then with an invalid bearer token. Every request
+must return `401` and the runner compares the complete relative scratch
+namespace (including file SHA-256 digests) before and after each refusal.
+No anonymous request may publish, modify or leave a synthetic Evidence or
+Quarantine file. The requests are deliberately aimed at a synthetic
+nonexistent claim ID and do not authorize access to real claims.
+
+The probe does not authenticate a real user, commit a database document or
+quarantine record, execute an end-to-end malware-scan admission transaction,
+or demonstrate rollback on a production database. Those remain separately
+gated steps and require an independently isolated disposable database before
+any mutating acceptance test. This is **not** customer Pilot GO.
+
 A pass establishes only that the selected API/worker images and **new,
 properly owned synthetic scratch** support non-root access. It is not proof
 that existing root-created customer Evidence folders, ACLs, scan quarantine
