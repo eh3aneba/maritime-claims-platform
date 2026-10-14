@@ -144,7 +144,7 @@ class NonrootIsolatedAuthClonePolicy(unittest.TestCase):
             'document.processing_status == DocumentProcessingStatus.PROCESSED',
             'extraction.extraction_method == "pypdf"',
             'extraction.char_count >= 60 and extraction.segment_count == 1',
-            'segment.extraction_id == extraction.id',
+            'DocumentTextSegment.extraction_id == extraction.id',
             'os.environ["MCRI_CI_AUTH_DB_NAME"] in segment.text',
             'clone_extractions_before=',
             'clone_segments_before=',
