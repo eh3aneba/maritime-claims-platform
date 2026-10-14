@@ -208,20 +208,34 @@ requires HTTP 201, an exact payload SHA-256 and length, an authoritative
 `CLEAN` malware verdict and timestamp, and an admitted private mode-`0600`
 file with matching bytes. It checks the newly committed `Document`, its
 pending `DocumentProcessingJob`, the absence of a same-hash
-`QuarantinedUpload`, and the real authenticated HTTP download. Only the
-new scratch file is deleted, with no staging or Quarantine leftovers.
-The disposable database must gain **exactly one Document and one processing
-job**, while the seeded source database's counts for sessions, Documents and
-processing jobs stay unchanged. The database clone is then dropped using
-the existing guarded cleanup trap. This is **not** a separate PostgreSQL
-engine or a real-host restore.
+`QuarantinedUpload`, and the real authenticated HTTP download. The
+test now generates an actual parseable single-page PDF with synthetic text
+(rather than just a PDF signature). The API hands **only its new document and
+job identifiers** to a distinct OCR-capable, UID/GID 1000 worker through a
+mode-`0600` scratch marker. That separate worker, with zero Linux capabilities
+and `no-new-privileges`, locks **only this precise new pending job**, records
+a bounded running lease, and executes the existing
+`process_job_with_lease(..., processor=process_job)` path. It checks the job
+completed once, the document was processed, and an authentic `pypdf`
+extraction and text segment were committed against the same document/claim
+and contain its unique synthetic marker. The worker deletes only its own
+temporary scratch Evidence and marker. No staging/Quarantine leftovers are
+allowed. The disposable database gains **exactly one Document, one processing
+job, one text extraction and one text segment**, while the seeded source
+database's matching row counts remain unchanged. The separate temporary DB
+is then dropped by the existing guarded cleanup trap.
 
-This proves a bounded authenticated **clean** upload and DB job-queue
-transaction with the real scanner under a non-root API process. It does
-**not** run the OCR worker against the newly queued job, test EICAR-driven
-HTTP quarantine persistence on the cloned DB, authenticate against customer
-data, change production API/Worker users, verify customer-host volume ACLs,
-or authorize Pilot GO. Those remain separately gated requirements.
+This proves a bounded authenticated clean upload, live malware scan, DB
+admission and **real non-root worker native-PDF text processing**, on a clone
+in the same ephemeral PostgreSQL instance, not a separate engine or host.
+The worker image has `eng+fas` OCR tooling available, but this PDF has native
+text: **scanned-page Tesseract OCR is NOT exercised** by this scenario.
+The job is explicitly selected by its freshly generated identifier and the
+same fenced processing function is called, rather than proving background
+queue polling fairness for unrelated jobs. Infected/outage HTTP quarantine
+persistence, actual scanned-PDF OCR, production runtime user changes,
+customer-host ACL compatibility, independent host rollback and Pilot GO
+remain separately gated.
 
 A pass establishes only that the selected API/worker images and **new,
 properly owned synthetic scratch** support non-root access. It is not proof
