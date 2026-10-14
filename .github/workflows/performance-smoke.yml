@@ -289,6 +289,7 @@ jobs:
             run --rm --no-deps -T \
             --user 1000:1000 -v "$scratch:/mnt/mcri-ci-uid-probe:rw" \
             -v "$legacy:/mnt/mcri-ci-legacy:ro" \
+            -e MCRI_SYNTHETIC_ONLY_CONFIRM=YES \
             api python - <<'PY'
           import os
           from pathlib import Path
