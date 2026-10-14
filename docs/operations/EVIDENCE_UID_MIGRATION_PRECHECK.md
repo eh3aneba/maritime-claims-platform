@@ -68,16 +68,16 @@ containers sharing the *scratch-only* mount. It checks the recorded SHA-256,
 private mode-0600 uploaded PDF, Quarantine → Evidence promotion, refusal to
 overwrite an already-present Evidence key, preservation of existing bytes,
 and cleanup of all synthetic files/directories. This is a filesystem-level
+custody regression, **not** a full HTTP upload/DB transaction, malware scan,
+tenant authorization or legacy-volume migration. In particular, never use
+this scratch test to approve an in-place ownership change on the mounted
+`local_documents` volume.
+
 The synthetic API process also attempts a duplicate streaming upload and a
 deliberately oversized upload. Both must be rejected without modifying the
 prior quarantine payload or leaving a published/temporary partial file.
 These negative tests do not exercise authenticated requests, scanner verdicts,
 a committed database transaction or customer data.
-
-custody regression, **not** a full HTTP upload/DB transaction, malware scan,
-tenant authorization or legacy-volume migration. In particular, never use
-this scratch test to approve an in-place ownership change on the mounted
-`local_documents` volume.
 
 A pass establishes only that the selected API/worker images and **new,
 properly owned synthetic scratch** support non-root access. It is not proof
