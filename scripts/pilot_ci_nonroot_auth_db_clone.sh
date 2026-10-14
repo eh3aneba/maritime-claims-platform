@@ -179,6 +179,10 @@ try:
         + os.environ["MCRI_CI_AUTH_DB_NAME"]
     )
     assert verification_text.isascii()
+    # Use large, centered, well-separated text lines. The former 14pt,
+    # single-line fixture could run past the PDF crop boundary after
+    # rasterization, producing a non-deterministic OCR acceptance result.
+    marker_text = os.environ["MCRI_CI_AUTH_DB_NAME"].encode("ascii")
     writer = PdfWriter()
     page = writer.add_blank_page(width=612, height=792)
     font = DictionaryObject({
@@ -193,8 +197,10 @@ try:
     })
     text_stream = DecodedStreamObject()
     text_stream.set_data(
-        b"BT /F1 14 Tf 30 700 Td ("
-        + verification_text.encode("ascii") + b") Tj ET"
+        b"BT /F1 20 Tf 55 650 Td "
+        b"(Synthetic marine claims evidence) Tj "
+        b"0 -48 Td (nonroot worker processing) Tj "
+        b"0 -48 Td (" + marker_text + b") Tj ET"
     )
     page[NameObject("/Contents")] = writer._add_object(text_stream)
     output = BytesIO()
@@ -433,7 +439,14 @@ recovered = extract_document_text(
     ocr_max_pages=1, ocr_timeout_seconds=90,
 )
 assert recovered.method == "pypdf+selective-tesseract:eng+fas"
-assert recovered.requires_ocr is False and len(recovered.segments) == 1
+if recovered.requires_ocr or len(recovered.segments) != 1:
+    # Only synthetic test data is involved; print bounded, diagnosis-only
+    # outcome metadata instead of raw OCR text, image bytes or credentials.
+    raise AssertionError(
+        "NO-GO synthetic scanned PDF OCR unresolved "
+        f"(segments={len(recovered.segments)}, chars={len(recovered.combined_text)}, "
+        f"warnings={'; '.join(w[:150] for w in recovered.warnings[:3])})"
+    )
 assert recovered.text_hash is not None
 assert recovered.segments[0].locator_type == "page"
 assert recovered.segments[0].locator_value == "1"
