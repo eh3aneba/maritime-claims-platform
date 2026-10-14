@@ -320,6 +320,10 @@ from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject, Num
 from app.db import metadata as _all_model_metadata  # noqa: F401
 from app.db.session import create_session
 from app.modules.processing.extractors import extract_document_text
+from app.core.restore_pair_audit import (
+    RestoreEvidenceRow, RestorePairAuditError, audit_restored_evidence_pair,
+)
+from dataclasses import replace
 from app.modules.documents.models import (
     Document, DocumentMalwareScanStatus, DocumentProcessingStatus, QuarantinedUpload,
 )
@@ -638,6 +642,38 @@ with create_session() as session:
     assert segment_scan.char_count == extraction_scan.char_count
     assert scanned_job.result["method"] == extraction_scan.extraction_method
     assert scanned_job.result["requires_ocr"] is False
+
+    # Read-only admission/restore-pair gate over the two real DB-linked
+    # Evidence files while their bytes still exist in private CI scratch.
+    # The negative case corrupts ONLY the in-memory expectation, never DB
+    # rows or Evidence bytes. No host volume, object store or customer paths.
+    native_db_row = session.get(Document, doc_id)
+    assert native_db_row is not None
+    assert native_db_row.claim_id == scanned_document.claim_id
+    assert native_db_row.organization_id == scanned_document.organization_id
+    rows = [
+        RestoreEvidenceRow(
+            kind="document", record_id=item.id,
+            organization_id=item.organization_id, claim_id=item.claim_id,
+            storage_key=item.storage_key, file_hash=item.file_hash,
+            file_size_bytes=item.file_size_bytes,
+            state=item.malware_scan_status.value,
+        )
+        for item in (native_db_row, scanned_document)
+    ]
+    assert audit_restored_evidence_pair(
+        root, rows, organization_id=native_db_row.organization_id,
+        claim_id=native_db_row.claim_id,
+    ) == 2
+    try:
+        audit_restored_evidence_pair(
+            root, [replace(rows[0], file_hash="0" * 64), rows[1]],
+            organization_id=native_db_row.organization_id,
+            claim_id=native_db_row.claim_id,
+        )
+        raise AssertionError("NO-GO: mismatched DB/Evidence digest was accepted")
+    except RestorePairAuditError as exc:
+        assert str(exc) == "digest_mismatch"
     session.rollback()
 
 # Only remove newly owned scratch artifacts; never unmount or delete the
@@ -683,6 +719,10 @@ from sqlalchemy import select
 from app.db import metadata as _all_model_metadata  # noqa: F401
 from app.db.session import create_session
 from app.modules.documents.malware import MalwareScanVerdict, scan_file
+from app.core.restore_pair_audit import (
+    RestoreEvidenceRow, RestorePairAuditError, audit_restored_evidence_pair,
+)
+from dataclasses import replace
 from app.modules.documents.models import Document, QuarantinedUpload, QuarantineStatus
 from app.core.config import get_settings
 from app.modules.claims.models import Claim
@@ -865,6 +905,38 @@ with isolated_api(18085, scanner_port=1) as (base, token):
     outage_path = verify_quarantine(
         outage_hash, outage_pdf, QuarantineStatus.SCAN_ERROR, token, base, "ci-scan-unavailable.pdf"
     )
+
+# Read-only post-admission reconciliation of the two actual quarantine
+# rows and private files. No destructive fault injection into the source DB.
+with create_session() as session:
+    selected = list(session.scalars(select(QuarantinedUpload).where(
+        QuarantinedUpload.claim_id == claim_id,
+        QuarantinedUpload.file_hash.in_([infected_hash, outage_hash]),
+    )))
+    assert len(selected) == 2
+    rows = [
+        RestoreEvidenceRow(
+            kind="quarantine", record_id=item.id,
+            organization_id=item.organization_id, claim_id=item.claim_id,
+            storage_key=item.quarantine_key, file_hash=item.file_hash,
+            file_size_bytes=item.file_size_bytes, state=item.status.value,
+        )
+        for item in selected
+    ]
+    assert audit_restored_evidence_pair(
+        root, rows, organization_id=selected[0].organization_id,
+        claim_id=claim_id,
+    ) == 2
+    try:
+        audit_restored_evidence_pair(
+            root, [replace(rows[0], claim_id=selected[0].organization_id), rows[1]],
+            organization_id=selected[0].organization_id,
+            claim_id=claim_id,
+        )
+        raise AssertionError("NO-GO: mismatched quarantine claim was accepted")
+    except RestorePairAuditError as exc:
+        assert str(exc) == "wrong_claim_lineage"
+    session.rollback()
 
 # Delete only two newly owned quarantine files after verifying their exact
 # bytes, private permissions and durable clone records. No customer volume.

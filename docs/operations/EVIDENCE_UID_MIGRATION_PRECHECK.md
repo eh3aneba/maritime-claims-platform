@@ -328,6 +328,36 @@ records while the seeded source database's quarantined-upload count stays
 unchanged, in addition to its unchanged Documents, jobs, text and session
 counts. The guarded clone cleanup then drops only this test's database.
 
+**Read-only selected-claim DB/Evidence pair audit (CI only):** the same
+non-root worker now calls the independent
+`app.core.restore_pair_audit.audit_restored_evidence_pair` on actual
+committed `Document` and `QuarantinedUpload` model rows from the
+disposable PostgreSQL clone **while their files remain in private scratch**.
+For every supplied row the audit requires correct organization, claim, UUID
+and canonical storage-key lineage, distinct row/key identities, clean
+admitted versus infected/scan-error quarantine state, owner UID/GID 1000,
+a mode-`0700` private Evidence root, non-writable nested directories,
+regular mode-`0600` files, matching length and **streamed SHA-256**.
+Symlinks, missing bytes, wrong tenant/claim IDs, stale hashes, incompatible
+states and permission changes return bounded privacy-safe NO-GO codes.
+
+The live CI scenario checks two **real** authenticated Documents (native
+and scanned PDF) and later two **real** quarantined uploads against their
+corresponding physical files. It also deliberately misstates **only a
+temporary in-memory expectation**, requiring detection without corrupting
+the actual database or Evidence. Unit tests cover same-size tampering,
+atomic synthetic-copy restoration, missing/truncated content, link
+substitution and wrong identities. Source DB row counts still cannot
+change; the existing guarded clone-drop and scratch cleanup remain intact.
+
+**This is a subset integrity auditor, not a database+volume restore.**
+It cannot establish that the full claim has no missing/unindexed files,
+that an independently restored PostgreSQL instance and Evidence snapshot
+share a common recovery point, or that a customer host has compatible
+mounts/ACLs. A separately approved, quiesced, independently isolated
+backup/restore rehearsal with exhaustive manifest reconciliation and
+operator signoff is still required.
+
 These security tests do not prove how production services handle a real
 host-wide scanner outage, API restart between quarantine and release, or
 independently restored legacy volumes. Production runtime-user changes,
