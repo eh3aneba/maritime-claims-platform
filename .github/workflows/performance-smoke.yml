@@ -283,7 +283,7 @@ jobs:
           sudo install -d -o 1000 -g 1000 -m 0700 "$scratch/cloned-legacy"
           sudo install -o 1000 -g 1000 -m 0600 \
             "$legacy/readonly-legacy.pdf" "$scratch/cloned-legacy/readonly-legacy.pdf"
-          test "$(sha256sum "$scratch/cloned-legacy/readonly-legacy.pdf" | cut -d ' ' -f1)" = "$original_sha"
+          test "$(sudo sha256sum "$scratch/cloned-legacy/readonly-legacy.pdf" | cut -d ' ' -f1)" = "$original_sha"
           docker compose --env-file .env.performance \
             -f docker-compose.yml -f docker-compose.ci-nonroot-custody.yml \
             run --rm --no-deps -T \
