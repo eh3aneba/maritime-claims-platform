@@ -196,7 +196,7 @@ A seeded synthetic user logs in through the real HTTP endpoint, creating a
 session **in the clone only**, then performs authenticated claim and document
 metadata reads. After verifying the source authentication-session count did
 not change, the runner terminates Uvicorn, drops only the freshly created
-clone, and securely deletes the temporary dump and scratch. A preexisting
+clone, and removes the private temporary dump and scratch. A preexisting
 clone name is never reused, overwritten or dropped.
 
 This proves authenticated read paths under actual non-root Linux credentials
