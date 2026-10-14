@@ -43,7 +43,12 @@ exists="$(compose exec -T db psql -U "$POSTGRES_USER" -d postgres -At \
 [ -z "$exists" ] || exit 2
 before="$(compose exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At \
   -c 'SELECT COUNT(*) FROM auth_sessions;')"
-[[ "$before" =~ ^[0-9]+$ ]] || exit 2
+source_documents_before="$(compose exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At \
+  -c 'SELECT COUNT(*) FROM documents;')"
+source_jobs_before="$(compose exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At \
+  -c 'SELECT COUNT(*) FROM document_processing_jobs;')"
+[[ "$before" =~ ^[0-9]+$ ]] && [[ "$source_documents_before" =~ ^[0-9]+$ ]] && \
+[[ "$source_jobs_before" =~ ^[0-9]+$ ]] || exit 2
 compose exec -T db pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
   --format=custom --no-owner --no-privileges > "$dump"
 [ -s "$dump" ] || exit 2
@@ -59,7 +64,12 @@ for name in "$POSTGRES_DB" "$clone"; do
 done
 clone_before="$(compose exec -T db psql -U "$POSTGRES_USER" -d "$clone" -At \
   -c 'SELECT COUNT(*) FROM auth_sessions;')"
-[[ "$clone_before" =~ ^[0-9]+$ ]] || exit 2
+clone_documents_before="$(compose exec -T db psql -U "$POSTGRES_USER" -d "$clone" -At \
+  -c 'SELECT COUNT(*) FROM documents;')"
+clone_jobs_before="$(compose exec -T db psql -U "$POSTGRES_USER" -d "$clone" -At \
+  -c 'SELECT COUNT(*) FROM document_processing_jobs;')"
+[[ "$clone_before" =~ ^[0-9]+$ ]] && [[ "$clone_documents_before" =~ ^[0-9]+$ ]] && \
+[[ "$clone_jobs_before" =~ ^[0-9]+$ ]] || exit 2
 clone_url="${DATABASE_URL%/*}/$clone"
 compose -f docker-compose.yml -f docker-compose.ci-nonroot-custody.yml \
   run --rm --no-deps -T --user 1000:1000 \
@@ -67,8 +77,17 @@ compose -f docker-compose.yml -f docker-compose.ci-nonroot-custody.yml \
   -e "DATABASE_URL=$clone_url" -e "MCRI_CI_AUTH_DB_NAME=$clone" \
   -e MCRI_DEMO_ORG_SLUG -e MCRI_DEMO_EMAIL -e MCRI_DEMO_PASSWORD \
   -e MCRI_SYNTHETIC_ONLY_CONFIRM=YES api python - <<'PY'
-import json, os, subprocess, sys, time, urllib.error, urllib.request
+import hashlib, json, os, stat, subprocess, sys, time, urllib.error, urllib.request
 from pathlib import Path
+from uuid import UUID
+from sqlalchemy import select
+from app.db.session import create_session
+from app.modules.documents.models import (
+    Document, DocumentMalwareScanStatus, QuarantinedUpload,
+)
+from app.modules.processing.models import (
+    DocumentProcessingJob, ProcessingJobStatus,
+)
 from app.core.config import get_settings
 from app.core.preflight import run_preflight
 
@@ -132,6 +151,72 @@ try:
         assert response.status == 200
         documents = json.load(response)
     assert isinstance(documents["total"], int) and isinstance(documents["items"], list)
+    # Authenticated real HTTP clean PDF upload: the entire admission,
+    # ClamAV verdict and DB transaction target ONLY the disposable clone.
+    # Derive distinct bytes from the exclusive clone ID, avoiding seeded
+    # document hash collisions without printing any contents.
+    clean_pdf = (b"%PDF-1.4\n% synthetic-noncustomer-" +
+                 os.environ["MCRI_CI_AUTH_DB_NAME"].encode("ascii") +
+                 b"\n%%EOF\n")
+    digest = hashlib.sha256(clean_pdf).hexdigest()
+    boundary = b"mcri-clean-ci-upload"
+    form = (
+        b"--" + boundary + b"\r\n"
+        + b'Content-Disposition: form-data; name="file"; filename="ci-clean.pdf"\r\n'
+        + b"Content-Type: application/pdf\r\n\r\n"
+        + clean_pdf + b"\r\n--" + boundary + b"--\r\n"
+    )
+    upload_request = urllib.request.Request(
+        base + "/claims/" + claims["items"][0]["id"] + "/documents",
+        data=form, method="POST", headers={
+            "Authorization": "Bearer " + token,
+            "Content-Type": "multipart/form-data; boundary=" + boundary.decode(),
+            "Accept": "application/json",
+        },
+    )
+    with urllib.request.urlopen(upload_request, timeout=30) as response:
+        assert response.status == 201, "clean synthetic upload not admitted"
+        admitted = json.load(response)
+    assert admitted["file_hash"] == digest
+    assert admitted["file_size_bytes"] == len(clean_pdf)
+    assert admitted["malware_scan_status"] == "clean"
+    assert admitted["malware_scanned_at"]
+    with create_session() as session:
+        document = session.get(Document, UUID(admitted["id"]))
+        assert document is not None and document.claim_id == UUID(claims["items"][0]["id"])
+        assert document.file_hash == digest
+        assert document.file_size_bytes == len(clean_pdf)
+        assert document.malware_scan_status == DocumentMalwareScanStatus.CLEAN
+        assert not document.storage_key.startswith("_quarantine/")
+        stored = root / document.storage_key
+        assert stored.is_file() and stored.resolve().is_relative_to(root)
+        assert hashlib.sha256(stored.read_bytes()).hexdigest() == digest
+        assert stat.S_IMODE(stored.stat().st_mode) == 0o600
+        assert session.scalar(select(DocumentProcessingJob).where(
+            DocumentProcessingJob.document_id == document.id,
+            DocumentProcessingJob.status == ProcessingJobStatus.PENDING,
+        )) is not None
+        assert session.scalar(select(QuarantinedUpload).where(
+            QuarantinedUpload.claim_id == document.claim_id,
+            QuarantinedUpload.file_hash == digest,
+        )) is None
+    downloaded_request = urllib.request.Request(
+        base + "/claims/" + claims["items"][0]["id"] +
+        "/documents/" + admitted["id"] + "/download",
+        headers={"Authorization": "Bearer " + token},
+    )
+    with urllib.request.urlopen(downloaded_request, timeout=10) as response:
+        assert response.status == 200
+        assert response.read() == clean_pdf
+    assert not list(root.rglob(".mcri-upload-*.partial"))
+    # Clean only the new scratch Evidence, never seeded/customer files.
+    assert [p for p in root.rglob("*") if p.is_file()] == [stored]
+    stored.unlink()
+    for directory in sorted(
+        (p for p in root.rglob("*") if p.is_dir()),
+        key=lambda p: len(p.parts), reverse=True,
+    ):
+        directory.rmdir()
     child = dict(
         line.split(":", 1) for line in Path(f"/proc/{server.pid}/status").read_text().splitlines()
         if ":" in line
@@ -149,14 +234,29 @@ finally:
         server.kill()
         server.wait(timeout=5)
 assert not any(root.iterdir()), "authenticated read polluted synthetic scratch"
-print("PASS: real non-root API authenticates and reads only the cloned synthetic database.")
-print("No document upload, customer data, separate DB engine or Pilot GO.")
+print("PASS: non-root API authenticated clean HTTP upload; live scanner CLEAN; cloned DB document and pending job matched.")
+print("Not an OCR completion, independent PostgreSQL engine, production user change or Pilot GO.")
 PY
 clone_after="$(compose exec -T db psql -U "$POSTGRES_USER" -d "$clone" -At \
   -c 'SELECT COUNT(*) FROM auth_sessions;')"
+clone_documents_after="$(compose exec -T db psql -U "$POSTGRES_USER" -d "$clone" -At \
+  -c 'SELECT COUNT(*) FROM documents;')"
+clone_jobs_after="$(compose exec -T db psql -U "$POSTGRES_USER" -d "$clone" -At \
+  -c 'SELECT COUNT(*) FROM document_processing_jobs;')"
 [ "$clone_after" -gt "$clone_before" ] || exit 1
+[ "$clone_documents_after" -eq "$((clone_documents_before + 1))" ] || exit 1
+[ "$clone_jobs_after" -eq "$((clone_jobs_before + 1))" ] || exit 1
 after="$(compose exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At \
   -c 'SELECT COUNT(*) FROM auth_sessions;')"
-[ "$before" = "$after" ] || exit 1
+source_documents_after="$(compose exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At \
+  -c 'SELECT COUNT(*) FROM documents;')"
+source_jobs_after="$(compose exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At \
+  -c 'SELECT COUNT(*) FROM document_processing_jobs;')"
+[ "$before" = "$after" ] && \
+[ "$source_documents_before" = "$source_documents_after" ] && \
+[ "$source_jobs_before" = "$source_jobs_after" ] || {
+  echo "::error::Seeded synthetic source database was unexpectedly modified"
+  exit 1
+}
 test -z "$(sudo find "$scratch" -mindepth 1 -print -quit)"
-echo "PASS: authenticated synthetic clone isolated from source session writes."
+echo "PASS: authenticated clean scan/admission + pending job committed only to disposable synthetic DB; source unchanged."
