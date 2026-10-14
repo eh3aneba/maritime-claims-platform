@@ -89,6 +89,17 @@ the two disposable `docker compose run --no-deps` commands; it is **not**
 the production API/worker configuration and does not change mounted
 `local_documents` permissions.
 
+**Legacy-mode refusal rehearsal (CI only):** the same isolated test now
+creates an additional disposable, root-owned `0755` directory containing a
+root-owned `0600` synthetic file, mounted **read-only** at a distinct path
+inside the one-shot API container. Running as actual UID/GID 1000 with zero
+effective Linux capabilities, the API must be unable to read the file and
+the existing `audit_evidence_tree` must reject the directory with
+`directory_permissions`. The test confirms that root metadata is unchanged.
+Only those synthetic fixture files receive root ownership; it never changes
+`local_documents`, performs a customer-volume probe, or authorizes a
+permission conversion on a cloned/production Evidence volume.
+
 A pass establishes only that the selected API/worker images and **new,
 properly owned synthetic scratch** support non-root access. It is not proof
 that existing root-created customer Evidence folders, ACLs, scan quarantine
