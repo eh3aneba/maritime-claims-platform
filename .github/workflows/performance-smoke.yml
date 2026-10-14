@@ -295,7 +295,7 @@ jobs:
           import hashlib
           from io import BytesIO
           from fastapi import UploadFile
-          from app.modules.documents.storage import LocalDocumentStorage
+          from app.modules.documents.storage import LocalDocumentStorage, UploadTooLarge
           store = LocalDocumentStorage(str(root), max_upload_bytes=1024)
           payload = b"%PDF-1.4\n% synthetic-ci-only\n%%EOF\n"
           stored = asyncio.run(store.save_upload(
@@ -306,6 +306,30 @@ jobs:
           assert stored.file_hash == hashlib.sha256(payload).hexdigest()
           assert store.path_for(stored.storage_key).read_bytes() == payload
           assert S_IMODE(store.path_for(stored.storage_key).stat().st_mode) == 0o600
+          # Fail closed after a fully streamed upload when the key exists.
+          # Private upload staging files must never remain after failure.
+          try:
+              asyncio.run(store.save_upload(
+                  UploadFile(file=BytesIO(b"synthetic-collision"), filename="collision.pdf"),
+                  stored.storage_key,
+              ))
+              raise AssertionError("NO-GO: colliding upload replaced Evidence")
+          except FileExistsError:
+              pass
+          assert store.path_for(stored.storage_key).read_bytes() == payload
+          # A rejected oversized upload must leave no Evidence and no partial.
+          try:
+              asyncio.run(LocalDocumentStorage(
+                  str(root), max_upload_bytes=4,
+              ).save_upload(
+                  UploadFile(file=BytesIO(payload), filename="oversized.pdf"),
+                  "_quarantine/ci/oversized.pdf",
+              ))
+              raise AssertionError("NO-GO: oversized upload was admitted")
+          except UploadTooLarge:
+              pass
+          assert not (root / "_quarantine/ci/oversized.pdf").exists()
+          assert not list((root / "_quarantine/ci").glob(".mcri-upload-*.partial"))
           PY
           docker compose --env-file .env.performance run --rm --no-deps -T \
             --user 1000:1000 -v "$scratch:/mnt/mcri-ci-uid-probe:rw" \

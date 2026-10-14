@@ -73,6 +73,12 @@ tenant authorization or legacy-volume migration. In particular, never use
 this scratch test to approve an in-place ownership change on the mounted
 `local_documents` volume.
 
+The synthetic API process also attempts a duplicate streaming upload and a
+deliberately oversized upload. Both must be rejected without modifying the
+prior quarantine payload or leaving a published/temporary partial file.
+These negative tests do not exercise authenticated requests, scanner verdicts,
+a committed database transaction or customer data.
+
 A pass establishes only that the selected API/worker images and **new,
 properly owned synthetic scratch** support non-root access. It is not proof
 that existing root-created customer Evidence folders, ACLs, scan quarantine
