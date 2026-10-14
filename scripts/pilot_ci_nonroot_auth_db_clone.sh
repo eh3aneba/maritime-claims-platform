@@ -300,9 +300,10 @@ compose -f docker-compose.yml -f docker-compose.ci-nonroot-custody.yml \
   -v "$scratch:/mnt/mcri-ci-auth-probe:rw" \
   -e "DATABASE_URL=$clone_url" -e LOCAL_STORAGE_PATH=/mnt/mcri-ci-auth-probe \
   -e "MCRI_CI_AUTH_DB_NAME=$clone" \
+  -e MCRI_DEMO_ORG_SLUG -e MCRI_DEMO_EMAIL -e MCRI_DEMO_PASSWORD \
   -e OCR_ENABLED=true -e OCR_LANGUAGES=eng+fas \
   -e MCRI_SYNTHETIC_ONLY_CONFIRM=YES worker python - <<'PY'
-import hashlib, json, os, re, stat, subprocess
+import hashlib, json, os, re, stat, subprocess, sys, time, urllib.error, urllib.request
 from io import BytesIO
 from datetime import UTC, datetime
 from pathlib import Path
@@ -313,7 +314,9 @@ from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject, Num
 from app.db import metadata as _all_model_metadata  # noqa: F401
 from app.db.session import create_session
 from app.modules.processing.extractors import extract_document_text
-from app.modules.documents.models import Document, DocumentProcessingStatus
+from app.modules.documents.models import (
+    Document, DocumentMalwareScanStatus, DocumentProcessingStatus, QuarantinedUpload,
+)
 from app.modules.processing.models import (
     DocumentProcessingJob, DocumentTextExtraction, DocumentTextSegment,
     ProcessingJobStatus, ProcessingJobType,
@@ -493,6 +496,147 @@ assert recovered.segments[0].locator_value == "1"
 assert "synthetic marine claims evidence" in recovered.combined_text.casefold()
 assert "nonroot worker processing" in recovered.combined_text.casefold()
 assert any("recovered 1" in warning for warning in recovered.warnings)
+# Authenticated HTTP admission of the REAL scanned-only PDF. This starts
+# a separate restricted Uvicorn process inside the disposable worker
+# container, pointed to the same exclusive PostgreSQL clone and scratch.
+# Its only write is a new synthetic scanned Document, security verdict and
+# pending processing job. The original synthetic source DB is never used.
+base = "http://127.0.0.1:18082/api/v1"
+api = subprocess.Popen(
+    [sys.executable, "-m", "uvicorn", "app.main:app",
+     "--host", "127.0.0.1", "--port", "18082", "--no-access-log"],
+    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+)
+try:
+    ready = False
+    for _ in range(40):
+        assert api.poll() is None, "NO-GO isolated scanned-PDF HTTP API stopped"
+        try:
+            with urllib.request.urlopen(base + "/health/ready", timeout=2) as response:
+                ready = response.status == 200 and json.load(response)["dependencies"]["database"] == "ok"
+            break
+        except (urllib.error.URLError, TimeoutError):
+            time.sleep(0.5)
+    assert ready, "NO-GO isolated scanned-PDF API unavailable"
+    request = urllib.request.Request(
+        base + "/auth/login",
+        data=json.dumps({
+            "organization_slug": os.environ["MCRI_DEMO_ORG_SLUG"],
+            "email": os.environ["MCRI_DEMO_EMAIL"],
+            "password": os.environ["MCRI_DEMO_PASSWORD"],
+        }).encode(), method="POST",
+        headers={"Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(request, timeout=10) as response:
+        assert response.status == 200
+        token = json.load(response)["access_token"]
+    assert isinstance(token, str) and len(token) >= 32
+    scan_blob = scanned_pdf.read_bytes()
+    scan_hash = hashlib.sha256(scan_blob).hexdigest()
+    assert scan_hash != details["file_hash"]
+    boundary = b"mcri-scanned-ci-upload"
+    body = (
+        b"--" + boundary + b"\r\n"
+        + b'Content-Disposition: form-data; name="file"; filename="ci-scanned-only.pdf"\r\n'
+        + b"Content-Type: application/pdf\r\n\r\n"
+        + scan_blob + b"\r\n--" + boundary + b"--\r\n"
+    )
+    request = urllib.request.Request(
+        base + "/claims/" + details["claim_id"] + "/documents",
+        data=body, method="POST", headers={
+            "Authorization": "Bearer " + token,
+            "Content-Type": "multipart/form-data; boundary=" + boundary.decode(),
+            "Accept": "application/json",
+        },
+    )
+    with urllib.request.urlopen(request, timeout=30) as response:
+        assert response.status == 201, "NO-GO scanned image-only PDF was not admitted"
+        admitted_scan = json.load(response)
+    assert admitted_scan["id"] != details["document_id"]
+    assert admitted_scan["file_hash"] == scan_hash
+    assert admitted_scan["file_size_bytes"] == len(scan_blob)
+    assert admitted_scan["malware_scan_status"] == "clean"
+    assert admitted_scan["malware_scanned_at"]
+    request = urllib.request.Request(
+        base + "/claims/" + details["claim_id"] +
+        "/documents/" + admitted_scan["id"] + "/download",
+        headers={"Authorization": "Bearer " + token},
+    )
+    with urllib.request.urlopen(request, timeout=15) as response:
+        assert response.status == 200 and response.read() == scan_blob
+finally:
+    if api.poll() is None:
+        api.terminate()
+    try:
+        api.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        api.kill()
+        api.wait(timeout=5)
+
+scanned_id = UUID(admitted_scan["id"])
+with create_session() as session:
+    scanned_document = session.get(Document, scanned_id)
+    assert scanned_document is not None
+    assert scanned_document.claim_id == UUID(details["claim_id"])
+    assert scanned_document.organization_id == document.organization_id
+    assert scanned_document.file_hash == scan_hash
+    assert scanned_document.malware_scan_status == DocumentMalwareScanStatus.CLEAN
+    scanned_storage = root / scanned_document.storage_key
+    assert scanned_storage.is_file() and scanned_storage.resolve().is_relative_to(root)
+    assert stat.S_IMODE(scanned_storage.stat().st_mode) == 0o600
+    assert hashlib.sha256(scanned_storage.read_bytes()).hexdigest() == scan_hash
+    assert session.scalar(select(QuarantinedUpload).where(
+        QuarantinedUpload.claim_id == scanned_document.claim_id,
+        QuarantinedUpload.file_hash == scan_hash,
+    )) is None
+    scanned_job = session.scalar(select(DocumentProcessingJob).where(
+        DocumentProcessingJob.document_id == scanned_id,
+        DocumentProcessingJob.status == ProcessingJobStatus.PENDING,
+        DocumentProcessingJob.job_type == ProcessingJobType.EXTRACT_TEXT,
+    ).with_for_update(skip_locked=True))
+    assert scanned_job is not None and scanned_job.attempt_count == 0
+    # Claim only this exact newly uploaded scanned Document's job, not a
+    # seeded/unrelated queue entry. Use the actual lease-fenced processor.
+    started = datetime.now(UTC)
+    scanned_job.status = ProcessingJobStatus.RUNNING
+    scanned_job.locked_at = started
+    scanned_job.locked_by = "ci-disposable-scanned-ocr-worker"
+    scanned_job.started_at = started
+    scanned_job.attempt_count += 1
+    session.commit()
+    session.refresh(scanned_job)
+    assert process_job_with_lease(session, job=scanned_job, processor=process_job)
+    session.expire_all()
+    scanned_document = session.get(Document, scanned_id)
+    scanned_job = session.get(DocumentProcessingJob, scanned_job.id)
+    assert scanned_job.status == ProcessingJobStatus.COMPLETED
+    assert scanned_job.attempt_count == 1 and scanned_job.completed_at is not None
+    assert scanned_job.locked_by is None and scanned_job.locked_at is None
+    assert scanned_document.processing_status == DocumentProcessingStatus.PROCESSED
+    extraction_scan = session.scalar(select(DocumentTextExtraction).where(
+        DocumentTextExtraction.document_id == scanned_id,
+    ))
+    assert extraction_scan is not None
+    assert extraction_scan.extraction_method == "pypdf+selective-tesseract:eng+fas"
+    assert extraction_scan.segment_count == 1 and extraction_scan.char_count >= 50
+    assert extraction_scan.requires_ocr is False
+    assert extraction_scan.text_hash is not None
+    segment_scan = session.scalar(select(DocumentTextSegment).where(
+        DocumentTextSegment.document_id == scanned_id,
+        DocumentTextSegment.extraction_id == extraction_scan.id,
+    ))
+    assert segment_scan is not None and segment_scan.locator_type == "page"
+    assert segment_scan.locator_value == "1"
+    assert "synthetic marine claims evidence" in segment_scan.text.casefold()
+    assert "nonroot worker processing" in segment_scan.text.casefold()
+    assert segment_scan.char_count == extraction_scan.char_count
+    assert scanned_job.result["method"] == extraction_scan.extraction_method
+    assert scanned_job.result["requires_ocr"] is False
+    session.rollback()
+
+# Only remove newly owned scratch artifacts; never unmount or delete the
+# shared Evidence volume nor modify original synthetic source records.
+scanned_storage.unlink()
 scanned_pdf.unlink()
 pgm_path.unlink()
 roundtrip_pgm.unlink()
@@ -505,8 +649,8 @@ for directory in sorted(
     directory.rmdir()
 assert not any(root.iterdir()), "restricted worker left synthetic Evidence behind"
 print("PASS: restricted real worker committed a fenced processing lease, native PDF text and matching extracted DB records.")
-print("A genuine image-only PDF required selective Tesseract eng+fas OCR; no customer file or DB record was used for the raster fixture.")
-print("Not a scanned-PDF HTTP upload, scanned document DB job, host migration or Pilot GO.")
+print("PASS: image-only scanned PDF authenticated HTTP admission, CLEAN ClamAV, fenced worker Tesseract OCR and committed matching DB extraction.")
+print("No customer data, real-host Evidence migration, separate database engine or Pilot GO.")
 PY
 clone_after="$(compose exec -T db psql -U "$POSTGRES_USER" -d "$clone" -At \
   -c 'SELECT COUNT(*) FROM auth_sessions;')"
@@ -518,11 +662,11 @@ clone_extractions_after="$(compose exec -T db psql -U "$POSTGRES_USER" -d "$clon
   -c 'SELECT COUNT(*) FROM document_text_extractions;')"
 clone_segments_after="$(compose exec -T db psql -U "$POSTGRES_USER" -d "$clone" -At \
   -c 'SELECT COUNT(*) FROM document_text_segments;')"
-[ "$clone_extractions_after" -eq "$((clone_extractions_before + 1))" ] || exit 1
-[ "$clone_segments_after" -eq "$((clone_segments_before + 1))" ] || exit 1
+[ "$clone_extractions_after" -eq "$((clone_extractions_before + 2))" ] || exit 1
+[ "$clone_segments_after" -eq "$((clone_segments_before + 2))" ] || exit 1
 [ "$clone_after" -gt "$clone_before" ] || exit 1
-[ "$clone_documents_after" -eq "$((clone_documents_before + 1))" ] || exit 1
-[ "$clone_jobs_after" -eq "$((clone_jobs_before + 1))" ] || exit 1
+[ "$clone_documents_after" -eq "$((clone_documents_before + 2))" ] || exit 1
+[ "$clone_jobs_after" -eq "$((clone_jobs_before + 2))" ] || exit 1
 after="$(compose exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At \
   -c 'SELECT COUNT(*) FROM auth_sessions;')"
 source_documents_after="$(compose exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At \
@@ -542,4 +686,4 @@ source_segments_after="$(compose exec -T db psql -U "$POSTGRES_USER" -d "$POSTGR
   exit 1
 }
 test -z "$(sudo find "$scratch" -mindepth 1 -print -quit)"
-echo "PASS: authenticated scan/admission and real nonroot worker text extraction/job completion isolated to clone; source unchanged."
+echo "PASS: both native and scanned synthetic PDFs were authentically admitted and processed by nonroot worker; source unchanged."
