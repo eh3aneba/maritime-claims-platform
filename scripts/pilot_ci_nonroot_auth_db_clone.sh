@@ -47,6 +47,11 @@ source_documents_before="$(compose exec -T db psql -U "$POSTGRES_USER" -d "$POST
   -c 'SELECT COUNT(*) FROM documents;')"
 source_jobs_before="$(compose exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At \
   -c 'SELECT COUNT(*) FROM document_processing_jobs;')"
+source_extractions_before="$(compose exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At \
+  -c 'SELECT COUNT(*) FROM document_text_extractions;')"
+source_segments_before="$(compose exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At \
+  -c 'SELECT COUNT(*) FROM document_text_segments;')"
+[[ "$source_extractions_before" =~ ^[0-9]+$ ]] && [[ "$source_segments_before" =~ ^[0-9]+$ ]] && \
 [[ "$before" =~ ^[0-9]+$ ]] && [[ "$source_documents_before" =~ ^[0-9]+$ ]] && \
 [[ "$source_jobs_before" =~ ^[0-9]+$ ]] || exit 2
 compose exec -T db pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
@@ -68,6 +73,11 @@ clone_documents_before="$(compose exec -T db psql -U "$POSTGRES_USER" -d "$clone
   -c 'SELECT COUNT(*) FROM documents;')"
 clone_jobs_before="$(compose exec -T db psql -U "$POSTGRES_USER" -d "$clone" -At \
   -c 'SELECT COUNT(*) FROM document_processing_jobs;')"
+clone_extractions_before="$(compose exec -T db psql -U "$POSTGRES_USER" -d "$clone" -At \
+  -c 'SELECT COUNT(*) FROM document_text_extractions;')"
+clone_segments_before="$(compose exec -T db psql -U "$POSTGRES_USER" -d "$clone" -At \
+  -c 'SELECT COUNT(*) FROM document_text_segments;')"
+[[ "$clone_extractions_before" =~ ^[0-9]+$ ]] && [[ "$clone_segments_before" =~ ^[0-9]+$ ]] && \
 [[ "$clone_before" =~ ^[0-9]+$ ]] && [[ "$clone_documents_before" =~ ^[0-9]+$ ]] && \
 [[ "$clone_jobs_before" =~ ^[0-9]+$ ]] || exit 2
 clone_url="${DATABASE_URL%/*}/$clone"
@@ -383,6 +393,12 @@ clone_documents_after="$(compose exec -T db psql -U "$POSTGRES_USER" -d "$clone"
   -c 'SELECT COUNT(*) FROM documents;')"
 clone_jobs_after="$(compose exec -T db psql -U "$POSTGRES_USER" -d "$clone" -At \
   -c 'SELECT COUNT(*) FROM document_processing_jobs;')"
+clone_extractions_after="$(compose exec -T db psql -U "$POSTGRES_USER" -d "$clone" -At \
+  -c 'SELECT COUNT(*) FROM document_text_extractions;')"
+clone_segments_after="$(compose exec -T db psql -U "$POSTGRES_USER" -d "$clone" -At \
+  -c 'SELECT COUNT(*) FROM document_text_segments;')"
+[ "$clone_extractions_after" -eq "$((clone_extractions_before + 1))" ] || exit 1
+[ "$clone_segments_after" -eq "$((clone_segments_before + 1))" ] || exit 1
 [ "$clone_after" -gt "$clone_before" ] || exit 1
 [ "$clone_documents_after" -eq "$((clone_documents_before + 1))" ] || exit 1
 [ "$clone_jobs_after" -eq "$((clone_jobs_before + 1))" ] || exit 1
@@ -392,6 +408,12 @@ source_documents_after="$(compose exec -T db psql -U "$POSTGRES_USER" -d "$POSTG
   -c 'SELECT COUNT(*) FROM documents;')"
 source_jobs_after="$(compose exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At \
   -c 'SELECT COUNT(*) FROM document_processing_jobs;')"
+source_extractions_after="$(compose exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At \
+  -c 'SELECT COUNT(*) FROM document_text_extractions;')"
+source_segments_after="$(compose exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At \
+  -c 'SELECT COUNT(*) FROM document_text_segments;')"
+[ "$source_extractions_before" = "$source_extractions_after" ] && \
+[ "$source_segments_before" = "$source_segments_after" ] && \
 [ "$before" = "$after" ] && \
 [ "$source_documents_before" = "$source_documents_after" ] && \
 [ "$source_jobs_before" = "$source_jobs_after" ] || {
@@ -399,4 +421,4 @@ source_jobs_after="$(compose exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_D
   exit 1
 }
 test -z "$(sudo find "$scratch" -mindepth 1 -print -quit)"
-echo "PASS: authenticated clean scan/admission + pending job committed only to disposable synthetic DB; source unchanged."
+echo "PASS: authenticated scan/admission and real nonroot worker text extraction/job completion isolated to clone; source unchanged."
