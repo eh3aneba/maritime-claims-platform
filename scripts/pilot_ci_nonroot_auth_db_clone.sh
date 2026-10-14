@@ -322,6 +322,7 @@ from app.db.session import create_session
 from app.modules.processing.extractors import extract_document_text
 from app.core.restore_pair_audit import (
     RestoreEvidenceRow, RestorePairAuditError, audit_restored_evidence_pair,
+    audit_complete_restored_claim_namespace,
 )
 from dataclasses import replace
 from app.modules.documents.models import (
@@ -665,6 +666,34 @@ with create_session() as session:
         root, rows, organization_id=native_db_row.organization_id,
         claim_id=native_db_row.claim_id,
     ) == 2
+    assert audit_complete_restored_claim_namespace(
+        root, rows, organization_id=native_db_row.organization_id,
+        claim_id=native_db_row.claim_id,
+        expected_document_count=2, expected_quarantine_count=0,
+    ) == 2
+    # Detect a staged/unknown file *not represented in PostgreSQL*.
+    # This is new disposable UID1000 scratch only, never the source volume.
+    stray_file = scanned_storage.parent / ".ci-unindexed-evidence.partial"
+    with stray_file.open("xb") as evidence:
+        evidence.write(b"synthetic-unindexed-file")
+    stray_file.chmod(0o600)
+    try:
+        try:
+            audit_complete_restored_claim_namespace(
+                root, rows, organization_id=native_db_row.organization_id,
+                claim_id=native_db_row.claim_id,
+                expected_document_count=2, expected_quarantine_count=0,
+            )
+            raise AssertionError("NO-GO: orphan Evidence was not detected")
+        except RestorePairAuditError as exc:
+            assert str(exc) == "orphan_physical_evidence"
+    finally:
+        stray_file.unlink()
+    assert audit_complete_restored_claim_namespace(
+        root, rows, organization_id=native_db_row.organization_id,
+        claim_id=native_db_row.claim_id,
+        expected_document_count=2, expected_quarantine_count=0,
+    ) == 2
     try:
         audit_restored_evidence_pair(
             root, [replace(rows[0], file_hash="0" * 64), rows[1]],
@@ -721,6 +750,7 @@ from app.db.session import create_session
 from app.modules.documents.malware import MalwareScanVerdict, scan_file
 from app.core.restore_pair_audit import (
     RestoreEvidenceRow, RestorePairAuditError, audit_restored_evidence_pair,
+    audit_complete_restored_claim_namespace,
 )
 from dataclasses import replace
 from app.modules.documents.models import Document, QuarantinedUpload, QuarantineStatus
@@ -926,6 +956,11 @@ with create_session() as session:
     assert audit_restored_evidence_pair(
         root, rows, organization_id=selected[0].organization_id,
         claim_id=claim_id,
+    ) == 2
+    assert audit_complete_restored_claim_namespace(
+        root, rows, organization_id=selected[0].organization_id,
+        claim_id=claim_id,
+        expected_document_count=0, expected_quarantine_count=2,
     ) == 2
     try:
         audit_restored_evidence_pair(
