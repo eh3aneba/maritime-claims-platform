@@ -231,8 +231,9 @@ in the same ephemeral PostgreSQL instance, not a separate engine or host.
 The existing authenticated document/job test uses a PDF with native text.
 A **separate read-only scanned-PDF OCR probe**, executed inside that same
 UID/GID 1000 worker, now creates a private image-only PDF without a text
-stream: Poppler renders the already verified synthetic one-page PDF to a
-grayscale PGM; pypdf then embeds those pixels as a compressed PDF Image
+stream: Poppler renders the already verified **large-font, three-line** synthetic
+one-page PDF to a grayscale PGM, keeping all expected text well within the
+page crop boundary; pypdf then embeds those pixels as a compressed PDF Image
 XObject. First, native-only extraction must report **no text** and
 `requires_ocr=True`. Next, the real `extract_document_text` pipeline with
 `enable_ocr=True`, `eng+fas`, a one-page cap and bounded timeout must call
