@@ -252,20 +252,37 @@ First, native-only extraction must report **no text** and
 `enable_ocr=True`, `eng+fas`, a one-page cap and bounded timeout must call
 Poppler/Tesseract, return `pypdf+selective-tesseract:eng+fas`, recover the
 synthetic marine-claims phrase and declare no remaining OCR requirement.
-The synthetic raster PGM and scanned PDF are deleted before custody cleanup.
+**Authenticated scanned-PDF persistence (disposable CI clone only):**
+After the image-only PDF has passed the independent no-native-text, raster
+visibility and real Tesseract checks, the restricted worker starts a separate
+loopback Uvicorn API subprocess on port 18082, using the same temporary
+UID-1000 Evidence scratch and exclusive new PostgreSQL database. It performs
+the seeded synthetic-user login and a real multipart HTTP POST of the actual
+image-only PDF. Live CI ClamAV must return CLEAN, the HTTP response must
+contain the exact size/hash, and the authenticated download must preserve
+the bytes. The Uvicorn process is terminated before job processing.
 
-This validates real scanned-page local OCR tools **without any test mocks**.
-The scanned-PDF fixture is **not** uploaded by authenticated HTTP or
-admitted as a second Document/processing job in PostgreSQL; the existing
-native-text document is the only persisted processing test. A fully
-authenticated scanned-PDF upload → queued worker → persisted OCR result
-remains a separate next acceptance step.
-The job is explicitly selected by its freshly generated identifier and the
-same fenced processing function is called, rather than proving background
-queue polling fairness for unrelated jobs. Infected/outage HTTP quarantine
-persistence, actual scanned-PDF OCR, production runtime user changes,
-customer-host ACL compatibility, independent host rollback and Pilot GO
-remain separately gated.
+The worker queries the new `Document` and **only its matching new
+`DocumentProcessingJob`**, claims a bounded lease and calls the real
+lease-fenced processing path. It then requires COMPLETED status, a processed
+Document, an authoritative
+`pypdf+selective-tesseract:eng+fas` extraction, a nonempty hash and
+matching extracted text segment connected to the correct claim. The final
+CI database reconciliation requires **exactly two new Documents, two jobs,
+two extractions and two text segments** (native-text and image-only
+PDFs) on the clone. The original seeded synthetic PostgreSQL database's
+session, Document, job, extraction and segment counts must remain unchanged.
+Only the new scratch files are deleted; the temporary database is dropped
+by the existing fail-closed cleanup trap. No customer Evidence is involved.
+
+This proves authenticated scanned-PDF admission and durable worker OCR
+extraction in a *second database in the same disposable PostgreSQL server*,
+not a separate physical server, and not customer-host restore readiness.
+The job is explicitly selected by its freshly generated identifier and
+processed using the real lease-fenced function; **unrelated queue fairness**
+is not proven. Infected/outage authenticated HTTP quarantine persistence,
+production runtime-user changes, legacy Evidence ACL compatibility,
+independent host rollback and Pilot GO remain separately gated.
 
 A pass establishes only that the selected API/worker images and **new,
 properly owned synthetic scratch** support non-root access. It is not proof
