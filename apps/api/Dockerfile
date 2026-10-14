@@ -150,6 +150,7 @@ RUN /sbin/apk upgrade --no-cache libssl3 libcrypto3 zlib \
         cairo \
         ca-certificates \
         fontconfig \
+        font-liberation \
         giflib \
         glib \
         icu-libs \
@@ -174,6 +175,8 @@ COPY --from=worker-tools-builder /opt/poppler /opt/poppler
 COPY --from=python-builder /opt/venv /opt/venv
 
 RUN python --version \
+    && test -r /usr/share/fonts/liberation/LiberationSans-Regular.ttf \
+    && fc-match -f '%{family}' Helvetica | grep -F 'Liberation Sans' \
     && tesseract --version | head -n 2 \
     && pdftotext -v 2>&1 | head -n 1 \
     && pdftoppm -v 2>&1 | head -n 1 \
