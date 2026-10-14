@@ -280,9 +280,38 @@ extraction in a *second database in the same disposable PostgreSQL server*,
 not a separate physical server, and not customer-host restore readiness.
 The job is explicitly selected by its freshly generated identifier and
 processed using the real lease-fenced function; **unrelated queue fairness**
-is not proven. Infected/outage authenticated HTTP quarantine persistence,
-production runtime-user changes, legacy Evidence ACL compatibility,
-independent host rollback and Pilot GO remain separately gated.
+is not proven.
+
+**Authenticated HTTP infection and scanner-outage quarantine proof (CI only):**
+After the two clean synthetic documents are successfully processed and
+their scratch files removed, a new restricted UID/GID-1000 API process
+authenticates a synthetic user and uploads a **valid DOCX ZIP archive**
+containing the harmless EICAR test signature as a separate uncompressed
+member. Appending the signature to a synthetic PDF header did **not** trigger
+the real scanner and is therefore not a valid infection fixture. The
+actual DOCX ZIP entry is verified byte-for-byte and the real ClamAV service
+must first independently identify the archive as `INFECTED`. The
+authenticated HTTP POST must then return **422**, with one durable
+`QuarantinedUpload` row at status `infected` and matching private
+mode-`0600` bytes under `_quarantine`, without creating a `Document`
+or allowing a document download.
+
+A *separate* isolated API process receives a different synthetic PDF
+with only its own `CLAMAV_PORT=1` environment override; the central
+CI scanner remains healthy. The authenticated POST must return **503**
+and persist one distinct `scan_error` quarantine row and matching private
+bytes, without admitting the file or allowing download. Both synthetic
+quarantines are verified against their SHA-256 and removed **only from
+fresh CI scratch**. The clone database must gain exactly two quarantine
+records while the seeded source database's quarantined-upload count stays
+unchanged, in addition to its unchanged Documents, jobs, text and session
+counts. The guarded clone cleanup then drops only this test's database.
+
+These security tests do not prove how production services handle a real
+host-wide scanner outage, API restart between quarantine and release, or
+independently restored legacy volumes. Production runtime-user changes,
+legacy Evidence ACL compatibility, independent host rollback and Pilot GO
+remain separately gated.
 
 A pass establishes only that the selected API/worker images and **new,
 properly owned synthetic scratch** support non-root access. It is not proof

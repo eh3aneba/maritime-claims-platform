@@ -51,6 +51,9 @@ source_extractions_before="$(compose exec -T db psql -U "$POSTGRES_USER" -d "$PO
   -c 'SELECT COUNT(*) FROM document_text_extractions;')"
 source_segments_before="$(compose exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At \
   -c 'SELECT COUNT(*) FROM document_text_segments;')"
+source_quarantine_before="$(compose exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At \
+  -c 'SELECT COUNT(*) FROM quarantined_uploads;')"
+[[ "$source_quarantine_before" =~ ^[0-9]+$ ]] || exit 2
 [[ "$source_extractions_before" =~ ^[0-9]+$ ]] && [[ "$source_segments_before" =~ ^[0-9]+$ ]] && \
 [[ "$before" =~ ^[0-9]+$ ]] && [[ "$source_documents_before" =~ ^[0-9]+$ ]] && \
 [[ "$source_jobs_before" =~ ^[0-9]+$ ]] || exit 2
@@ -77,6 +80,9 @@ clone_extractions_before="$(compose exec -T db psql -U "$POSTGRES_USER" -d "$clo
   -c 'SELECT COUNT(*) FROM document_text_extractions;')"
 clone_segments_before="$(compose exec -T db psql -U "$POSTGRES_USER" -d "$clone" -At \
   -c 'SELECT COUNT(*) FROM document_text_segments;')"
+clone_quarantine_before="$(compose exec -T db psql -U "$POSTGRES_USER" -d "$clone" -At \
+  -c 'SELECT COUNT(*) FROM quarantined_uploads;')"
+[[ "$clone_quarantine_before" =~ ^[0-9]+$ ]] || exit 2
 [[ "$clone_extractions_before" =~ ^[0-9]+$ ]] && [[ "$clone_segments_before" =~ ^[0-9]+$ ]] && \
 [[ "$clone_before" =~ ^[0-9]+$ ]] && [[ "$clone_documents_before" =~ ^[0-9]+$ ]] && \
 [[ "$clone_jobs_before" =~ ^[0-9]+$ ]] || exit 2
@@ -652,6 +658,228 @@ print("PASS: restricted real worker committed a fenced processing lease, native 
 print("PASS: image-only scanned PDF authenticated HTTP admission, CLEAN ClamAV, fenced worker Tesseract OCR and committed matching DB extraction.")
 print("No customer data, real-host Evidence migration, separate database engine or Pilot GO.")
 PY
+
+# Authentic infected and scanner-outage HTTP admission tests against the
+# *same disposable DB clone*, from the real restricted UID1000 API image.
+# No credentials or synthetic bytes are printed. This does not alter the
+# ClamAV service itself or any customer Evidence volume.
+compose -f docker-compose.yml -f docker-compose.ci-nonroot-custody.yml \
+  run --rm --no-deps -T --user 1000:1000 \
+  -v "$scratch:/mnt/mcri-ci-auth-probe:rw" \
+  -e "DATABASE_URL=$clone_url" -e "MCRI_CI_AUTH_DB_NAME=$clone" \
+  -e MCRI_DEMO_ORG_SLUG -e MCRI_DEMO_EMAIL -e MCRI_DEMO_PASSWORD \
+  -e LOCAL_STORAGE_PATH=/mnt/mcri-ci-auth-probe \
+  -e MCRI_SYNTHETIC_ONLY_CONFIRM=YES \
+  -e MALWARE_SCAN_ENABLED=true -e CLAMAV_HOST=clamav -e CLAMAV_PORT=3310 \
+  api python - <<'PY'
+import hashlib, json, os, stat, subprocess, sys, time
+import urllib.error, urllib.request
+from contextlib import contextmanager
+from io import BytesIO
+from pathlib import Path
+from zipfile import ZIP_STORED, ZipFile
+from docx import Document as OfficeDocument
+from sqlalchemy import select
+from app.db import metadata as _all_model_metadata  # noqa: F401
+from app.db.session import create_session
+from app.modules.documents.malware import MalwareScanVerdict, scan_file
+from app.modules.documents.models import Document, QuarantinedUpload, QuarantineStatus
+from app.core.config import get_settings
+from app.modules.claims.models import Claim
+
+assert os.geteuid() == os.getegid() == 1000
+proc = dict(line.split(":", 1) for line in Path("/proc/self/status").read_text().splitlines() if ":" in line)
+assert int(proc["CapEff"].strip(), 16) == 0 and proc["NoNewPrivs"].strip() == "1"
+assert os.environ["APP_ENV"] == "test"
+assert os.environ["MCRI_SYNTHETIC_ONLY_CONFIRM"] == "YES"
+assert os.environ["AI_PROVIDER"] == "disabled"
+assert os.environ["DATABASE_URL"].endswith("/" + os.environ["MCRI_CI_AUTH_DB_NAME"])
+assert os.environ["MALWARE_SCAN_ENABLED"].lower() == "true"
+assert os.environ["CLAMAV_HOST"] == "clamav" and os.environ["CLAMAV_PORT"] == "3310"
+root = Path("/mnt/mcri-ci-auth-probe")
+assert root.is_dir() and root.stat().st_uid == 1000
+assert not any(root.iterdir()), "previous synthetic scratch cleanup incomplete"
+get_settings.cache_clear()
+
+with create_session() as session:
+    claim = session.scalar(select(Claim).where(
+        Claim.external_reference == "MCRI-DEMO-MT-ORION"
+    ))
+    assert claim is not None
+    claim_id = claim.id
+
+def login(base):
+    req = urllib.request.Request(
+        base + "/auth/login", data=json.dumps({
+            "organization_slug": os.environ["MCRI_DEMO_ORG_SLUG"],
+            "email": os.environ["MCRI_DEMO_EMAIL"],
+            "password": os.environ["MCRI_DEMO_PASSWORD"],
+        }).encode(), method="POST", headers={"Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=15) as response:
+        assert response.status == 200
+        token = json.load(response)["access_token"]
+    assert isinstance(token, str) and len(token) >= 32
+    return token
+
+def blocked_upload(base, token, filename, raw, status_code):
+    boundary = b"mcri-quarantine-ci-boundary"
+    assert filename.endswith((".pdf", ".docx"))
+    mime = b"application/vnd.openxmlformats-officedocument.wordprocessingml.document" if filename.endswith(".docx") else b"application/pdf"
+    multipart = (
+        b"--" + boundary + b"\r\n"
+        + b'Content-Disposition: form-data; name="file"; filename="' +
+        filename.encode("ascii") + b'"\r\n'
+        + b"Content-Type: " + mime + b"\r\n\r\n"
+        + raw + b"\r\n--" + boundary + b"--\r\n"
+    )
+    req = urllib.request.Request(
+        base + "/claims/" + str(claim_id) + "/documents",
+        data=multipart, method="POST", headers={
+            "Authorization": "Bearer " + token,
+            "Content-Type": "multipart/form-data; boundary=" + boundary.decode(),
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30):
+            raise AssertionError("NO-GO quarantined upload admitted as Document")
+    except urllib.error.HTTPError as response:
+        assert response.code == status_code, (
+            f"NO-GO unexpected blocked upload HTTP status {response.code}"
+        )
+        detail = json.load(response)["detail"]
+        assert "quarantined" in detail.casefold()
+    return hashlib.sha256(raw).hexdigest()
+
+def verify_quarantine(digest, raw, expected_status, token, base, filename):
+    with create_session() as session:
+        matches = list(session.scalars(select(QuarantinedUpload).where(
+            QuarantinedUpload.claim_id == claim_id,
+            QuarantinedUpload.file_hash == digest,
+        )))
+        assert len(matches) == 1, "NO-GO durable quarantine record absent or duplicated"
+        record = matches[0]
+        assert record.status == expected_status and record.scanned_at is not None
+        assert record.file_size_bytes == len(raw)
+        assert record.quarantine_key.startswith("_quarantine/")
+        assert record.quarantine_key.endswith(Path(filename).suffix)
+        assert session.scalar(select(Document).where(
+            Document.claim_id == claim_id,
+            Document.file_hash == digest,
+        )) is None, "NO-GO quarantined bytes entered admitted Evidence"
+        location = root / record.quarantine_key
+        assert location.is_file() and location.resolve().is_relative_to(root)
+        assert stat.S_IMODE(location.stat().st_mode) == 0o600
+        assert hashlib.sha256(location.read_bytes()).hexdigest() == digest
+        assert location.read_bytes() == raw
+        if expected_status == QuarantineStatus.INFECTED:
+            assert record.threat_name and not record.scan_error
+        else:
+            assert record.scan_error and not record.threat_name
+        document_id = str(record.id)
+    req = urllib.request.Request(
+        base + "/claims/" + str(claim_id) +
+        "/documents/" + document_id + "/download",
+        headers={"Authorization": "Bearer " + token},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10):
+            raise AssertionError("NO-GO blocked Evidence was downloadable")
+    except urllib.error.HTTPError as response:
+        assert response.code == 404, "NO-GO quarantined bytes leaked through document download"
+    return location
+
+@contextmanager
+def isolated_api(port, scanner_port):
+    env = dict(os.environ, CLAMAV_PORT=str(scanner_port))
+    server = subprocess.Popen(
+        [sys.executable, "-m", "uvicorn", "app.main:app", "--host",
+         "127.0.0.1", "--port", str(port), "--no-access-log"],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env,
+    )
+    base = f"http://127.0.0.1:{port}/api/v1"
+    try:
+        ready = False
+        for _ in range(40):
+            assert server.poll() is None, "NO-GO restricted quarantine API exited"
+            try:
+                with urllib.request.urlopen(base + "/health/ready", timeout=2) as response:
+                    ready = response.status == 200 and json.load(response)["dependencies"]["database"] == "ok"
+                break
+            except (urllib.error.URLError, TimeoutError):
+                time.sleep(0.5)
+        assert ready, "NO-GO restricted quarantine API did not become ready"
+        yield base, login(base)
+    finally:
+        if server.poll() is None:
+            server.terminate()
+        try:
+            server.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            server.kill()
+            server.wait(timeout=5)
+
+# Harmless industry-standard EICAR test string, NOT real malware.
+eicar = (b"X5O!P%@AP[4" + bytes([92]) +
+         b"PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*")
+assert len(eicar) == 68
+# The scanner did NOT flag EICAR when it was merely appended to arbitrary
+# PDF-signature bytes. Use an actual DOCX (ZIP container) and store the
+# harmless test signature as a separate uncompressed ZIP member instead:
+# ClamAV can inspect the archive entry, and the HTTP API validates DOCX PK.
+office = OfficeDocument()
+office.add_paragraph("Synthetic ClamAV archive quarantine boundary check")
+buffer = BytesIO()
+office.save(buffer)
+with ZipFile(buffer, "a") as archive:
+    archive.writestr("ci-av-test/eicar-test.txt", eicar, compress_type=ZIP_STORED)
+infected_docx = buffer.getvalue()
+assert infected_docx.startswith(b"PK\x03\x04")
+assert eicar in infected_docx and len(infected_docx) < 100000
+with ZipFile(BytesIO(infected_docx), "r") as archive:
+    assert archive.read("ci-av-test/eicar-test.txt") == eicar
+preflight = root / "ci-eicar-preflight.docx"
+with preflight.open("xb") as handle:
+    handle.write(infected_docx)
+preflight.chmod(0o600)
+verdict = scan_file(preflight, host="clamav", port=3310, timeout_seconds=20)
+assert verdict.verdict == MalwareScanVerdict.INFECTED, "NO-GO EICAR scan fixture not detected"
+preflight.unlink()
+with isolated_api(18084, scanner_port=3310) as (base, token):
+    infected_hash = blocked_upload(base, token, "ci-eicar.docx", infected_docx, 422)
+    infected_path = verify_quarantine(
+        infected_hash, infected_docx, QuarantineStatus.INFECTED, token, base, "ci-eicar.docx"
+    )
+
+# The outage is scoped to this short-lived API process only. The synthetic
+# scanner stays healthy for all other CI probes. Port 1 is deliberately
+# unreachable; fail-closed response is HTTP 503 and durable SCAN_ERROR.
+outage_pdf = (
+    b"%PDF-1.4\n% synthetic scanner-unavailable admission " +
+    os.environ["MCRI_CI_AUTH_DB_NAME"].encode("ascii") +
+    b"\n%%EOF\n"
+)
+assert hashlib.sha256(outage_pdf).hexdigest() != infected_hash
+with isolated_api(18085, scanner_port=1) as (base, token):
+    outage_hash = blocked_upload(base, token, "ci-scan-unavailable.pdf", outage_pdf, 503)
+    outage_path = verify_quarantine(
+        outage_hash, outage_pdf, QuarantineStatus.SCAN_ERROR, token, base, "ci-scan-unavailable.pdf"
+    )
+
+# Delete only two newly owned quarantine files after verifying their exact
+# bytes, private permissions and durable clone records. No customer volume.
+assert infected_path != outage_path
+for location in (infected_path, outage_path):
+    location.unlink()
+for directory in sorted(
+    (p for p in root.rglob("*") if p.is_dir()),
+    key=lambda p: len(p.parts), reverse=True,
+):
+    directory.rmdir()
+assert not any(root.iterdir()), "NO-GO isolated quarantine Evidence residue"
+print("PASS: authenticated EICAR=422 infected and scanner-unavailable=503, two durable quarantines, no admitted Evidence.")
+PY
+
 clone_after="$(compose exec -T db psql -U "$POSTGRES_USER" -d "$clone" -At \
   -c 'SELECT COUNT(*) FROM auth_sessions;')"
 clone_documents_after="$(compose exec -T db psql -U "$POSTGRES_USER" -d "$clone" -At \
@@ -662,6 +890,9 @@ clone_extractions_after="$(compose exec -T db psql -U "$POSTGRES_USER" -d "$clon
   -c 'SELECT COUNT(*) FROM document_text_extractions;')"
 clone_segments_after="$(compose exec -T db psql -U "$POSTGRES_USER" -d "$clone" -At \
   -c 'SELECT COUNT(*) FROM document_text_segments;')"
+clone_quarantine_after="$(compose exec -T db psql -U "$POSTGRES_USER" -d "$clone" -At \
+  -c 'SELECT COUNT(*) FROM quarantined_uploads;')"
+[ "$clone_quarantine_after" -eq "$((clone_quarantine_before + 2))" ] || exit 1
 [ "$clone_extractions_after" -eq "$((clone_extractions_before + 2))" ] || exit 1
 [ "$clone_segments_after" -eq "$((clone_segments_before + 2))" ] || exit 1
 [ "$clone_after" -gt "$clone_before" ] || exit 1
@@ -677,6 +908,9 @@ source_extractions_after="$(compose exec -T db psql -U "$POSTGRES_USER" -d "$POS
   -c 'SELECT COUNT(*) FROM document_text_extractions;')"
 source_segments_after="$(compose exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At \
   -c 'SELECT COUNT(*) FROM document_text_segments;')"
+source_quarantine_after="$(compose exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At \
+  -c 'SELECT COUNT(*) FROM quarantined_uploads;')"
+[ "$source_quarantine_before" = "$source_quarantine_after" ] && \
 [ "$source_extractions_before" = "$source_extractions_after" ] && \
 [ "$source_segments_before" = "$source_segments_after" ] && \
 [ "$before" = "$after" ] && \
@@ -686,4 +920,4 @@ source_segments_after="$(compose exec -T db psql -U "$POSTGRES_USER" -d "$POSTGR
   exit 1
 }
 test -z "$(sudo find "$scratch" -mindepth 1 -print -quit)"
-echo "PASS: both native and scanned synthetic PDFs were authentically admitted and processed by nonroot worker; source unchanged."
+echo "PASS: two scanned/native clean documents admitted, processed; infected/outage HTTP uploads quarantined without source DB writes."
