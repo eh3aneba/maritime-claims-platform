@@ -89,6 +89,7 @@ class NonrootIsolatedAuthClonePolicy(unittest.TestCase):
             'assert response.status == 201',
             'admitted["malware_scan_status"] == "clean"',
             'admitted["malware_scanned_at"]',
+            'from app.db import metadata as _all_model_metadata',
             'document.file_hash == digest',
             'document.malware_scan_status == DocumentMalwareScanStatus.CLEAN',
             'stat.S_IMODE(stored.stat().st_mode) == 0o600',
