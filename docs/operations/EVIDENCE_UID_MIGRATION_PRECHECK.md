@@ -234,7 +234,15 @@ UID/GID 1000 worker, now creates a private image-only PDF without a text
 stream: Poppler renders the already verified **large-font, three-line** synthetic
 one-page PDF to a grayscale PGM, keeping all expected text well within the
 page crop boundary; pypdf then embeds those pixels as a compressed PDF Image
-XObject. The probe first checks that the initial grayscale raster contains real
+XObject. The Worker image installs the Alpine `font-liberation` package and verifies
+that fontconfig resolves Helvetica to a readable Liberation Sans font. Without
+a substitute for the PDF's standard Helvetica font, `pdftoppm` may return
+a valid-sized but blank synthetic PGM although `pypdf` can read the PDF's
+native text stream. This is a real image-rendering dependency, not a reason
+to weaken OCR acceptance. The package is added to the Worker image only;
+the production API image and customer Evidence volumes are untouched.
+
+The probe first checks that the initial grayscale raster contains real
 ink and that **the installed Tesseract** recognizes its synthetic phrase.
 It then rasterizes the generated scanned-only PDF independently and requires
 the pixel dimensions and visible ink to survive re-embedding. A blank or
