@@ -127,6 +127,27 @@ scratch cleanup. This is a controlled copy-level permission rollback
 regression, **not** a database/application rollback, production filesystem
 remediation, customer-storage migration or restore of a real backup.
 
+**Actual restricted API HTTP readiness (CI only):** after proving the
+synthetic clone, the one-shot UID/GID 1000 API container explicitly overrides
+`LOCAL_STORAGE_PATH` to its *isolated scratch mount* and requires
+`APP_ENV=test`, `MCRI_SYNTHETIC_ONLY_CONFIRM=YES`, and disabled external AI.
+It executes the **real** application preflight (synthetic database connection,
+ClamAV connectivity and a temporary scratch-only storage write probe); the
+temporary file must be removed. It then starts the real Uvicorn application
+bound only to `127.0.0.1` **inside the one-shot container**, checks HTTP
+liveness/readiness and live PostgreSQL dependency status, requires a
+request to the documents endpoint without credentials to return HTTP 401,
+and verifies the actual child process retains UID/GID 1000,
+`CapEff=0` and `NoNewPrivs=1`. A `finally` block terminates the
+temporary server and reaps it. No Docker port is published and no customer
+storage path is used.
+
+This establishes a **non-root HTTP startup and read-only readiness/auth
+boundary** on the disposable seeded CI stack. It does not prove authenticated
+document upload, a database-committed quarantine/scan/OCR transaction,
+production API/worker user changes, any customer Evidence volume migration,
+or Pilot GO.
+
 A pass establishes only that the selected API/worker images and **new,
 properly owned synthetic scratch** support non-root access. It is not proof
 that existing root-created customer Evidence folders, ACLs, scan quarantine
