@@ -68,6 +68,27 @@ directories or database/document lifecycle behave under a migrated non-root
 runtime. These require a separate approved cloned-volume integration and
 rollback rehearsal before any changes to a real deployment.
 
+**Evidence publication collision protection:** LocalDocumentStorage now writes
+every uploaded file into an exclusively created mode-`0600` staging file
+under the same target directory, completes the upload/hash/size checks, and
+publishes the final name using an atomic **no-clobber hard link**. An existing
+or raced-in final Evidence name is never removed during failed upload
+cleanup; only the private temporary file is removed. Local promotion from
+Quarantine to admitted Evidence similarly links at the destination before
+unlinking the Quarantine name: if the final name already exists (including a
+late collision), both preexisting Evidence and the original Quarantine
+source remain intact. This preserves the local same-filesystem admission
+contract; stores that do not support hard links must fail closed and require
+a separately reviewed admission strategy, **not** a fallback to overwriting
+`rename`. If Quarantine cleanup fails after a successful hard link, both
+names can temporarily reference the same inode. Stop and reconcile custody
+through the established audit/recovery process; do not auto-delete either.
+New private uploads require the eventual non-root API/worker to share the
+reviewed UID/GID contract; existing file ownership still requires a
+separate approved migration. This protects namespace collision behavior
+but does not replace full durable DB/Filesystem atomicity or external-host
+acceptance.
+
 **Limitations:** This is a necessary POSIX mode-bit screening check, **not**
 an effective-UID permissions test. POSIX/NFS ACLs, SELinux/AppArmor,
 supplemental group memberships, mount/idmap policy and race conditions cannot

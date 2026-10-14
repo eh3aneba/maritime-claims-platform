@@ -1,6 +1,8 @@
 from dataclasses import dataclass
+import os
 from pathlib import Path
-from typing import Protocol
+import tempfile
+from typing import BinaryIO, Protocol
 
 from fastapi import UploadFile
 
@@ -52,6 +54,20 @@ class LocalDocumentStorage:
             raise StorageError("Invalid storage key")
         return candidate
 
+    @staticmethod
+    def _private_staging_file(parent: Path) -> tuple[BinaryIO, Path]:
+        # Staging on the target filesystem permits atomic no-clobber publish
+        # only after all bytes have been written and validated. mkstemp creates
+        # a fresh mode-0600 file, never a predictable or shared name.
+        fd, name = tempfile.mkstemp(prefix=".mcri-upload-", suffix=".partial", dir=parent)
+        partial = Path(name)
+        try:
+            return os.fdopen(fd, "wb"), partial
+        except BaseException:
+            os.close(fd)
+            partial.unlink(missing_ok=True)
+            raise
+
     async def save_upload(self, upload: UploadFile, storage_key: str) -> StoredUpload:
         import hashlib
 
@@ -60,8 +76,10 @@ class LocalDocumentStorage:
         digest = hashlib.sha256()
         size = 0
 
+        partial: Path | None = None
         try:
-            with path.open("xb") as destination:
+            destination, partial = self._private_staging_file(path.parent)
+            with destination:
                 while chunk := await upload.read(1024 * 1024):
                     size += len(chunk)
                     if size > self.max_upload_bytes:
@@ -70,10 +88,12 @@ class LocalDocumentStorage:
                         )
                     digest.update(chunk)
                     destination.write(chunk)
-        except Exception:
-            path.unlink(missing_ok=True)
-            raise
+            # Unlike check-exists + rename, link creates the published name
+            # exclusively. A pre-existing/raced-in Evidence file is untouched.
+            os.link(partial, path, follow_symlinks=False)
         finally:
+            if partial is not None:
+                partial.unlink(missing_ok=True)
             await upload.close()
 
         return StoredUpload(
@@ -88,12 +108,15 @@ class LocalDocumentStorage:
         path = self._resolve_key(storage_key)
         path.parent.mkdir(parents=True, exist_ok=True)
         digest = hashlib.sha256(payload).hexdigest()
+        partial: Path | None = None
         try:
-            with path.open("xb") as destination:
+            destination, partial = self._private_staging_file(path.parent)
+            with destination:
                 destination.write(payload)
-        except Exception:
-            path.unlink(missing_ok=True)
-            raise
+            os.link(partial, path, follow_symlinks=False)
+        finally:
+            if partial is not None:
+                partial.unlink(missing_ok=True)
         return StoredUpload(
             storage_key=storage_key,
             file_size_bytes=len(payload),
@@ -111,9 +134,16 @@ class LocalDocumentStorage:
             source = self.path_for(quarantine_key)
             destination = self._resolve_key(storage_key)
             destination.parent.mkdir(parents=True, exist_ok=True)
-            if destination.exists():
-                raise StorageError("Target storage key already exists")
-            source.rename(destination)
+            # Quarantine and admitted Evidence are on the same local store.
+            # Link is atomic and refuses any existing destination. A
+            # check-exists followed by rename could overwrite raced-in bytes.
+            # If source cleanup fails, keep both links for safe reconciliation
+            # rather than deleting the newly published Evidence.
+            try:
+                os.link(source, destination, follow_symlinks=False)
+            except FileExistsError as exc:
+                raise StorageError("Target storage key already exists") from exc
+            source.unlink()
         except StorageError:
             raise
         except OSError as exc:
