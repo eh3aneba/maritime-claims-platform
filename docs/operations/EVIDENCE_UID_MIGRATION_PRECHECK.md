@@ -79,6 +79,16 @@ prior quarantine payload or leaving a published/temporary partial file.
 These negative tests do not exercise authenticated requests, scanner verdicts,
 a committed database transaction or customer data.
 
+The synthetic CI-only Compose overlay
+(`docker-compose.ci-nonroot-custody.yml`) additionally drops **all Linux
+capabilities** and enforces `no-new-privileges` for the one-shot API and OCR
+worker probes. Each process verifies its actual `/proc/self/status`
+`CapEff=0` and `NoNewPrivs=1` at UID/GID 1000 while running the
+filesystem-custody/OCR exercise. The override is deliberately applied only to
+the two disposable `docker compose run --no-deps` commands; it is **not**
+the production API/worker configuration and does not change mounted
+`local_documents` permissions.
+
 A pass establishes only that the selected API/worker images and **new,
 properly owned synthetic scratch** support non-root access. It is not proof
 that existing root-created customer Evidence folders, ACLs, scan quarantine

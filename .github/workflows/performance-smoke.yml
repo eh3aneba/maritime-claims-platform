@@ -272,7 +272,9 @@ jobs:
           trap 'sudo rm -rf -- "$scratch"' EXIT
           sudo chown 1000:1000 "$scratch"
           sudo chmod 0700 "$scratch"
-          docker compose --env-file .env.performance run --rm --no-deps -T \
+          docker compose --env-file .env.performance \
+            -f docker-compose.yml -f docker-compose.ci-nonroot-custody.yml \
+            run --rm --no-deps -T \
             --user 1000:1000 -v "$scratch:/mnt/mcri-ci-uid-probe:rw" \
             api python - <<'PY'
           import os
@@ -280,6 +282,12 @@ jobs:
           from stat import S_IMODE
           root = Path("/mnt/mcri-ci-uid-probe")
           assert os.geteuid() == os.getegid() == 1000
+          proc_status = dict(
+              line.split(":", 1) for line in Path("/proc/self/status").read_text().splitlines()
+              if ":" in line
+          )
+          assert int(proc_status["CapEff"].strip(), 16) == 0
+          assert proc_status["NoNewPrivs"].strip() == "1"
           assert root.is_dir() and root.stat().st_uid == 1000
           assert S_IMODE(root.stat().st_mode) == 0o700
           assert not os.access("/app/app", os.W_OK)
@@ -331,7 +339,9 @@ jobs:
           assert not (root / "_quarantine/ci/oversized.pdf").exists()
           assert not list((root / "_quarantine/ci").glob(".mcri-upload-*.partial"))
           PY
-          docker compose --env-file .env.performance run --rm --no-deps -T \
+          docker compose --env-file .env.performance \
+            -f docker-compose.yml -f docker-compose.ci-nonroot-custody.yml \
+            run --rm --no-deps -T \
             --user 1000:1000 -v "$scratch:/mnt/mcri-ci-uid-probe:rw" \
             worker python - <<'PY'
           import os
@@ -341,6 +351,12 @@ jobs:
           from pathlib import Path
           root = Path("/mnt/mcri-ci-uid-probe")
           assert os.geteuid() == os.getegid() == 1000
+          proc_status = dict(
+              line.split(":", 1) for line in Path("/proc/self/status").read_text().splitlines()
+              if ":" in line
+          )
+          assert int(proc_status["CapEff"].strip(), 16) == 0
+          assert proc_status["NoNewPrivs"].strip() == "1"
           assert not os.access("/app/app", os.W_OK)
           marker = root / "cross-service-synthetic-marker"
           assert marker.read_bytes() == b"synthetic-noncustomer-evidence"

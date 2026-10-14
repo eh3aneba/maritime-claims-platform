@@ -1,0 +1,16 @@
+# CI-only security overlay. Use solely for disposable one-shot API/worker
+# synthetic scratch custody probes with --no-deps; never for customer volumes.
+# The ordinary production Compose service user/permissions remain unchanged.
+services:
+  api:
+    user: "1000:1000"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+  worker:
+    user: "1000:1000"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true

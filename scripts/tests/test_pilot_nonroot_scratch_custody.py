@@ -13,6 +13,9 @@ class SyntheticNonrootCustodyPolicyTests(unittest.TestCase):
         self.assertIn(name, source)
         section = source.split("- name: " + name, 1)[1].split("\n      - name:", 1)[0]
         self.assertEqual(section.count("--user 1000:1000"), 2)
+        self.assertEqual(section.count("-f docker-compose.ci-nonroot-custody.yml"), 2)
+        self.assertEqual(section.count('int(proc_status["CapEff"].strip(), 16) == 0'), 2)
+        self.assertEqual(section.count('proc_status["NoNewPrivs"].strip() == "1"'), 2)
         self.assertEqual(section.count('-v "$scratch:/mnt/mcri-ci-uid-probe:rw"'), 2)
         self.assertIn("api python - <<'PY'", section)
         self.assertIn("worker python - <<'PY'", section)
@@ -43,6 +46,17 @@ class SyntheticNonrootCustodyPolicyTests(unittest.TestCase):
         self.assertIn('store.delete_physical(existing_key)', section)
         self.assertIn('("_quarantine/ci", "_quarantine", "tenant/claim", "tenant")', section)
         self.assertIn('sudo find "$scratch" -mindepth 1 -maxdepth 1', section)
+
+    def test_ci_override_only_confines_disposable_api_and_worker(self):
+        override = (ROOT / "docker-compose.ci-nonroot-custody.yml").read_text(encoding="utf-8")
+        self.assertIn('user: "1000:1000"', override)
+        self.assertEqual(override.count('user: "1000:1000"'), 2)
+        self.assertEqual(override.count("cap_drop:"), 2)
+        self.assertEqual(override.count("- ALL"), 2)
+        self.assertEqual(override.count("no-new-privileges:true"), 2)
+        self.assertNotIn("local_documents:", override)
+        self.assertNotIn("/data/documents", override)
+        self.assertNotIn("privileged:", override)
 
     def test_no_legacy_volume_mutation_or_security_bypass(self):
         source = WORKFLOW.read_text(encoding="utf-8")
