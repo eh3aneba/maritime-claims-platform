@@ -174,6 +174,40 @@ class NonrootIsolatedAuthClonePolicy(unittest.TestCase):
         self.assertNotIn('docker volume rm', script)
         self.assertNotIn('chown -R', script)
 
+    def test_scanned_image_only_pdf_requires_genuine_tesseract_eng_fas(self):
+        script = SCRIPT.read_text(encoding="utf-8")
+        for marker in (
+            '["pdftoppm", "-f", "1", "-l", "1", "-singlefile",',
+            '"-r", "200", "-gray", str(stored), str(pgm_prefix)',
+            'header = re.match(rb"P5',
+            'assert len(pixels) == width * height',
+            'image = image.flate_encode()',
+            'NameObject("/Subtype"): NameObject("/Image")',
+            'NameObject("/ColorSpace"): NameObject("/DeviceGray")',
+            'stream.set_data(b"q 612 0 0 792 0 0 cm /Im1 Do Q")',
+            'writer.write(output)',
+            'native = extract_document_text(scanned_pdf, enable_ocr=False)',
+            'assert native.method == "pypdf" and native.requires_ocr',
+            'not native.combined_text.strip()',
+            'recovered = extract_document_text(',
+            'enable_ocr=True, ocr_languages="eng+fas"',
+            'ocr_max_pages=1, ocr_timeout_seconds=90',
+            'recovered.method == "pypdf+selective-tesseract:eng+fas"',
+            'recovered.requires_ocr is False',
+            'recovered.text_hash is not None',
+            'recovered.segments[0].locator_value == "1"',
+            '"synthetic marine claims evidence" in recovered.combined_text.casefold()',
+            '"nonroot worker processing" in recovered.combined_text.casefold()',
+            'scanned_pdf.unlink()',
+            'pgm_path.unlink()',
+            'Not a scanned-PDF HTTP upload, scanned document DB job',
+        ):
+            self.assertIn(marker, script)
+        self.assertIn('rb"P5\\s+(\\d+)\\s+(\\d+)\\s+(\\d+)\\s"', script)
+        self.assertEqual(script.count("MCRI_SYNTHETIC_ONLY_CONFIRM=YES worker python -"), 1)
+        self.assertNotIn('docker volume rm', script)
+        self.assertNotIn('--network host', script)
+
     def test_required_live_stack_step_is_wired(self):
         workflow = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn(
