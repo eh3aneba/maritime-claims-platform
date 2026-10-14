@@ -75,6 +75,46 @@ class NonrootIsolatedAuthClonePolicy(unittest.TestCase):
         self.assertNotIn("--service-ports", script)
         self.assertNotIn("--network host", script)
 
+    def test_authenticated_clean_http_upload_is_scanned_and_committed_only_to_clone(self):
+        script = SCRIPT.read_text(encoding="utf-8")
+        for marker in (
+            'source_documents_before=',
+            'source_jobs_before=',
+            'clone_documents_before=',
+            'clone_jobs_before=',
+            'clean_pdf = (b"%PDF-1.4',
+            'digest = hashlib.sha256(clean_pdf).hexdigest()',
+            'multipart/form-data; boundary=',
+            'data=form, method="POST"',
+            'assert response.status == 201',
+            'admitted["malware_scan_status"] == "clean"',
+            'admitted["malware_scanned_at"]',
+            'document.file_hash == digest',
+            'document.malware_scan_status == DocumentMalwareScanStatus.CLEAN',
+            'stat.S_IMODE(stored.stat().st_mode) == 0o600',
+            'DocumentProcessingJob.document_id == document.id',
+            'DocumentProcessingJob.status == ProcessingJobStatus.PENDING',
+            'QuarantinedUpload.claim_id == document.claim_id',
+            'QuarantinedUpload.file_hash == digest',
+            'response.read() == clean_pdf',
+            'assert not list(root.rglob(".mcri-upload-*.partial"))',
+            'assert [p for p in root.rglob("*") if p.is_file()] == [stored]',
+            'stored.unlink()',
+            'directory.rmdir()',
+            'clone_documents_after=',
+            'clone_jobs_after=',
+            'source_documents_after=',
+            'source_jobs_after=',
+            '[ "$clone_documents_after" -eq "$((clone_documents_before + 1))" ]',
+            '[ "$clone_jobs_after" -eq "$((clone_jobs_before + 1))" ]',
+            '[ "$source_documents_before" = "$source_documents_after" ]',
+            '[ "$source_jobs_before" = "$source_jobs_after" ]',
+        ):
+            self.assertIn(marker, script)
+        self.assertIn('b"\\r\\n"', script)
+        self.assertNotIn('STORAGE_BACKEND=s3', script)
+        self.assertNotIn('docker volume rm', script)
+
     def test_required_live_stack_step_is_wired(self):
         workflow = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn(
