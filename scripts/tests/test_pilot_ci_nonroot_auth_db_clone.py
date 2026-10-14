@@ -37,10 +37,7 @@ class NonrootIsolatedAuthClonePolicy(unittest.TestCase):
             '--no-owner --no-privileges --exit-on-error < "$dump"',
             'rm -f -- "$dump"',
             'sudo rm -rf -- "$scratch"',
-            'source_sessions',
         ):
-            if marker == "source_sessions":
-                continue
             self.assertIn(marker, script)
         self.assertEqual(script.count('created=1'), 1)
         self.assertIn('SELECT COUNT(*) FROM auth_sessions;', script)
