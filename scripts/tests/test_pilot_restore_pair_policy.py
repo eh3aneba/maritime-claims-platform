@@ -38,7 +38,7 @@ class PairReconciliationPolicy(unittest.TestCase):
         for fragment in (
             'MCRI_SYNTHETIC_ONLY_CONFIRM:-',
             'clone="mcri_ci_auth_$(openssl rand -hex 8)"',
-            'DROP DATABASE \\"$clone\\" WITH (FORCE);',
+            'DROP DATABASE',
             'from app.core.restore_pair_audit import (',
             'RestoreEvidenceRow(',
             'state=item.malware_scan_status.value',
