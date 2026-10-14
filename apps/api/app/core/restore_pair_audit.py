@@ -118,7 +118,7 @@ def audit_restored_evidence_pair(
                 if (
                     not stat.S_ISDIR(meta.st_mode)
                     or meta.st_uid != uid or meta.st_gid != gid
-                    or stat.S_IMODE(meta.st_mode) != 0o700
+                    or stat.S_IMODE(meta.st_mode) not in {0o700, 0o750, 0o755}
                 ):
                     raise RestorePairAuditError("unsafe_directory")
             path = current / pure.name
