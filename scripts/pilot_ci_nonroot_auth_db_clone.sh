@@ -47,6 +47,11 @@ source_documents_before="$(compose exec -T db psql -U "$POSTGRES_USER" -d "$POST
   -c 'SELECT COUNT(*) FROM documents;')"
 source_jobs_before="$(compose exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At \
   -c 'SELECT COUNT(*) FROM document_processing_jobs;')"
+source_extractions_before="$(compose exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At \
+  -c 'SELECT COUNT(*) FROM document_text_extractions;')"
+source_segments_before="$(compose exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At \
+  -c 'SELECT COUNT(*) FROM document_text_segments;')"
+[[ "$source_extractions_before" =~ ^[0-9]+$ ]] && [[ "$source_segments_before" =~ ^[0-9]+$ ]] && \
 [[ "$before" =~ ^[0-9]+$ ]] && [[ "$source_documents_before" =~ ^[0-9]+$ ]] && \
 [[ "$source_jobs_before" =~ ^[0-9]+$ ]] || exit 2
 compose exec -T db pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
@@ -68,6 +73,11 @@ clone_documents_before="$(compose exec -T db psql -U "$POSTGRES_USER" -d "$clone
   -c 'SELECT COUNT(*) FROM documents;')"
 clone_jobs_before="$(compose exec -T db psql -U "$POSTGRES_USER" -d "$clone" -At \
   -c 'SELECT COUNT(*) FROM document_processing_jobs;')"
+clone_extractions_before="$(compose exec -T db psql -U "$POSTGRES_USER" -d "$clone" -At \
+  -c 'SELECT COUNT(*) FROM document_text_extractions;')"
+clone_segments_before="$(compose exec -T db psql -U "$POSTGRES_USER" -d "$clone" -At \
+  -c 'SELECT COUNT(*) FROM document_text_segments;')"
+[[ "$clone_extractions_before" =~ ^[0-9]+$ ]] && [[ "$clone_segments_before" =~ ^[0-9]+$ ]] && \
 [[ "$clone_before" =~ ^[0-9]+$ ]] && [[ "$clone_documents_before" =~ ^[0-9]+$ ]] && \
 [[ "$clone_jobs_before" =~ ^[0-9]+$ ]] || exit 2
 clone_url="${DATABASE_URL%/*}/$clone"
@@ -78,7 +88,10 @@ compose -f docker-compose.yml -f docker-compose.ci-nonroot-custody.yml \
   -e MCRI_DEMO_ORG_SLUG -e MCRI_DEMO_EMAIL -e MCRI_DEMO_PASSWORD \
   -e MCRI_SYNTHETIC_ONLY_CONFIRM=YES api python - <<'PY'
 import hashlib, json, os, stat, subprocess, sys, time, urllib.error, urllib.request
+from io import BytesIO
 from pathlib import Path
+from pypdf import PdfWriter
+from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
 from uuid import UUID
 from sqlalchemy import select
 # Direct SQLAlchemy model lookups need the same complete model registry as
@@ -158,9 +171,36 @@ try:
     # ClamAV verdict and DB transaction target ONLY the disposable clone.
     # Derive distinct bytes from the exclusive clone ID, avoiding seeded
     # document hash collisions without printing any contents.
-    clean_pdf = (b"%PDF-1.4\n% synthetic-noncustomer-" +
-                 os.environ["MCRI_CI_AUTH_DB_NAME"].encode("ascii") +
-                 b"\n%%EOF\n")
+    # The previous bytes were only a PDF signature, not a parseable document.
+    # Create a real, one-page text PDF so the separate worker can perform
+    # genuine native extraction without a mock or external fixture.
+    verification_text = (
+        "Synthetic marine claims evidence for isolated nonroot worker processing "
+        + os.environ["MCRI_CI_AUTH_DB_NAME"]
+    )
+    assert verification_text.isascii()
+    writer = PdfWriter()
+    page = writer.add_blank_page(width=612, height=792)
+    font = DictionaryObject({
+        NameObject("/Type"): NameObject("/Font"),
+        NameObject("/Subtype"): NameObject("/Type1"),
+        NameObject("/BaseFont"): NameObject("/Helvetica"),
+    })
+    page[NameObject("/Resources")] = DictionaryObject({
+        NameObject("/Font"): DictionaryObject({
+            NameObject("/F1"): writer._add_object(font)
+        }),
+    })
+    text_stream = DecodedStreamObject()
+    text_stream.set_data(
+        b"BT /F1 14 Tf 30 700 Td ("
+        + verification_text.encode("ascii") + b") Tj ET"
+    )
+    page[NameObject("/Contents")] = writer._add_object(text_stream)
+    output = BytesIO()
+    writer.write(output)
+    clean_pdf = output.getvalue()
+    assert clean_pdf.startswith(b"%PDF-") and len(clean_pdf) < 8192
     digest = hashlib.sha256(clean_pdf).hexdigest()
     boundary = b"mcri-clean-ci-upload"
     form = (
@@ -195,10 +235,12 @@ try:
         assert stored.is_file() and stored.resolve().is_relative_to(root)
         assert hashlib.sha256(stored.read_bytes()).hexdigest() == digest
         assert stat.S_IMODE(stored.stat().st_mode) == 0o600
-        assert session.scalar(select(DocumentProcessingJob).where(
+        pending_job = session.scalar(select(DocumentProcessingJob).where(
             DocumentProcessingJob.document_id == document.id,
             DocumentProcessingJob.status == ProcessingJobStatus.PENDING,
-        )) is not None
+        ))
+        assert pending_job is not None
+        processing_id = str(pending_job.id)
         assert session.scalar(select(QuarantinedUpload).where(
             QuarantinedUpload.claim_id == document.claim_id,
             QuarantinedUpload.file_hash == digest,
@@ -212,14 +254,18 @@ try:
         assert response.status == 200
         assert response.read() == clean_pdf
     assert not list(root.rglob(".mcri-upload-*.partial"))
-    # Clean only the new scratch Evidence, never seeded/customer files.
+    # Transfer only the synthetic document/job identifiers, not bearer tokens,
+    # into a private one-shot marker shared with the separate real worker.
     assert [p for p in root.rglob("*") if p.is_file()] == [stored]
-    stored.unlink()
-    for directory in sorted(
-        (p for p in root.rglob("*") if p.is_dir()),
-        key=lambda p: len(p.parts), reverse=True,
-    ):
-        directory.rmdir()
+    target_marker = root / "ci-processing-target.json"
+    with target_marker.open("x", encoding="utf-8") as file:
+        json.dump({
+            "document_id": admitted["id"],
+            "job_id": processing_id,
+            "claim_id": claims["items"][0]["id"],
+            "file_hash": digest,
+        }, file)
+    target_marker.chmod(0o600)
     child = dict(
         line.split(":", 1) for line in Path(f"/proc/{server.pid}/status").read_text().splitlines()
         if ":" in line
@@ -236,9 +282,110 @@ finally:
     except subprocess.TimeoutExpired:
         server.kill()
         server.wait(timeout=5)
-assert not any(root.iterdir()), "authenticated read polluted synthetic scratch"
-print("PASS: non-root API authenticated clean HTTP upload; live scanner CLEAN; cloned DB document and pending job matched.")
-print("Not an OCR completion, independent PostgreSQL engine, production user change or Pilot GO.")
+assert (root / "ci-processing-target.json").is_file(), "synthetic worker handoff missing"
+print("PASS: non-root API authenticated clean HTTP upload; live scanner CLEAN; pending job recorded for independent worker.")
+print("Not proof of OCR completion, customer data or Pilot GO.")
+PY
+
+# The API does NOT delete the admitted synthetic PDF. The separate restricted
+# OCR-capable worker must claim its exact new DB job and remove only scratch.
+compose -f docker-compose.yml -f docker-compose.ci-nonroot-custody.yml \
+  run --rm --no-deps -T --user 1000:1000 \
+  -v "$scratch:/mnt/mcri-ci-auth-probe:rw" \
+  -e "DATABASE_URL=$clone_url" -e LOCAL_STORAGE_PATH=/mnt/mcri-ci-auth-probe \
+  -e "MCRI_CI_AUTH_DB_NAME=$clone" \
+  -e OCR_ENABLED=true -e OCR_LANGUAGES=eng+fas \
+  -e MCRI_SYNTHETIC_ONLY_CONFIRM=YES worker python - <<'PY'
+import hashlib, json, os, stat
+from datetime import UTC, datetime
+from pathlib import Path
+from uuid import UUID
+from sqlalchemy import select
+from app.db import metadata as _all_model_metadata  # noqa: F401
+from app.db.session import create_session
+from app.modules.documents.models import Document, DocumentProcessingStatus
+from app.modules.processing.models import (
+    DocumentProcessingJob, DocumentTextExtraction, DocumentTextSegment,
+    ProcessingJobStatus, ProcessingJobType,
+)
+from app.modules.processing.service import process_job
+from app.modules.processing.lease_recovery import process_job_with_lease
+
+assert os.geteuid() == os.getegid() == 1000
+assert os.environ["APP_ENV"] == "test"
+assert os.environ["AI_PROVIDER"] == "disabled"
+assert os.environ["MCRI_SYNTHETIC_ONLY_CONFIRM"] == "YES"
+assert os.environ["DATABASE_URL"].endswith("/" + os.environ["MCRI_CI_AUTH_DB_NAME"])
+assert os.environ["OCR_ENABLED"].lower() == "true"
+assert os.environ["OCR_LANGUAGES"] == "eng+fas"
+proc = dict(line.split(":", 1) for line in Path("/proc/self/status").read_text().splitlines() if ":" in line)
+assert int(proc["CapEff"].strip(), 16) == 0 and proc["NoNewPrivs"].strip() == "1"
+root = Path("/mnt/mcri-ci-auth-probe")
+marker = root / "ci-processing-target.json"
+assert marker.is_file() and stat.S_IMODE(marker.stat().st_mode) == 0o600
+details = json.loads(marker.read_text(encoding="utf-8"))
+assert set(details) == {"document_id", "job_id", "claim_id", "file_hash"}
+doc_id, job_id = UUID(details["document_id"]), UUID(details["job_id"])
+with create_session() as session:
+    document = session.get(Document, doc_id)
+    job = session.scalar(select(DocumentProcessingJob).where(
+        DocumentProcessingJob.id == job_id,
+        DocumentProcessingJob.document_id == doc_id,
+    ).with_for_update(skip_locked=True))
+    assert document is not None and job is not None
+    assert document.claim_id == UUID(details["claim_id"])
+    assert document.file_hash == details["file_hash"]
+    assert job.status == ProcessingJobStatus.PENDING
+    assert job.job_type == ProcessingJobType.EXTRACT_TEXT
+    assert job.attempt_count == 0
+    stored = root / document.storage_key
+    assert stored.is_file() and stored.resolve().is_relative_to(root)
+    assert stat.S_IMODE(stored.stat().st_mode) == 0o600
+    assert hashlib.sha256(stored.read_bytes()).hexdigest() == details["file_hash"]
+    now = datetime.now(UTC)
+    job.status = ProcessingJobStatus.RUNNING
+    job.locked_at = now
+    job.locked_by = "ci-disposable-nonroot-worker"
+    job.started_at = now
+    job.attempt_count += 1
+    session.commit()
+    session.refresh(job)
+    assert process_job_with_lease(session, job=job, processor=process_job)
+    session.expire_all()
+    document = session.get(Document, doc_id)
+    job = session.get(DocumentProcessingJob, job_id)
+    assert job.status == ProcessingJobStatus.COMPLETED
+    assert job.completed_at is not None and job.attempt_count == 1
+    assert job.locked_at is None and job.locked_by is None
+    assert document.processing_status == DocumentProcessingStatus.PROCESSED
+    extraction = session.scalar(select(DocumentTextExtraction).where(
+        DocumentTextExtraction.document_id == doc_id,
+    ))
+    assert extraction is not None and extraction.extraction_method == "pypdf"
+    assert extraction.char_count >= 60 and extraction.segment_count == 1
+    assert extraction.requires_ocr is False and extraction.text_hash is not None
+    segment = session.scalar(select(DocumentTextSegment).where(
+        DocumentTextSegment.document_id == doc_id,
+        DocumentTextSegment.extraction_id == extraction.id,
+    ))
+    assert segment is not None and segment.locator_value == "1"
+    assert "Synthetic marine claims evidence" in segment.text
+    assert os.environ["MCRI_CI_AUTH_DB_NAME"] in segment.text
+    assert segment.char_count == extraction.char_count
+    assert job.result["method"] == "pypdf"
+    assert job.result["segment_count"] == 1
+    assert job.result["requires_ocr"] is False
+    session.rollback()
+stored.unlink()
+marker.unlink()
+for directory in sorted(
+    (p for p in root.rglob("*") if p.is_dir()),
+    key=lambda p: len(p.parts), reverse=True,
+):
+    directory.rmdir()
+assert not any(root.iterdir()), "restricted worker left synthetic Evidence behind"
+print("PASS: restricted real worker committed a fenced processing lease, native PDF text and matching extracted DB records.")
+print("Not scanned-page OCR, host migration or Pilot GO.")
 PY
 clone_after="$(compose exec -T db psql -U "$POSTGRES_USER" -d "$clone" -At \
   -c 'SELECT COUNT(*) FROM auth_sessions;')"
@@ -246,6 +393,12 @@ clone_documents_after="$(compose exec -T db psql -U "$POSTGRES_USER" -d "$clone"
   -c 'SELECT COUNT(*) FROM documents;')"
 clone_jobs_after="$(compose exec -T db psql -U "$POSTGRES_USER" -d "$clone" -At \
   -c 'SELECT COUNT(*) FROM document_processing_jobs;')"
+clone_extractions_after="$(compose exec -T db psql -U "$POSTGRES_USER" -d "$clone" -At \
+  -c 'SELECT COUNT(*) FROM document_text_extractions;')"
+clone_segments_after="$(compose exec -T db psql -U "$POSTGRES_USER" -d "$clone" -At \
+  -c 'SELECT COUNT(*) FROM document_text_segments;')"
+[ "$clone_extractions_after" -eq "$((clone_extractions_before + 1))" ] || exit 1
+[ "$clone_segments_after" -eq "$((clone_segments_before + 1))" ] || exit 1
 [ "$clone_after" -gt "$clone_before" ] || exit 1
 [ "$clone_documents_after" -eq "$((clone_documents_before + 1))" ] || exit 1
 [ "$clone_jobs_after" -eq "$((clone_jobs_before + 1))" ] || exit 1
@@ -255,6 +408,12 @@ source_documents_after="$(compose exec -T db psql -U "$POSTGRES_USER" -d "$POSTG
   -c 'SELECT COUNT(*) FROM documents;')"
 source_jobs_after="$(compose exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At \
   -c 'SELECT COUNT(*) FROM document_processing_jobs;')"
+source_extractions_after="$(compose exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At \
+  -c 'SELECT COUNT(*) FROM document_text_extractions;')"
+source_segments_after="$(compose exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At \
+  -c 'SELECT COUNT(*) FROM document_text_segments;')"
+[ "$source_extractions_before" = "$source_extractions_after" ] && \
+[ "$source_segments_before" = "$source_segments_after" ] && \
 [ "$before" = "$after" ] && \
 [ "$source_documents_before" = "$source_documents_after" ] && \
 [ "$source_jobs_before" = "$source_jobs_after" ] || {
@@ -262,4 +421,4 @@ source_jobs_after="$(compose exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_D
   exit 1
 }
 test -z "$(sudo find "$scratch" -mindepth 1 -print -quit)"
-echo "PASS: authenticated clean scan/admission + pending job committed only to disposable synthetic DB; source unchanged."
+echo "PASS: authenticated scan/admission and real nonroot worker text extraction/job completion isolated to clone; source unchanged."
