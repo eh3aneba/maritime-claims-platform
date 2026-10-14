@@ -228,8 +228,24 @@ is then dropped by the existing guarded cleanup trap.
 This proves a bounded authenticated clean upload, live malware scan, DB
 admission and **real non-root worker native-PDF text processing**, on a clone
 in the same ephemeral PostgreSQL instance, not a separate engine or host.
-The worker image has `eng+fas` OCR tooling available, but this PDF has native
-text: **scanned-page Tesseract OCR is NOT exercised** by this scenario.
+The existing authenticated document/job test uses a PDF with native text.
+A **separate read-only scanned-PDF OCR probe**, executed inside that same
+UID/GID 1000 worker, now creates a private image-only PDF without a text
+stream: Poppler renders the already verified synthetic one-page PDF to a
+grayscale PGM; pypdf then embeds those pixels as a compressed PDF Image
+XObject. First, native-only extraction must report **no text** and
+`requires_ocr=True`. Next, the real `extract_document_text` pipeline with
+`enable_ocr=True`, `eng+fas`, a one-page cap and bounded timeout must call
+Poppler/Tesseract, return `pypdf+selective-tesseract:eng+fas`, recover the
+synthetic marine-claims phrase and declare no remaining OCR requirement.
+The synthetic raster PGM and scanned PDF are deleted before custody cleanup.
+
+This validates real scanned-page local OCR tools **without any test mocks**.
+The scanned-PDF fixture is **not** uploaded by authenticated HTTP or
+admitted as a second Document/processing job in PostgreSQL; the existing
+native-text document is the only persisted processing test. A fully
+authenticated scanned-PDF upload → queued worker → persisted OCR result
+remains a separate next acceptance step.
 The job is explicitly selected by its freshly generated identifier and the
 same fenced processing function is called, rather than proving background
 queue polling fairness for unrelated jobs. Infected/outage HTTP quarantine
