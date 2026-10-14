@@ -81,6 +81,9 @@ import hashlib, json, os, stat, subprocess, sys, time, urllib.error, urllib.requ
 from pathlib import Path
 from uuid import UUID
 from sqlalchemy import select
+# Direct SQLAlchemy model lookups need the same complete model registry as
+# Alembic/tests; otherwise Document's Organization relationship is unresolved.
+from app.db import metadata as _all_model_metadata  # noqa: F401
 from app.db.session import create_session
 from app.modules.documents.models import (
     Document, DocumentMalwareScanStatus, QuarantinedUpload,
