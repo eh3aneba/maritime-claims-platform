@@ -174,6 +174,63 @@ class NonrootIsolatedAuthClonePolicy(unittest.TestCase):
         self.assertNotIn('docker volume rm', script)
         self.assertNotIn('chown -R', script)
 
+    def test_worker_has_readable_font_fallback_for_scanned_pdf_fixture(self):
+        dockerfile = (ROOT / "apps" / "api" / "Dockerfile").read_text(encoding="utf-8")
+        worker = dockerfile.split("FROM python:3.14.8-alpine3.24 AS worker\n", 1)[1].split(
+            "\nFROM base AS api", 1
+        )[0]
+        self.assertIn("        font-liberation \\", worker)
+        self.assertIn("test -r /usr/share/fonts/liberation/LiberationSans-Regular.ttf", worker)
+        self.assertIn("fc-match -f '%{family}' Helvetica | grep -F 'Liberation Sans'", worker)
+        self.assertIn("RUN python --version", worker)
+        self.assertNotIn("font-liberation", dockerfile.split(
+            "FROM python:3.14.8-alpine3.24 AS base", 1
+        )[1].split("FROM python:3.14.8-alpine3.24 AS worker\n", 1)[0])
+
+    def test_scanned_image_only_pdf_requires_genuine_tesseract_eng_fas(self):
+        script = SCRIPT.read_text(encoding="utf-8")
+        for marker in (
+            '["pdftoppm", "-f", "1", "-l", "1", "-singlefile",',
+            '"-r", "200", "-gray", str(stored), str(pgm_prefix)',
+            'header = re.match(rb"P5',
+            'assert len(pixels) == width * height',
+            'image = image.flate_encode()',
+            'NameObject("/Subtype"): NameObject("/Image")',
+            'NameObject("/ColorSpace"): NameObject("/DeviceGray")',
+            'stream.set_data(b"q 612 0 0 792 0 0 cm /Im1 Do Q")',
+            'writer.write(output)',
+            'b"BT /F1 20 Tf 55 650 Td "',
+            'b"0 -48 Td (nonroot worker processing) Tj "',
+            'marker_text = os.environ["MCRI_CI_AUTH_DB_NAME"].encode("ascii")',
+            'native = extract_document_text(scanned_pdf, enable_ocr=False)',
+            'assert native.method == "pypdf" and native.requires_ocr',
+            'not native.combined_text.strip()',
+            'recovered = extract_document_text(',
+            'enable_ocr=True, ocr_languages="eng+fas"',
+            'ocr_max_pages=1, ocr_timeout_seconds=90',
+            'recovered.method == "pypdf+selective-tesseract:eng+fas"',
+            'if recovered.requires_ocr or len(recovered.segments) != 1:',
+            'recovered.text_hash is not None',
+            'recovered.segments[0].locator_value == "1"',
+            '"synthetic marine claims evidence" in recovered.combined_text.casefold()',
+            '"nonroot worker processing" in recovered.combined_text.casefold()',
+            'source_ink = sum(pixel < 180 for pixel in pixels)',
+            'ocr_source = subprocess.run(',
+            'source-raster Tesseract exited nonzero',
+            'roundtrip_prefix = root / "ci-scanned-roundtrip"',
+            'roundtrip_ink = sum(pixel < 180 for pixel in rt_pixels)',
+            'NO-GO scanned PDF image content did not survive round-trip',
+            'roundtrip_pgm.unlink()',
+            'scanned_pdf.unlink()',
+            'pgm_path.unlink()',
+            'Not a scanned-PDF HTTP upload, scanned document DB job',
+        ):
+            self.assertIn(marker, script)
+        self.assertIn('rb"P5\\s+(\\d+)\\s+(\\d+)\\s+(\\d+)\\s"', script)
+        self.assertEqual(script.count("MCRI_SYNTHETIC_ONLY_CONFIRM=YES worker python -"), 1)
+        self.assertNotIn('docker volume rm', script)
+        self.assertNotIn('--network host', script)
+
     def test_required_live_stack_step_is_wired(self):
         workflow = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn(

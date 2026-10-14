@@ -179,6 +179,10 @@ try:
         + os.environ["MCRI_CI_AUTH_DB_NAME"]
     )
     assert verification_text.isascii()
+    # Use large, centered, well-separated text lines. The former 14pt,
+    # single-line fixture could run past the PDF crop boundary after
+    # rasterization, producing a non-deterministic OCR acceptance result.
+    marker_text = os.environ["MCRI_CI_AUTH_DB_NAME"].encode("ascii")
     writer = PdfWriter()
     page = writer.add_blank_page(width=612, height=792)
     font = DictionaryObject({
@@ -193,8 +197,10 @@ try:
     })
     text_stream = DecodedStreamObject()
     text_stream.set_data(
-        b"BT /F1 14 Tf 30 700 Td ("
-        + verification_text.encode("ascii") + b") Tj ET"
+        b"BT /F1 20 Tf 55 650 Td "
+        b"(Synthetic marine claims evidence) Tj "
+        b"0 -48 Td (nonroot worker processing) Tj "
+        b"0 -48 Td (" + marker_text + b") Tj ET"
     )
     page[NameObject("/Contents")] = writer._add_object(text_stream)
     output = BytesIO()
@@ -296,13 +302,17 @@ compose -f docker-compose.yml -f docker-compose.ci-nonroot-custody.yml \
   -e "MCRI_CI_AUTH_DB_NAME=$clone" \
   -e OCR_ENABLED=true -e OCR_LANGUAGES=eng+fas \
   -e MCRI_SYNTHETIC_ONLY_CONFIRM=YES worker python - <<'PY'
-import hashlib, json, os, stat
+import hashlib, json, os, re, stat, subprocess
+from io import BytesIO
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID
 from sqlalchemy import select
+from pypdf import PdfWriter
+from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject, NumberObject
 from app.db import metadata as _all_model_metadata  # noqa: F401
 from app.db.session import create_session
+from app.modules.processing.extractors import extract_document_text
 from app.modules.documents.models import Document, DocumentProcessingStatus
 from app.modules.processing.models import (
     DocumentProcessingJob, DocumentTextExtraction, DocumentTextSegment,
@@ -376,6 +386,116 @@ with create_session() as session:
     assert job.result["segment_count"] == 1
     assert job.result["requires_ocr"] is False
     session.rollback()
+
+# Real scanned-PDF OCR proof on a second **private ephemeral file**, no DB
+# admission. Convert the already-admitted synthetic text PDF to a grayscale
+# image and re-embed those pixels in a PDF with NO native text stream.
+# This is not an OCR mock: it invokes actual Poppler and Tesseract eng+fas.
+pgm_prefix = root / "ci-ocr-source"
+pgm_path = pgm_prefix.with_suffix(".pgm")
+scanned_pdf = root / "ci-scanned-only.pdf"
+result = subprocess.run(
+    ["pdftoppm", "-f", "1", "-l", "1", "-singlefile",
+     "-r", "200", "-gray", str(stored), str(pgm_prefix)],
+    capture_output=True, timeout=35, check=False,
+)
+assert result.returncode == 0 and pgm_path.is_file(), "scanner rasterization unavailable"
+raster = pgm_path.read_bytes()
+header = re.match(rb"P5\s+(\d+)\s+(\d+)\s+(\d+)\s", raster)
+assert header is not None, "scanner raster has an unexpected PGM header"
+width, height, max_value = map(int, header.groups())
+assert 1000 <= width <= 2500 and 1000 <= height <= 3500 and max_value == 255
+pixels = raster[header.end():]
+assert len(pixels) == width * height and len(pixels) < 9_000_000
+source_ink = sum(pixel < 180 for pixel in pixels)
+assert source_ink > 3000, "NO-GO synthetic source page is blank"
+# Before checking the PDF wrapper, prove the actual pinned ENG+FAS OCR
+# engine can recognize this input raster. Never log document bytes/text.
+ocr_source = subprocess.run(
+    ["tesseract", str(pgm_path), "stdout", "-l", "eng+fas"],
+    capture_output=True, text=True, timeout=45, check=False,
+)
+assert ocr_source.returncode == 0, "NO-GO source-raster Tesseract exited nonzero"
+if "synthetic marine claims evidence" not in ocr_source.stdout.casefold():
+    raise AssertionError(
+        "NO-GO source-raster OCR did not read the synthetic phrase "
+        f"(pixels={len(pixels)}, ink={source_ink}, chars={len(ocr_source.stdout)})"
+    )
+writer = PdfWriter()
+page = writer.add_blank_page(width=612, height=792)
+image = DecodedStreamObject()
+image.set_data(pixels)
+image = image.flate_encode()
+image.update(DictionaryObject({
+    NameObject("/Type"): NameObject("/XObject"),
+    NameObject("/Subtype"): NameObject("/Image"),
+    NameObject("/Width"): NumberObject(width),
+    NameObject("/Height"): NumberObject(height),
+    NameObject("/ColorSpace"): NameObject("/DeviceGray"),
+    NameObject("/BitsPerComponent"): NumberObject(8),
+}))
+page[NameObject("/Resources")] = DictionaryObject({
+    NameObject("/XObject"): DictionaryObject({
+        NameObject("/Im1"): writer._add_object(image),
+    }),
+})
+stream = DecodedStreamObject()
+stream.set_data(b"q 612 0 0 792 0 0 cm /Im1 Do Q")
+page[NameObject("/Contents")] = writer._add_object(stream)
+with scanned_pdf.open("xb") as output:
+    writer.write(output)
+assert scanned_pdf.stat().st_size < 1_000_000
+# Verify the image survived PDF re-embedding, not just that a pypdf
+# Image XObject was present. In particular catch an empty/inverted/
+# invisible PDF image before blaming the OCR engine or its language data.
+roundtrip_prefix = root / "ci-scanned-roundtrip"
+roundtrip_pgm = roundtrip_prefix.with_suffix(".pgm")
+raster_check = subprocess.run(
+    ["pdftoppm", "-f", "1", "-l", "1", "-singlefile",
+     "-r", "200", "-gray", str(scanned_pdf), str(roundtrip_prefix)],
+    capture_output=True, timeout=35, check=False,
+)
+assert raster_check.returncode == 0 and roundtrip_pgm.is_file(), (
+    "NO-GO scanned PDF cannot render as a raster"
+)
+roundtrip = roundtrip_pgm.read_bytes()
+rt_header = re.match(rb"P5\s+(\d+)\s+(\d+)\s+(\d+)\s", roundtrip)
+assert rt_header is not None and tuple(map(int, rt_header.groups())) == (
+    width, height, 255,
+), "NO-GO scanned PDF rendered unexpected dimensions"
+rt_pixels = roundtrip[rt_header.end():]
+assert len(rt_pixels) == len(pixels), "NO-GO scanned PDF raster byte length changed"
+roundtrip_ink = sum(pixel < 180 for pixel in rt_pixels)
+if roundtrip_ink < 3000:
+    raise AssertionError(
+        "NO-GO scanned PDF image content did not survive round-trip "
+        f"(source_ink={source_ink}, roundtrip_ink={roundtrip_ink})"
+    )
+native = extract_document_text(scanned_pdf, enable_ocr=False)
+assert native.method == "pypdf" and native.requires_ocr
+assert len(native.segments) == 1 and not native.combined_text.strip()
+recovered = extract_document_text(
+    scanned_pdf, enable_ocr=True, ocr_languages="eng+fas",
+    ocr_max_pages=1, ocr_timeout_seconds=90,
+)
+assert recovered.method == "pypdf+selective-tesseract:eng+fas"
+if recovered.requires_ocr or len(recovered.segments) != 1:
+    # Only synthetic test data is involved; print bounded, diagnosis-only
+    # outcome metadata instead of raw OCR text, image bytes or credentials.
+    raise AssertionError(
+        "NO-GO synthetic scanned PDF OCR unresolved "
+        f"(segments={len(recovered.segments)}, chars={len(recovered.combined_text)}, "
+        f"warnings={'; '.join(w[:150] for w in recovered.warnings[:3])})"
+    )
+assert recovered.text_hash is not None
+assert recovered.segments[0].locator_type == "page"
+assert recovered.segments[0].locator_value == "1"
+assert "synthetic marine claims evidence" in recovered.combined_text.casefold()
+assert "nonroot worker processing" in recovered.combined_text.casefold()
+assert any("recovered 1" in warning for warning in recovered.warnings)
+scanned_pdf.unlink()
+pgm_path.unlink()
+roundtrip_pgm.unlink()
 stored.unlink()
 marker.unlink()
 for directory in sorted(
@@ -385,7 +505,8 @@ for directory in sorted(
     directory.rmdir()
 assert not any(root.iterdir()), "restricted worker left synthetic Evidence behind"
 print("PASS: restricted real worker committed a fenced processing lease, native PDF text and matching extracted DB records.")
-print("Not scanned-page OCR, host migration or Pilot GO.")
+print("A genuine image-only PDF required selective Tesseract eng+fas OCR; no customer file or DB record was used for the raster fixture.")
+print("Not a scanned-PDF HTTP upload, scanned document DB job, host migration or Pilot GO.")
 PY
 clone_after="$(compose exec -T db psql -U "$POSTGRES_USER" -d "$clone" -At \
   -c 'SELECT COUNT(*) FROM auth_sessions;')"
