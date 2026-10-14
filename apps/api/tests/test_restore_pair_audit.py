@@ -14,6 +14,8 @@ from app.core.restore_pair_audit import (
 
 class RestorePairAuditTests(unittest.TestCase):
     def setUp(self):
+        if os.geteuid() == 0 or os.getegid() == 0:
+            self.skipTest("Only an actual unprivileged user may validate this audit")
         self.tmp = tempfile.TemporaryDirectory(prefix="mcri-ci-restore-pair-")
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name) / "evidence"
@@ -135,10 +137,6 @@ class RestorePairAuditTests(unittest.TestCase):
         path.parent.chmod(0o777)
         self.expect_no_go("unsafe_directory")
         path.parent.chmod(0o700)
-        self.expect_no_go(
-            "unsafe_root_owner",
-            None,
-        ) if False else None
         with self.assertRaisesRegex(RestorePairAuditError, "unsafe_root_owner"):
             audit_restored_evidence_pair(
                 self.root, [self.document], organization_id=self.org,
