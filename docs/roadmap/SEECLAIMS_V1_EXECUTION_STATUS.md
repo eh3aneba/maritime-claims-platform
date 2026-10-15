@@ -44,13 +44,13 @@ publish a project-complete percentage based on number of merged PRs.
 
 | ID | Required deliverable | State | Owner / next action |
 | --- | --- | --- | --- |
-| R0-01 | Target organization type, daily user, economic buyer, expensive workflow problem, first 5 essentials, exclusions | **PARTIALLY APPROVED — insurer H&M claims team + vessel machinery claims focus approved on 2026-10-15; other elements pending** | Product owner: confirm user/buyer, problem, five essentials and exclusions in `R0_SCOPE_DECISIONS.md` |
+| R0-01 | Target organization type, daily user, economic buyer, expensive workflow problem, first 5 essentials, exclusions | **PARTIALLY APPROVED — insurer H&M claims team, vessel machinery focus and five essential workflow groups approved 2026-10-15; other elements pending** | Product owner: confirm user/buyer, problem, illustrative case and exclusions in `R0_SCOPE_DECISIONS.md` |
 | R0-02 | Document entry method, SFTP on/off, external AI mode, connector permissions | **PENDING OWNER SIGN-OFF** | Product owner; technical team verifies flags in candidate |
 | R0-03 | Unambiguous `README` / #25 / #647 status and software-vs-operations split | **IN PROGRESS** | Technical docs PR; verify latest `main` and correct stale issue references |
 | R0-04 | Disposition of old PRs #554, #562, #565, #641 and protected intentional red PR #707 | **REVIEW PENDING** | Compare each with current `main` before close/rebase; preserve #707 test record |
 | R0-05 | Roadmap ID → tracking issue, owner, dependency, evidence and exit gate | **IN PROGRESS** | This table is the initial mapping; missing accountable humans stay unassigned |
 
-First binding R0 decision: **D-R0-01a APPROVED by product owner (2026-10-15)** — insurer H&M claims-handling team, focused on vessel machinery damage claims. This does not select an actual customer, validate the buyer or approve R0 as a whole.
+R0 scope decisions **D-R0-01a and D-R0-01b APPROVED by product owner (2026-10-15)**: insurer H&M claims-handling team, vessel machinery damage focus and five essential workflow groups (secure intake/versions; missing-conflicting evidence and chronology; technical/financial review; source-linked versioned Initial Assessment; human-controlled correspondence/export). No named insurer, validated economic buyer, accepted exclusions, operational capability proof or overall R0 approval is inferred.
 
 No R0 completion or downstream gate is claimed before all five are accepted.
 
