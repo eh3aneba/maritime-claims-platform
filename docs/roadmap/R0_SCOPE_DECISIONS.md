@@ -1,13 +1,16 @@
 # SeeClaims R0 — Pilot v1 scope and decisions
 
-**Status: R0-01 customer type and machinery-loss focus OWNER-APPROVED; all other R0 choices remain pending.**
+**Status: R0-01 customer type, vessel machinery scope and five essential workflow groups OWNER-APPROVED; remaining R0 choices are pending.**
 Working paper derived from the product owner's
 `SeeClaims_Execution_Roadmap_v1_2026-10-15_FA.docx` (pp. 2–4, 19).
 The product owner explicitly confirmed on 2026-10-15 that the **first target
 customer is an insurer's H&M claims-handling team** and the **initial focus is
-vessel machinery damage claims**. This is a scoped product decision only;
-it does **not** assert buyer demand, a selected design partner, an accepted
-case fixture, pilot entry method, operator assignment or independent review.
+vessel machinery damage claims**. The owner subsequently explicitly
+confirmed the **five essential workflow groups** below (2026-10-15).
+These scoped product decisions do **not** assert buyer demand, a selected
+design partner, approved exclusions beyond what the roadmap proposes,
+an accepted case fixture, pilot entry method, operator assignment or
+independent review.
 
 ## R0-01: First customer and first end-to-end claim
 
@@ -21,7 +24,8 @@ case fixture, pilot entry method, operator assignment or independent review.
 | One illustrative case | Turbocharger / main-engine machinery Particular Average (synthetic or explicitly authorized claim) | Awaiting product owner |
 | Human decision authority | Coverage, causation, liability, reserve, settlement and payment decisions remain with responsible humans | Non-negotiable safety boundary |
 
-Five **essential workflow groups** proposed for the pilot candidate:
+Five **essential workflow groups APPROVED by the product owner (2026-10-15)**
+for Pilot v1's selected H&M machinery handler journey:
 
 1. Secure document/claim intake with quarantine and traceable document version.
 2. Identify missing and contradictory evidence and construct source-linked chronology.
@@ -68,11 +72,19 @@ independent operational proof.
   H&M claims-handling team**, initially focusing on **vessel machinery
   damage claims**. No specific insurer or permission to access its files is
   implied.
-- **D-R0-01b — PENDING:** Validate the actual daily-user roles, buyer,
-  high-cost workflow problem, five essential pilot workflow groups and
-  illustrative Particular Average/turbocharger fixture with the product
-  owner and prospective customer. These are *not* part of the approval
-  recorded in D-R0-01a.
+- **D-R0-01b — APPROVED (2026-10-15):** The five workflow groups listed
+  above are the exact required product scope: secure claim/document
+  intake and versions; missing/conflicting evidence and source-linked
+  chronology; handler-led technical/financial review including
+  deductible/limits/FX; versioned source-linked Initial Assessment with
+  unknown states; human-controlled correspondence and file export.
+  These are scope commitments, **not** an operational acceptance of the
+  individual software capabilities.
+- **D-R0-01c — PENDING:** Validate the actual daily-user roles, economic
+  buyer, expensive workflow problem, representative Particular Average/
+  turbocharger case and explicitly proposed exclusions with the owner
+  and any prospective buyer. Do not infer their acceptance from the
+  approved five workflow groups.
 - **D-R0-02:** Accept manual-only intake and disabled SFTP/email/Drive or
   document a buyer-specific requirement.
 - **D-R0-03:** Confirm external AI disabled for pilot v1 unless explicitly
@@ -85,7 +97,9 @@ independent operational proof.
 
 ## Completion definition (not yet met)
 
-R0-01a is the **first approved decision**, not a completed R0-01 package.
+R0-01a and R0-01b are **approved product-scope decisions**, not a
+completed R0-01 package. The daily user, economic buyer, costly problem,
+example scenario and exclusions still require explicit closure.
 R0 is accepted only when the owner records the primary segment,
 workflow, five essentials, explicit exclusions, document intake, external
 AI mode, responsible pilot operations/reviewers, live backlog dispositions,
