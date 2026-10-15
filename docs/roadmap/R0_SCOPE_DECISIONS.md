@@ -1,11 +1,13 @@
 # SeeClaims R0 — Pilot v1 scope and decisions
 
-**Status: R0-01 target and five essential workflows APPROVED; R0-02a manual-only intake / inactive external connectors APPROVED; external AI and remaining R0 decisions PENDING.**
+**Status: International-insurer R0-01 target and five essential workflows APPROVED; R0-02a manual-only intake / inactive external connectors APPROVED; operating country, buyer, external AI and remaining R0 decisions PENDING.**
 Working paper derived from the product owner's
 `SeeClaims_Execution_Roadmap_v1_2026-10-15_FA.docx` (pp. 2–4, 19).
 The product owner explicitly confirmed on 2026-10-15 that the **first target
-customer is an insurer's H&M claims-handling team** and the **initial focus is
-vessel machinery damage claims**. The owner subsequently explicitly
+customer is an international (non-Iranian) insurance company's H&M
+claims-handling team** and the **initial focus is vessel machinery damage
+claims**. The target operating jurisdiction, buyer company and contractual
+counterparty have not yet been selected. The owner subsequently explicitly
 confirmed the **five essential workflow groups** below (2026-10-15).
 These scoped product decisions do **not** assert buyer demand, a selected
 design partner, approved exclusions beyond what the roadmap proposes,
@@ -19,7 +21,8 @@ has yet been technically configured or verified to enforce those settings.
 
 | Decision | Proposed starting option | Acceptance state |
 | --- | --- | --- |
-| Primary customer type | **H&M claims-handling team within an insurance company** | **APPROVED by product owner — 2026-10-15** |
+| Primary customer type | **H&M claims-handling team within an international (non-Iranian) insurance company** | **APPROVED by product owner — 2026-10-15; international focus clarified subsequently** |
+| Target market / jurisdiction | International insurer outside Iran; **specific country, legal entity, hosting jurisdiction and buyer unknown** | **International target APPROVED; country/entity selection PENDING** |
 | Initial case domain | **Vessel machinery damage claims (H&M)** | **APPROVED by product owner — 2026-10-15** |
 | Daily user | Claims handler + Claims Manager human reviewer | Awaiting product owner |
 | Economic buyer | Claims Director / Head of Marine Claims (to validate by interview) | Unknown |
@@ -82,10 +85,13 @@ independent operational proof.
 
 ## Decisions to obtain in R0
 
-- **D-R0-01a — APPROVED (2026-10-15):** Target an **insurance company's
-  H&M claims-handling team**, initially focusing on **vessel machinery
-  damage claims**. No specific insurer or permission to access its files is
-  implied.
+- **D-R0-01a — APPROVED and subsequently CLARIFIED:** Target an
+  **international (non-Iranian) insurance company's H&M claims-handling
+  team**, initially focusing on **vessel machinery damage claims**.
+  The product owner expressly chose an international rather than Iran-first
+  target. No named country, insurer, operating jurisdiction, buyer,
+  hosting location, external-provider availability, data-export consent
+  or authority to access customer documents is implied.
 - **D-R0-01b — APPROVED (2026-10-15):** The five workflow groups listed
   above are the exact required product scope: secure claim/document
   intake and versions; missing/conflicting evidence and source-linked
@@ -105,9 +111,13 @@ independent operational proof.
   configuration, denied activation and absence of unauthorized external
   access before real-data pilot approval. This approval is **not** proof
   the deployment is already configured or that #652 is closed.
-- **D-R0-02b — PENDING:** External AI mode is undecided. The proposed
-  fail-closed default is OFF until specifically approved with data,
-  safety, independent review, cost and version controls.
+- **D-R0-02b — PENDING:** External AI mode is undecided. Targeting an
+  international insurer does **not** grant authority to enable OpenAI API
+  or send its documents to any external provider. Assess provider-supported
+  operating jurisdiction, contract/payment availability, customer data
+  processing location, retention terms, permission, source quality, cost
+  and human oversight before a separate owner decision. The proposed
+  fail-closed runtime default remains OFF until specifically approved.
 - **D-R0-03:** Confirm external AI disabled for pilot v1 unless explicitly
   authorized separately.
 - **D-R0-04:** Name operations and independent security/restore reviewers
@@ -120,7 +130,8 @@ independent operational proof.
 
 R0-01a, R0-01b and R0-02a are **approved product decisions**, not
 completion of the R0-01/R0-02 packages or the overall R0 gate. The daily user, economic buyer, costly problem,
-example scenario and exclusions still require explicit closure.
+example scenario, target operating jurisdiction and exclusions still
+require explicit closure.
 R0 is accepted only when the owner records the primary segment,
 workflow, five essentials, explicit exclusions, document intake, external
 AI mode, responsible pilot operations/reviewers, live backlog dispositions,
