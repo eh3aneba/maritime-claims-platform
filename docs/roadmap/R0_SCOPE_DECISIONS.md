@@ -1,6 +1,6 @@
 # SeeClaims R0 — Pilot v1 scope and decisions
 
-**Status: R0-01 customer type, vessel machinery scope and five essential workflow groups OWNER-APPROVED; remaining R0 choices are pending.**
+**Status: R0-01 target and five essential workflows APPROVED; R0-02a manual-only intake / inactive external connectors APPROVED; external AI and remaining R0 decisions PENDING.**
 Working paper derived from the product owner's
 `SeeClaims_Execution_Roadmap_v1_2026-10-15_FA.docx` (pp. 2–4, 19).
 The product owner explicitly confirmed on 2026-10-15 that the **first target
@@ -9,8 +9,11 @@ vessel machinery damage claims**. The owner subsequently explicitly
 confirmed the **five essential workflow groups** below (2026-10-15).
 These scoped product decisions do **not** assert buyer demand, a selected
 design partner, approved exclusions beyond what the roadmap proposes,
-an accepted case fixture, pilot entry method, operator assignment or
-independent review.
+an accepted case fixture, operator assignment or independent review.
+On 2026-10-15, the owner also confirmed the separate **Pilot v1 intake**
+decision: secure manual uploads only, with SFTP, email and Drive connectors
+**not enabled for the pilot**. This does not assert that any final candidate
+has yet been technically configured or verified to enforce those settings.
 
 ## R0-01: First customer and first end-to-end claim
 
@@ -42,16 +45,27 @@ unmeasured production SLA. These enter only with a documented buyer blocker.
 
 | Decision | Safest proposed default | State |
 | --- | --- | --- |
-| Evidence entry | Secure authenticated **manual upload** | Awaiting product owner |
-| SFTP | **Disabled** in Pilot v1 unless a named buyer requires it | Awaiting product owner |
-| Email / Drive | Disabled unless a named authorized pilot workflow requires them | Awaiting product owner |
+| Evidence entry | Secure authenticated **manual upload** only for Pilot v1 | **APPROVED by product owner — 2026-10-15; not yet runtime-verified** |
+| SFTP | **Not enabled** in Pilot v1; a future buyer-requested exception requires scope change and separate acceptance | **APPROVED by product owner — 2026-10-15; disabled-config verification pending** |
+| Email / Drive | **Not enabled** in Pilot v1; any exception requires explicit authorization, owner approval and acceptance tests | **APPROVED by product owner — 2026-10-15; disabled-config verification pending** |
 | External AI | **Disabled by default** until permitted data, independent review, model/cost/source validation and activation contract exist | Awaiting product owner |
 | Local OCR | English + Persian for the selected evidence types; human correction and source lineage | Candidate behavior, operational gate outstanding |
 | Evidence | Synthetic, consented anonymized or explicitly customer-authorized only; never put customer files in a public repo | Required |
 
+**D-R0-02a is an approved product decision, not a deployed configuration.**
+For the first Pilot v1 candidate, users will upload permitted Evidence
+through the existing authenticated manual interface; external SFTP,
+email ingestion and Drive integrations will not be activated. No connector
+features are removed, and no customer integrations or credentials are
+authorized by this decision.
+
 An OFF decision does not close #652 or prove that inactive connectors
 cannot activate. Technical acceptance must assert disabled settings,
 permissions and runtime negative cases against the final pilot candidate.
+If SFTP is not enabled, #652's controlled real-server exercise is not
+a prerequisite for this *manual-only* pilot, but the issue itself remains
+open; enabling it later reintroduces that acceptance gate. External AI
+and local OCR acceptance remain separate decisions and validations.
 
 ## Roles that must be named before operational acceptance
 
@@ -85,8 +99,15 @@ independent operational proof.
   turbocharger case and explicitly proposed exclusions with the owner
   and any prospective buyer. Do not infer their acceptance from the
   approved five workflow groups.
-- **D-R0-02:** Accept manual-only intake and disabled SFTP/email/Drive or
-  document a buyer-specific requirement.
+- **D-R0-02a — APPROVED (2026-10-15):** Pilot v1 Evidence intake uses
+  authenticated manual upload; SFTP, email ingestion and Drive connectors
+  remain **OFF** for the candidate. Implementation must prove
+  configuration, denied activation and absence of unauthorized external
+  access before real-data pilot approval. This approval is **not** proof
+  the deployment is already configured or that #652 is closed.
+- **D-R0-02b — PENDING:** External AI mode is undecided. The proposed
+  fail-closed default is OFF until specifically approved with data,
+  safety, independent review, cost and version controls.
 - **D-R0-03:** Confirm external AI disabled for pilot v1 unless explicitly
   authorized separately.
 - **D-R0-04:** Name operations and independent security/restore reviewers
@@ -97,8 +118,8 @@ independent operational proof.
 
 ## Completion definition (not yet met)
 
-R0-01a and R0-01b are **approved product-scope decisions**, not a
-completed R0-01 package. The daily user, economic buyer, costly problem,
+R0-01a, R0-01b and R0-02a are **approved product decisions**, not
+completion of the R0-01/R0-02 packages or the overall R0 gate. The daily user, economic buyer, costly problem,
 example scenario and exclusions still require explicit closure.
 R0 is accepted only when the owner records the primary segment,
 workflow, five essentials, explicit exclusions, document intake, external
