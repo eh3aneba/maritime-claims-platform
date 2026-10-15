@@ -1,16 +1,20 @@
 # SeeClaims R0 — Pilot v1 scope and decisions
 
-**Status: PROPOSED / NOT OWNER-APPROVED.**
+**Status: R0-01 customer type and machinery-loss focus OWNER-APPROVED; all other R0 choices remain pending.**
 Working paper derived from the product owner's
 `SeeClaims_Execution_Roadmap_v1_2026-10-15_FA.docx` (pp. 2–4, 19).
-This page does **not** assert that a buyer, design partner, operator or
-reviewer has accepted these choices.
+The product owner explicitly confirmed on 2026-10-15 that the **first target
+customer is an insurer's H&M claims-handling team** and the **initial focus is
+vessel machinery damage claims**. This is a scoped product decision only;
+it does **not** assert buyer demand, a selected design partner, an accepted
+case fixture, pilot entry method, operator assignment or independent review.
 
 ## R0-01: First customer and first end-to-end claim
 
 | Decision | Proposed starting option | Acceptance state |
 | --- | --- | --- |
-| Primary customer type | **H&M machinery insurer's claims-handling team** | Awaiting product owner |
+| Primary customer type | **H&M claims-handling team within an insurance company** | **APPROVED by product owner — 2026-10-15** |
+| Initial case domain | **Vessel machinery damage claims (H&M)** | **APPROVED by product owner — 2026-10-15** |
 | Daily user | Claims handler + Claims Manager human reviewer | Awaiting product owner |
 | Economic buyer | Claims Director / Head of Marine Claims (to validate by interview) | Unknown |
 | Costly first problem | Repeated manual collection/review of vessel machinery damage documents, evidence chronology, technical conflicts and financial summary | Hypothesis, not customer-proven |
@@ -60,8 +64,15 @@ independent operational proof.
 
 ## Decisions to obtain in R0
 
-- **D-R0-01:** Accept the H&M insurer handler / manager / buyer hypothesis
-  and the machinery Particular Average sample, or provide exact alternative.
+- **D-R0-01a — APPROVED (2026-10-15):** Target an **insurance company's
+  H&M claims-handling team**, initially focusing on **vessel machinery
+  damage claims**. No specific insurer or permission to access its files is
+  implied.
+- **D-R0-01b — PENDING:** Validate the actual daily-user roles, buyer,
+  high-cost workflow problem, five essential pilot workflow groups and
+  illustrative Particular Average/turbocharger fixture with the product
+  owner and prospective customer. These are *not* part of the approval
+  recorded in D-R0-01a.
 - **D-R0-02:** Accept manual-only intake and disabled SFTP/email/Drive or
   document a buyer-specific requirement.
 - **D-R0-03:** Confirm external AI disabled for pilot v1 unless explicitly
@@ -74,6 +85,7 @@ independent operational proof.
 
 ## Completion definition (not yet met)
 
+R0-01a is the **first approved decision**, not a completed R0-01 package.
 R0 is accepted only when the owner records the primary segment,
 workflow, five essentials, explicit exclusions, document intake, external
 AI mode, responsible pilot operations/reviewers, live backlog dispositions,
