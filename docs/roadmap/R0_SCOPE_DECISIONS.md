@@ -55,7 +55,7 @@ unmeasured production SLA. These enter only with a documented buyer blocker.
 | Evidence entry | Secure authenticated **manual upload** only for Pilot v1 | **APPROVED by product owner — 2026-10-15; not yet runtime-verified** |
 | SFTP | **Not enabled** in Pilot v1; a future buyer-requested exception requires scope change and separate acceptance | **APPROVED by product owner — 2026-10-15; disabled-config verification pending** |
 | Email / Drive | **Not enabled** in Pilot v1; any exception requires explicit authorization, owner approval and acceptance tests | **APPROVED by product owner — 2026-10-15; disabled-config verification pending** |
-| Local generative AI (LLM inference) | **Use a self-hosted model inside the controlled deployment boundary FIRST**; model/version/hardware/license to be benchmarked against synthetic H&M machinery fixtures; no customer activation until technical and independent acceptance | **PRODUCT APPROVED (2026-10-15); implementation, selection and acceptance PENDING — #752** |
+| Local generative AI (LLM inference) | **Use a self-hosted model inside the controlled deployment boundary FIRST**; first synthetic-only development experiment on owner's **personal computer**, not a production/pilot host; model/version/hardware/license and H&M test results pending | **PRODUCT/DEV HOST APPROVED (2026-10-15); no hardware inventory, deployed model, release acceptance or customer activation — #752** |
 | External AI APIs (OpenAI or alternative) | **Do not use in initial Pilot v1; optional future integration only after separate owner approval, supported jurisdiction, contract/data-processing permissions, cost controls and independent review** | **DEFERRED by product owner — 2026-10-15; not activated** |
 | Local OCR | English + Persian for the selected evidence types; human correction and source lineage | Candidate behavior, operational gate outstanding |
 | Evidence | Synthetic, consented anonymized or explicitly customer-authorized only; never put customer files in a public repo | Required |
@@ -136,6 +136,13 @@ independent operational proof.
   customer data permissions, contractual processing/retention, security,
   benchmark, cost and operator acceptance; this decision grants no
   external document transfer or API activation.
+- **D-R0-02c — APPROVED (2026-10-15):** Use the product owner's
+  **personal computer** for the first synthetic-only local AI model
+  feasibility experiment. Hardware (CPU/RAM/GPU/VRAM/OS) is unverified;
+  model/vendor/runtime selection and performance measurement are pending
+  under #752 and `docs/roadmap/LOCAL_AI_PC_DEV_PROTOTYPE.md`. This host is
+  **not** authorized for actual insurer customer files or as the eventual
+  international-insurer deployment environment.
 - **D-R0-03 — APPROVED in scope:** External AI remains disabled for
   the initial pilot; enabling any external provider later requires a
   new explicit product-owner decision and separate acceptance.
