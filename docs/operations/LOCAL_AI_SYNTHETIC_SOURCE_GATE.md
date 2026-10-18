@@ -1,0 +1,96 @@
+# #752 — local AI source-custody gate (synthetic CI only)
+
+**Status: test contract, not a production local-model adapter.**
+
+The first owner-operated Qwen3 1.7B trial demonstrated 100% GPU
+loading on a GTX 1050 personal computer but generated unsourced
+"allegations", made unsupported negligence inferences, and sometimes
+confused "not supplied" with "never existed". A five-section interactive
+benchmark was not valid because the scenario/asks were entered as
+separate turns. These are **open quality blockers** for H&M workflow
+acceptance, not grounds to assume every local model always fails.
+
+## CI safety boundary
+
+The pure standard-library
+`scripts/pilot_local_ai_source_gate.py` checks a *narrow* candidate
+output of **literal source excerpts only**. It is runnable with
+`python -m unittest discover -s scripts/tests -p 'test_pilot_local_ai_source_gate.py' -v`.
+
+The source inventory must be supplied by an independently authorized
+upstream component, for example:
+
+```json
+{
+  "S1": {
+    "kind": "event_notice",
+    "version": "v1",
+    "body": "Owner notification: Turbocharger damage reportedly occurred on 16 July 2025."
+  },
+  "S2": {
+    "kind": "reported_statement",
+    "version": "v1",
+    "body": "Chief Engineer reported abnormal vibration before shutdown."
+  },
+  "S3": {
+    "kind": "intake_status",
+    "version": "v1",
+    "body": "Engine logs for the previous ten days have NOT BEEN SUPPLIED."
+  }
+}
+```
+
+A synthetically generated candidate has this **exact** top-level shape:
+
+```json
+{
+  "schema": "seeclaims-local-ai-source-quotes-v1",
+  "model_id": "qwen3:1.7b",
+  "model_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "prompt_version": "synthetic-v1",
+  "items": [{
+    "kind": "reported_statement",
+    "source_id": "S2",
+    "source_version": "v1",
+    "verbatim_excerpt": "Chief Engineer reported abnormal vibration before shutdown."
+  }]
+}
+```
+
+Every quote must be an **exact substring** of the corresponding
+authorized versioned source. A candidate cannot invent an
+`allegations`, `coverage`, `liability`, `thinking`,
+`interpretation` or other free-text output field. Source kind
+(`event_notice`, `reported_statement`, `intake_status`) cannot be
+reclassified by the model. All failures use fixed privacy-safe error
+codes; the return object contains only bounded metadata and always says
+`human_review_required=True`,
+`authoritative_fact_updates=False`, `pilot_accepted=False`.
+
+## What remains UNSOLVED
+
+- This gate **does not invoke Ollama**, load a real model, establish model
+  digest authenticity, verify the upstream source inventory, trace page
+  locations in PDFs, make factual inference, or verify semantic meaning.
+  It checks exact source-byte grounding and caller-assigned source type
+  only. Even an exact quote may be cherry-picked or misleading.
+- Model metadata is **self-reported by the candidate**; upstream must
+  independently pin/compare model/version/prompt before production
+  authority. The gate never logs full Evidence or model free text.
+- Hypotheses and unknowns must be represented in a **separate,
+  explicitly unverified human-review structure**, not laundered through
+  an accepted source quote as fact or party allegation.
+- No current AI job is wired to this script. A future implementation PR
+  must place it behind the provider-neutral job, source-document
+  authorization and tenant boundary before calling an actual local
+  model. AI still must not set coverage, settlement, liability, reserve
+  or promoted claim facts.
+- Neither success here nor the owner's personal-PC benchmark establishes
+  a production deployment, data isolation, egress prevention,
+  external-provider compatibility or R5 pilot acceptance.
+
+**Next engineering slice:** inventory current AI gateway and current
+review/feedback persistence; add a local model adapter with loopback /
+deny-by-default transport, immutable run metadata and synthetic
+request/timeout/oversize tests. Keep `ai_provider=disabled` until
+a separate operationally approved candidate is proven.
