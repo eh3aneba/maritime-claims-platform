@@ -1,7 +1,7 @@
 # SeeClaims — local AI first development host (owner decision)
 
 **Decision status:** Owner-approved *development environment* preference.
-**Pilot AI runtime and model:** NOT SELECTED / NOT OPERATIONALLY ACCEPTED.
+**Personal-PC prototype:** Qwen3 1.7B / Ollama local execution **OBSERVED**. **Pilot AI runtime and model:** NOT INTEGRATED / NOT OPERATIONALLY ACCEPTED.
 
 ## Owner selection
 
@@ -17,8 +17,9 @@ materials, tokens or production credentials in this prototype.
 
 ## Step 1 — establish hardware feasibility without secrets
 
-The host's exact hardware is **not yet known**. Before selecting or
-downloading an LLM, obtain the following owner-supplied information:
+Owner supplied screenshots of the first development host; see the dated
+observations below. The following is still a useful checklist for a **new**
+development host, not an unfulfilled requirement for this PC:
 
 - OS and version; CPU model and architecture
 - installed RAM and available free disk space
@@ -49,6 +50,39 @@ Only share CPU/GPU models, RAM/VRAM, OS and free storage; **do not**
 share device IDs, serial numbers, usernames, private paths or credentials.
 The script is illustrative guidance, **not proof** that it has run.
 
+## Dated owner-observed local feasibility (2026-10-15)
+
+| Item | Evidence, not an R5 gate |
+| --- | --- |
+| OS | Windows 10 Pro 22H2, x64 |
+| CPU / RAM | AMD Ryzen 5 2500U; 16 GB installed RAM |
+| GPU | NVIDIA GTX 1050, 4 GB dedicated VRAM |
+| Driver | NVIDIA 582.78 (after upgrade from 462.31) |
+| Local runtime | Owner-reported Ollama CLI 0.40.4 |
+| Local model | `qwen3:1.7b`, loaded via `llamacpp` |
+| Offload | Owner's `ollama ps` reported **100% GPU**, 1.7 GB occupied, context 4096; not a timed end-to-end SeeClaims measurement |
+
+The owner-provided synthetic turbocharger claim transcript uncovered
+**material acceptance problems**, documented in issue #752: the model
+misclassified imagined hypotheses as reported party allegations, inferred
+possible negligence merely from missing logs, and sometimes treated
+*not supplied* records as *non-existent*. The experimental prompt was also
+split into several independent interactive turns with an unsupported
+`/no_think` slash command; therefore **there is no clean, scored,
+stateless 5-section evaluation yet**. No verified local inference adapter
+is committed or connected to SeeClaims and no end-to-end privacy/egress
+assessment was performed. Treat this as **environment feasibility only**,
+not reliable maritime claims assistance.
+
+**GitHub-first engineering mode (owner direction, 2026-10-18):**
+Proceed in the repository with small reviewed PRs for the provider-neutral
+local AI adapter, strictly synthetic/mock tests, source attribution,
+fail-closed security, model/prompt/version custody and human-review
+validation. Do not block ordinary GitHub engineering progress on new
+interactive PowerShell exercises; reserve the owner's PC for later optional
+acceptance tests. Never claim CI mocks constitute verified real local
+model inference in the final release.
+
 ## Step 2 — controlled model and runtime selection
 
 Select one or two suitably licensed, locally served small models **after**
@@ -77,7 +111,9 @@ chosen local inference runtime, model/version/license, repeatable synthetic
 demo results and measured limits. This is **not** R5 acceptance or
 permission for a 30-day customer pilot.
 
-## Next owner input
+## Next engineering action
 
-Request CPU model, installed RAM (GB), GPU model plus dedicated VRAM
-(GB), and operating system. Proceed with model sizing only after receipt.
+Continue **on GitHub** with a bounded implementation and regression PR.
+Keep `ai_provider=disabled` and external inference OFF until real
+operator-controlled runtime acceptance; no confidential customer data,
+source-unverified conclusions, or autonomous coverage/liability decisions.
