@@ -36,7 +36,7 @@ class LocalAIReviewReceiptPolicy(unittest.TestCase):
         ):
             self.assertNotIn(forbidden, s)
         # Do not misclassify the safe helper name "_fingerprint(" as print().
-        self.assertNotRegex(s, r"(?m)^\\s*print\\(")
+        self.assertNotRegex(s, r"(?m)^ *print[(]")
 
     def test_model_egress_and_review_remain_mocked(self):
         t = TESTS.read_text(encoding="utf-8")
