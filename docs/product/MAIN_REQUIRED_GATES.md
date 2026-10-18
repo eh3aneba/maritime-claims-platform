@@ -1,92 +1,97 @@
-# Main branch required gate matrix
+# Main branch protected check matrix
 
-## Current protection
+## Source of authority and dated evidence
 
-Repository ruleset `Protect main` (ruleset ID `20842512`) is active on the default branch with:
+- GitHub repository `eh3aneba/maritime-claims-platform`, active repository
+  ruleset **Protect main** (`20842512`).
+- Exact intended required names are defined by
+  `scripts/pilot_ruleset_evidence.py:EXPECTED_CONTEXTS`; do not infer
+  GitHub check contexts from workflow names.
+- Issue [#461](https://github.com/eh3aneba/maritime-claims-platform/issues/461)
+  is **closed**. Its latest dated record, **2026-10-12**, reports live ruleset
+  readback of **11/11 exact required contexts**, strict/up-to-date checks,
+  squash-only merges, linear history, resolved conversations, protected
+  deletion/non-fast-forward, and zero bypass actors.
+- The same issue records the synthetic-only
+  [PR #707](https://github.com/eh3aneba/maritime-claims-platform/pull/707)
+  **RED / GREEN** experiment on separate exact heads of one open PR:
+  the mandatory `Production environment policy` check failed in RED
+  and the GitHub mergeability state was `blocked`; after repair that check
+  succeeded and mergeability was `clean`. No forbidden merge attempt was
+  performed, and no customer data was used.
+- **Evidence boundary:** the above is a *historical, dated issue record*,
+  not a fresh live admin ruleset readback during each PR. Operators
+  re-run `scripts/pilot_ruleset_evidence.py` and
+  `scripts/pilot_required_check_preflight.py` on the protected
+  release candidate; new governance failures reopen investigation.
+  Closed #461 does not mean customer Pilot GO.
 
-- deletion protection;
-- non-fast-forward protection;
-- squash-only pull-request merges;
-- required review-thread resolution;
-- strict/up-to-date required status checks;
-- required linear history;
-- no bypass actors.
+## Eleven stable required contexts
 
-The active required status checks are currently:
+Only the following exact context names should be in `Protect main`:
 
-- `Backend tests`
-- `PostgreSQL migration chain`
-- `Frontend typecheck and build`
-- `Docker Compose validation`
+| # | Required exact context | Source / purpose |
+| --- | --- | --- |
+| 1 | `Backend tests` | Full Backend Pre-Merge's stable classification/aggregation |
+| 2 | `PostgreSQL migration chain` | Continuous Integration migration job |
+| 3 | `Frontend typecheck and build` | Continuous Integration frontend |
+| 4 | `Docker Compose validation` | Continuous Integration Compose |
+| 5 | `Scoped CI gate` | Stable `if: always()` gate for optional CI jobs |
+| 6 | `PostgreSQL concurrency gate` | Stable aggregate for selected PostgreSQL concurrency jobs |
+| 7 | `Operational performance gate` | Stable aggregate for live-stack performance checks |
+| 8 | `Production dependency audit and SBOM` | Supply Chain Security |
+| 9 | `Secret history scan` | Supply Chain Security |
+| 10 | `Container image vulnerability scan` | Supply Chain Security |
+| 11 | `Production environment policy` | Production Deployment Policy |
 
-That matrix is narrower than the repository's actual production-quality validation surface.
+The corresponding six **workflow** names (shown in PR run lists) are
+`Full Backend Pre-Merge`, `Continuous Integration`,
+`PostgreSQL Concurrency Regression Suite`, `Operational Performance Smoke`,
+`Supply Chain Security` and `Production Deployment Policy`.
+**Workflow success alone is not a substitute for exact required-check
+identity and independently reviewed operations evidence.**
 
-## Workflow availability on main
+## Path-aware execution
 
-At the stabilization baseline represented by this PR, the workflow definitions needed to emit the target contexts below are present on `main`, including the specialized PostgreSQL safety workflows introduced by A03 and A02.
+- `Scoped CI gate` aggregates **conditional** `Dependency lock
+  consistency` and `Design partner browser E2E`. Do **not** globally
+  require the conditional names; unrelated changes may legitimately skip
+  them while the aggregate enforces selected jobs.
+- `PostgreSQL concurrency gate` aggregates the selected PostgreSQL
+  shard/group matrix. Do **not** globally require dynamic individual group
+  names; ambiguous/shared runtime changes fail closed to broader coverage.
+- `Operational performance gate` aggregates the live-stack smoke result.
+  A narrow documentation change may skip expensive implementation work
+  and still require the always-emitted aggregate.
+- `Backend tests` aggregates the relevant full-backend policy on ready
+  PRs. **A green backend aggregate does not prove all 64 shards ran**
+  when the diff classifier intentionally selected a narrower path.
+- Security and deployment checks must not be disabled to work around
+  an unrelated, required-failing change.
 
-This satisfies the workflow-availability prerequisite for expanding the required-gate matrix. It does **not** mean the expanded ruleset is enforced. Ruleset mutation, readback of the expanded matrix, and deliberate failure proof remain separate administrative steps.
+## Periodic verification and safe response
 
-## Target required status checks
+1. Read back **current** ruleset metadata from GitHub using approved
+   operator tooling; compare name sets **exactly** to the eleven names
+   in `EXPECTED_CONTEXTS`, require zero duplicates, unexpected names or
+   bypass actors, and verify strict, branch and history protections.
+2. On the **exact current PR head**, verify each required check comes
+   from the intended GitHub Actions source and completed successfully;
+   check selected backend/shard coverage for the code changed.
+3. Preserve the intentional synthetic red/green #707 record as a proof
+   artifact; **never merge its controlled proof branch**.
+4. A new required context must first be available on `main` and
+   always emitted for any protected PR; change rulesets only through an
+   authorized Admin surface and perform red/green proof without bypass.
+5. Record exact SHA, failed/green check IDs, operator ticket/reviewer
+   acceptance and any remaining P0 gaps before any operational release.
 
-### Core CI
+## Scope boundary
 
-- `Backend tests`
-- `PostgreSQL migration chain`
-- `Frontend typecheck and build`
-- `Docker Compose validation`
-- `Dependency lock consistency`
-- `Design partner browser E2E`
-
-### Security, deployment and operations
-
-- `Secret history scan`
-- `Production dependency audit and SBOM`
-- `Container image vulnerability scan`
-- `Production environment policy`
-- `Live-stack performance smoke`
-
-### Specialized PostgreSQL safety gates
-
-- `Processing lease fencing` — introduced by A03;
-- `Payment settlement concurrency` — introduced by A02.
-
-## Safe activation sequence
-
-1. Confirm every target context is emitted successfully from the workflow definitions now present on `main` and on a fresh pull request.
-2. Update `Protect main` using an authorized GitHub administration surface.
-3. Preserve:
-   - strict/up-to-date required checks;
-   - squash-only merge policy;
-   - review-thread resolution;
-   - linear history;
-   - empty bypass actor set.
-4. Read back the ruleset and compare the exact required context names with this document.
-5. Create a temporary validation PR that intentionally fails one required critical gate.
-6. Confirm repository protection marks the PR non-mergeable without bypass.
-7. Restore the check, rerun it, and confirm mergeability returns.
-
-## Important failure mode
-
-Do not require a status context before a workflow capable of producing that context exists on the default branch. GitHub can otherwise leave every pull request permanently waiting for a check that can never be reported.
-
-## Governance rule for new workflows
-
-Any new workflow that protects one of the following must be explicitly reviewed for required-gate treatment:
-
-- financial authority or concurrency;
-- authentication or MFA;
-- tenant isolation;
-- evidence integrity or processing leases;
-- Production AI authorization;
-- supply-chain security;
-- deployment policy;
-- disaster recovery or data-loss prevention.
-
-If a specialized workflow should not become a separate required context, its critical assertion must be aggregated into an already-required stable gate and documented.
-
-## Enforcement status
-
-This document describes the target protection matrix. It does not by itself change GitHub branch protection.
-
-Do not claim the expanded matrix is enforced until a ruleset readback shows the exact contexts above and a deliberate failure test proves protection blocks merge.
+#461's repository protection evidence is **separate** from #487 non-root
+customer Evidence migration, #653 independent database+Evidence recovery
+and release rehearsals, #752 local LLM readiness, #647 H&M pilot
+acceptance, and conditional #652 SFTP real-server acceptance. None of
+those open operational items can be made green by altering a GitHub
+status-check matrix. Real-data Pilot GO remains NO until separately
+approved.
