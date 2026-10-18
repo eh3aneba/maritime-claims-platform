@@ -60,6 +60,7 @@ def evaluate_synthetic_source_quotes(sources: object, candidate: object) -> dict
             not isinstance(source_id, str) or not SOURCE_ID.fullmatch(source_id)
             or type(record) is not dict
             or set(record) != {"kind", "version", "body"}
+            or not isinstance(record["kind"], str)
             or record["kind"] not in SOURCE_KINDS
             or not isinstance(record["version"], str)
             or not VERSION.fullmatch(record["version"])
