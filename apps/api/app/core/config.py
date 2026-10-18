@@ -54,6 +54,8 @@ class Settings(BaseSettings):
     ocr_max_pages: int = 20
     ocr_timeout_seconds: float = 120.0
     ai_provider: str = "disabled"
+    # Local Ollama is an explicit synthetic-only DEVELOPMENT experiment.
+    ai_local_experimental_enabled: bool = False
     ai_production_control_plane_enabled: bool = False
     ai_model: str = ""
     openai_api_key: str = ""

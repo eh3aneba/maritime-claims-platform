@@ -75,6 +75,13 @@ def run_preflight(*, require_db: bool = True) -> tuple[list[str], list[str]]:
     if settings.ai_provider.lower() != "disabled":
         if not settings.ai_model.strip():
             _fail(errors, "AI_MODEL is required when AI_PROVIDER is enabled")
+        if settings.ai_provider.lower() == "ollama_local":
+            if env not in {"development", "test"}:
+                _fail(errors, "Experimental local AI is forbidden in pilot/staging/production")
+            if not getattr(settings, "ai_local_experimental_enabled", False):
+                _fail(errors, "AI_LOCAL_EXPERIMENTAL_ENABLED must be true for synthetic local tests")
+            if settings.ai_model != "qwen3:1.7b":
+                _fail(errors, "Experimental local AI model must match the fixed allowlist")
         if settings.ai_provider.lower() == "openai":
             if not settings.openai_api_key.strip():
                 _fail(errors, "OPENAI_API_KEY is required when AI_PROVIDER=openai")
