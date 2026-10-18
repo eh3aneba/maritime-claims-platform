@@ -67,6 +67,47 @@ codes; the return object contains only bounded metadata and always says
 `human_review_required=True`,
 `authoritative_fact_updates=False`, `pilot_accepted=False`.
 
+## GitHub-only synthetic Ollama quote-handoff experiment (PR #758)
+
+The added pure `scripts/pilot_local_ai_synthetic_handoff.py` wires
+a **hard-coded three-source invented H&M turbocharger scenario** into
+the development-only `AIProvider` adapter and the existing source-quote
+gate. Its one-shot prompt requests a bounded JSON-only list of literal
+source quotes, preserving `event_notice` versus
+`reported_statement` versus `intake_status`. It requires the
+existing Ollama adapter's synthetic-only metadata and rejects any
+other adapter/model identity, unsupported quote, wrong source/version,
+extra generated narration or empty items. The only returned result is
+bounded evaluation status and a count; it cannot write to a real claim,
+document store, database or human approval table.
+
+`apps/api/tests/test_local_ai_synthetic_handoff.py` exercises the
+**entire handoff with a mocked transport** to the real Ollama gateway
+class, plus wrong-response, invented negligence, fabricated party
+allegation and 'not supplied means never existed' negative tests.
+The always-on Production Deployment Policy script checks the new
+boundary independently without installing or running Ollama.
+
+The mock demonstrates successful local request formation and
+source-quote postprocessing, but **does not execute a real local model**,
+independently verify an actual model SHA, prove semantic truth,
+show safe deployment network policies, or make this a human approval.
+The source validation is substring-only, so a verified excerpt
+may still mislead a human if taken out of context.
+
+The candidate metadata contains a conspicuous all-zero digest placeholder
+used only to satisfy the existing **syntax** schema. This is not a model
+artifact attestation and must never authorize a customer model.
+The experimental `ollama_local` path remains forbidden outside
+development/test, and normal case jobs cannot pass the exact marker.
+No new API route, configurable input path, document job consumer, external
+provider, customer data or production AI enablement is added.
+
+**Pilot GO remains NO.** The next slice will need real trusted
+model-digest custody, separate user/tenant authorization for future
+real data, evidence-level schema validation, human review persistence
+and independently measured source-accuracy tests before R5 acceptance.
+
 ## What remains UNSOLVED
 
 - This gate **does not invoke Ollama**, load a real model, establish model
@@ -80,7 +121,7 @@ codes; the return object contains only bounded metadata and always says
 - Hypotheses and unknowns must be represented in a **separate,
   explicitly unverified human-review structure**, not laundered through
   an accepted source quote as fact or party allegation.
-- No current AI job is wired to this script. A future implementation PR
+- The synthetic development-only evaluator now calls the quote gate, but no real claim AI job is wired to it. A future implementation PR
   must place it behind the provider-neutral job, source-document
   authorization and tenant boundary before calling an actual local
   model. AI still must not set coverage, settlement, liability, reserve
