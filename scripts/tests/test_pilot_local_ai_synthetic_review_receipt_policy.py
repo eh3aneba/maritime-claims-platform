@@ -31,10 +31,12 @@ class LocalAIReviewReceiptPolicy(unittest.TestCase):
         for forbidden in (
             "sqlalchemy", "create_session(", "open(", "Path(",
             "requests.", "OpenAI(", "http.client.HTTPConnection(",
-            "get_ai_provider(", "print(", "logging.",
+            "get_ai_provider(", "logging.",
             "from app.modules.documents", "from app.modules.claims",
         ):
             self.assertNotIn(forbidden, s)
+        # Do not misclassify the safe helper name "_fingerprint(" as print().
+        self.assertNotRegex(s, r"(?m)^\\s*print\\(")
 
     def test_model_egress_and_review_remain_mocked(self):
         t = TESTS.read_text(encoding="utf-8")
