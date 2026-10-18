@@ -91,7 +91,7 @@ boundary independently without installing or running Ollama.
 The mock demonstrates successful local request formation and
 source-quote postprocessing, but **does not execute a real local model**,
 independently verify an actual model SHA, prove semantic truth,
-show safe deployment network policies, or make this a human approval.
+show safe deployment network policies, and is not a human approval.
 The source validation is substring-only, so a verified excerpt
 may still mislead a human if taken out of context.
 
