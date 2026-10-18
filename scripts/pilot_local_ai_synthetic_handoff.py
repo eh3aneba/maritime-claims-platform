@@ -76,13 +76,13 @@ SYSTEM = (
 def build_synthetic_hm_request() -> AIRequest:
     """Produce a single unambiguous prompt from an immutable code-owned fixture."""
     blocks = [
-        f'[{sid} | {data["kind"]} | {data["version"]}]\\n{data["body"]}'
+        f'[{sid} | {data["kind"]} | {data["version"]}]\n{data["body"]}'
         for sid, data in FIXTURE_SOURCES.items()
     ]
     return AIRequest(
         task="synthetic_hm_source_quote_review",
         system_instructions=SYSTEM,
-        input_text="\\n\\n".join(blocks),
+        input_text="\n\n".join(blocks),
         schema_name=SCHEMA,
         output_schema=deepcopy(OUTPUT_SCHEMA),
         metadata={"synthetic_local_ai_test": True},
