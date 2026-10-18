@@ -37,7 +37,10 @@ class OllamaLocalExperimentalProvider:
     def generate(self, request: AIRequest) -> AIResponse:
         # Explicit synthetic-only marker: normal claim jobs carry document_id,
         # claim_id, etc., so they can never silently use this experimental path.
-        if request.metadata != {"synthetic_local_ai_test": True}:
+        if (
+            request.metadata != {"synthetic_local_ai_test": True}
+            or type(request.metadata.get("synthetic_local_ai_test")) is not bool
+        ):
             raise AIProviderUnavailable("local_ai_synthetic_only")
         if (
             not request.schema_name
