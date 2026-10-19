@@ -12,7 +12,7 @@ import sys
 from time import monotonic
 from typing import Any
 
-from app.ai.gateway.base import AIProvider, AIProviderUnavailable, AIRequest
+from app.ai.gateway.base import AIProvider, AIProviderUnavailable, AIRequest, AIResponse
 from app.ai.gateway.ollama_local import OllamaLocalExperimentalProvider
 from scripts.pilot_local_ai_hm_fixture_matrix import (
     deterministic_reference_candidate, evaluate_synthetic_scenario,
@@ -60,7 +60,8 @@ def run_fixed_three_scenario_smoke(provider: AIProvider) -> dict[str, Any]:
         try:
             response = provider.generate(request)
             if (
-                response.provider != "ollama_local"
+                not isinstance(response, AIResponse)
+                or response.provider != "ollama_local"
                 or response.model != MODEL
                 or type(response.structured_output) is not dict
                 or set(response.structured_output) != _EXPECTED_RESPONSE_KEYS
