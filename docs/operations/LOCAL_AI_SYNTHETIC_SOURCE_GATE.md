@@ -145,7 +145,7 @@ human decision authority and test quality on pre-agreed synthetic
 reference answers. This receipt is not evidence of any of those gates.
 **Pilot GO remains NO.**
 
-## Read-only synthetic receipt verification before review (PR #760)
+## Read-only synthetic receipt verification before review (PR #761)
 
 `scripts/pilot_local_ai_synthetic_review_verify.py` provides an
 **exact-shape, read-only synthetic receipt verification** step after the
