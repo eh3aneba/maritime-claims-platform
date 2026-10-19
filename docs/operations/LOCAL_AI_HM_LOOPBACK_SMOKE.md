@@ -36,6 +36,15 @@ remain misleading. No external model API or third-party egress is used
 by this code; independent host/network controls and server logs still
 require review.
 
+For failed scenarios, the safe output contains one `rejection_category`
+from this **fixed code-owned** vocabulary: `local_runtime_unavailable`
+(Ollama unreachable), `invalid_model_response` (malformed / oversized
+structured response), `local_request_rejected` (invalid input/budget),
+`source_quote_rejected` (unsupported quote or wrong source lineage), or
+`unclassified_rejection` (any unexpected error code). These are **diagnostic
+categories**, not evidence of a particular root cause. Raw exceptions,
+source excerpts, prompt text and model prose never appear in stdout.
+
 Any unsupported/hallucinated quote is rejected without exposing prose;
 the runner continues to the next invented scenario and returns a
 nonzero exit if any scenario was rejected. Actual model performance,
