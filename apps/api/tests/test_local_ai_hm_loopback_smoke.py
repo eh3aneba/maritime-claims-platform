@@ -129,3 +129,20 @@ def test_cli_unexpected_errors_hidden_without_stack_or_source_text(monkeypatch, 
     monkeypatch.setattr(smoke, "OllamaLocalExperimentalProvider", failed_provider)
     assert smoke.main(["--run-fixed-synthetic-ollama"]) == 1
     assert capsys.readouterr().out.strip() == "local_ai_synthetic_smoke_failed"
+
+
+def test_malformed_provider_response_is_rejected_and_other_scenarios_continue():
+    class MalformedResponse(FakeProvider):
+        def generate(self, request):
+            if not self.calls:
+                self.calls.append(request)
+                return None
+            return super().generate(request)
+
+    fake = MalformedResponse()
+    result = smoke.run_fixed_three_scenario_smoke(fake)
+    assert len(fake.calls) == 3
+    assert result["all_accepted_for_human_review"] is False
+    assert result["scenarios"][0]["status"] == "rejected"
+    assert all(x["status"] == "source_quotes_accepted_for_human_review"
+               for x in result["scenarios"][1:])
