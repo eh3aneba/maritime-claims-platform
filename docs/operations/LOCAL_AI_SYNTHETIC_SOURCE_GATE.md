@@ -145,6 +145,39 @@ human decision authority and test quality on pre-agreed synthetic
 reference answers. This receipt is not evidence of any of those gates.
 **Pilot GO remains NO.**
 
+## Read-only synthetic receipt verification before review (PR #760)
+
+`scripts/pilot_local_ai_synthetic_review_verify.py` provides an
+**exact-shape, read-only synthetic receipt verification** step after the
+hash-only fixture receipt in #759. It recalculates the expected hash for
+the **code-owned source catalog and request**, validates quote count,
+model/prompt/schema tag and the unmodified canonical receipt hash,
+and fails closed if any field falsely asserts approval, a reviewer,
+database persistence, model-digest attestation or customer/pilot
+authorization.
+
+On success, it returns a **sanitized review preview only**: digest and
+quote count, `pending_unassigned_human_review`, and explicit
+`reviewer_authorized=false`, `human_decision_recorded=false`,
+`may_auto_approve=false`, `persisted_to_review_queue=false`,
+`pilot_accepted=false`. This is **not an authenticated human-review
+transition**, not a queue insert and not a replacement for the
+existing tenant-scoped `DocumentExtraction`/`AIFeedback` authorization
+rules and append-only human feedback semantics.
+
+Critically, an **unkeyed hash is not an authenticity signature**.
+An attacker who can edit the candidate hash and recompute the receipt
+hash may forge consistent strings. The verifier deliberately returns
+no approval authority even after verification. Model artifact identity
+is also not attested; source quote semantics can remain misleading.
+This limitation has its own regression test. The same reviewer
+authorization, genuine Evidence custody and human decision gates
+remain necessary before this can be integrated into the actual
+claim-intelligence workflow.
+
+**Pilot GO remains NO.** Only invented data and mocked provider
+responses are used for this development stage.
+
 ## What remains UNSOLVED
 
 - This gate **does not invoke Ollama**, load a real model, establish model
