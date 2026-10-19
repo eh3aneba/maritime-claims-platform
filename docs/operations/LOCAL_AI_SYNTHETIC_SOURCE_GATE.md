@@ -108,6 +108,75 @@ model-digest custody, separate user/tenant authorization for future
 real data, evidence-level schema validation, human review persistence
 and independently measured source-accuracy tests before R5 acceptance.
 
+## Hash-only pending review receipt (next synthetic CI slice)
+
+`scripts/pilot_local_ai_synthetic_review_receipt.py` can now consume
+the prior **hard-coded invented** H&M source→mocked Ollama→quote validation
+handoff and produce a deterministic **hash-only pending review receipt**.
+The receipt records a SHA256 of the fixed source catalog, the exact
+request, the JSON candidate, plus a content-derived receipt fingerprint,
+prompt/schema versions, an *unverified* model tag and verified quote
+count. It contains **no actual Evidence, generated narrative or
+personally identifiable customer data**.
+
+Receipt status is `pending_unassigned_human_review`; it has
+`reviewer_id=null`, `review_decision=null`,
+`stored_in_database=false`, `model_digest_attested=false`,
+`authoritative_claim_changes=false`, and `pilot_accepted=false`.
+This is deliberately **not persisted** and is **not a digital
+signature**, model attestation or a human approval. It establishes
+reproducible synthetic evaluation identities only. The receipt is
+not an accepted Claims Intelligence decision, and **no actual human reviewer**
+or sign-off was involved. Any failed source quote prevents receipt creation.
+
+`apps/api/tests/test_local_ai_synthetic_review_receipt.py` verifies
+determinism, changes when a valid excerpt changes, privacy-safe
+rejection of fabricated negligence and missing-record claims, wrong
+provider, malformed/oversized responses and a full **mocked**
+Ollama `HTTPConnection` request. The Production Deployment Policy
+test separately guards the absence of real-source loaders, persistence
+and claimed approval.
+
+Next, create an explicitly authorized, tenant-scoped human-review
+handoff and actual append-only custody *after* this static fixture
+prototype has passed CI. That future workflow must independently
+verify real source permissions, artifact digest, prompt/model identity,
+human decision authority and test quality on pre-agreed synthetic
+reference answers. This receipt is not evidence of any of those gates.
+**Pilot GO remains NO.**
+
+## Read-only synthetic receipt verification before review (PR #761)
+
+`scripts/pilot_local_ai_synthetic_review_verify.py` provides an
+**exact-shape, read-only synthetic receipt verification** step after the
+hash-only fixture receipt in #759. It recalculates the expected hash for
+the **code-owned source catalog and request**, validates quote count,
+model/prompt/schema tag and the unmodified canonical receipt hash,
+and fails closed if any field falsely asserts approval, a reviewer,
+database persistence, model-digest attestation or customer/pilot
+authorization.
+
+On success, it returns a **sanitized review preview only**: digest and
+quote count, `pending_unassigned_human_review`, and explicit
+`reviewer_authorized=false`, `human_decision_recorded=false`,
+`may_auto_approve=false`, `persisted_to_review_queue=false`,
+`pilot_accepted=false`. This is not an authenticated human-review transition, not a queue insert and not a replacement for the
+existing tenant-scoped `DocumentExtraction`/`AIFeedback` authorization
+rules and append-only human feedback semantics.
+
+Critically, an **unkeyed hash is not an authenticity signature**.
+An attacker who can edit the candidate hash and recompute the receipt
+hash may forge consistent strings. The verifier deliberately returns
+no approval authority even after verification. Model artifact identity
+is also not attested; source quote semantics can remain misleading.
+This limitation has its own regression test. The same reviewer
+authorization, genuine Evidence custody and human decision gates
+remain necessary before this can be integrated into the actual
+claim-intelligence workflow.
+
+**Pilot GO remains NO.** Only invented data and mocked provider
+responses are used for this development stage.
+
 ## What remains UNSOLVED
 
 - This gate **does not invoke Ollama**, load a real model, establish model
