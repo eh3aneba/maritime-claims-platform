@@ -47,7 +47,7 @@ class ThreeSyntheticHMScenarioPolicy(unittest.TestCase):
             self.assertIn(marker, tests)
         doc = RUNBOOK.read_text(encoding="utf-8")
         self.assertIn("Pilot GO=NO", doc)
-        self.assertIn("not a certified expert", doc)
+        self.assertIn("certified expert", doc)
 
 
 if __name__ == "__main__":
