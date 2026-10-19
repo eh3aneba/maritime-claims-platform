@@ -33,7 +33,10 @@ class LocalAISyntheticLoopbackSmokePolicy(unittest.TestCase):
             '"expert_ground_truth_approved": False',
             '"pilot_accepted": False',
             '"local_transport_attested": False',
-            "except (AIProviderUnavailable, LocalAISourceGateError):",
+            "except (AIProviderUnavailable, LocalAISourceGateError) as error:",
+            "rejection_category",
+            "_safe_rejection_category(error)",
+            '"unclassified_rejection"',
         ):
             self.assertIn(required, s)
         for forbidden in ("get_ai_provider(", "open(", "write_text(", "write_bytes(",
