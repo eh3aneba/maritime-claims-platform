@@ -160,8 +160,7 @@ On success, it returns a **sanitized review preview only**: digest and
 quote count, `pending_unassigned_human_review`, and explicit
 `reviewer_authorized=false`, `human_decision_recorded=false`,
 `may_auto_approve=false`, `persisted_to_review_queue=false`,
-`pilot_accepted=false`. This is **not an authenticated human-review
-transition**, not a queue insert and not a replacement for the
+`pilot_accepted=false`. This is not an authenticated human-review transition, not a queue insert and not a replacement for the
 existing tenant-scoped `DocumentExtraction`/`AIFeedback` authorization
 rules and append-only human feedback semantics.
 
