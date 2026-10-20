@@ -12,7 +12,7 @@ import re
 import sys
 from typing import Any, Callable
 
-from scripts.pilot_local_ai_synthetic_handoff import MODEL
+from scripts.pilot_local_ai_hm_fixture_matrix import MODEL_TAG_UNVERIFIED as MODEL
 
 _HOST = "127.0.0.1"
 _PORT = 11434
