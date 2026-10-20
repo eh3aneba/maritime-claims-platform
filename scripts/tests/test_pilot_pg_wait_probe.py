@@ -51,6 +51,61 @@ class PilotPgWaitProbeTests(unittest.TestCase):
             self.assertNotIn(forbidden, json.dumps(result).lower())
         self.assertEqual(len(probe.safe_summary(rows * 20)["sessions"]), 32)
 
+    def test_one_way_wait_is_not_mistaken_for_observed_deadlock_cycle(self):
+        result = probe.safe_summary([
+            (201, "active", "Lock", "transactionid", 9, [202]),
+            (202, "idle in transaction", "Client", "ClientRead", 10, []),
+            (203, "idle", "Client", "ClientRead", 0, []),
+        ])
+        self.assertEqual(result["blocked_count"], 1)
+        self.assertFalse(result["observed_blocker_cycle_in_sample"])
+        self.assertTrue(result["sample_blocker_graph_complete"])
+
+    def test_two_and_three_session_cycles_are_observed_but_not_certified(self):
+        for edges in (
+            [(201, [202]), (202, [201])],
+            [(201, [202]), (202, [203]), (203, [201])],
+        ):
+            with self.subTest(edges=edges):
+                rows = [
+                    (pid, "active", "Lock", "transactionid", 5, blockers)
+                    for pid, blockers in edges
+                ]
+                result = probe.safe_summary(rows)
+                self.assertTrue(result["observed_blocker_cycle_in_sample"])
+                self.assertTrue(result["sample_blocker_graph_complete"])
+                self.assertEqual(result["blocked_count"], len(rows))
+                self.assertNotIn("deadlock_confirmed", result)
+
+    def test_external_or_truncated_blocker_graph_is_marked_incomplete(self):
+        external = probe.safe_summary([
+            (201, "active", "Lock", "transactionid", 5, [999]),
+        ])
+        self.assertFalse(external["observed_blocker_cycle_in_sample"])
+        self.assertFalse(external["sample_blocker_graph_complete"])
+        self.assertEqual(external["sessions"][0]["blocking_pids"], [999])
+
+        rows = [
+            (i, "active", "Lock", "transactionid", 5, [i + 1])
+            for i in range(100, 133)
+        ]
+        capped = probe.safe_summary(rows)
+        self.assertEqual(capped["client_count"], 32)
+        self.assertTrue(capped["truncated"])
+        self.assertFalse(capped["sample_blocker_graph_complete"])
+        self.assertFalse(capped["observed_blocker_cycle_in_sample"])
+
+    def test_observer_graph_cannot_echo_any_query_text(self):
+        rows = [
+            (201, "active", "Lock", "transactionid", 3, [202]),
+            (202, "idle in transaction", "Client", "ClientRead", 5, []),
+        ]
+        payload = json.dumps(probe.safe_summary(rows))
+        for forbidden in ("SELECT", "private_claim", "customer", "credential",
+                          "password", "SQL statement", "secret"):
+            self.assertNotIn(forbidden, payload)
+        self.assertNotIn("query", payload.lower())
+
     def test_failed_sample_does_not_print_exception_secrets(self):
         out = io.StringIO()
         with (patch.dict(os.environ, _CI_ENV, clear=True),
