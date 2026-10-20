@@ -2,7 +2,7 @@
 
 This *does not* attest the model weights or prove the same model was used
 during inference. It merely observes two untrusted, read-only tag snapshots
-around exactly nine fixed, invented H&M requests. No files or claim data.
+around exactly nine fixed, invented H&M inference calls. No files or claim data.
 """
 from __future__ import annotations
 
