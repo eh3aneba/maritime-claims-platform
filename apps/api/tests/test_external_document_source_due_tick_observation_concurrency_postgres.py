@@ -112,25 +112,26 @@ def test_same_due_tick_concurrent_consumers_create_one_execution(
     engine, SessionLocal = _session_factory()
     due_now = datetime.now(UTC)
     try:
-        with SessionLocal() as db:
-            family = db.get(
-                ExternalDocumentSourceEvidenceFamilyBinding,
-                UUID(binding["id"]),
-            )
-            assert family is not None
-            organization_id = family.organization_id
-            schedule, _ = authorize_recurring_observation_schedule(
-                db,
-                organization_id=organization_id,
-                profile_id=UUID(profile_id),
-                binding_id=UUID(binding["id"]),
-                authorized_by_id=actor_id,
-                request_key="phase-ac-pg-schedule",
-                reason=_SCHEDULE_REASON,
-                cadence_class="hourly",
-                effective_at=due_now,
-            )
-            schedule_id = schedule.id
+        with ci_due_tick_stage("same_tick_schedule"):
+            with SessionLocal() as db:
+                family = db.get(
+                    ExternalDocumentSourceEvidenceFamilyBinding,
+                    UUID(binding["id"]),
+                )
+                assert family is not None
+                organization_id = family.organization_id
+                schedule, _ = authorize_recurring_observation_schedule(
+                    db,
+                    organization_id=organization_id,
+                    profile_id=UUID(profile_id),
+                    binding_id=UUID(binding["id"]),
+                    authorized_by_id=actor_id,
+                    request_key="phase-ac-pg-schedule",
+                    reason=_SCHEDULE_REASON,
+                    cadence_class="hourly",
+                    effective_at=due_now,
+                )
+                schedule_id = schedule.id
 
         barrier = Barrier(2)
 
@@ -198,25 +199,26 @@ def test_disable_vs_consume_is_serialized_and_never_observes_after_disable(
     engine, SessionLocal = _session_factory()
     due_now = datetime.now(UTC)
     try:
-        with SessionLocal() as db:
-            family = db.get(
-                ExternalDocumentSourceEvidenceFamilyBinding,
-                UUID(binding["id"]),
-            )
-            assert family is not None
-            organization_id = family.organization_id
-            schedule, _ = authorize_recurring_observation_schedule(
-                db,
-                organization_id=organization_id,
-                profile_id=UUID(profile_id),
-                binding_id=UUID(binding["id"]),
-                authorized_by_id=actor_id,
-                request_key="phase-ac-pg-disable-schedule",
-                reason=_SCHEDULE_REASON,
-                cadence_class="hourly",
-                effective_at=due_now,
-            )
-            schedule_id = schedule.id
+        with ci_due_tick_stage("disable_race_schedule"):
+            with SessionLocal() as db:
+                family = db.get(
+                    ExternalDocumentSourceEvidenceFamilyBinding,
+                    UUID(binding["id"]),
+                )
+                assert family is not None
+                organization_id = family.organization_id
+                schedule, _ = authorize_recurring_observation_schedule(
+                    db,
+                    organization_id=organization_id,
+                    profile_id=UUID(profile_id),
+                    binding_id=UUID(binding["id"]),
+                    authorized_by_id=actor_id,
+                    request_key="phase-ac-pg-disable-schedule",
+                    reason=_SCHEDULE_REASON,
+                    cadence_class="hourly",
+                    effective_at=due_now,
+                )
+                schedule_id = schedule.id
 
         barrier = Barrier(2)
 
