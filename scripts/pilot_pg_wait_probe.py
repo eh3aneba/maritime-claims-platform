@@ -43,6 +43,48 @@ def _ci_database_url() -> str:
     return raw
 
 
+def _observed_blocker_graph(sessions: list[dict], *, truncated: bool) -> dict:
+    """Detect a cycle only among PIDs visible in this *one bounded sample*.
+
+    A missing cycle does NOT exclude a real PostgreSQL deadlock: blockers
+    may be outside the row cap or relationships may change between probes.
+    Never inspect SQL text, lock keys, transaction IDs or application data.
+    """
+    ids = {session["pid"] for session in sessions}
+    graph = {
+        session["pid"]: [
+            pid for pid in session["blocking_pids"] if pid in ids
+        ]
+        for session in sessions
+    }
+    complete = not truncated and all(
+        pid in ids
+        for session in sessions
+        for pid in session["blocking_pids"]
+    )
+    seen: set[int] = set()
+    path: set[int] = set()
+
+    def visit(pid: int) -> bool:
+        if pid in path:
+            return True
+        if pid in seen:
+            return False
+        path.add(pid)
+        for blocker in graph[pid]:
+            if visit(blocker):
+                return True
+        path.remove(pid)
+        seen.add(pid)
+        return False
+
+    detected = any(visit(pid) for pid in graph if pid not in seen)
+    return {
+        "observed_blocker_cycle_in_sample": detected,
+        "sample_blocker_graph_complete": complete,
+    }
+
+
 def safe_summary(rows: list[tuple]) -> dict:
     """Whitelisted PostgreSQL metadata only: never accept/serialize query text."""
     sessions = []
@@ -57,11 +99,13 @@ def safe_summary(rows: list[tuple]) -> dict:
             "transaction_age_seconds": max(0, int(age)),
             "blocking_pids": [int(value) for value in (blocking or [])][:16],
         })
+    truncated = len(rows) > _MAX_ROWS
     return {
         "client_count": len(sessions),
         "blocked_count": sum(bool(s["blocking_pids"]) for s in sessions),
         "sessions": sessions,
-        "truncated": len(rows) > _MAX_ROWS,
+        "truncated": truncated,
+        **_observed_blocker_graph(sessions, truncated=truncated),
     }
 
 
