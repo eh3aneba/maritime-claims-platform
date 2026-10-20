@@ -35,6 +35,9 @@ There is no prompt, source body, model text, exception trace, private
 identifier or automatic file write in the output. Any missing,
 incomplete or rejected case makes the process exit with a nonzero code.
 
+This tool **does not independently verify** that a specific Ollama
+binary/model artifact executed or that the host's network egress is blocked.
+
 **These counts do not establish model accuracy or statistical
 reproducibility.** Three runs are far too few to establish reliability
 or semantic correctness. The synthetic phrase baseline has **not**
