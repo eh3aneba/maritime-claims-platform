@@ -184,3 +184,50 @@ def test_non_string_runtime_exception_is_classified_without_leaking_it():
     assert all(x["rejection_category"] == "unclassified_rejection"
                for x in result["scenarios"])
     assert "never-echo-me" not in json.dumps(result)
+
+
+def test_source_backed_partial_coverage_is_not_reported_as_accepted():
+    class PartialQuoteProvider(FakeProvider):
+        def generate(self, request):
+            result = super().generate(request)
+            index = len(self.calls) - 1
+            if index == 1:
+                # A literal, valid substring is still dangerously incomplete:
+                # it conceals that the records were NOT supplied.
+                result.structured_output["items"][2]["verbatim_excerpt"] = (
+                    "Synthetic intake: Engine logs for the previous ten days"
+                )
+            elif index == 2:
+                # Independently source-backed statements must BOTH survive.
+                result.structured_output["items"] = [
+                    item for item in result.structured_output["items"]
+                    if item["source_id"] != "S2"
+                ]
+            return result
+
+    provider = PartialQuoteProvider()
+    report = smoke.run_fixed_three_scenario_smoke(provider)
+    assert len(provider.calls) == 3
+    assert report["all_accepted_for_human_review"] is False
+    assert [item["status"] for item in report["scenarios"]] == [
+        "source_quotes_accepted_for_human_review",
+        "source_quotes_incomplete_for_review",
+        "source_quotes_incomplete_for_review",
+    ]
+    assert report["scenarios"][0]["critical_literal_coverage_observed"] is True
+    assert report["scenarios"][1]["critical_literal_requirements_missing"] == 2
+    assert report["scenarios"][2]["critical_literal_requirements_missing"] == 1
+    assert "NOT BEEN SUPPLIED" not in json.dumps(report)
+    assert "11:55" not in json.dumps(report)
+
+
+def test_complete_literal_source_quotes_are_not_expert_approved():
+    fake = FakeProvider()
+    result = smoke.run_fixed_three_scenario_smoke(fake)
+    assert all(item["critical_literal_coverage_observed"] is True
+               for item in result["scenarios"])
+    assert all(item["critical_literal_requirements_missing"] == 0
+               for item in result["scenarios"])
+    assert result["expert_ground_truth_approved"] is False
+    assert result["human_review_completed"] is False
+    assert result["pilot_accepted"] is False

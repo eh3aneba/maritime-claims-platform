@@ -15,8 +15,10 @@ from typing import Any
 from app.ai.gateway.base import AIProvider, AIProviderUnavailable, AIRequest, AIResponse
 from app.ai.gateway.ollama_local import OllamaLocalExperimentalProvider
 from scripts.pilot_local_ai_hm_fixture_matrix import (
-    deterministic_reference_candidate, evaluate_synthetic_scenario,
-    scenario_names, synthetic_source_catalog,
+    deterministic_reference_candidate, scenario_names, synthetic_source_catalog,
+)
+from scripts.pilot_local_ai_hm_critical_quote_coverage import (
+    observe_required_literal_quote_coverage,
 )
 from scripts.pilot_local_ai_source_gate import SCHEMA, LocalAISourceGateError
 from scripts.pilot_local_ai_synthetic_handoff import MODEL, OUTPUT_SCHEMA, SYSTEM
@@ -98,14 +100,22 @@ def run_fixed_three_scenario_smoke(provider: AIProvider) -> dict[str, Any]:
                 raise AIProviderUnavailable("local_ai_invalid_handoff")
             candidate = deterministic_reference_candidate(scenario)
             candidate["items"] = response.structured_output["items"]
-            report = evaluate_synthetic_scenario(scenario, candidate)
+            report = observe_required_literal_quote_coverage(scenario, candidate)
+            critical_coverage = report["critical_literal_coverage_observed"]
             result = {
                 "scenario": scenario,
-                "status": "source_quotes_accepted_for_human_review",
+                "status": (
+                    "source_quotes_accepted_for_human_review"
+                    if critical_coverage else "source_quotes_incomplete_for_review"
+                ),
                 "quote_count": report["validated_quote_count"],
-                "literal_baseline_match_count": report["reference_match_count"],
-                "literal_baseline_missing_count": report["reference_missing_count"],
+                "literal_baseline_match_count": report["literal_baseline_match_count"],
+                "literal_baseline_missing_count": report["literal_baseline_missing_count"],
                 "other_source_backed_quote_count": report["other_source_backed_quote_count"],
+                "critical_literal_requirements_total": report["critical_literal_requirements_total"],
+                "critical_literal_requirements_observed": report["critical_literal_requirements_observed"],
+                "critical_literal_requirements_missing": report["critical_literal_requirements_missing"],
+                "critical_literal_coverage_observed": critical_coverage,
             }
         except (AIProviderUnavailable, LocalAISourceGateError) as error:
             # Never return the dynamic exception message, model text or source.

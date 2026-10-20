@@ -45,6 +45,23 @@ structured response), `local_request_rejected` (invalid input/budget),
 categories**, not evidence of a particular root cause. Raw exceptions,
 source excerpts, prompt text and model prose never appear in stdout.
 
+**Additional literal completeness observation (development-only):** a response
+may cite real substrings while omitting the most important evidence. The
+observer now requires specific **code-authored phrases** per invented case:
+notice/alarm/log status in the complete-record case; the explicit
+`NOT BEEN SUPPLIED` **and** `existence is unknown` distinctions in the
+missing-records case; and both separately attributed 11:30/11:55 statements
+plus the unresolved conflict in the contradictory-records case. After the
+normal substring/source/version gate, any missing anchor yields
+`source_quotes_incomplete_for_review`, safe numerical
+`critical_literal_requirements_total`, `critical_literal_requirements_observed`,
+`critical_literal_requirements_missing`, and
+`critical_literal_coverage_observed=false`. The CLI returns a nonzero exit
+if any case is incomplete. These literal anchors are **not independent expert
+ground truth** and do not certify causal correctness, legal coverage,
+completeness of a real Evidence file, or a model deployment decision.
+No missing phrase text is printed.
+
 Any unsupported/hallucinated quote is rejected without exposing prose;
 the runner continues to the next invented scenario and returns a
 nonzero exit if any scenario was rejected. Actual model performance,

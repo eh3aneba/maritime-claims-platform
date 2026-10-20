@@ -28,7 +28,6 @@ class LocalAISyntheticLoopbackSmokePolicy(unittest.TestCase):
             'OllamaLocalExperimentalProvider(model=MODEL, max_output_tokens=512)',
             "metadata={\"synthetic_local_ai_test\": True}",
             "synthetic_source_catalog(scenario)",
-            "evaluate_synthetic_scenario(scenario, candidate)",
             '"model_digest_attested": False',
             '"expert_ground_truth_approved": False',
             '"pilot_accepted": False',
@@ -36,6 +35,9 @@ class LocalAISyntheticLoopbackSmokePolicy(unittest.TestCase):
             "except (AIProviderUnavailable, LocalAISourceGateError) as error:",
             "rejection_category",
             "_safe_rejection_category(error)",
+            "observe_required_literal_quote_coverage(scenario, candidate)",
+            '"source_quotes_incomplete_for_review"',
+            '"critical_literal_coverage_observed"',
             '"unclassified_rejection"',
         ):
             self.assertIn(required, s)
