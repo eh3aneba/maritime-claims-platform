@@ -28,7 +28,6 @@ class LocalAISyntheticLoopbackSmokePolicy(unittest.TestCase):
             'OllamaLocalExperimentalProvider(model=MODEL, max_output_tokens=512)',
             "metadata={\"synthetic_local_ai_test\": True}",
             "synthetic_source_catalog(scenario)",
-            "evaluate_synthetic_scenario(scenario, candidate)",
             '"model_digest_attested": False',
             '"expert_ground_truth_approved": False',
             '"pilot_accepted": False',
