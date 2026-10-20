@@ -118,7 +118,19 @@ jobs:
                 postgres_required=true
                 add_group admission-execution
                 ;;
-              .github/workflows/postgres-*.yml|apps/api/*)
+              apps/api/tests/test_local_ai_hm_loopback_smoke.py|apps/api/tests/test_local_ai_hm_fixture_matrix.py)
+                # Exact code-owned synthetic-only test modules. If a new
+                # dependency or DB-affecting call appears, require every
+                # PostgreSQL group rather than trusting a path exception.
+                if python3 scripts/ci_postgres_synthetic_test_scope.py "$path"; then
+                  echo "Offline synthetic AI test verified without database imports: $path"
+                else
+                  postgres_required=true
+                  fail_closed=true
+                  break
+                fi
+                ;;
+              .github/workflows/postgres-*.yml|scripts/ci_postgres_synthetic_test_scope.py|apps/api/*)
                 postgres_required=true
                 fail_closed=true
                 break
