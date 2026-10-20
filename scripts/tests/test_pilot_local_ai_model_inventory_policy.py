@@ -20,7 +20,7 @@ class LocalModelInventoryPolicy(unittest.TestCase):
                 imports.add(node.module)
         self.assertEqual(imports, {
             "__future__", "http.client", "json", "re", "sys", "typing",
-            "scripts.pilot_local_ai_synthetic_handoff",
+            "scripts.pilot_local_ai_hm_fixture_matrix",
         })
         for needle in (
             '_HOST = "127.0.0.1"',
