@@ -36,6 +36,9 @@ class LocalAISyntheticLoopbackSmokePolicy(unittest.TestCase):
             "except (AIProviderUnavailable, LocalAISourceGateError) as error:",
             "rejection_category",
             "_safe_rejection_category(error)",
+            "observe_required_literal_quote_coverage(scenario, candidate)",
+            '"source_quotes_incomplete_for_review"',
+            '"critical_literal_coverage_observed"',
             '"unclassified_rejection"',
         ):
             self.assertIn(required, s)
