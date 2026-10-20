@@ -21,8 +21,8 @@ command does not connect. The model tag is fixed as `qwen3:1.7b`.
 The output JSON contains only a fixed model tag, whether that tag
 appeared exactly once in the local registry and its reported 64-hex
 SHA-256 digest (or null if missing). The digest comes from the local
-server's own untrusted `/api/tags` response. It is **not independent
-attestation** of the model weights, binaries, machine, network controls,
+server's own untrusted `/api/tags` response. It is not independent attestation
+of the model weights, binaries, machine, network controls,
 or actual model used during a subsequent inference call. The model
 could be replaced between this check and inference. Record and compare
 the digest independently, following a security-reviewed process,
