@@ -25,12 +25,22 @@ _ALLOWED = frozenset({
 def ci_due_tick_stage(label: str):
     if label not in _ALLOWED:
         raise ValueError("Unsupported CI timing stage")
+    enabled = (
+        os.environ.get("APP_ENV") == "test"
+        and os.environ.get("EXTERNAL_EVIDENCE_DUE_TICK_POSTGRES_TEST") == "1"
+    )
+    # A BEGIN marker is durable before the potentially blocked work begins.
+    # On a process crash or timeout, the last unmatched BEGIN identifies
+    # the interrupted code-owned stage without logging SQL or source values.
+    if enabled:
+        begin = {"event": "ci_due_tick_stage_begin", "stage": label}
+        with open(_LOG_PATH, "a", encoding="utf-8") as handle:
+            handle.write(json.dumps(begin, sort_keys=True) + "\n")
     started = perf_counter()
     try:
         yield
     finally:
-        if (os.environ.get("APP_ENV") == "test"
-                and os.environ.get("EXTERNAL_EVIDENCE_DUE_TICK_POSTGRES_TEST") == "1"):
+        if enabled:
             record = {"event": "ci_due_tick_stage", "stage": label,
                       "elapsed_seconds": round(perf_counter() - started, 3)}
             with open(_LOG_PATH, "a", encoding="utf-8") as handle:
