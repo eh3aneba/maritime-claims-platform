@@ -24,6 +24,35 @@ from scripts.pilot_local_ai_synthetic_handoff import MODEL, OUTPUT_SCHEMA, SYSTE
 _EXPECTED_RESPONSE_KEYS = frozenset({"items"})
 _MAX_SCENARIO_INPUT_CHARS = 4096
 
+# Static, privacy-safe diagnostic categories. Never echo an exception string:
+# provider errors, source quotes and model prose must not leave this CLI.
+_RUNTIME_UNAVAILABLE = frozenset({"local_ai_unavailable"})
+_INVALID_MODEL_RESPONSE = frozenset({
+    "local_ai_invalid_response", "local_ai_invalid_handoff",
+    "local_ai_response_too_large",
+})
+_LOCAL_REQUEST_REJECTED = frozenset({
+    "local_ai_invalid_request", "local_ai_request_too_large",
+    "local_ai_model_not_allowlisted", "local_ai_unsafe_output_budget",
+    "local_ai_synthetic_only",
+})
+
+
+def _safe_rejection_category(error: AIProviderUnavailable | LocalAISourceGateError) -> str:
+    """Only finite code-owned strings; never reveal error arguments or prose."""
+    if isinstance(error, LocalAISourceGateError):
+        return "source_quote_rejected"
+    code = error.args[0] if len(error.args) == 1 and type(error.args[0]) is str else None
+    if code in _RUNTIME_UNAVAILABLE:
+        return "local_runtime_unavailable"
+    if code in _INVALID_MODEL_RESPONSE:
+        return "invalid_model_response"
+    if code in _LOCAL_REQUEST_REJECTED:
+        return "local_request_rejected"
+    if code == "local_ai_source_quote_rejected":
+        return "source_quote_rejected"
+    return "unclassified_rejection"
+
 
 def build_fixed_scenario_request(scenario: str) -> AIRequest:
     """Build only from code-owned inputs; never accept raw text or file paths."""
@@ -78,9 +107,13 @@ def run_fixed_three_scenario_smoke(provider: AIProvider) -> dict[str, Any]:
                 "literal_baseline_missing_count": report["reference_missing_count"],
                 "other_source_backed_quote_count": report["other_source_backed_quote_count"],
             }
-        except (AIProviderUnavailable, LocalAISourceGateError):
-            # No model text, request body, traceback, network exception or path.
-            result = {"scenario": scenario, "status": "rejected"}
+        except (AIProviderUnavailable, LocalAISourceGateError) as error:
+            # Never return the dynamic exception message, model text or source.
+            result = {
+                "scenario": scenario,
+                "status": "rejected",
+                "rejection_category": _safe_rejection_category(error),
+            }
         result["elapsed_ms_observed"] = max(0, int((monotonic() - started) * 1000))
         results.append(result)
 

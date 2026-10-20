@@ -74,6 +74,7 @@ def test_one_hallucination_rejected_without_stopping_other_cases():
         "source_quotes_accepted_for_human_review",
     ]
     assert "negligent" not in str(result)
+    assert result["scenarios"][1]["rejection_category"] == "source_quote_rejected"
 
 
 def test_unavailable_local_adapter_reports_safe_rejection_only():
@@ -83,6 +84,8 @@ def test_unavailable_local_adapter_reports_safe_rejection_only():
     assert result["all_accepted_for_human_review"] is False
     assert all(x["status"] == "rejected" for x in result["scenarios"])
     assert "local_ai_unavailable" not in str(result)
+    assert all(x["rejection_category"] == "local_runtime_unavailable"
+               for x in result["scenarios"])
 
 
 def test_wrong_provider_refused_without_model_call():
@@ -144,5 +147,40 @@ def test_malformed_provider_response_is_rejected_and_other_scenarios_continue():
     assert len(fake.calls) == 3
     assert result["all_accepted_for_human_review"] is False
     assert result["scenarios"][0]["status"] == "rejected"
+    assert result["scenarios"][0]["rejection_category"] == "invalid_model_response"
     assert all(x["status"] == "source_quotes_accepted_for_human_review"
                for x in result["scenarios"][1:])
+
+
+@pytest.mark.parametrize("error_code,category", (
+    ("local_ai_unavailable", "local_runtime_unavailable"),
+    ("local_ai_invalid_response", "invalid_model_response"),
+    ("local_ai_response_too_large", "invalid_model_response"),
+    ("local_ai_invalid_request", "local_request_rejected"),
+    ("local_ai_source_quote_rejected", "source_quote_rejected"),
+    ("sensitive invented prompt details should never escape", "unclassified_rejection"),
+))
+def test_bounded_error_category_never_leaks_exception_text(error_code, category):
+    class FailingProvider(FakeProvider):
+        def generate(self, request):
+            self.calls.append(request)
+            raise AIProviderUnavailable(error_code)
+
+    fake = FailingProvider()
+    result = smoke.run_fixed_three_scenario_smoke(fake)
+    assert len(fake.calls) == 3
+    assert result["all_accepted_for_human_review"] is False
+    assert all(x["rejection_category"] == category for x in result["scenarios"])
+    assert error_code not in json.dumps(result)
+
+
+def test_non_string_runtime_exception_is_classified_without_leaking_it():
+    class OpaqueFailureProvider(FakeProvider):
+        def generate(self, request):
+            self.calls.append(request)
+            raise AIProviderUnavailable({"secret": "never-echo-me"})
+
+    result = smoke.run_fixed_three_scenario_smoke(OpaqueFailureProvider())
+    assert all(x["rejection_category"] == "unclassified_rejection"
+               for x in result["scenarios"])
+    assert "never-echo-me" not in json.dumps(result)
