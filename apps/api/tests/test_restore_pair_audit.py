@@ -157,5 +157,82 @@ class RestorePairAuditTests(unittest.TestCase):
             )
 
 
+    def inventory(self, records=None, document_count=1, quarantine_count=1):
+        from app.core.restore_pair_audit import audit_complete_restored_claim_namespace
+        return audit_complete_restored_claim_namespace(
+            self.root,
+            [self.document, self.quarantine] if records is None else records,
+            organization_id=self.org, claim_id=self.claim,
+            expected_document_count=document_count,
+            expected_quarantine_count=quarantine_count,
+            uid=self.uid, gid=self.gid,
+        )
+
+    def expect_inventory_no_go(self, code, **kwargs):
+        with self.assertRaises(RestorePairAuditError) as exc:
+            self.inventory(**kwargs)
+        self.assertEqual(str(exc.exception), code)
+
+    def test_complete_claim_document_and_quarantine_inventory(self):
+        self.assertEqual(self.inventory(), 2)
+        assert (self.root / self.document.storage_key).is_file()
+        assert (self.root / self.quarantine.storage_key).is_file()
+
+    def test_unindexed_document_and_orphan_quarantine_fail_closed(self):
+        document_dir = (self.root / self.document.storage_key).parent
+        extra = document_dir / (str(uuid4()) + ".pdf")
+        extra.write_bytes(b"%PDF-1.4\nunknown")
+        extra.chmod(0o600)
+        self.expect_inventory_no_go("orphan_physical_evidence")
+        self.assertTrue(extra.is_file(), "The auditor must not delete extra Evidence")
+        extra.unlink()
+        quarantine_dir = (self.root / self.quarantine.storage_key).parent
+        extra = quarantine_dir / ".mcri-upload-orphan.partial"
+        extra.write_bytes(b"synthetic leftover")
+        extra.chmod(0o600)
+        self.expect_inventory_no_go("orphan_physical_evidence")
+        self.assertTrue(extra.is_file())
+        extra.unlink()
+        self.assertEqual(self.inventory(), 2)
+
+    def test_manifest_must_match_separate_authoritative_db_counts(self):
+        self.expect_inventory_no_go(
+            "manifest_count_mismatch", document_count=2, quarantine_count=1
+        )
+        self.expect_inventory_no_go(
+            "manifest_count_mismatch", document_count=0, quarantine_count=2
+        )
+        self.expect_inventory_no_go(
+            "manifest_count_mismatch",
+            records=[self.document], document_count=1, quarantine_count=1,
+        )
+        self.assertEqual(self.inventory(), 2)
+
+    def test_unlisted_directory_symlink_and_hardlink_are_refused(self):
+        native_dir = (self.root / self.document.storage_key).parent
+        shadow = native_dir / "unknown-subfolder"
+        shadow.mkdir(mode=0o700)
+        self.expect_inventory_no_go("unexpected_entry")
+        shadow.rmdir()
+        unexpected_link = native_dir / "unknown-symlink.pdf"
+        unexpected_link.symlink_to(self.root / self.quarantine.storage_key)
+        self.expect_inventory_no_go("unexpected_entry")
+        unexpected_link.unlink()
+        link = native_dir / "hardlink-to-known-file"
+        os.link(self.root / self.document.storage_key, link)
+        self.expect_inventory_no_go("unsafe_file_link")
+        link.unlink()
+        self.assertEqual(self.inventory(), 2)
+
+    def test_missing_quarantine_namespace_only_allowed_with_no_quarantine_rows(self):
+        quarantined_dir = (self.root / self.quarantine.storage_key).parent
+        (self.root / self.quarantine.storage_key).unlink()
+        quarantined_dir.rmdir()
+        self.assertEqual(self.inventory(
+            records=[self.document], document_count=1, quarantine_count=0,
+        ), 1)
+        self.expect_inventory_no_go("evidence_unavailable")
+
+
 if __name__ == "__main__":
     unittest.main()

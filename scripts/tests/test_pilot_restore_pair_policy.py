@@ -61,6 +61,39 @@ class PairReconciliationPolicy(unittest.TestCase):
         for unsafe in ("docker volume rm", "chown -R", "--network host"):
             self.assertNotIn(unsafe, probe)
 
+    def test_complete_claim_inventory_is_read_only_and_exercised_live(self):
+        source = AUDIT.read_text(encoding="utf-8")
+        probe = PROBE.read_text(encoding="utf-8")
+        for marker in (
+            'def audit_complete_restored_claim_namespace(',
+            'expected_document_count: int',
+            'expected_quarantine_count: int',
+            'raise RestorePairAuditError("manifest_count_mismatch")',
+            'audit_restored_evidence_pair(',
+            'with os.scandir(leaf) as children:',
+            'child.is_file(follow_symlinks=False)',
+            'raise RestorePairAuditError("unexpected_entry")',
+            'raise RestorePairAuditError("orphan_physical_evidence")',
+            'raise RestorePairAuditError("unsafe_file_link")',
+            'raise RestorePairAuditError("missing_reference")',
+        ):
+            self.assertIn(marker, source)
+        for marker in (
+            'from app.core.restore_pair_audit import (',
+            'audit_complete_restored_claim_namespace,',
+            'expected_document_count=2, expected_quarantine_count=0',
+            'expected_document_count=0, expected_quarantine_count=2',
+            'stray_file = scanned_storage.parent / ".ci-unindexed-evidence.partial"',
+            'assert str(exc) == "orphan_physical_evidence"',
+            'stray_file.unlink()',
+            'source_documents_before=',
+            '[ "$source_documents_before" = "$source_documents_after" ]',
+        ):
+            self.assertIn(marker, probe)
+        self.assertEqual(probe.count('audit_complete_restored_claim_namespace,'), 2)
+        for forbidden in ('os.unlink(', 'shutil.rmtree(', 'os.remove(', 'os.replace('):
+            self.assertNotIn(forbidden, source)
+
     def test_operator_documentation_preserves_no_go_boundary(self):
         doc = PRECHECK.read_text(encoding="utf-8")
         self.assertIn("Read-only selected-claim DB/Evidence pair audit", doc)

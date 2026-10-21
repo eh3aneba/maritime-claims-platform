@@ -350,6 +350,37 @@ atomic synthetic-copy restoration, missing/truncated content, link
 substitution and wrong identities. Source DB row counts still cannot
 change; the existing guarded clone-drop and scratch cleanup remain intact.
 
+**Complete per-claim private-file inventory (CI only):**
+In addition to verifying expected DB references, the new
+`audit_complete_restored_claim_namespace` requires separate authoritative
+document/quarantine row counts and enumerates **both actual filesystem
+claim directories** under the UID/GID 1000 private Evidence scratch. It
+rejects any unexpected physical file, dangling upload staging artifact,
+symlink, extra directory, hard link or a missing referenced file. Only
+files belonging to the selected organization and claim are examined;
+other tenants' Evidence must not be enumerated. No file is moved,
+unlinked, fixed or quarantined by the auditor.
+
+The live CI clone tests exactly two authenticated, persisted clean
+Documents (including scanned-PDF OCR) before deleting their scratch
+copies, and separately two genuine infected/scanner-outage quarantine
+records and private files. The authenticated Document scenario creates
+one additional **synthetic orphan staging file** inside its own temporary
+scratch and verifies an explicit `orphan_physical_evidence` NO-GO, then
+removes only that new test artifact and re-verifies a clean inventory.
+Focused unit tests require rejection of orphan files, extra directories,
+symlinks, unexpected hard links and DB count mismatches. The number of
+rows passed to this function must be a complete authoritative
+query for its scoped claim—passing a partial set is not proof of
+completeness.
+
+The two phases use separate scratch namespaces; this test does not
+assert that all DB rows from the original seeded test database were
+restored. It is **not** proof of a consistent independently recovered
+DB+volume snapshot, a filesystem-wide orphan search, a backup restore
+or the absence of bytes in other claims. Such claims still require
+quiesced independent host evidence and operator signoff.
+
 **This is a subset integrity auditor, not a database+volume restore.**
 It cannot establish that the full claim has no missing/unindexed files,
 that an independently restored PostgreSQL instance and Evidence snapshot

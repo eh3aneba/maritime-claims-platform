@@ -159,3 +159,100 @@ def audit_restored_evidence_pair(
         raise
     except (OSError, ValueError, TypeError):
         raise RestorePairAuditError("evidence_unavailable") from None
+
+
+def audit_complete_restored_claim_namespace(
+    root: Path,
+    records: list[RestoreEvidenceRow],
+    *,
+    organization_id: UUID,
+    claim_id: UUID,
+    expected_document_count: int,
+    expected_quarantine_count: int,
+    uid: int = 1000,
+    gid: int = 1000,
+) -> int:
+    """Check *both sides* of an explicit quiesced claim's private file inventory.
+
+    This extends the selected-reference hash audit to reject extra files and
+    directories under the selected claim's admitted and quarantine folders.
+    The record list MUST be the complete database selection for this claim:
+    verify the independent database counts before relying on the result.
+    This does not inspect any other claim, snapshot timestamp or DB backup.
+    """
+    if (
+        not isinstance(records, list)
+        or not isinstance(expected_document_count, int)
+        or not isinstance(expected_quarantine_count, int)
+        or expected_document_count < 0 or expected_quarantine_count < 0
+        or expected_document_count + expected_quarantine_count != len(records)
+        or not 1 <= len(records) <= MAX_ROWS
+    ):
+        raise RestorePairAuditError("manifest_count_mismatch")
+    if (
+        sum(row.kind == "document" for row in records) != expected_document_count
+        or sum(row.kind == "quarantine" for row in records) != expected_quarantine_count
+    ):
+        raise RestorePairAuditError("manifest_count_mismatch")
+
+    checked = audit_restored_evidence_pair(
+        root, records, organization_id=organization_id,
+        claim_id=claim_id, uid=uid, gid=gid,
+    )
+    expected_keys = {row.storage_key for row in records}
+    # Roots below are derived exclusively from validated UUIDs. No user
+    # supplied paths, recursive delete, glob traversal or writes.
+    namespaces = (
+        (root / str(organization_id) / str(claim_id),
+         f"{organization_id}/{claim_id}"),
+        (root / "_quarantine" / str(organization_id) / str(claim_id),
+         f"_quarantine/{organization_id}/{claim_id}"),
+    )
+    try:
+        for leaf, key_prefix in namespaces:
+            expected_here = {
+                key for key in expected_keys if key.startswith(key_prefix + "/")
+            }
+            if not leaf.exists() and not leaf.is_symlink():
+                if expected_here:
+                    raise RestorePairAuditError("missing_namespace")
+                continue
+            # Reject symlinks at every ancestor even when no DB rows refer to
+            # that namespace; a symlinked empty quarantine is not acceptable.
+            current = root
+            for part in leaf.relative_to(root).parts:
+                current = current / part
+                meta = current.lstat()
+                if (
+                    not stat.S_ISDIR(meta.st_mode)
+                    or meta.st_uid != uid or meta.st_gid != gid
+                    or stat.S_IMODE(meta.st_mode) not in {0o700, 0o750, 0o755}
+                ):
+                    raise RestorePairAuditError("unsafe_namespace")
+            found: set[str] = set()
+            with os.scandir(leaf) as children:
+                for child in children:
+                    if (
+                        not child.is_file(follow_symlinks=False)
+                        or child.is_symlink()
+                    ):
+                        raise RestorePairAuditError("unexpected_entry")
+                    # Reject aliased inodes before considering whether the
+                    # directory entry is unindexed. A newly linked copy can
+                    # appear under an orphan filename, but must still be
+                    # classified as an unsafe link, not ordinary stray bytes.
+                    if child.stat(follow_symlinks=False).st_nlink != 1:
+                        raise RestorePairAuditError("unsafe_file_link")
+                    key = key_prefix + "/" + child.name
+                    if key not in expected_here:
+                        raise RestorePairAuditError("orphan_physical_evidence")
+                    found.add(key)
+                    if len(found) > MAX_ROWS:
+                        raise RestorePairAuditError("scan_limit_exceeded")
+            if found != expected_here:
+                raise RestorePairAuditError("missing_reference")
+        return checked
+    except RestorePairAuditError:
+        raise
+    except (OSError, ValueError, TypeError):
+        raise RestorePairAuditError("evidence_unavailable") from None
