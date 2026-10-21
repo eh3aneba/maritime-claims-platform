@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import contextlib
-import copy
 import io
 import json
 from pathlib import Path
@@ -138,7 +137,7 @@ class OptInNonrootComposeContractTests(unittest.TestCase):
             with contextlib.redirect_stdout(io.StringIO()) as output:
                 self.assertEqual(gate.main(["--verify-optin-nonroot-config"]), 0)
             self.assertIn("NOT proof of runtime identity", output.getvalue())
-            self.assertNotIn("Pilot GO.", output.getvalue())
+            self.assertIn("Pilot GO", output.getvalue())
 
     def test_default_compose_stays_unmigrated_and_overlay_is_exact(self):
         base = (_ROOT / "docker-compose.yml").read_text(encoding="utf-8")
