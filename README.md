@@ -36,7 +36,7 @@ The MVP now includes the full H&M Machinery / Turbocharger design-partner workfl
 - Separately authorized limited-production AI evaluation with deterministic rollout, live monitors, expiry and rollback
 - Governed SharePoint / Google Drive external-Evidence control plane through recurring observation, human review and exact changed-item refresh staging
 
-**Current phase: Phase 17.6-C — SFTP credential-reference health qualification.** Protected `main` includes Phase 17.6-B, which adds governed non-secret SFTP credential-reference custody without opening any remote SFTP session. Phase 17.6-C is the active product slice: qualify whether the approved external credential reference can be resolved and whether its material class matches the approved authentication kind, while still forbidding SSH/SFTP login, remote listing/content reads, Evidence admission, processing and AI execution.
+**Current execution phase (2026-10-15): R0 — pilot scope and status baseline.** The Phase 17.6 SFTP **software feature chain** is complete on `main`, but independent controlled **real SFTP server acceptance** remains open in #652; SFTP is a Pilot v1 gate **only if enabled** for the selected design partner. Production non-root Evidence compatibility (#487), independently restored DB+Evidence and operator deployment/alerts (#653), and pilot user acceptance (#647) are **not** complete. A green synthetic CI run, merged PR or feature label does not authorize a real-data pilot. Start with the [versioned roadmap execution status](docs/roadmap/SEECLAIMS_V1_EXECUTION_STATUS.md) and [R0 proposed owner decisions](docs/roadmap/R0_SCOPE_DECISIONS.md).
 
 ## Prerequisites
 
