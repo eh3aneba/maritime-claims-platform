@@ -1,0 +1,22 @@
+# Opt-in only. DO NOT add this file to COMPOSE_FILE or default deploy.
+# Use only after approved quiesced/cloned Evidence volume compatibility review
+# with private operator signoff. Overlay does not migrate existing ownership.
+services:
+  preflight:
+    user: "1000:1000"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+  api:
+    user: "1000:1000"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+  worker:
+    user: "1000:1000"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
