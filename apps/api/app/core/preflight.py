@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import stat
+import tempfile
 from urllib.parse import urlparse
 
 from sqlalchemy import text
@@ -18,6 +20,34 @@ from app.modules.documents.object_storage import (
 )
 
 DEFAULT_DB_PASSWORD_FRAGMENT = "change-me-in-local-env"
+
+
+def _check_local_evidence_write_access(storage: Path, *, strict: bool) -> None:
+    """Probe the *effective process UID* without touching any existing Evidence.
+
+    Temporary names are generated with exclusive creation. Never use a fixed
+    name that could alias a customer file or follow an attacker-owned symlink.
+    In strict deployments the mounted Evidence root must already exist; never
+    silently initialize a missing production Evidence namespace.
+    """
+    if not storage.is_absolute():
+        raise OSError("storage_root_unavailable")
+    if not strict:
+        storage.mkdir(parents=True, exist_ok=True)
+    metadata = storage.lstat()
+    if (
+        not stat.S_ISDIR(metadata.st_mode)
+        or stat.S_IMODE(metadata.st_mode) & stat.S_IWOTH
+    ):
+        raise OSError("unsafe_storage_root")
+    # tempfile uses O_EXCL and mode 0600, so an existing claim file or
+    # symlink cannot be overwritten. The context closes and unlinks only
+    # the newly created probe; absence of write/delete authority fails.
+    with tempfile.NamedTemporaryFile(
+        mode="wb", prefix=".mcri-preflight-", suffix=".tmp", dir=storage
+    ) as temporary:
+        temporary.write(b"synthetic-probe")
+        temporary.flush()
 
 
 def _fail(errors: list[str], message: str) -> None:
@@ -114,12 +144,10 @@ def run_preflight(*, require_db: bool = True) -> tuple[list[str], list[str]]:
     if storage_backend == "local":
         storage = Path(settings.local_storage_path)
         try:
-            storage.mkdir(parents=True, exist_ok=True)
-            probe = storage / ".mcri-write-probe"
-            probe.write_text("ok")
-            probe.unlink(missing_ok=True)
-        except OSError as exc:
-            _fail(errors, f"Local evidence storage is not writable: {exc}")
+            _check_local_evidence_write_access(storage, strict=strict)
+        except OSError:
+            # The exception may contain a private host path or mount name.
+            _fail(errors, "Local evidence storage is unavailable or unsafe")
         if strict:
             warnings.append("Local evidence storage is acceptable for a private pilot but not the long-term HA target")
     elif storage_backend == "s3":
