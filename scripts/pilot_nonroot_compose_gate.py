@@ -21,7 +21,7 @@ _COMPOSE = _ROOT / "docker-compose.yml"
 _OVERLAY = _ROOT / "docker-compose.nonroot-optin.yml"
 _SERVICES = ("preflight", "api", "worker")
 _OWNER = "1000:1000"
-_VOLUME = re.compile(r"(?:^|_)local_documents\\Z")
+_VOLUME = re.compile(r"(?:^|_)local_documents\Z")
 
 
 def verify_optin_rendered_compose(config: object) -> list[str]:
