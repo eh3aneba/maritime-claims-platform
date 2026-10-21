@@ -237,11 +237,15 @@ def audit_complete_restored_claim_namespace(
                         or child.is_symlink()
                     ):
                         raise RestorePairAuditError("unexpected_entry")
+                    # Reject aliased inodes before considering whether the
+                    # directory entry is unindexed. A newly linked copy can
+                    # appear under an orphan filename, but must still be
+                    # classified as an unsafe link, not ordinary stray bytes.
+                    if child.stat(follow_symlinks=False).st_nlink != 1:
+                        raise RestorePairAuditError("unsafe_file_link")
                     key = key_prefix + "/" + child.name
                     if key not in expected_here:
                         raise RestorePairAuditError("orphan_physical_evidence")
-                    if child.stat(follow_symlinks=False).st_nlink != 1:
-                        raise RestorePairAuditError("unsafe_file_link")
                     found.add(key)
                     if len(found) > MAX_ROWS:
                         raise RestorePairAuditError("scan_limit_exceeded")
