@@ -47,6 +47,28 @@ class EvidencePreflightPolicy(unittest.TestCase):
         ):
             self.assertIn(marker, tests)
 
+    def test_nonroot_rehearsal_still_requires_isolated_external_clone(self):
+        # Independent cross-feature regression: a preflight hardening merge
+        # must not silently undo the separate clone-only runtime overlay.
+        overlay = (ROOT / "docker-compose.nonroot-optin.yml").read_text(
+            encoding="utf-8"
+        )
+        workflow = (ROOT / ".github/workflows/production-deployment-policy.yml").read_text(
+            encoding="utf-8"
+        )
+        for marker in (
+            "nonroot_review_evidence:/data/documents",
+            "  nonroot_review_evidence:",
+            "external: true",
+            "MCRI_NONROOT_CLONE_EVIDENCE_VOLUME:?",
+        ):
+            self.assertIn(marker, overlay)
+        self.assertNotIn("local_documents:/data/documents", overlay)
+        self.assertIn(
+            "MCRI_NONROOT_CLONE_EVIDENCE_VOLUME: mcri-nonroot-clone-synthetic-ci-only",
+            workflow,
+        )
+
     def test_deployment_uid_switch_remains_unapproved(self):
         source = COMPOSE.read_text(encoding="utf-8")
         # This commit must not flip the production API/worker UID or

@@ -9,11 +9,18 @@ autostart service, or an existing customer deployment.
 
 ## Safe first check: render-only, no container start
 
-From the repository root:
+From the repository root, provide an **explicit synthetic-only volume
+name** for a render-only policy check. Docker does not create or mount it:
 
 ```bash
+MCRI_NONROOT_CLONE_EVIDENCE_VOLUME=mcri-nonroot-clone-synthetic-example \
 python scripts/pilot_nonroot_compose_gate.py --verify-optin-nonroot-config --env-file .env.pilot.example
 ```
+
+On Windows PowerShell, first set
+`$env:MCRI_NONROOT_CLONE_EVIDENCE_VOLUME="mcri-nonroot-clone-synthetic-example"`
+then run the same Python command. **Do not** set this variable globally for
+normal customer deployment or reuse an existing production Evidence volume.
 
 The command renders the **base + opt-in overlay** with Docker Compose and
 checks only the parsed configuration in memory. It never starts, stops,
@@ -21,17 +28,25 @@ restarts or changes containers, volume ownership or file permissions.
 It prints only fixed error categories, never expanded environment secrets.
 It verifies that the `preflight`, `api` and `worker` services all use
 `1000:1000`, drop every Linux capability, forbid privilege escalation,
-avoid host namespaces, and keep the **named** Evidence volume attached
-read/write only at `/data/documents`. The existing private pilot host-port
-policy must also pass. The required CI Production Deployment Policy runs
-this check against the synthetic example configuration.
+avoid host namespaces, and require an **external, pre-existing, separately named clone
+volume** mounted at `/data/documents`. The original `local_documents`
+volume is never an accepted mount for the three opt-in services. Without
+`MCRI_NONROOT_CLONE_EVIDENCE_VOLUME`, Compose interpolation rejects the
+overlay. Docker must not automatically create the clone volume: the
+`external: true` declaration requires that the actual operator-controlled
+clone exists before any attempted startup. The policy checks its
+`mcri-nonroot-clone-...` name namespace but cannot prove its provenance.
+The existing private pilot host-port policy must also pass. Protected CI
+renders with a synthetic placeholder name, without creating that volume.
 
 A passing render means **configuration syntax and policy only**.
 It does not prove the final process UID, mount ownership/ACLs, file
 accessibility, process capabilities at runtime, production secrets,
 actual network isolation, or readiness for real Evidence. The default
 named `local_documents` volume is **not automatically migrated** and may
-be root-owned.
+be root-owned. A named external clone is not evidence of correct UID/ACL
+ownership, provenance, backup recovery-point alignment or customer-data
+authorization; those are separate operator acceptance gates.
 
 ## Mandatory independent operator steps before considering activation
 
