@@ -44,6 +44,9 @@ def test_pilot_preflight_requires_malware_scanning(monkeypatch, tmp_path):
         SECRET_KEY="a-secure-random-pilot-secret-with-more-than-32-characters",
         DATABASE_URL="postgresql+psycopg://maritime:secure-password@localhost:5432/maritime_claims",
     )
+    # In a strict pilot, the Evidence mount is provisioned by the operator,
+    # never silently created by the application's preflight.
+    (tmp_path / "evidence").mkdir()
     errors, _ = run_preflight(require_db=False)
     assert errors == ["MALWARE_SCAN_ENABLED must be true for pilot, staging and production"]
 

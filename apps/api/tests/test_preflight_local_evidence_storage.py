@@ -74,6 +74,7 @@ def test_preflight_never_emits_os_error_with_private_storage_path(
     settings = SimpleNamespace(
         app_env="test",
         cors_origins=["http://127.0.0.1:3000"],
+        next_public_api_base_url="http://127.0.0.1:3000",
         ai_provider="disabled",
         storage_backend="local",
         local_storage_path=secret_path,
