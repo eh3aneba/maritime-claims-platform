@@ -21,17 +21,31 @@ _COMPOSE = _ROOT / "docker-compose.yml"
 _OVERLAY = _ROOT / "docker-compose.nonroot-optin.yml"
 _SERVICES = ("preflight", "api", "worker")
 _OWNER = "1000:1000"
-_VOLUME = re.compile(r"(?:^|_)local_documents\Z")
+_CLONE_VOLUME_KEY = "nonroot_review_evidence"
+# This prefix is a safety namespace, NOT independent evidence that the volume
+# is an authorized clone. The operator must separately attest provenance.
+_CLONE_NAME = re.compile(r"mcri-nonroot-clone-[a-z0-9][a-z0-9-]{0,55}\Z")
 
 
 def verify_optin_rendered_compose(config: object) -> list[str]:
-    """Verify effective identity/capability and existing Evidence mount contract."""
+    """Verify opt-in identity and an external *isolated clone* mount contract."""
     if type(config) is not dict or type(config.get("services")) is not dict:
         return ["invalid_compose_services"]
     services = config["services"]
     errors: list[str] = []
     if verify_private_ports(config):
         errors.append("private_port_policy")
+    volumes = config.get("volumes")
+    definition = volumes.get(_CLONE_VOLUME_KEY) if type(volumes) is dict else None
+    clone_name = definition.get("name") if type(definition) is dict else None
+    if (
+        type(definition) is not dict
+        or definition.get("external") is not True
+        or type(clone_name) is not str
+        or _CLONE_NAME.fullmatch(clone_name) is None
+    ):
+        errors.append("external_clone_volume_not_declared")
+        clone_name = None
     for name in _SERVICES:
         service = services.get(name)
         if type(service) is not dict:
@@ -63,7 +77,8 @@ def verify_optin_rendered_compose(config: object) -> list[str]:
             type(mount) is not dict
             or mount.get("type") != "volume"
             or type(mount.get("source")) is not str
-            or _VOLUME.search(mount["source"]) is None
+            or clone_name is None
+            or mount["source"] not in {_CLONE_VOLUME_KEY, clone_name}
             or mount.get("target") != "/data/documents"
             or mount.get("read_only") is True
         ):
