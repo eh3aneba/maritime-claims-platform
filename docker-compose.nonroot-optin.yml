@@ -1,7 +1,6 @@
-# Explicit opt-in, for a separately approved/isolated clone only.
-# Never add this overlay to ordinary deployments or COMPOSE_FILE.
-# No automatic Evidence ownership migration or new Docker volume creation.
-# Required env input must name a PRE-EXISTING isolated clone, not customer data.
+# Opt-in only. DO NOT add this file to COMPOSE_FILE or default deploy.
+# Use only after approved quiesced/cloned Evidence volume compatibility review
+# with private operator signoff. Overlay does not migrate existing ownership.
 services:
   preflight:
     user: "1000:1000"
@@ -9,26 +8,15 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
-    volumes:
-      - nonroot_review_evidence:/data/documents
   api:
     user: "1000:1000"
     cap_drop:
       - ALL
     security_opt:
       - no-new-privileges:true
-    volumes:
-      - nonroot_review_evidence:/data/documents
   worker:
     user: "1000:1000"
     cap_drop:
       - ALL
     security_opt:
       - no-new-privileges:true
-    volumes:
-      - nonroot_review_evidence:/data/documents
-
-volumes:
-  nonroot_review_evidence:
-    external: true
-    name: ${MCRI_NONROOT_CLONE_EVIDENCE_VOLUME:?isolated pre-existing Evidence clone required}

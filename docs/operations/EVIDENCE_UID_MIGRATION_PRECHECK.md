@@ -436,3 +436,41 @@ as destructive test fixtures.
 The migration/preflight/demo-seed and document/AI processing services remain
 **unchanged** by this precheck PR; explicit changes to their runtime users
 must only follow an operator-approved compatibility procedure.
+
+
+## Non-destructive effective-UID preflight (Issue #487)
+
+The application startup preflight has a separate **effective-process UID**
+write test, not a static permission-bit audit. In PR #777 it is hardened
+so it never writes or deletes a predictable `.mcri-write-probe` path.
+It opens an exclusive private temporary file in the already-selected local
+storage root and cleans up only that new file.
+
+Under `APP_ENV=pilot`, `staging` or `production`, the storage root must
+**already exist** and be a real directory, not a symlink or a
+world-writable directory. The startup preflight refuses an absent root
+without creating directories or altering historical Evidence. In
+`development`/`test` only, it may create a missing local storage root,
+as before. Storage errors are reported by fixed category without echoing
+mount paths, filenames or exception text.
+
+This is intentionally **not** an automatic UID change: normal API,
+document-worker and preflight services retain their Compose identities.
+The preflight success reports only that the currently executing process
+can create/write/unlink a disposable private test file; it does **not**
+show that UID/GID 1000 can perform this on an existing customer Evidence
+volume, prove effective ACLs for the complete tree, or authorize switching
+all services. Use the metadata-only precheck above plus the separate
+real-UID synthetic custody tests, approved maintenance plan, paired
+recovery point, and private operator signoff before touching production
+runtime users. No recursive `chown` or permission broadening is allowed.
+
+Tests:
+
+```bash
+PYTHONPATH=apps/api python -m pytest apps/api/tests/test_preflight_local_evidence_storage.py -q
+python -m unittest scripts.tests.test_pilot_evidence_preflight_storage_policy -v
+```
+
+**Pilot GO=NO.** This change neither deploys to a customer host nor
+turns on AI inference.

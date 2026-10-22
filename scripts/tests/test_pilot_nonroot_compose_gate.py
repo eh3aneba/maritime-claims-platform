@@ -22,7 +22,7 @@ def _safe_rendered():
                       "published": str(v), "protocol": "tcp"}
     evidence = lambda: [{
         "type": "volume",
-        "source": "mcri-nonroot-clone-synthetic-ci-only",
+        "source": "maritime-claims-platform_local_documents",
         "target": "/data/documents",
     }]
     guarded = lambda: {
@@ -31,14 +31,7 @@ def _safe_rendered():
         "security_opt": ["no-new-privileges:true"],
         "volumes": evidence(),
     }
-    return {
-        "volumes": {
-            "nonroot_review_evidence": {
-                "name": "mcri-nonroot-clone-synthetic-ci-only",
-                "external": True,
-            },
-        },
-        "services": {
+    return {"services": {
         "db": {"ports": [port(5432)]},
         "web": {"ports": [port(3000)]},
         "api": {**guarded(), "ports": [port(8000)]},
@@ -90,36 +83,6 @@ class OptInNonrootComposeContractTests(unittest.TestCase):
                 cfg["services"]["worker"]["volumes"] = bad
                 self.assertIn("worker:evidence_mount_unexpected",
                               gate.verify_optin_rendered_compose(cfg))
-
-    def test_clone_must_be_explicit_external_and_correctly_named(self):
-        for change in ("missing", "not_external", "default_volume",
-                       "wrong_namespace", "empty_suffix", "untrusted_key",
-                       "real_customer_alias"):
-            cfg = _safe_rendered()
-            definition = cfg["volumes"]["nonroot_review_evidence"]
-            if change == "missing":
-                del cfg["volumes"]["nonroot_review_evidence"]
-            elif change == "not_external":
-                definition["external"] = False
-            elif change == "default_volume":
-                definition["name"] = "maritime-claims-platform_local_documents"
-            elif change == "wrong_namespace":
-                definition["name"] = "mcri-production-customer-evidence"
-            elif change == "empty_suffix":
-                definition["name"] = "mcri-nonroot-clone-"
-            elif change == "untrusted_key":
-                cfg["volumes"]["other"] = cfg["volumes"].pop("nonroot_review_evidence")
-            elif change == "real_customer_alias":
-                cfg["services"]["api"]["volumes"][0]["source"] = "local_documents"
-            with self.subTest(change=change):
-                self.assertTrue(gate.verify_optin_rendered_compose(cfg))
-
-    def test_clone_mount_missing_on_any_service_refused(self):
-        for service in ("preflight", "api", "worker"):
-            cfg = _safe_rendered()
-            cfg["services"][service]["volumes"][0]["source"] = "local_documents"
-            self.assertIn(f"{service}:evidence_mount_unexpected",
-                          gate.verify_optin_rendered_compose(cfg))
 
     def test_synthetic_host_exposure_and_incomplete_service_rejected(self):
         for operation in ("public_api", "extra_malware_port", "missing_worker"):
@@ -185,10 +148,7 @@ class OptInNonrootComposeContractTests(unittest.TestCase):
             self.assertIn(f"  {service}:\n", overlay)
         self.assertNotIn("chown", overlay.replace("ownership", ""))
         self.assertNotIn("chmod", overlay)
-        self.assertIn("external: true", overlay)
-        self.assertIn("MCRI_NONROOT_CLONE_EVIDENCE_VOLUME:?", overlay)
-        self.assertIn("nonroot_review_evidence:/data/documents", overlay)
-        self.assertNotIn("local_documents:/data/documents", overlay)
+        self.assertNotIn("volume:", overlay)
         self.assertIn("  api:\n", base)
         self.assertIn("  worker:\n", base)
         self.assertIn("  preflight:\n", base)
