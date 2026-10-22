@@ -75,5 +75,8 @@ jobs:
       - name: Validate rendered private Pilot Compose host-port policy
         run: python scripts/pilot_compose_port_policy.py --env-file .env.pilot.example
 
-      - name: Validate opt-in non-root Evidence runtime Compose policy (render only)
+      - name: Validate isolated-clone-only non-root Compose policy (render only)
+        env:
+          # Only an uncreated example string; rendering does not start Docker.
+          MCRI_NONROOT_CLONE_EVIDENCE_VOLUME: mcri-nonroot-clone-synthetic-ci-only
         run: python scripts/pilot_nonroot_compose_gate.py --verify-optin-nonroot-config --env-file .env.pilot.example
