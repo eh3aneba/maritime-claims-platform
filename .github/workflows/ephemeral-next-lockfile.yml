@@ -1,0 +1,55 @@
+name: Ephemeral npm lockfile generator (remove before merge)
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize]
+    paths:
+      - apps/web/package.json
+      - .github/workflows/ephemeral-next-lockfile.yml
+
+permissions:
+  contents: read
+
+jobs:
+  generate-lock:
+    name: Generate Next.js 16.4.1 lockfile via npm registry
+    # Temporary, same-repository draft-PR tool only. No write token/secrets.
+    if: github.event.pull_request.draft == true && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+      - name: Regenerate signed-integrity npm lock metadata (no install scripts)
+        working-directory: apps/web
+        run: |
+          set -euo pipefail
+          npm install --package-lock-only --ignore-scripts --no-audit --no-fund --strict-peer-deps
+      - name: Validate registry-generated dependency tree and export lock bytes
+        working-directory: apps/web
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64
+          import json
+          import subprocess
+          lock_bytes = Path("package-lock.json").read_bytes()
+          lock = json.loads(lock_bytes)
+          assert lock["packages"][""]["dependencies"]["next"] == "16.4.1"
+          assert lock["packages"]["node_modules/next"]["version"] == "16.4.1"
+          assert lock["lockfileVersion"] == 3
+          assert len(lock_bytes) < 250000
+          print("LOCKFILE_GIT_SHA1=" + subprocess.check_output(
+              ["git", "hash-object", "package-lock.json"], text=True
+          ).strip())
+          print("LOCKFILE_SIZE=" + str(len(lock_bytes)))
+          print("LOCKFILE_B64_BEGIN")
+          b64 = base64.b64encode(lock_bytes).decode("ascii")
+          for offset in range(0, len(b64), 100):
+              print("LOCKFILE_B64_" + b64[offset:offset + 100])
+          print("LOCKFILE_B64_END")
+          PY
