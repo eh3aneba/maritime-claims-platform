@@ -8,6 +8,7 @@ from scripts.ci_postgres_synthetic_test_scope import is_db_free_synthetic_test
 AUDITED = frozenset((
     "apps/api/tests/test_local_ai_hm_loopback_smoke.py",
     "apps/api/tests/test_local_ai_hm_fixture_matrix.py",
+    "apps/api/tests/test_local_ai_hm_repeat_smoke.py",
 ))
 PG_ONLY = frozenset((
     "apps/api/tests/test_external_document_source_recurring_observation_schedule_concurrency_postgres.py",

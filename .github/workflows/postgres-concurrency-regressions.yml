@@ -27,6 +27,9 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Test PostgreSQL scope AST guard
+        run: python -m unittest scripts.tests.test_ci_postgres_synthetic_test_scope -v
+
       - name: Classify exact-head PostgreSQL concurrency scope
         id: scope
         shell: bash
@@ -118,7 +121,7 @@ jobs:
                 postgres_required=true
                 add_group admission-execution
                 ;;
-              apps/api/tests/test_local_ai_hm_loopback_smoke.py|apps/api/tests/test_local_ai_hm_fixture_matrix.py)
+              apps/api/tests/test_local_ai_hm_loopback_smoke.py|apps/api/tests/test_local_ai_hm_fixture_matrix.py|apps/api/tests/test_local_ai_hm_repeat_smoke.py)
                 # Exact code-owned synthetic-only test modules. If a new
                 # dependency or DB-affecting call appears, require every
                 # PostgreSQL group rather than trusting a path exception.

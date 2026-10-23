@@ -25,6 +25,12 @@ _ALLOWED_IMPORTS = {
         "scripts.pilot_local_ai_source_gate",
         "scripts.pilot_local_ai_hm_fixture_matrix",
     }),
+    "apps/api/tests/test_local_ai_hm_repeat_smoke.py": frozenset({
+        "json", "pathlib", "sys", "pytest",
+        "app.ai.gateway.base",
+        "scripts.pilot_local_ai_hm_fixture_matrix",
+        "scripts.pilot_local_ai_hm_repeat_smoke",
+    }),
 }
 _FORBIDDEN_NAMES = frozenset({
     "DATABASE_URL", "TestingSessionLocal", "SessionLocal",

@@ -9,11 +9,12 @@ from scripts import ci_postgres_synthetic_test_scope as guard
 REPO = Path(__file__).resolve().parents[2]
 LOOPBACK = "apps/api/tests/test_local_ai_hm_loopback_smoke.py"
 MATRIX = "apps/api/tests/test_local_ai_hm_fixture_matrix.py"
+REPEAT = "apps/api/tests/test_local_ai_hm_repeat_smoke.py"
 
 
 class OfflineAISyntheticPostgresScopeTests(unittest.TestCase):
     def test_current_code_owned_tests_are_allowed(self):
-        for name in (LOOPBACK, MATRIX):
+        for name in (LOOPBACK, MATRIX, REPEAT):
             with self.subTest(name=name):
                 self.assertTrue(guard.is_db_free_synthetic_test(name))
                 self.assertEqual(guard.main([name]), 0)
@@ -25,6 +26,7 @@ class OfflineAISyntheticPostgresScopeTests(unittest.TestCase):
             "apps/api/app/ai/gateway/ollama_local.py",
             "scripts/ci_postgres_synthetic_test_scope.py",
             LOOPBACK + "/child", LOOPBACK.upper(),
+            REPEAT + "/child", REPEAT.upper(),
         ):
             with self.subTest(name=name):
                 self.assertFalse(guard.is_db_free_synthetic_test(name))
@@ -58,6 +60,24 @@ class OfflineAISyntheticPostgresScopeTests(unittest.TestCase):
             with patch.object(guard, "_ROOT", Path(root)):
                 self.assertFalse(guard.is_db_free_synthetic_test(LOOPBACK))
 
+    def test_repeat_smoke_import_drift_is_refused(self):
+        with tempfile.TemporaryDirectory() as root:
+            target = Path(root) / REPEAT
+            target.parent.mkdir(parents=True)
+            target.write_text(
+                "import pytest\nfrom app.ai.gateway.base import AIResponse\n"
+                "import scripts.pilot_local_ai_hm_repeat_smoke as repeat\n",
+                encoding="utf-8",
+            )
+            with patch.object(guard, "_ROOT", Path(root)):
+                self.assertTrue(guard.is_db_free_synthetic_test(REPEAT))
+            target.write_text(
+                "import sqlalchemy\nfrom app.db import get_db\n",
+                encoding="utf-8",
+            )
+            with patch.object(guard, "_ROOT", Path(root)):
+                self.assertFalse(guard.is_db_free_synthetic_test(REPEAT))
+
     def test_audited_imports_not_implicitly_any_test(self):
         with tempfile.TemporaryDirectory() as root:
             target = Path(root) / MATRIX
@@ -75,7 +95,8 @@ class OfflineAISyntheticPostgresScopeTests(unittest.TestCase):
         )
         self.assertIn(
             "apps/api/tests/test_local_ai_hm_loopback_smoke.py|"
-            "apps/api/tests/test_local_ai_hm_fixture_matrix.py)",
+            "apps/api/tests/test_local_ai_hm_fixture_matrix.py|"
+            "apps/api/tests/test_local_ai_hm_repeat_smoke.py)",
             workflow,
         )
         self.assertIn(

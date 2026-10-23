@@ -172,12 +172,12 @@ jobs:
         run: |
           set -euo pipefail
           read -r -a selected_tests <<< "$NARROW_TESTS"
-          if (( ${#selected_tests[@]} < 1 || ${#selected_tests[@]} > 2 )); then
+          if (( ${#selected_tests[@]} < 1 || ${#selected_tests[@]} > 3 )); then
             echo "Invalid synthetic test selection" >&2; exit 1
           fi
           for test_module in "${selected_tests[@]}"; do
             case "$test_module" in
-              tests/test_local_ai_hm_loopback_smoke.py|tests/test_local_ai_hm_fixture_matrix.py) ;;
+              tests/test_local_ai_hm_loopback_smoke.py|tests/test_local_ai_hm_fixture_matrix.py|tests/test_local_ai_hm_repeat_smoke.py) ;;
               *) echo "Unknown test module" >&2; exit 1 ;;
             esac
           done
