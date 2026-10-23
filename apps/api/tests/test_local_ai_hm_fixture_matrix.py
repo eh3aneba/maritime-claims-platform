@@ -119,6 +119,27 @@ def test_input_unchanged_and_source_lineage_reclassification_rejected():
         evaluate_synthetic_scenario(scenario, candidate)
 
 
+
+@pytest.mark.parametrize("scenario", (
+    "complete_records", "missing_engine_records", "conflicting_alarm_times",
+))
+def test_unknown_source_id_is_rejected_in_all_synthetic_hm_scenarios(scenario):
+    candidate = deterministic_reference_candidate(scenario)
+    candidate["items"][0]["source_id"] = "S99"
+    with pytest.raises(LocalAISourceGateError, match="^unknown_source$"):
+        evaluate_synthetic_scenario(scenario, candidate)
+
+
+@pytest.mark.parametrize("scenario", (
+    "complete_records", "missing_engine_records", "conflicting_alarm_times",
+))
+def test_duplicate_quote_is_rejected_in_all_synthetic_hm_scenarios(scenario):
+    candidate = deterministic_reference_candidate(scenario)
+    candidate["items"].append(deepcopy(candidate["items"][0]))
+    with pytest.raises(LocalAISourceGateError, match="^duplicate_quote$"):
+        evaluate_synthetic_scenario(scenario, candidate)
+
+
 def test_extra_claim_decision_is_not_accepted():
     candidate = deterministic_reference_candidate("complete_records")
     candidate["coverage"] = "approved"
