@@ -27,6 +27,9 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Test PostgreSQL scope AST guard
+        run: python -m unittest scripts.tests.test_ci_postgres_synthetic_test_scope -v
+
       - name: Classify exact-head PostgreSQL concurrency scope
         id: scope
         shell: bash
