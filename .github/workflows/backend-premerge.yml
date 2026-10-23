@@ -32,6 +32,9 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Test fail-closed stable shard assignment
+        run: python -m unittest scripts.tests.test_backend_shard_selector -v
+
       - name: Classify exact-head change scope
         id: scope
         shell: bash
@@ -143,17 +146,13 @@ jobs:
       - name: Run backend test shard
         shell: bash
         run: |
-          mapfile -t test_nodes < <(
-            pytest --collect-only -q tests |
-              grep -E '^tests/.*::' |
-              sort
-          )
-          shard_nodes=()
-          for index in "${!test_nodes[@]}"; do
-            if (( index % 64 == ${{ matrix.shard }} )); then
-              shard_nodes+=("${test_nodes[$index]}")
-            fi
-          done
+          set -euo pipefail
+          selected_nodes_file="$(mktemp)"
+          trap 'rm -f "$selected_nodes_file"' EXIT
+          # Capture selector exit status directly (no process-substitution
+          # masking of failed collection); NUL delimiters preserve node IDs.
+          python ../../scripts/backend_shard_selector.py --shard "${{ matrix.shard }}" --shards 64 > "$selected_nodes_file"
+          mapfile -d '' -t shard_nodes < "$selected_nodes_file"
           if (( ${#shard_nodes[@]} == 0 )); then
             echo "No backend test nodes selected for shard ${{ matrix.shard }}" >&2
             exit 1
