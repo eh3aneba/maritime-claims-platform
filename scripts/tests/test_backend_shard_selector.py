@@ -62,10 +62,10 @@ class BackendShardSelectorTests(unittest.TestCase):
         self.assertIn('python ../../scripts/backend_shard_selector.py --shard', workflow)
         self.assertIn("mapfile -d '' -t shard_nodes", workflow)
         self.assertNotIn('index % 64', workflow)
-        self.assertIn('if [ "$SHARD_RESULT" != "success" ]; then', workflow)
+        self.assertIn('[ "$SHARD_RESULT" = "success" ] ||', workflow)
         self.assertIn('name: Backend tests', workflow)
         self.assertIn('shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10', workflow)
-        self.assertIn('python -m unittest scripts.tests.test_backend_shard_selector -v', workflow)
+        self.assertIn('python -m unittest scripts.tests.test_backend_shard_selector scripts.tests.test_ci_backend_narrow_scope -v', workflow)
 
 
 if __name__ == "__main__":
