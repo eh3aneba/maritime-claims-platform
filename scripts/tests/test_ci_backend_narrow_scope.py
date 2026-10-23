@@ -11,24 +11,26 @@ from scripts import ci_backend_narrow_scope as scope
 ROOT = Path(__file__).resolve().parents[2]
 A = "apps/api/tests/test_local_ai_hm_loopback_smoke.py"
 B = "apps/api/tests/test_local_ai_hm_fixture_matrix.py"
+C = "apps/api/tests/test_local_ai_hm_repeat_smoke.py"
 PG = "apps/api/tests/test_payment_settlement_concurrency_postgres.py"
 
 
 class NarrowBackendCIRegressionTests(unittest.TestCase):
-    def test_exact_two_audited_modules_only(self):
-        for p in (A, B):
+    def test_exact_three_audited_modules_only(self):
+        for p in (A, B, C):
             with self.subTest(p=p):
                 self.assertTrue(scope.is_db_free_synthetic_test(p))
                 self.assertEqual(scope.classify([("M", p)]),
                                  ("narrow", ("tests/" + p.rsplit("/", 1)[1],)))
-        mode, paths = scope.classify([("M", A), ("M", B)])
+        mode, paths = scope.classify([("M", A), ("M", B), ("M", C)])
         self.assertEqual(mode, "narrow")
         self.assertEqual(set(paths), {"tests/test_local_ai_hm_loopback_smoke.py",
-                                    "tests/test_local_ai_hm_fixture_matrix.py"})
+                                    "tests/test_local_ai_hm_fixture_matrix.py",
+                                    "tests/test_local_ai_hm_repeat_smoke.py"})
 
     def test_unknown_and_mixed_changes_never_use_narrow(self):
         examples = (
-            [("D", A)], [("A", A)], [("M", A), ("M", PG)],
+            [("D", A)], [("A", A)], [("D", C)], [("A", C)], [("M", A), ("M", PG)],
             [("M", A), ("M", "docs/readme.md")],
             [("M", A), ("M", "scripts/tool.py")],
             [("M", "apps/api/app/core/preflight.py")],
@@ -80,6 +82,7 @@ class NarrowBackendCIRegressionTests(unittest.TestCase):
             "pytest --collect-only -q tests", "backend_required=true",
             "narrow_required=false", "python -m scripts.ci_backend_narrow_scope",
             "All 64 Backend shards passed.", "shard: [0, 1, 2, 3, 4, 5",
+            "tests/test_local_ai_hm_repeat_smoke.py",
         ):
             self.assertIn(marker, wf)
 

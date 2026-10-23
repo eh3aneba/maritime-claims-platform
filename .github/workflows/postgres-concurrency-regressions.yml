@@ -118,7 +118,7 @@ jobs:
                 postgres_required=true
                 add_group admission-execution
                 ;;
-              apps/api/tests/test_local_ai_hm_loopback_smoke.py|apps/api/tests/test_local_ai_hm_fixture_matrix.py)
+              apps/api/tests/test_local_ai_hm_loopback_smoke.py|apps/api/tests/test_local_ai_hm_fixture_matrix.py|apps/api/tests/test_local_ai_hm_repeat_smoke.py)
                 # Exact code-owned synthetic-only test modules. If a new
                 # dependency or DB-affecting call appears, require every
                 # PostgreSQL group rather than trusting a path exception.
