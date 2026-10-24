@@ -34,6 +34,9 @@ class LocalAIRepeatSmokePolicy(unittest.TestCase):
             '"model_digest_attested": False',
             '"model_execution_independently_attested": False',
             '"repeatability_proven": False',
+            '"context_preservation_expert_verified": False',
+            '"context_pairs_missing_total"',
+            '"context_not_evaluated_rounds"',
             '"expert_ground_truth_approved": False',
             '"human_review_completed": False',
             '"pilot_accepted": False',
@@ -53,6 +56,8 @@ class LocalAIRepeatSmokePolicy(unittest.TestCase):
         for required in (
             "test_exact_nine_calls_and_bounded_success_metrics_without_prose",
             "test_partial_and_hallucinated_rounds_never_report_full_acceptance",
+            "test_quote_gate_success_can_coexist_with_context_diagnostic_warning",
+            "test_malformed_context_counters_fail_closed",
             "test_disconnected_localhost_is_safe_and_not_counted_as_success",
             "test_explicit_opt_in_required_before_constructing_provider",
             "test_unexpected_provider_error_never_leaks_data",
