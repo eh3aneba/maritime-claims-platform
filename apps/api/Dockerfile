@@ -51,7 +51,10 @@ RUN /sbin/apk add --no-cache \
         zlib-dev
 
 # libtiff 4.7.2: includes the upstream fixes for CVE-2023-52356 and CVE-2026-4775.
-RUN python -c "import hashlib,urllib.request; u='https://download.osgeo.org/libtiff/tiff-4.7.2.tar.gz'; d=urllib.request.urlopen(u,timeout=120).read(); h=hashlib.sha512(d).hexdigest(); assert h=='bad66954a7e7e158c6dcbfc0e2d0032b8f3e2a354b6d0fdbb8038a7963e36c5b8a433dd4ee81c6c4dabfb50094152d440aa1f32b5299098c9ae29e55de2e41fc',h; open('/tmp/tiff.tar.gz','wb').write(d)" \
+# Retry transport timeouts up to three times; the fixed SHA-512 remains
+# mandatory and checksum mismatch fails immediately before any unpacking.
+COPY build_tools/fetch_pinned_libtiff.py /tmp/fetch_pinned_libtiff.py
+RUN python /tmp/fetch_pinned_libtiff.py \
     && mkdir /src/tiff \
     && tar -xzf /tmp/tiff.tar.gz -C /src/tiff --strip-components=1 \
     && cmake -S /src/tiff -B /src/tiff/build -G Ninja \
