@@ -38,6 +38,8 @@ class LocalAISyntheticLoopbackSmokePolicy(unittest.TestCase):
             "observe_required_literal_quote_coverage(scenario, candidate)",
             '"source_quotes_incomplete_for_review"',
             '"critical_literal_coverage_observed"',
+            '"context_pairs_same_excerpt_missing"',
+            '"context_preservation_expert_verified": False',
             '"unclassified_rejection"',
         ):
             self.assertIn(required, s)

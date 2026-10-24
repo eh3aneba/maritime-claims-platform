@@ -116,6 +116,10 @@ def run_fixed_three_scenario_smoke(provider: AIProvider) -> dict[str, Any]:
                 "critical_literal_requirements_observed": report["critical_literal_requirements_observed"],
                 "critical_literal_requirements_missing": report["critical_literal_requirements_missing"],
                 "critical_literal_coverage_observed": critical_coverage,
+                "context_pairs_total": report["context_pairs_total"],
+                "context_pairs_same_excerpt_observed": report["context_pairs_same_excerpt_observed"],
+                "context_pairs_same_excerpt_missing": report["context_pairs_same_excerpt_missing"],
+                "context_preservation_expert_verified": False,
             }
         except (AIProviderUnavailable, LocalAISourceGateError) as error:
             # Never return the dynamic exception message, model text or source.

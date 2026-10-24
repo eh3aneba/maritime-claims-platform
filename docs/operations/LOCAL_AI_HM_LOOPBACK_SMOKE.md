@@ -62,6 +62,22 @@ ground truth** and do not certify causal correctness, legal coverage,
 completeness of a real Evidence file, or a model deployment decision.
 No missing phrase text is printed.
 
+**Additional qualifier-context observation (not a new acceptance gate):**
+the synthetic observer now reports `context_pairs_total`,
+`context_pairs_same_excerpt_observed`, and
+`context_pairs_same_excerpt_missing`. These count fixed pairs of
+record-specific facts and caveats that must appear in **one validated
+excerpt**, such as the missing-log submission status and the fact that
+document existence is unknown, or an alarm time and its attributed
+reporter. Merely putting two separate quoted fragments from the same
+source in an output cannot count as preserving their relationship.
+The counters contain no source phrases or model prose. Their values do
+**not** change `all_accepted_for_human_review` or the exit status:
+a missing pair is a **reason for expert review**, not proof of an
+incorrect model conclusion. The output always says
+`context_preservation_expert_verified=false`; professional
+semantic review, grounding and document sufficiency remain unverified.
+
 Any unsupported/hallucinated quote is rejected without exposing prose;
 the runner continues to the next invented scenario and returns a
 nonzero exit if any scenario was rejected. Actual model performance,
