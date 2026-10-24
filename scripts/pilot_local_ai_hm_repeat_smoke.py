@@ -32,6 +32,10 @@ def run_three_fixed_rounds(provider: AIProvider) -> dict[str, Any]:
             "accepted_rounds": 0,
             "incomplete_rounds": 0,
             "rejected_rounds": 0,
+            "context_complete_rounds": 0,
+            "context_incomplete_rounds": 0,
+            "context_not_evaluated_rounds": 0,
+            "context_pairs_missing_total": 0,
             "min_elapsed_ms_observed": None,
             "max_elapsed_ms_observed": None,
         } for name in names
@@ -62,6 +66,33 @@ def run_three_fixed_rounds(provider: AIProvider) -> dict[str, Any]:
                 _REJECTED: "rejected_rounds",
             }[status]
             summary[key] += 1
+            if status == _REJECTED:
+                # No valid candidate: never miscount absent metrics as failure
+                # to preserve context, or as evidence the context was intact.
+                if any(key in row for key in (
+                    "context_pairs_total", "context_pairs_same_excerpt_observed",
+                    "context_pairs_same_excerpt_missing",
+                    "context_preservation_expert_verified",
+                )):
+                    raise ValueError("invalid_synthetic_context_observation")
+                summary["context_not_evaluated_rounds"] += 1
+            else:
+                total = row.get("context_pairs_total")
+                observed = row.get("context_pairs_same_excerpt_observed")
+                missing = row.get("context_pairs_same_excerpt_missing")
+                if (
+                    type(total) is not int or total != 3
+                    or type(observed) is not int or not 0 <= observed <= total
+                    or type(missing) is not int or not 0 <= missing <= total
+                    or observed + missing != total
+                    or row.get("context_preservation_expert_verified") is not False
+                ):
+                    raise ValueError("invalid_synthetic_context_observation")
+                summary[
+                    "context_complete_rounds" if missing == 0
+                    else "context_incomplete_rounds"
+                ] += 1
+                summary["context_pairs_missing_total"] += missing
             minimum = summary["min_elapsed_ms_observed"]
             maximum = summary["max_elapsed_ms_observed"]
             summary["min_elapsed_ms_observed"] = elapsed if minimum is None else min(minimum, elapsed)
@@ -77,6 +108,7 @@ def run_three_fixed_rounds(provider: AIProvider) -> dict[str, Any]:
         "model_execution_independently_attested": False,
         "repeatability_proven": False,
         "expert_ground_truth_approved": False,
+        "context_preservation_expert_verified": False,
         "human_review_completed": False,
         "production_authorized": False,
         "pilot_accepted": False,

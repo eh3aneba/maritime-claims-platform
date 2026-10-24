@@ -40,9 +40,10 @@ def observed(digest=FIRST, **changes):
 class FakeProvider:
     name = "ollama_local"
 
-    def __init__(self, *, drop_conflict_at=-1):
+    def __init__(self, *, drop_conflict_at=-1, split_context_at=-1):
         self.calls = []
         self.drop_conflict_at = drop_conflict_at
+        self.split_context_at = split_context_at
 
     def generate(self, request):
         assert request.task == "synthetic_hm_source_quote_review"
@@ -51,6 +52,13 @@ class FakeProvider:
         self.calls.append(request)
         name = scenario_names()[index % 3]
         quotes = deterministic_reference_candidate(name)["items"]
+        if index == self.split_context_at and name == "missing_engine_records":
+            quotes = quotes[:2] + [
+                {"kind": "intake_status", "source_id": "S3",
+                 "source_version": "v1", "verbatim_excerpt": "NOT BEEN SUPPLIED"},
+                {"kind": "intake_status", "source_id": "S3",
+                 "source_version": "v1", "verbatim_excerpt": "existence is unknown"},
+            ]
         if index == self.drop_conflict_at:
             quotes = [item for item in quotes if item["source_id"] != "S2"]
         return AIResponse(
@@ -73,6 +81,8 @@ def test_exact_preflight_nine_requests_postflight_order():
     assert result["local_tag_digest_same_before_after"] is True
     assert result["guarded_observation_accepted_for_human_review"] is True
     assert all(x["accepted_rounds"] == 3 for x in result["scenarios"])
+    assert all(x["context_complete_rounds"] == 3 for x in result["scenarios"])
+    assert all(x["context_pairs_missing_total"] == 0 for x in result["scenarios"])
     for flag in (
         "model_digest_attested", "model_execution_independently_attested",
         "model_artifact_independently_attested", "network_egress_isolation_verified",
@@ -83,6 +93,39 @@ def test_exact_preflight_nine_requests_postflight_order():
     output = json.dumps(result)
     for secret in (FIRST, "Turbocharger damage", "NOT BEEN SUPPLIED", "11:55"):
         assert secret not in output
+
+
+def test_digest_guard_sanitizes_non_gate_context_warning():
+    provider = FakeProvider(split_context_at=4)
+    result = guarded.run_fixed_digest_guarded_smoke(provider, lambda: observed())
+    assert len(provider.calls) == 9
+    assert result["local_tag_digest_same_before_after"] is True
+    assert result["all_rounds_source_quotes_accepted_for_review"] is True
+    assert result["guarded_observation_accepted_for_human_review"] is True
+    assert result["scenarios"][1]["context_complete_rounds"] == 2
+    assert result["scenarios"][1]["context_incomplete_rounds"] == 1
+    assert result["scenarios"][1]["context_pairs_missing_total"] == 1
+    assert result["context_preservation_expert_verified"] is False
+    assert "NOT BEEN SUPPLIED" not in json.dumps(result)
+
+
+@pytest.mark.parametrize("field,bad", (
+    ("context_complete_rounds", -1),
+    ("context_not_evaluated_rounds", True),
+    ("context_pairs_missing_total", 10),
+    ("context_incomplete_rounds", "1"),
+))
+def test_digest_guard_refuses_invalid_context_summary(monkeypatch, field, bad):
+    real = guarded.run_three_fixed_rounds
+
+    def malformed(provider):
+        data = real(provider)
+        data["scenarios"][0][field] = bad
+        return data
+
+    monkeypatch.setattr(guarded, "run_three_fixed_rounds", malformed)
+    with pytest.raises(ValueError, match="^invalid_local_repeat_report$"):
+        guarded.run_fixed_digest_guarded_smoke(FakeProvider(), lambda: observed())
 
 
 def test_digest_changed_after_nine_requests_denies_guarded_success():
