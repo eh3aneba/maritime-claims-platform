@@ -128,6 +128,69 @@ def test_digest_guard_refuses_invalid_context_summary(monkeypatch, field, bad):
         guarded.run_fixed_digest_guarded_smoke(FakeProvider(), lambda: observed())
 
 
+@pytest.mark.parametrize("incomplete,missing", (
+    (0, 1), (1, 4), (2, 1), (2, 7), (3, 2),
+))
+def test_digest_guard_rejects_impossible_aggregated_context_pairs(
+    monkeypatch, incomplete, missing,
+):
+    original = guarded.run_three_fixed_rounds
+
+    def corrupted(provider):
+        record = original(provider)
+        row = record["scenarios"][0]
+        row["context_complete_rounds"] = 3 - incomplete
+        row["context_incomplete_rounds"] = incomplete
+        row["context_pairs_missing_total"] = missing
+        return record
+
+    monkeypatch.setattr(guarded, "run_three_fixed_rounds", corrupted)
+    with pytest.raises(ValueError, match="^invalid_local_repeat_report$"):
+        guarded.run_fixed_digest_guarded_smoke(FakeProvider(), lambda: observed())
+
+
+@pytest.mark.parametrize("incomplete,missing", ((0, 0), (1, 1), (1, 3), (2, 2), (2, 6), (3, 9)))
+def test_digest_guard_accepts_consistent_bounded_context_counts(
+    monkeypatch, incomplete, missing,
+):
+    original = guarded.run_three_fixed_rounds
+
+    def consistent(provider):
+        record = original(provider)
+        row = record["scenarios"][0]
+        row["context_complete_rounds"] = 3 - incomplete
+        row["context_incomplete_rounds"] = incomplete
+        row["context_pairs_missing_total"] = missing
+        return record
+
+    monkeypatch.setattr(guarded, "run_three_fixed_rounds", consistent)
+    result = guarded.run_fixed_digest_guarded_smoke(FakeProvider(), lambda: observed())
+    row = result["scenarios"][0]
+    assert row["context_incomplete_rounds"] == incomplete
+    assert row["context_pairs_missing_total"] == missing
+    assert result["context_preservation_expert_verified"] is False
+    assert result["pilot_accepted"] is False
+
+
+@pytest.mark.parametrize("flag", (
+    "context_preservation_expert_verified", "repeatability_proven",
+    "model_execution_independently_attested", "human_review_completed",
+))
+def test_digest_guard_refuses_unearned_approvals_in_repeat_summary(
+    monkeypatch, flag,
+):
+    original = guarded.run_three_fixed_rounds
+
+    def tampered(provider):
+        record = original(provider)
+        record[flag] = True
+        return record
+
+    monkeypatch.setattr(guarded, "run_three_fixed_rounds", tampered)
+    with pytest.raises(ValueError, match="^invalid_local_repeat_report$"):
+        guarded.run_fixed_digest_guarded_smoke(FakeProvider(), lambda: observed())
+
+
 def test_digest_changed_after_nine_requests_denies_guarded_success():
     provider = FakeProvider()
     values = iter((observed(FIRST), observed(SECOND)))
