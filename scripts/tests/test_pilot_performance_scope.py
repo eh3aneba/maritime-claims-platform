@@ -100,6 +100,84 @@ class PerformanceScopeTests(unittest.TestCase):
             self.assertEqual(path.read_text(),
                              "performance_required=false\nperformance_required=true\n")
 
+    def test_exact_audited_hm_cohort_is_bounded_independently(self):
+        allowed = scope.AUDITED_HM_PERFORMANCE_TESTS
+        self.assertEqual(len(allowed), 3)
+        with patch.object(scope, "audited_browser_skip", return_value=True) as guard:
+            for path in sorted(allowed):
+                with self.subTest(path=path):
+                    self.assertTrue(scope.audited_hm_only(BASE, HEAD, [path]))
+            self.assertTrue(scope.audited_hm_only(BASE, HEAD, sorted(allowed)))
+        self.assertEqual(guard.call_count, 4)
+
+    def test_all_mixed_unknown_workflow_dependencies_and_bad_sha_fail_closed(self):
+        path = sorted(scope.AUDITED_HM_PERFORMANCE_TESTS)[0]
+        cases = [
+            [], [path, path], [path, "docs/README.md"],
+            [path, "apps/api/app/main.py"],
+            [path, "apps/api/requirements.lock"],
+            [path, "apps/api/Dockerfile"],
+            [path, "apps/api/tests/conftest.py"],
+            [path, ".github/workflows/performance-smoke.yml"],
+            [path, ".github/workflows/ci.yml"],
+            [path, "scripts/pilot_performance_scope.py"],
+            [path, "scripts/ci_browser_offline_hm_scope.py"],
+            [path, "scripts/ci_postgres_synthetic_test_scope.py"],
+            [path, "apps/api/tests/test_other_unreviewed.py"],
+        ]
+        with patch.object(scope, "audited_browser_skip", return_value=True) as guard:
+            for changed in cases:
+                with self.subTest(changed=changed):
+                    self.assertFalse(scope.audited_hm_only(BASE, HEAD, changed))
+            for before, after in ((BASE, BASE), ("bad", HEAD), (BASE, "z" * 40)):
+                self.assertFalse(scope.audited_hm_only(before, after, [path]))
+        guard.assert_not_called()
+
+    def test_ast_failure_or_git_status_rejection_retains_full_performance(self):
+        path = sorted(scope.AUDITED_HM_PERFORMANCE_TESTS)[0]
+        with patch.object(scope, "audited_browser_skip", return_value=False) as guard:
+            self.assertFalse(scope.audited_hm_only(BASE, HEAD, [path]))
+        guard.assert_called_once_with(BASE, HEAD)
+
+    def test_cli_audited_hm_admission_and_rejected_mixed_diff(self):
+        path = sorted(scope.AUDITED_HM_PERFORMANCE_TESTS)[0]
+        with tempfile.TemporaryDirectory() as dir:
+            output = Path(dir) / "GITHUB_OUTPUT"
+            with patch.object(scope, "changed_files", return_value=[path]), \
+                 patch.object(scope, "audited_browser_skip", return_value=True), \
+                 contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(scope.main([
+                    "--base", BASE, "--head", HEAD, "--output", str(output)]), 0)
+            self.assertEqual(output.read_text(), "performance_required=false\n")
+            with patch.object(scope, "changed_files", return_value=[path]), \
+                 patch.object(scope, "audited_browser_skip", return_value=False), \
+                 contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(scope.main([
+                    "--base", BASE, "--head", HEAD, "--output", str(output)]), 0)
+            self.assertTrue(output.read_text().endswith("performance_required=true\n"))
+            with patch.object(scope, "changed_files",
+                              return_value=[path, "apps/api/app/main.py"]), \
+                 patch.object(scope, "audited_browser_skip", return_value=True) as guard, \
+                 contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(scope.main([
+                    "--base", BASE, "--head", HEAD, "--output", str(output)]), 0)
+            guard.assert_not_called()
+            self.assertTrue(output.read_text().endswith(
+                "performance_required=true\nperformance_required=true\n"))
+
+    def test_workflow_runs_guard_before_scope_and_preserves_protected_gate(self):
+        workflow = (Path(__file__).resolve().parents[2] /
+                    ".github/workflows/performance-smoke.yml").read_text()
+        guard_step = "python -m unittest scripts.tests.test_pilot_performance_scope -v"
+        classifier = "python scripts/pilot_performance_scope.py"
+        self.assertIn(guard_step, workflow)
+        self.assertIn(classifier, workflow)
+        self.assertLess(workflow.index(guard_step), workflow.index(classifier))
+        self.assertIn("name: Operational performance gate", workflow)
+        self.assertIn("PERFORMANCE_RESULT", workflow)
+        self.assertIn("CROSS_RUNNER_RESULT", workflow)
+        self.assertIn('if [ "$EVENT_NAME" = "workflow_dispatch" ]; then', workflow)
+
     def test_unwritable_output_does_not_pass_classifier(self):
         with tempfile.TemporaryDirectory() as dir:
             path = Path(dir) / "nonexistent" / "GITHUB_OUTPUT"
