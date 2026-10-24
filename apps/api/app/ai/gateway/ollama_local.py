@@ -21,6 +21,9 @@ _MAX_PREDICT = 512
 # Synthetic-only inference: allow cold GPU/model load above the observed 10s limit.
 # Fixed bound; no caller-supplied timeout or production-provider relaxation.
 _LOCAL_READ_TIMEOUT_SECONDS = 30
+# Fixed 60-second local model retention between bounded synthetic requests.
+# Runtime cannot override this value; customer/pilot jobs are rejected above.
+_LOCAL_KEEP_ALIVE = "1m"
 
 
 class OllamaLocalExperimentalProvider:
@@ -62,7 +65,7 @@ class OllamaLocalExperimentalProvider:
             "format": request.output_schema,
             "stream": False,
             "think": False,
-            "keep_alive": 0,
+            "keep_alive": _LOCAL_KEEP_ALIVE,
             "options": {
                 "num_ctx": 4096,
                 "num_predict": self._max_output_tokens,

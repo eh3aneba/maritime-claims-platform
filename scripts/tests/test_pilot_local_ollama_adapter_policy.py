@@ -20,6 +20,8 @@ class LocalOllamaDevelopmentBoundaryPolicy(unittest.TestCase):
             'request.metadata != {"synthetic_local_ai_test": True}',
             'type(request.metadata.get("synthetic_local_ai_test")) is not bool',
             '_LOCAL_READ_TIMEOUT_SECONDS = 30',
+            '_LOCAL_KEEP_ALIVE = "1m"',
+            '"keep_alive": _LOCAL_KEEP_ALIVE,',
             'http.client.HTTPConnection("127.0.0.1", 11434, timeout=_LOCAL_READ_TIMEOUT_SECONDS)',
             '"POST", "/api/generate"',
             '"think": False', '"stream": False',
@@ -53,6 +55,8 @@ class LocalOllamaDevelopmentBoundaryPolicy(unittest.TestCase):
         doc = DOC.read_text(encoding="utf-8")
         for fragment in (
             'test_only_fixed_loopback_and_structured_no_think_request',
+            'test_two_sequential_synthetic_requests_retain_fixed_local_model_only',
+            'assert body["keep_alive"] == "1m"',
             'test_real_claim_job_or_loose_synthetic_label_never_reaches_network',
             'test_transport_failure_hides_private_provider_errors',
             'test_timeout_after_request_fails_closed_and_closes_socket',
@@ -61,7 +65,7 @@ class LocalOllamaDevelopmentBoundaryPolicy(unittest.TestCase):
             'network.assert_not_called()',
         ):
             self.assertIn(fragment, source)
-        self.assertIn('not deployed, not tested against a real Ollama daemon', doc)
+        self.assertIn('not deployed or pilot-authorized', doc)
         self.assertIn('No real customer files', doc)
         self.assertIn('Pilot GO remains NO', doc)
 

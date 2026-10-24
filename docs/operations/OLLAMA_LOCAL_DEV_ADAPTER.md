@@ -1,7 +1,11 @@
 # Experimental local Ollama adapter — Issue #752
 
 **Status:** implemented **development-only**, mock-transport CI tested,
-**not deployed, not tested against a real Ollama daemon, not pilot-authorized**.
+**not deployed or pilot-authorized; mock-transport CI tested,** with
+operator-supplied real localhost **synthetic-only** timing observations.
+A short artificial 2-request timing probe measured 9,096ms reported load on
+its first request versus 8ms on the second with `keep_alive="1m"`. This is
+operator-provided data, not a verified H&M throughput benchmark.
 The primary source-of-truth for the roadmap remains R0/R5 and issue #752.
 
 ## Why this slice is deliberately narrow
@@ -27,7 +31,17 @@ localhost experiment (the prior 10-second bound rejected one measured
 remain capped. This does not promise a 30-second total execution deadline
 or an SLA, and timeout still rejects without leaking response/source text. Response model and JSON must match the strict contract.
 Raw server errors, exceptions, documents and response bytes never appear
-in error messages.
+in error messages. After a 30s bound alone did not yield stable review
+coverage (5/9 invented fixture attempts admitted), a subsequent trivial
+prompt probe suggested repeated model loading was expensive. The adapter
+now requests fixed `keep_alive="1m"` **only for the synthetic-only local
+model**, rather than unloading it immediately after every request.
+Ollama may keep approximately 1.7 GB model memory resident for up to
+one minute after a request (actual memory behavior is host-dependent).
+This change does **not** raise the 30s socket timeout, alter request/response
+or token budgets, claim semantic standards or acceptance criteria, or prove
+reliable performance on lengthy H&M fixtures. Runtime reuse and latency
+must be independently observed again on the operator PC.
 
 ### Activation contract
 
@@ -57,7 +71,8 @@ in error messages.
 ### CI scope
 
 `apps/api/tests/test_ollama_local_experimental.py` uses a fake
-`HTTPConnection`. It checks exact destination/body, successful
+`HTTPConnection`. It checks exact destination/body, including fixed 1m retention on
+sequential synthetic requests, successful
 structured output, old disabled default, environment and marker gates,
 wrong model, oversize, non-200 response, invalid JSON/shape, wrong model
 reply, socket errors, response limits and privacy-safe failure codes.
@@ -65,7 +80,9 @@ reply, socket errors, response limits and privacy-safe failure codes.
 `scripts/tests/test_pilot_local_ollama_adapter_policy.py` is also
 included in the stable **Production environment policy** CI step.
 
-**None of these tests starts a real Ollama daemon.** They cannot prove
+**CI tests do not start a real Ollama daemon.** The operator ran an earlier
+standalone localhost timing probe, but has not yet run a post-change H&M
+repeatability check. CI cannot prove
 GPU execution, source-semantic quality, independently verified model
 digest, throughput/latency, an approved isolated pilot host, actual
 network egress restrictions of the entire stack, or readiness for
