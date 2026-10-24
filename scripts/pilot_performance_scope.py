@@ -15,6 +15,12 @@ import re
 import subprocess
 import sys
 
+# Support the existing direct-script invocation from CI and operator shell:
+# import only trusted, repository-local audit code, never cwd-supplied modules.
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from scripts.ci_browser_offline_hm_scope import should_skip as audited_browser_skip
+
 SHA = re.compile(r"[a-f0-9]{40}\Z")
 OFFLINE_SCRIPTS = frozenset({
     "scripts/pilot_backend_execution_evidence.py",
@@ -31,6 +37,27 @@ OFFLINE_SCRIPTS = frozenset({
     "scripts/tests/test_pilot_rollback_rehearsal.py",
 })
 STATIC_TEXT_FILES = frozenset(("README.md", "CHANGELOG.md", "LICENSE"))
+
+# Independent, frozen cohort: a future extension of browser/backend skip
+# eligibility must NOT silently authorize bypassing live Performance validation.
+AUDITED_HM_PERFORMANCE_TESTS = frozenset({
+    "apps/api/tests/test_local_ai_hm_loopback_smoke.py",
+    "apps/api/tests/test_local_ai_hm_fixture_matrix.py",
+    "apps/api/tests/test_local_ai_hm_repeat_smoke.py",
+})
+
+
+def audited_hm_only(base: str, head: str, paths: list[str]) -> bool:
+    """Admit only exact modified AST-audited synthetic tests, never mixed changes."""
+    if (not paths or len(paths) > len(AUDITED_HM_PERFORMANCE_TESTS)
+            or len(set(paths)) != len(paths)
+            or any(path not in AUDITED_HM_PERFORMANCE_TESTS for path in paths)
+            or not SHA.fullmatch(base) or not SHA.fullmatch(head) or base == head):
+        return False
+    # Browser's independently verified name-status -z classifier rejects
+    # added/deleted/renamed/unknown entries and applies AST no-DB guard.
+    return audited_browser_skip(base, head)
+
 
 
 class ScopeError(ValueError):
@@ -83,6 +110,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         paths = changed_files(args.base, args.head)
         required = requires_live_stack(paths)
+        if required and audited_hm_only(args.base, args.head, paths):
+            required = False
     except ScopeError:
         # Deterministically require the real stack on ambiguous metadata,
         # including an unavailable Git diff, instead of a false cheap PASS.

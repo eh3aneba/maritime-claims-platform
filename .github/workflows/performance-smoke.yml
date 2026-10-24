@@ -26,6 +26,9 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Run fail-closed Performance scope regressions
+        run: python -m unittest scripts.tests.test_pilot_performance_scope -v
+
       - name: Classify exact-head performance scope
         id: scope
         shell: bash
