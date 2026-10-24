@@ -39,7 +39,11 @@ comparison boolean and fixed FALSE attestation/approval flags are
 printed. Each scenario now carries separate counts of rounds whose three
 fixed fact/qualifier pairs were complete or incomplete in the **same
 source-backed excerpt**, plus rounds not evaluated after rejection and
-the bounded missing-pair total. These are NON-GATING context diagnostics;
+the bounded missing-pair total. The summary fails closed if these counters
+are contradictory: each context-incomplete round must account for one
+to three missing fixed pairs, while a rejected round is not evaluated.
+Forged upstream expert/model-execution approval flags are also refused.
+These are NON-GATING context diagnostics;
 even with missing pairs, an otherwise valid quote/digest result retains
 its previous exit status. None is a professional interpretation. The
 `context_preservation_expert_verified=false` flag is fixed. **Neither digest value, source content, model response nor
