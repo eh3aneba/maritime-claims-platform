@@ -80,6 +80,24 @@ def run_fixed_digest_guarded_smoke(
             row[key] = count
         if sum(row[k] for k in ("accepted_rounds", "incomplete_rounds", "rejected_rounds")) != _ROUNDS:
             raise ValueError("invalid_local_repeat_report")
+        for key in (
+            "context_complete_rounds", "context_incomplete_rounds",
+            "context_not_evaluated_rounds", "context_pairs_missing_total",
+        ):
+            number = item.get(key)
+            if type(number) is not int or not 0 <= number <= (
+                _ROUNDS * _SCENARIOS if key == "context_pairs_missing_total" else _ROUNDS
+            ):
+                raise ValueError("invalid_local_repeat_report")
+            row[key] = number
+        if (
+            row["context_complete_rounds"] + row["context_incomplete_rounds"]
+            + row["context_not_evaluated_rounds"] != _ROUNDS
+            or row["context_not_evaluated_rounds"] != row["rejected_rounds"]
+            or (row["context_incomplete_rounds"] == 0) !=
+                (row["context_pairs_missing_total"] == 0)
+        ):
+            raise ValueError("invalid_local_repeat_report")
         safe_rows.append(row)
     after = _observed_unattested_digest(observe_inventory())
     unchanged = before == after
@@ -99,6 +117,7 @@ def run_fixed_digest_guarded_smoke(
         "network_egress_isolation_verified": False,
         "repeatability_proven": False,
         "expert_ground_truth_approved": False,
+        "context_preservation_expert_verified": False,
         "human_review_completed": False,
         "pilot_accepted": False,
         "scenarios": safe_rows,

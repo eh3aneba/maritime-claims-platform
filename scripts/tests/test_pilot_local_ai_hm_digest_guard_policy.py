@@ -37,6 +37,8 @@ class LocalAIDigestGuardPolicy(unittest.TestCase):
             '"model_artifact_independently_attested": False',
             '"network_egress_isolation_verified": False',
             '"expert_ground_truth_approved": False',
+            '"context_preservation_expert_verified": False',
+            '"context_pairs_missing_total"',
             '"pilot_accepted": False',
             'print("local_model_digest_guard_failed")',
         ):
@@ -56,6 +58,8 @@ class LocalAIDigestGuardPolicy(unittest.TestCase):
             "test_missing_or_untrusted_preflight_never_calls_model",
             "test_postflight_missing_or_untrusted_fails_closed_without_success",
             "test_source_quote_incomplete_cannot_be_reported_as_guarded_success",
+            "test_digest_guard_sanitizes_non_gate_context_warning",
+            "test_digest_guard_refuses_invalid_context_summary",
             "test_cli_requires_one_exact_manual_flag_and_never_connects_without_it",
             "test_cli_sanitizes_unexpected_inventory_exceptions",
         ):

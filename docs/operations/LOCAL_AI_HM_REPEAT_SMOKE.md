@@ -34,7 +34,13 @@ The results are not independent model/expert attestations.
 Stdout contains only a JSON summary: three code-owned scenario labels,
 round count, per-scenario counts of `accepted_rounds`,
 `incomplete_rounds`, `rejected_rounds`, and min/max observed response
-milliseconds. A round is source-accepted only if **all required literal
+milliseconds. Per scenario the output additionally counts
+`context_complete_rounds`, `context_incomplete_rounds`,
+`context_not_evaluated_rounds` (rejected responses cannot be scored)
+and `context_pairs_missing_total`. These are bounded *non-gating*
+observations of three fixed fact/qualifier pairs appearing in the same
+validated excerpt; they are **not semantic correctness or expert review**.
+A round is source-accepted only if **all required literal
 quote anchors** are found in source-backed extracts. Incomplete and
 unsupported/invented excerpts are counted separately.
 
@@ -53,6 +59,7 @@ network isolation configuration and actual execution logs have not
 been independently verified. The JSON therefore always reports
 `repeatability_proven=false`,
 `model_execution_independently_attested=false`,
+`context_preservation_expert_verified=false`,
 `model_digest_attested=false`,
 `expert_ground_truth_approved=false`, and `pilot_accepted=false`.
 
