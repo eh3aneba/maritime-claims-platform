@@ -36,7 +36,13 @@ nonzero CLI exit even when all nine quoted outputs were accepted.
 
 Only bounded counts per scenario, the fixed tag, the two-snapshot
 comparison boolean and fixed FALSE attestation/approval flags are
-printed. **Neither digest value, source content, model response nor
+printed. Each scenario now carries separate counts of rounds whose three
+fixed fact/qualifier pairs were complete or incomplete in the **same
+source-backed excerpt**, plus rounds not evaluated after rejection and
+the bounded missing-pair total. These are NON-GATING context diagnostics;
+even with missing pairs, an otherwise valid quote/digest result retains
+its previous exit status. None is a professional interpretation. The
+`context_preservation_expert_verified=false` flag is fixed. **Neither digest value, source content, model response nor
 network error details are printed**. The CLI does not save an artifact.
 
 Matching digest observations are **not independent attestation** of
