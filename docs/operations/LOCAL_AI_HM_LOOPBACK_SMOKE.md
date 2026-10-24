@@ -12,8 +12,8 @@ PowerShell:
 
 ```powershell
 ollama list
-$env:PYTHONPATH = "apps/api"
-python -m scripts.pilot_local_ai_hm_loopback_smoke --run-fixed-synthetic-ollama
+$env:PYTHONPATH = "$(Get-Location)\apps\api;$(Get-Location)"
+& .\.venv-local-ai\Scripts\python.exe -m scripts.pilot_local_ai_hm_loopback_smoke --run-fixed-synthetic-ollama
 ```
 
 With no flag or with any other argument, the command refuses to connect.
