@@ -18,6 +18,9 @@ _MAX_INPUT_CHARS = 4096
 _MAX_REQUEST_BYTES = 65536
 _MAX_RESPONSE_BYTES = 65536
 _MAX_PREDICT = 512
+# Synthetic-only inference: allow cold GPU/model load above the observed 10s limit.
+# Fixed bound; no caller-supplied timeout or production-provider relaxation.
+_LOCAL_READ_TIMEOUT_SECONDS = 30
 
 
 class OllamaLocalExperimentalProvider:
@@ -72,7 +75,7 @@ class OllamaLocalExperimentalProvider:
 
         # stdlib HTTPConnection with a *literal* IP/port: no DNS resolver,
         # ProxyHandler, redirects, URL interpolation or outbound AI API.
-        conn = http.client.HTTPConnection("127.0.0.1", 11434, timeout=10)
+        conn = http.client.HTTPConnection("127.0.0.1", 11434, timeout=_LOCAL_READ_TIMEOUT_SECONDS)
         try:
             conn.request(
                 "POST", "/api/generate", body=body,

@@ -110,7 +110,7 @@ def test_only_fixed_loopback_and_structured_no_think_request():
 
     with patch("app.ai.gateway.ollama_local.http.client.HTTPConnection", side_effect=constructor):
         result = _provider().generate(_request())
-    assert calls == [("127.0.0.1", 11434, 10)]
+    assert calls == [("127.0.0.1", 11434, 30)]
     method, path, body, headers = conn.request_args
     assert (method, path) == ("POST", "/api/generate")
     assert body["model"] == "qwen3:1.7b"
@@ -181,6 +181,21 @@ def test_transport_failure_hides_private_provider_errors():
             _provider().generate(_request())
     assert str(ex.value) == "local_ai_unavailable"
     assert "private" not in str(ex.value)
+    assert conn.closed
+
+
+
+def test_timeout_after_request_fails_closed_and_closes_socket():
+    class _TimedOutResponse(_FakeResponse):
+        def read(self, _size):
+            raise TimeoutError("sensitive localhost timing or fixture details")
+
+    conn = _FakeConnection(response=_TimedOutResponse())
+    with patch("app.ai.gateway.ollama_local.http.client.HTTPConnection", return_value=conn):
+        with pytest.raises(AIProviderUnavailable) as ex:
+            _provider().generate(_request())
+    assert str(ex.value) == "local_ai_unavailable"
+    assert "sensitive" not in str(ex.value)
     assert conn.closed
 
 

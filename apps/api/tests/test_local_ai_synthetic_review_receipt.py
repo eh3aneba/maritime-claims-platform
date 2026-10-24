@@ -149,7 +149,7 @@ def test_mock_transport_runs_real_ollama_adapter_but_no_daemon():
     provider = OllamaLocalExperimentalProvider(model="qwen3:1.7b")
     with patch("app.ai.gateway.ollama_local.http.client.HTTPConnection", FakeConn):
         receipt = build_pending_synthetic_review_receipt(provider)
-    assert observed["endpoint"] == ("127.0.0.1", 11434, 10)
+    assert observed["endpoint"] == ("127.0.0.1", 11434, 30)
     assert observed["method"] == "POST"
     assert observed["path"] == "/api/generate"
     assert observed["payload"]["think"] is False
