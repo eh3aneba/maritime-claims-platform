@@ -11,16 +11,23 @@ From the repository root **on the PC that has Ollama and `qwen3:1.7b`**:
 
 ```powershell
 ollama list
-$env:PYTHONPATH = "apps/api"
-python -m scripts.pilot_local_ai_hm_repeat_smoke --run-fixed-synthetic-ollama-repeat-3
+$env:PYTHONPATH = "$(Get-Location)\apps\api;$(Get-Location)"
+& .\.venv-local-ai\Scripts\python.exe -m scripts.pilot_local_ai_hm_repeat_smoke --run-fixed-synthetic-ollama-repeat-3
 ```
 
 The exact option is mandatory and the command is **not invoked by CI**;
 without it, the script refuses to connect. The local adapter uses a
-short per-request timeout, `temperature=0`, bounded output, fixed
-schema, `think=false` and `keep_alive=0`. Because the model is unloaded
-after each request, measured elapsed time may include repeated cold
-starts; do not compare results to warmed-up production inference.
+fixed 30s per-request socket timeout (not an end-to-end SLA),
+`temperature=0`, bounded output, fixed schema, `think=false` and
+code-owned `keep_alive="1m"` (since merged #798). The adapter asks
+Ollama to retain the model locally between sequential synthetic calls,
+not to guarantee a warm execution. Observed latency still depends on
+host load, prompt/response size and runtime. No production benchmark
+or inference-provider activation follows from this setting.
+
+For the bounded 2026-10-24 post-#798 operator observations and
+interpretation caveats, see [POST_RETENTION_SYNTHETIC_HM_OBSERVATION_20261024.md](POST_RETENTION_SYNTHETIC_HM_OBSERVATION_20261024.md).
+The results are not independent model/expert attestations.
 
 ## Output / nonclaims
 
