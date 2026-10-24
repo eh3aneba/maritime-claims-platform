@@ -60,6 +60,8 @@ class LocalAIDigestGuardPolicy(unittest.TestCase):
             "test_source_quote_incomplete_cannot_be_reported_as_guarded_success",
             "test_digest_guard_sanitizes_non_gate_context_warning",
             "test_digest_guard_refuses_invalid_context_summary",
+            "test_digest_guard_rejects_impossible_aggregated_context_pairs",
+            "test_digest_guard_refuses_unearned_approvals_in_repeat_summary",
             "test_cli_requires_one_exact_manual_flag_and_never_connects_without_it",
             "test_cli_sanitizes_unexpected_inventory_exceptions",
         ):
