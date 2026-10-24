@@ -146,7 +146,7 @@ def test_actual_ollama_adapter_mocked_socket_to_source_quote_verification():
     provider = OllamaLocalExperimentalProvider(model=MODEL, max_output_tokens=256)
     with patch("app.ai.gateway.ollama_local.http.client.HTTPConnection", FakeConn):
         report = evaluate_synthetic_hm_handoff(provider)
-    assert observed["destination"] == ("127.0.0.1", 11434, 10)
+    assert observed["destination"] == ("127.0.0.1", 11434, 30)
     assert observed["route"] == ("POST", "/api/generate")
     assert observed["payload"]["think"] is False
     assert observed["payload"]["stream"] is False
