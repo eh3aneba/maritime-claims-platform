@@ -27,6 +27,9 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Verify audited synthetic H&M E2E scope gate
+        run: python -m unittest scripts.tests.test_ci_browser_offline_hm_scope -v
+
       - name: Classify exact-head general CI scope
         id: scope
         shell: bash
@@ -53,7 +56,17 @@ jobs:
           dependency_required=false
           e2e_required=false
 
-          while IFS= read -r changed_path; do
+          # Capture Git's exit code instead of masking failure through
+          # process substitution. NUL delimiters preserve every path byte.
+          diff_file="$(mktemp)"
+          trap 'rm -f "$diff_file"' EXIT
+          if ! git diff --name-only -z --no-renames "$BASE_SHA" "$HEAD_SHA" > "$diff_file" || [ ! -s "$diff_file" ]; then
+            printf 'dependency_required=true\ne2e_required=true\n' >> "$GITHUB_OUTPUT"
+            echo "::warning::Unverifiable exact-head diff: full General CI required."
+            exit 0
+          fi
+
+          while IFS= read -r -d '' changed_path; do
             case "$changed_path" in
               apps/api/requirements.txt|apps/api/requirements.lock|apps/api/requirements-dev.in|apps/api/requirements-dev.lock|apps/web/package.json|apps/web/package-lock.json|tests/browser/requirements.txt|tests/browser/requirements.lock|.github/workflows/ci.yml)
                 dependency_required=true
@@ -65,7 +78,20 @@ jobs:
                 e2e_required=true
                 ;;
             esac
-          done < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+          done < "$diff_file"
+
+          # Only already-audited, EXACT modified synthetic H&M test modules
+          # may skip full Docker/browser E2E. The Backend tests gate still
+          # requires full collection and changed-module regression execution.
+          # An error, unknown output or mixed diff always retains full E2E.
+          if [ "$e2e_required" = "true" ]; then
+            if admission="$(python -m scripts.ci_browser_offline_hm_scope "$BASE_SHA" "$HEAD_SHA")" && [ "$admission" = "skip" ]; then
+              e2e_required=false
+              echo "Audited offline synthetic H&M-only change: browser E2E not required."
+            else
+              echo "Full browser E2E required (app, mixed, workflow or unknown changes)."
+            fi
+          fi
 
           echo "dependency_required=$dependency_required" >> "$GITHUB_OUTPUT"
           echo "e2e_required=$e2e_required" >> "$GITHUB_OUTPUT"
