@@ -89,6 +89,35 @@ def test_disconnected_localhost_is_safe_and_not_counted_as_success():
     assert "local_ai_unavailable" not in json.dumps(result)
 
 
+
+@pytest.mark.parametrize("status,elapsed", (
+    ("unexpected_status", 0),
+    ("rejected", -1),
+    ("rejected", True),
+    ("rejected", 3_600_001),
+    (None, 0),
+    ("source_quotes_accepted_for_human_review", 1.5),
+))
+def test_repeat_rounds_fail_closed_on_invalid_status_or_timing(monkeypatch, status, elapsed):
+    names = scenario_names()
+    def malformed_round(_provider):
+        return {
+            "scenarios": [
+                {
+                    "scenario": name,
+                    "status": status if index == 0 else "rejected",
+                    "elapsed_ms_observed": elapsed if index == 0 else 0,
+                }
+                for index, name in enumerate(names)
+            ],
+        }
+
+    monkeypatch.setattr(repeat, "run_fixed_three_scenario_smoke", malformed_round)
+    with pytest.raises(ValueError, match="^invalid_synthetic_round_value$"):
+        repeat.run_three_fixed_rounds(SyntheticProvider())
+
+
+
 def test_explicit_opt_in_required_before_constructing_provider(monkeypatch, capsys):
     def forbidden(**kwargs):
         raise AssertionError("should not invoke even local provider")
