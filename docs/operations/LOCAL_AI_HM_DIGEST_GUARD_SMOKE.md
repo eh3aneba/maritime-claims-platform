@@ -14,8 +14,8 @@ From the SeeClaims repository root, with Ollama running and
 
 ```powershell
 ollama list
-$env:PYTHONPATH = "apps/api"
-python -m scripts.pilot_local_ai_hm_digest_guard_smoke --run-fixed-synthetic-ollama-digest-guard
+$env:PYTHONPATH = "$(Get-Location)\apps\api;$(Get-Location)"
+& .\.venv-local-ai\Scripts\python.exe -m scripts.pilot_local_ai_hm_digest_guard_smoke --run-fixed-synthetic-ollama-digest-guard
 ```
 
 The CLI refuses to contact even localhost without this exact flag.
