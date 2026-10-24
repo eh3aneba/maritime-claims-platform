@@ -90,6 +90,39 @@ def test_disconnected_localhost_is_safe_and_not_counted_as_success():
 
 
 
+ 
+@pytest.mark.parametrize("shape", (
+    "empty",
+    "one_missing",
+    "reverse_order",
+    "not_a_list",
+    "non_dict_row",
+    "duplicated_scenario",
+))
+def test_three_round_report_rejects_malformed_scenario_structure(monkeypatch, shape):
+    rows = [
+        {"scenario": name, "status": "rejected", "elapsed_ms_observed": 0}
+        for name in scenario_names()
+    ]
+    if shape == "empty":
+        rows = []
+    elif shape == "one_missing":
+        rows = rows[:-1]
+    elif shape == "reverse_order":
+        rows = list(reversed(rows))
+    elif shape == "not_a_list":
+        rows = tuple(rows)
+    elif shape == "non_dict_row":
+        rows[0] = None
+    elif shape == "duplicated_scenario":
+        rows[1]["scenario"] = rows[0]["scenario"]
+    monkeypatch.setattr(repeat, "run_fixed_three_scenario_smoke", lambda _provider: {
+        "scenarios": rows,
+    })
+    with pytest.raises(ValueError, match="^invalid_synthetic_round_shape$"):
+        repeat.run_three_fixed_rounds(SyntheticProvider())
+
+
 @pytest.mark.parametrize("status,elapsed", (
     ("unexpected_status", 0),
     ("rejected", -1),
