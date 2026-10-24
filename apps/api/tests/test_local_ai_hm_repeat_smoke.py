@@ -98,6 +98,8 @@ def test_disconnected_localhost_is_safe_and_not_counted_as_success():
     "not_a_list",
     "non_dict_row",
     "duplicated_scenario",
+    "extra_record",
+    "unknown_scenario",
 ))
 def test_three_round_report_rejects_malformed_scenario_structure(monkeypatch, shape):
     rows = [
@@ -116,6 +118,10 @@ def test_three_round_report_rejects_malformed_scenario_structure(monkeypatch, sh
         rows[0] = None
     elif shape == "duplicated_scenario":
         rows[1]["scenario"] = rows[0]["scenario"]
+    elif shape == "extra_record":
+        rows.append({"scenario": "unexpected_case", "status": "rejected", "elapsed_ms_observed": 0})
+    elif shape == "unknown_scenario":
+        rows[0]["scenario"] = "unapproved_synthetic_case"
     monkeypatch.setattr(repeat, "run_fixed_three_scenario_smoke", lambda _provider: {
         "scenarios": rows,
     })
