@@ -18,10 +18,12 @@ import scripts.pilot_local_ai_hm_repeat_smoke as repeat
 class SyntheticProvider:
     name = "ollama_local"
 
-    def __init__(self, *, incomplete_at: int = -1, rejected_at: int = -1, unavailable: bool = False):
+    def __init__(self, *, incomplete_at: int = -1, rejected_at: int = -1,
+                 split_context_at: int = -1, unavailable: bool = False):
         self.calls = []
         self.incomplete_at = incomplete_at
         self.rejected_at = rejected_at
+        self.split_context_at = split_context_at
         self.unavailable = unavailable
 
     def generate(self, request):
@@ -38,6 +40,15 @@ class SyntheticProvider:
             items[-1]["verbatim_excerpt"] = (
                 "Synthetic intake: Engine logs for the previous ten days"
             )
+        if index == self.split_context_at and name == "missing_engine_records":
+            # Still passes all four literal anchors, but the status and its
+            # uncertainty qualifier do not co-occur in one source quote.
+            items = items[:2] + [
+                {"kind": "intake_status", "source_id": "S3",
+                 "source_version": "v1", "verbatim_excerpt": "NOT BEEN SUPPLIED"},
+                {"kind": "intake_status", "source_id": "S3",
+                 "source_version": "v1", "verbatim_excerpt": "existence is unknown"},
+            ]
         if index == self.rejected_at:
             items[0]["verbatim_excerpt"] = "The workshop confirmed owner negligence."
         return AIResponse(
@@ -57,6 +68,10 @@ def test_exact_nine_calls_and_bounded_success_metrics_without_prose():
     for row in result["scenarios"]:
         assert row["accepted_rounds"] == 3
         assert row["incomplete_rounds"] == row["rejected_rounds"] == 0
+        assert row["context_complete_rounds"] == 3
+        assert row["context_incomplete_rounds"] == 0
+        assert row["context_not_evaluated_rounds"] == 0
+        assert row["context_pairs_missing_total"] == 0
         assert 0 <= row["min_elapsed_ms_observed"] <= row["max_elapsed_ms_observed"]
     for forbidden in ("Turbocharger damage", "NOT BEEN SUPPLIED", "11:55", "negligence"):
         assert forbidden not in json.dumps(result)
@@ -78,6 +93,24 @@ def test_partial_and_hallucinated_rounds_never_report_full_acceptance():
     assert (missing["accepted_rounds"], missing["incomplete_rounds"], missing["rejected_rounds"]) == (2, 1, 0)
     assert (conflicting["accepted_rounds"], conflicting["incomplete_rounds"], conflicting["rejected_rounds"]) == (2, 0, 1)
     assert "negligence" not in json.dumps(result)
+    assert conflicting["context_not_evaluated_rounds"] == 1
+
+
+def test_quote_gate_success_can_coexist_with_context_diagnostic_warning():
+    fake = SyntheticProvider(split_context_at=4)
+    result = repeat.run_three_fixed_rounds(fake)
+    assert len(fake.calls) == 9
+    assert result["all_rounds_source_quotes_accepted_for_review"] is True
+    rows = result["scenarios"]
+    assert rows[1]["accepted_rounds"] == 3
+    assert rows[1]["context_complete_rounds"] == 2
+    assert rows[1]["context_incomplete_rounds"] == 1
+    assert rows[1]["context_not_evaluated_rounds"] == 0
+    assert rows[1]["context_pairs_missing_total"] == 1
+    assert all(x["context_incomplete_rounds"] == 0 for x in (rows[0], rows[2]))
+    assert result["context_preservation_expert_verified"] is False
+    assert result["pilot_accepted"] is False
+    assert "NOT BEEN SUPPLIED" not in json.dumps(result)
 
 
 def test_disconnected_localhost_is_safe_and_not_counted_as_success():
@@ -86,6 +119,8 @@ def test_disconnected_localhost_is_safe_and_not_counted_as_success():
     assert len(fake.calls) == 9
     assert result["all_rounds_source_quotes_accepted_for_review"] is False
     assert all(x["rejected_rounds"] == 3 for x in result["scenarios"])
+    assert all(x["context_not_evaluated_rounds"] == 3 for x in result["scenarios"])
+    assert all(x["context_pairs_missing_total"] == 0 for x in result["scenarios"])
     assert "local_ai_unavailable" not in json.dumps(result)
 
 
@@ -155,6 +190,21 @@ def test_repeat_rounds_fail_closed_on_invalid_status_or_timing(monkeypatch, stat
     with pytest.raises(ValueError, match="^invalid_synthetic_round_value$"):
         repeat.run_three_fixed_rounds(SyntheticProvider())
 
+
+
+@pytest.mark.parametrize("bad_value", (-1, 4, True, "3", None))
+def test_malformed_context_counters_fail_closed(monkeypatch, bad_value):
+    fake = SyntheticProvider()
+    original = repeat.run_fixed_three_scenario_smoke
+
+    def corrupted(provider):
+        observation = original(provider)
+        observation["scenarios"][0]["context_pairs_same_excerpt_missing"] = bad_value
+        return observation
+
+    monkeypatch.setattr(repeat, "run_fixed_three_scenario_smoke", corrupted)
+    with pytest.raises(ValueError, match="^invalid_synthetic_context_observation$"):
+        repeat.run_three_fixed_rounds(fake)
 
 
 def test_explicit_opt_in_required_before_constructing_provider(monkeypatch, capsys):
