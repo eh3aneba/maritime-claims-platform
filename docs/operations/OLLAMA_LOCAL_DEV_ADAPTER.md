@@ -21,8 +21,11 @@ loopback `127.0.0.1:11434`, HTTP `POST /api/generate` with exact
 structured JSON schema, `stream=false`, `think=false`, and deterministic
 temperature. It does not resolve DNS, consult OS proxies, interpolate a
 remote URL, follow redirects, set credentials, or invoke any external
-inference provider. Timeout is 10 seconds; inputs/responses and token
-budgets are capped. Response model and JSON must match the strict contract.
+inference provider. The fixed HTTP read timeout is **30 seconds** only for this synthetic-only
+localhost experiment (the prior 10-second bound rejected one measured
+10.014-second cold/warm request); inputs/responses and token budgets
+remain capped. This does not promise a 30-second total execution deadline
+or an SLA, and timeout still rejects without leaking response/source text. Response model and JSON must match the strict contract.
 Raw server errors, exceptions, documents and response bytes never appear
 in error messages.
 
