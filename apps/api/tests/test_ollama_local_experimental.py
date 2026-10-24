@@ -114,6 +114,7 @@ def test_only_fixed_loopback_and_structured_no_think_request():
     method, path, body, headers = conn.request_args
     assert (method, path) == ("POST", "/api/generate")
     assert body["model"] == "qwen3:1.7b"
+    assert body["keep_alive"] == "1m"
     assert body["think"] is False and body["stream"] is False
     assert body["format"]["additionalProperties"] is False
     assert body["options"]["num_predict"] == 256
@@ -123,6 +124,32 @@ def test_only_fixed_loopback_and_structured_no_think_request():
     assert result.structured_output == {"quote": "abnormal vibration"}
     assert result.usage == {"input_tokens": 33, "output_tokens": 6}
     assert result.provider == "ollama_local"
+
+
+def test_two_sequential_synthetic_requests_retain_fixed_local_model_only():
+    connections = []
+
+    def constructor(host, port, timeout):
+        assert (host, port, timeout) == ("127.0.0.1", 11434, 30)
+        conn = _FakeConnection()
+        connections.append(conn)
+        return conn
+
+    provider = _provider()
+    with patch("app.ai.gateway.ollama_local.http.client.HTTPConnection",
+               side_effect=constructor):
+        provider.generate(_request())
+        provider.generate(_request())
+    assert len(connections) == 2
+    for conn in connections:
+        assert conn.closed is True
+        method, path, body, headers = conn.request_args
+        assert (method, path) == ("POST", "/api/generate")
+        assert body["keep_alive"] == "1m"
+        assert body["model"] == "qwen3:1.7b"
+        assert body["think"] is False
+        assert body["stream"] is False
+        assert body["options"]["num_ctx"] == 4096
 
 
 @pytest.mark.parametrize("metadata", [
