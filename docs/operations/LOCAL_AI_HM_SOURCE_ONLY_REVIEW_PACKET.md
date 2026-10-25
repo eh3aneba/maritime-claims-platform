@@ -1,5 +1,11 @@
 # #752 — source-only packet for blind independent H&M reference review
 
+**For the first *unprimed* assessment, prefer the [neutral Phase 1
+packet](LOCAL_AI_HM_NEUTRAL_BLIND_PHASE_ONE.md)**. This older packet
+exposes scenario-specific criteria; reserve it for the separately
+controlled *post-reference* phase, after independent labels are frozen.
+Neither file proves an expert was actually blinded.
+
 The existing checklist in #772 describes **what** an independent H&M
 machinery claims specialist should judge. This companion tool supplies
 **only the nine invented, versioned source records** across the three
