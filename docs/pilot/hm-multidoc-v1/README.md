@@ -107,6 +107,42 @@ phrases now inform regression engineering in a public repo; **it is
 not a sealed blind LLM holdout**. A fresh independently held evaluation
 set is required.
 
+## HM-06 actual financial *source intake*, no AI or invented quantum
+
+`tests/browser/hm_multidoc_financial_intake_e2e.py` exercises the
+protected, disposable **AI_PROVIDER=disabled** stack with HM-06's
+four invented documents. It creates an authenticated unique tanker
+claim in TRIAGE and uploads four real DOCX files through the same
+manual Evidence API: a notification, **two mutually alternative**
+repair quotations (one described in USD and another in EUR), and a
+separate **inspection invoice whose payment status is unknown**.
+ClamAV must mark all four CLEAN and the real worker must process them.
+
+Because no independent AI extraction and no human financial cost
+review have occurred, **there must be no derived CostItems,
+quotation comparison valuations, per-currency amount totals, paid
+invoice amount, reserve or settlement authority** in the backend
+financial-review response. The client Financial review page now
+also fetches the *tenant-scoped existing document inventory* and
+separately displays current typed quotation/invoice **source file names,
+document versions, scan statuses and processing statuses** even
+before any reviewed line items exist. The assigned upload type is
+not proof of a correct type, scope, currency, amount, incurred cost or
+legal coverage. Superseded document versions are not represented
+as current. Quotation alternatives are never added together in
+this intake-only view; the invoice is never marked as paid.
+
+The browser test asserts the two quote rows + one invoice row are
+visible, checks no document-embedded fictional amounts were promoted
+to on-screen financial valuations, and writes only code-owned source
+counts plus machine-observed stage times to a bounded CI artifact.
+**The test does not assess real claim quantum, verify exchange rates,
+prove costs were incurred, choose repair suppliers, approve a reserve,
+or measure handler productivity.** No external AI model or customer
+Evidence is accessed. A separate independent bilingual/H&M
+human-reviewed benchmark and explicit cost-document evidence
+verification remain required; real pilot **NO-GO**.
+
 ## Actual uploadable fixtures — no fake text-extension upload
 
 `scripts/hm_multidoc_packs.py` validates the finite in-repo source
