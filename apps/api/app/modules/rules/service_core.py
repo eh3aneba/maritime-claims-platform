@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.modules.audit.service import write_audit_log
 from app.modules.claims.facts import ClaimFact
-from app.modules.claims.models import Claim
+from app.modules.claims.models import Claim, ClaimStatus
 from app.modules.documents.models import (
     Document,
     DocumentMalwareScanStatus,
