@@ -61,6 +61,10 @@ def run_fixed_digest_guarded_smoke(
         or repeat.get("pilot_accepted") is not False
         or repeat.get("model_digest_attested") is not False
         or repeat.get("expert_ground_truth_approved") is not False
+        or repeat.get("context_preservation_expert_verified") is not False
+        or repeat.get("repeatability_proven") is not False
+        or repeat.get("model_execution_independently_attested") is not False
+        or repeat.get("human_review_completed") is not False
         or type(repeat.get("all_rounds_source_quotes_accepted_for_review")) is not bool
     ):
         raise ValueError("invalid_local_repeat_report")
@@ -94,8 +98,14 @@ def run_fixed_digest_guarded_smoke(
             row["context_complete_rounds"] + row["context_incomplete_rounds"]
             + row["context_not_evaluated_rounds"] != _ROUNDS
             or row["context_not_evaluated_rounds"] != row["rejected_rounds"]
-            or (row["context_incomplete_rounds"] == 0) !=
-                (row["context_pairs_missing_total"] == 0)
+            # Each incomplete round contains between one and three
+            # missing pairs. Reject impossible forged or buggy summaries;
+            # rejected rounds are not counted as context-incomplete.
+            or not (
+                row["context_incomplete_rounds"]
+                <= row["context_pairs_missing_total"]
+                <= _SCENARIOS * row["context_incomplete_rounds"]
+            )
         ):
             raise ValueError("invalid_local_repeat_report")
         safe_rows.append(row)
