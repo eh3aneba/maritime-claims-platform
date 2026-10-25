@@ -93,6 +93,55 @@ def main() -> None:
         expect(page.get_by_text("SYNTHETIC HM ALDER " + sample, exact=True).first).to_be_visible()
         stages["case_creation_and_ui_ms"] = _milliseconds(stage)
 
+        # Test the production-like NEW state BEFORE the first upload:
+        # mandatory H&M TRIAGE rules have not activated yet. A normal
+        # generation request must fail; only explicitly PRELIMINARY
+        # generation is permitted, and even manager approval is denied.
+        stage = time.monotonic()
+        new_rules = _ok(
+            request.get(API + f"/api/v1/claims/{claim_id}/rules"),
+            "new_stage_rule_summary",
+        )
+        if (
+            new_rules["requirements"]
+            or new_rules["readiness"]["state"] != "not_ready"
+            or new_rules["readiness"]["score"] > 10
+            or not any("TRIAGE" in text for text in new_rules["readiness"]["blocking_items"])
+        ):
+            raise AssertionError("synthetic_new_stage_premature_readiness")
+        ordinary_generation = request.post(
+            API + f"/api/v1/claims/{claim_id}/initial-assessment/generate",
+            data={"allow_if_not_ready": False},
+        )
+        if ordinary_generation.status != 409:
+            raise AssertionError("synthetic_new_stage_nonpreliminary_generation_allowed")
+        new_assessment = _ok(
+            request.post(
+                API + f"/api/v1/claims/{claim_id}/initial-assessment/generate",
+                data={
+                    "allow_if_not_ready": True,
+                    "override_reason": "Synthetic NEW-stage review aid only; H&M policy not active.",
+                },
+            ), "new_stage_preliminary_only",
+        )
+        if (
+            new_assessment["is_preliminary"] is not True
+            or new_assessment["readiness_state"] != "not_ready"
+            or new_assessment["approved_by_id"] is not None
+            or new_assessment["source_state"] != "current"
+        ):
+            raise AssertionError("synthetic_new_stage_appears_final")
+        new_approval = request.post(
+            API + f"/api/v1/claims/{claim_id}/initial-assessment/{new_assessment['id']}/approve",
+            data={
+                "note": "Synthetic NEW-stage approval must fail",
+                "expected_source_fingerprint": new_assessment["source_fingerprint"],
+            },
+        )
+        if new_approval.status != 409:
+            raise AssertionError("synthetic_new_stage_manager_approval_allowed")
+        stages["new_stage_readiness_and_approval_guard_ms"] = _milliseconds(stage)
+
         stage = time.monotonic()
         # Upload the first actual DOCX through the handler's input control.
         first = case["documents"][0]
@@ -184,6 +233,13 @@ def main() -> None:
         ]
         if summary["readiness"]["state"] != "not_ready" or not missing_policy:
             raise AssertionError("synthetic_triage_policy_gate_not_active")
+        stale_new = _ok(
+            request.get(
+                API + f"/api/v1/claims/{claim_id}/initial-assessment/versions/{new_assessment['id']}"
+            ), "new_stage_prior_version",
+        )
+        if stale_new["source_state"] != "stale":
+            raise AssertionError("synthetic_new_assessment_not_stale_after_triage")
         stages["triage_requirements_activation_ms"] = _milliseconds(stage)
 
         stage = time.monotonic()
