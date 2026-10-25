@@ -40,6 +40,9 @@ jobs:
           # Pure offline, source-only synthetic packet; fail before expensive shards
           # if a neutral-blindness contract or approval-leak regression fails.
           python -m unittest scripts.tests.test_pilot_local_ai_hm_neutral_blind_packet -v
+          # Phase-two may reveal only fixed synthetic source-backed excerpts;
+          # require an always-on, no-network policy regression before shards.
+          python -m unittest scripts.tests.test_pilot_local_ai_hm_postblind_quote_policy -v
 
       - name: Classify exact-head Backend scope
         id: scope
