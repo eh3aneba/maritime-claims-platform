@@ -4,6 +4,19 @@ Monorepo for the H&M Machinery Claims MVP.
 
 ## Current status
 
+**Execution-policy update (2026-10-25):** The 25 October strategic
+review is now the decision framework for R0–R7. Stop expanding the
+three-case local-AI smoke toolchain absent a concrete defect; prioritize
+(1) independently coded H&M reference + meaningful multi-document
+benchmark, (2) one synthetic user journey from manual upload to
+source-linked, versioned Initial Assessment/export, and (3) selected-host
+runtime/security and coherent DB+Evidence restore acceptance (#653,
+#764). Track **code/CI**, **operator-host proof**, **independent expert
+quality**, and **customer permission** separately; passing GitHub
+checks or adding PRs is not a product outcome. Read the
+[dated execution status](docs/roadmap/SEECLAIMS_V1_EXECUTION_STATUS.md)
+before choosing new work. Pilot GO=NO.
+
 The MVP now includes the full H&M Machinery / Turbocharger design-partner workflow:
 
 - Core claims platform, tenant isolation, audit and secure evidence handling
@@ -36,7 +49,13 @@ The MVP now includes the full H&M Machinery / Turbocharger design-partner workfl
 - Separately authorized limited-production AI evaluation with deterministic rollout, live monitors, expiry and rollback
 - Governed SharePoint / Google Drive external-Evidence control plane through recurring observation, human review and exact changed-item refresh staging
 
-**Current execution phase (2026-10-15): R0 — pilot scope and status baseline.** The Phase 17.6 SFTP **software feature chain** is complete on `main`, but independent controlled **real SFTP server acceptance** remains open in #652; SFTP is a Pilot v1 gate **only if enabled** for the selected design partner. Production non-root Evidence compatibility (#487), independently restored DB+Evidence and operator deployment/alerts (#653), and pilot user acceptance (#647) are **not** complete. A green synthetic CI run, merged PR or feature label does not authorize a real-data pilot. Start with the [versioned roadmap execution status](docs/roadmap/SEECLAIMS_V1_EXECUTION_STATUS.md) and [R0 proposed owner decisions](docs/roadmap/R0_SCOPE_DECISIONS.md).
+**Current execution phase (2026-10-25): R0 scope/status reconciliation plus the bounded R5 independent H&M reference and synthetic end-to-end journey.** The Phase 17.6 SFTP **software feature chain** is complete on `main`, but independent controlled **real SFTP server acceptance** remains open in #652; SFTP is a Pilot v1 gate **only if enabled** for the selected design partner. The non-root code-tracking issue #487 is now **closed**; this does not
+mean API/OCR Worker UID1000 and existing Evidence volumes were independently
+accepted on the selected host. That operational proof remains a **NO-GO**
+dependency under #653. PR #746's read-only claim-Evidence inventory is
+merged, but a complete matching DB+Evidence restore, alert receipt and
+operator signoff under #653 remain incomplete. Pilot user acceptance
+under #647 is not complete. A green synthetic CI run, merged PR or feature label does not authorize a real-data pilot. Start with the [versioned roadmap execution status](docs/roadmap/SEECLAIMS_V1_EXECUTION_STATUS.md) and [R0 proposed owner decisions](docs/roadmap/R0_SCOPE_DECISIONS.md).
 
 ## Prerequisites
 
