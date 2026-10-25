@@ -651,6 +651,6 @@ def get_rule_summary(db: Session, *, claim: Claim) -> RuleSummaryResponse:
             for row in requirements
         ],
         issues=issues,
-        readiness=calculate_readiness(requirements),
+        readiness=calculate_readiness(requirements, claim_status=claim.status),
         triggered_rule_ids=list(latest_run.triggered_rule_ids or []) if latest_run else [],
     )
