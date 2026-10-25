@@ -4,7 +4,6 @@ from uuid import UUID
 
 from sqlalchemy import select
 
-from app.modules.claims.models import ClaimStatus
 from app.modules.rules import service_core as _core
 from app.modules.rules.models import ClaimDocumentRequirement, RuleEvaluationRun
 from app.modules.rules.requirement_lineage import (
@@ -41,27 +40,9 @@ def _active_requirements(db, *, claim) -> list[ClaimDocumentRequirement]:
     )
 
 
-NEW_CLAIM_TRIAGE_BLOCKER = "Start TRIAGE to activate mandatory H&M evidence and policy requirements."
-
-
 def _stage_guarded_readiness(*, claim, requirements):
-    """A NEW claim cannot claim 100% readiness before rule activation.
-
-    The requirements themselves still activate at the original TRIAGE
-    milestones. The guard only describes honest intake readiness; it
-    cannot accept evidence or authorize an assessment.
-    """
-    readiness = _core.calculate_readiness(requirements)
-    if claim.status != ClaimStatus.NEW:
-        return readiness
-    blockers = list(readiness.blocking_items)
-    if NEW_CLAIM_TRIAGE_BLOCKER not in blockers:
-        blockers.insert(0, NEW_CLAIM_TRIAGE_BLOCKER)
-    return readiness.model_copy(update={
-        "score": min(readiness.score, 10),
-        "state": "not_ready",
-        "blocking_items": blockers,
-    })
+    """Use canonical readiness for saved runs and interactive summaries."""
+    return _core.calculate_readiness(requirements, claim_status=claim.status)
 
 
 def _update_run_readiness(db, *, claim, run: RuleEvaluationRun) -> None:
