@@ -5,7 +5,8 @@ import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { useLocale } from "@/components/locale-provider";
-import { ApiError, resolveFinancialFlag } from "@/lib/api";
+import { ApiError, listClaimDocuments, resolveFinancialFlag } from "@/lib/api";
+import type { ClaimDocument } from "@/lib/types";
 import {
   getMatureFinancialReview,
   recordCostReviewDecision,
@@ -65,12 +66,27 @@ export default function FinancialReviewPage() {
   const { locale } = useLocale();
   const r = (en: string, fa: string) => reviewT(locale, en, fa);
   const [data, setData] = useState<MatureFinancialReviewResponse | null>(null);
+  const [financialSources, setFinancialSources] = useState<ClaimDocument[]>([]);
   const [error, setError] = useState("");
   const [busyItem, setBusyItem] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
-      setData(await getMatureFinancialReview(id));
+      // Both lists use the same tenant-scoped authenticated claim context.
+      // A typed financial source can be received before AI or independent
+      // line-item review; do not silently hide those uploaded documents.
+      const [review, documents] = await Promise.all([
+        getMatureFinancialReview(id),
+        listClaimDocuments(id),
+      ]);
+      setFinancialSources(
+        documents.items.filter(
+          (source) => source.is_current && (
+            source.document_type === "quotation" || source.document_type === "invoice"
+          ),
+        ),
+      );
+      setData(review);
       setError("");
     } catch (loadError) {
       setError(
@@ -241,6 +257,36 @@ export default function FinancialReviewPage() {
           <p className="metric-label">{r("Unreviewed items", "اقلام بازبینی‌نشده")}</p>
           <p className="metric-value" dir="ltr">{data.summary.unreviewed_item_count}</p>
         </div>
+      </section>
+
+      <section className="panel mt-6 p-6" data-testid="financial-source-documents">
+        <h2 className="section-title">{r("Received quotation and invoice files", "فایل‌های پیشنهاد قیمت و صورتحساب دریافت‌شده")}</h2>
+        <p className="section-subtitle">
+          {r(
+            "Source files listed by their assigned upload type, before independent content verification. Quotations are alternatives, not expenses; invoices are not evidence of payment. Amounts, currencies, deductibles and coverage remain unverified until authorized human review.",
+            "فایل‌ها بر اساس نوع ثبت‌شده هنگام بارگذاری نمایش داده می‌شوند و محتوای آنها هنوز مستقلاً تأیید نشده است. پیشنهادهای قیمت گزینه‌های جایگزین هستند، نه هزینه قطعی؛ صورتحساب نیز به معنی پرداخت نیست. مبالغ، ارزها، فرانشیز و پوشش تا پیش از بازبینی انسانی مجاز تأیید نشده‌اند.",
+          )}
+        </p>
+        {financialSources.length ? (
+          <div className="mt-4 space-y-2">
+            {financialSources.map((source) => (
+              <div key={source.id} data-testid={`financial-source-${source.id}`} className="rounded-lg border border-slate-200 px-4 py-3">
+                <p className="text-sm font-semibold text-slate-900" dir="auto">{source.original_filename}</p>
+                <p className="mt-1 text-xs text-slate-500">
+                  {source.document_type === "quotation"
+                    ? r("Quotation alternative — not an incurred loss", "پیشنهاد تعمیر جایگزین — هزینه قطعی نیست")
+                    : r("Invoice received — payment not confirmed", "صورتحساب دریافت‌شده — پرداخت تأیید نشده است")}
+                  {" · "}{r("Document version", "نسخه سند")} <span dir="ltr">v{source.version_number}</span>
+                </p>
+                <p className="mt-1 text-xs text-slate-500" dir="ltr">
+                  {r("Processing", "پردازش")}: {source.processing_status} · {r("Malware scan", "اسکن امنیتی")}: {source.malware_scan_status}
+                </p>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="mt-4 text-sm text-slate-500">{r("No current quotation or invoice files received.", "هنوز فایل جاری پیشنهاد قیمت یا صورتحساب دریافت نشده است.")}</p>
+        )}
       </section>
 
       <section className="panel mt-6 p-6">
