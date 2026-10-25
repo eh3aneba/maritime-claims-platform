@@ -40,9 +40,14 @@ def _active_requirements(db, *, claim) -> list[ClaimDocumentRequirement]:
     )
 
 
+def _stage_guarded_readiness(*, claim, requirements):
+    """Use canonical readiness for saved runs and interactive summaries."""
+    return _core.calculate_readiness(requirements, claim_status=claim.status)
+
+
 def _update_run_readiness(db, *, claim, run: RuleEvaluationRun) -> None:
     requirements = _active_requirements(db, claim=claim)
-    readiness = _core.calculate_readiness(requirements)
+    readiness = _stage_guarded_readiness(claim=claim, requirements=requirements)
     summary = dict(run.summary or {})
     summary.update(
         {
@@ -132,7 +137,7 @@ def get_rule_summary(db, *, claim):
                 enrich_requirement_response(db, claim=claim, requirement=requirement)
                 for requirement in requirements
             ],
-            "readiness": _core.calculate_readiness(requirements),
+            "readiness": _stage_guarded_readiness(claim=claim, requirements=requirements),
         }
     )
 

@@ -49,6 +49,27 @@ def test_history_keeps_approved_version_and_specific_version_semantics_explicit(
     result = create_orion_claim()
     claim_id = result["claim"]["id"]
 
+    # Approval is intentionally forbidden in NEW. Exercise historical
+    # approved-version immutability after the genuine TRIAGE transition,
+    # which activates the mandatory H&M policy/evidence requirements.
+    triage = client.post(
+        f"/api/v1/claims/{claim_id}/status",
+        json={
+            "status": "triage",
+            "reason": "Start synthetic H&M evidence review before manager signoff.",
+        },
+    )
+    assert triage.status_code == 200, triage.text
+    assert triage.json()["status"] == "triage"
+    requirements = client.get(f"/api/v1/claims/{claim_id}/rules")
+    assert requirements.status_code == 200, requirements.text
+    summary = requirements.json()
+    assert summary["readiness"]["state"] == "not_ready"
+    assert any(
+        row["document_type"] == "policy" and row["is_active"]
+        for row in summary["requirements"]
+    )
+
     approved_v1 = _approve(claim_id, _generate(claim_id))
     approved_hash = approved_v1["approved_content_hash"]
     assert approved_hash
