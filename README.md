@@ -49,7 +49,7 @@ The MVP now includes the full H&M Machinery / Turbocharger design-partner workfl
 - Separately authorized limited-production AI evaluation with deterministic rollout, live monitors, expiry and rollback
 - Governed SharePoint / Google Drive external-Evidence control plane through recurring observation, human review and exact changed-item refresh staging
 
-**Current execution phase (2026-10-15): R0 — pilot scope and status baseline.** The Phase 17.6 SFTP **software feature chain** is complete on `main`, but independent controlled **real SFTP server acceptance** remains open in #652; SFTP is a Pilot v1 gate **only if enabled** for the selected design partner. The non-root code-tracking issue #487 is now **closed**; this does not
+**Current execution phase (2026-10-25): R0 scope/status reconciliation plus the bounded R5 independent H&M reference and synthetic end-to-end journey.** The Phase 17.6 SFTP **software feature chain** is complete on `main`, but independent controlled **real SFTP server acceptance** remains open in #652; SFTP is a Pilot v1 gate **only if enabled** for the selected design partner. The non-root code-tracking issue #487 is now **closed**; this does not
 mean API/OCR Worker UID1000 and existing Evidence volumes were independently
 accepted on the selected host. That operational proof remains a **NO-GO**
 dependency under #653. PR #746's read-only claim-Evidence inventory is
