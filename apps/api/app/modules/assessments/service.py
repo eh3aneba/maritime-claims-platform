@@ -18,7 +18,7 @@ from app.modules.assessments.source_integrity import (
 from app.modules.audit.service import write_audit_log
 from app.modules.chronology.models import ChronologyEvent, ConflictStatus, EvidenceConflict, EventEvidence
 from app.modules.claims.facts import ClaimFact
-from app.modules.claims.models import Claim
+from app.modules.claims.models import Claim, ClaimStatus
 from app.modules.documents.models import Document
 from app.modules.financial.models import CostItem, CostReviewStatus, FinancialFlag, FinancialFlagStatus, ReserveHistory
 from app.modules.rules.models import ClaimDocumentRequirement, ClaimIssue, RequirementPriority, RequirementStatus
@@ -699,6 +699,14 @@ def approve_assessment(
 ) -> InitialAssessment:
     if assessment.claim_id != claim.id or assessment.organization_id != claim.organization_id:
         raise HTTPException(status_code=404, detail="Assessment not found")
+    # NEW has not activated mandatory H&M TRIAGE requirements. A
+    # preliminary review aid may be drafted/edited, but no manager
+    # can approve it as a completed assessment before TRIAGE.
+    if claim.status == ClaimStatus.NEW:
+        raise HTTPException(
+            status_code=409,
+            detail="Cannot approve Initial Assessment while claim is NEW. Start TRIAGE, evaluate mandatory H&M policy evidence, and generate a fresh source-bound version.",
+        )
     if assessment.status == AssessmentStatus.APPROVED:
         raise HTTPException(
             status_code=409,
