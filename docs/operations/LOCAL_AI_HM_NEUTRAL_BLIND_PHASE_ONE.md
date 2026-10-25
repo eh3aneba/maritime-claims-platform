@@ -26,6 +26,11 @@ write files, contact external APIs or record professional judgments.
 The printed JSON **does include invented source text**. It is safe for
 this development-only synthetic evaluation, NOT for actual customer files.
 
+The later [Phase 2 model-selected source-quote preview](LOCAL_AI_HM_POSTBLIND_MODEL_QUOTES.md)
+must be given only to authorized project reviewers **after** the expert's
+initial independent observations are frozen. It is not part of this
+first-phase blind packet.
+
 ## Separation-of-information protocol
 
 1. Appoint a competent independent H&M machinery reviewer and disclose
