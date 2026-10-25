@@ -443,7 +443,14 @@ def _sync_issues(
     return active, triggered
 
 
-def calculate_readiness(requirements: list[ClaimDocumentRequirement]) -> ReadinessResponse:
+NEW_CLAIM_TRIAGE_BLOCKER = "Start TRIAGE to activate mandatory H&M evidence and policy requirements."
+
+
+def calculate_readiness(
+    requirements: list[ClaimDocumentRequirement],
+    *,
+    claim_status: ClaimStatus | None = None,
+) -> ReadinessResponse:
     active = [requirement for requirement in requirements if requirement.is_active]
     total_weight = sum(PRIORITY_WEIGHT[requirement.priority] for requirement in active)
     satisfied_weight = sum(
@@ -467,12 +474,20 @@ def calculate_readiness(requirements: list[ClaimDocumentRequirement]) -> Readine
         state = "limited"
     else:
         state = "ready"
+    blockers = [requirement.document_label for requirement in critical_missing]
+    if claim_status == ClaimStatus.NEW:
+        # Critical H&M rules activate at TRIAGE, not at NEW. An empty
+        # requirement set cannot mean 100% operational readiness.
+        score = min(score, 10)
+        state = "not_ready"
+        if NEW_CLAIM_TRIAGE_BLOCKER not in blockers:
+            blockers.insert(0, NEW_CLAIM_TRIAGE_BLOCKER)
     return ReadinessResponse(
         score=score,
         state=state,
         critical_missing_count=len(critical_missing),
         important_missing_count=len(important_missing),
-        blocking_items=[requirement.document_label for requirement in critical_missing],
+        blocking_items=blockers,
         satisfied_weight=satisfied_weight,
         total_weight=total_weight,
     )
@@ -487,7 +502,7 @@ def evaluate_claim_rules(db: Session, *, claim: Claim, user: User, trigger: str 
     # Keep rule-driven document-request tasks synchronized with evidence usability.
     from app.modules.tasks.service import sync_requirement_tasks
     sync_requirement_tasks(db, claim=claim, user=user)
-    readiness = calculate_readiness(requirements)
+    readiness = calculate_readiness(requirements, claim_status=claim.status)
     triggered = list(dict.fromkeys(document_rule_ids + issue_rule_ids))
     summary = {
         "readiness_score": readiness.score,
