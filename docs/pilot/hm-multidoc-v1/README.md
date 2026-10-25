@@ -27,6 +27,38 @@ is designated now, but true held-out blindness needs restricted access to
 model/prompt development and independent reviewers; a public GitHub repo
 alone cannot enforce it.
 
+## H&M NEW-stage assessment/readiness safety gate (#807)
+
+Before TRIAGE, the H&M ruleset deliberately has not activated its
+critical Chief Engineer Report, Engine Log and policy wording requirements.
+A no-requirements state **must not** yield `ready/100` for a newly
+created claim. The rule summary now explicitly returns
+`readiness.state=not_ready`, `readiness.score<=10` and a human-readable
+stage blocker: `Start TRIAGE to activate mandatory H&M evidence and
+policy requirements.`. Existing milestones at TRIAGE/INVESTIGATION and
+the normal ruleset calculation remain unchanged. No missing policy
+is automatically accepted or inferred, and no claim becomes ready
+merely due to an empty requirement list.
+
+For a genuine NEW H&M claim, `/initial-assessment/generate` without
+an explicit `allow_if_not_ready` plus a nontrivial reason returns 409.
+A requested **preliminary source-bound review aid** is still permitted;
+no model, reviewer or coverage approval is implied. Importantly, the
+server also returns 409 on `/{assessment_id}/approve` while the claim
+remains NEW, including for authenticated claims managers. After a
+legitimate NEW→TRIAGE transition, the old preliminary source fingerprint
+becomes stale and the mandatory policy/engine evidence requirements
+are reflected in a **fresh** version.
+
+`apps/api/tests/test_new_claim_assessment_readiness_gate.py` covers
+the real DB rules/assessment service, while the existing protected
+HM-01 browser E2E now exercises these exact API actions before
+continuing the normal four-document TRIAGE→Assessment→Excel journey.
+Existing human approval of legitimate preliminary documents at later
+claim stages is **not** disabled. This is a conservative software
+readiness guard, **not an insurer/independent H&M expert's signoff**.
+Real-data pilot NO-GO remains unchanged.
+
 ## HM-04 actual replacement/source-freshness acceptance (new)
 
 `tests/browser/hm_multidoc_replacement_e2e.py` executes a **second**
