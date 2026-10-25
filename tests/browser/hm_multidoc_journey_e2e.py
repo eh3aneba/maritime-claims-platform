@@ -157,6 +157,35 @@ def main() -> None:
             raise AssertionError("synthetic_document_scanning_or_versions_invalid")
         stages["malware_and_worker_processing_ms"] = _milliseconds(stage)
 
+        # A just-created claim is NEW: critical H&M document obligations
+        # enter scope at TRIAGE (DOC-001/002/004). Do not fake Preliminary
+        # on NEW merely because the rules have not yet been activated.
+        stage = time.monotonic()
+        triage = _ok(
+            request.post(
+                API + f"/api/v1/claims/{claim_id}/status",
+                data={
+                    "status": "triage",
+                    "reason": "Synthetic handler starts TRIAGE so policy and evidence requirements activate.",
+                },
+            ), "move_claim_to_triage",
+        )
+        if triage["status"] != "triage":
+            raise AssertionError("synthetic_claim_not_in_triage")
+        summary = _ok(
+            request.get(API + f"/api/v1/claims/{claim_id}/rules"),
+            "read_triage_requirements",
+        )
+        requirements = summary["requirements"]
+        missing_policy = [
+            item for item in requirements if
+            item["document_type"] == "policy"
+            and item["status"] not in ("accepted", "under_review")
+        ]
+        if summary["readiness"]["state"] != "not_ready" or not missing_policy:
+            raise AssertionError("synthetic_triage_policy_gate_not_active")
+        stages["triage_requirements_activation_ms"] = _milliseconds(stage)
+
         stage = time.monotonic()
         page.goto(WEB + f"/claims/{claim_id}/assessment", wait_until="networkidle")
         expect(page.get_by_role("heading", name="Initial Assessment", exact=True)).to_be_visible()
