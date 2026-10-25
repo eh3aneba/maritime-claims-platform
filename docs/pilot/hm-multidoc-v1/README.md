@@ -61,6 +61,41 @@ pretend expert approval. Historical records may remain available to
 authorized humans; excluding them from a *new/current* assessment
 does not erase the old immutable assessment version. **Pilot GO=NO.**
 
+## HM-05 genuine Persian OCR regression (local, invented)
+
+The new `tests/browser/hm_multidoc_persian_ocr_e2e.py` extends the
+protected disposable browser suite with **real Tesseract OCR**, not a
+pre-written text or fake PDF parser. It creates an invented HM-05
+tanker claim; activates legitimate TRIAGE; renders the exact fixed
+source lines as a **Chromium image-only PNG**, then uploads it plus
+three valid DOCX companion records using authenticated manual
+evidence upload. Requires all four to pass ClamAV and the real
+processing worker.
+
+The dedicated document-processing summary must report
+`tesseract:eng+fas`, nonempty OCR characters/segments, a persisted
+SHA-256 text hash and `requires_ocr=false`. Actual, *post-worker*
+lexical evidence search restricted to the PNG source must recover
+both an exact technical term (`توربوشارژر`) and the uncertainty negation
+(`نیست`) with the correct document ID/version/file hash/extraction
+hash and page 1 locator. A source-bound, **preliminary and unapproved**
+Initial Assessment must cite that document ID; it does not
+automatically assert a mechanical cause.
+
+**This is a bounded smoke test of two recoverable Persian phrases,
+NOT a statement that the whole OCR transcript, times, negation scope,
+technical meaning or insurance consequence is correct.** An independent
+bilingual technical reviewer must compare the full recovered text
+against the original scan and record omissions, insertion, timing and
+negation errors. All human-quality and pilot approval flags remain
+false. Only local `AI_PROVIDER=disabled` operation is tested.
+
+HM-05's name is *designated holdout*, but its fixtures are public
+and its OCR phrases are now used for regression engineering; do
+**not** treat these probes as a sealed blinded LLM evaluation set.
+A sealed, independently controlled holdout remains a separate
+acceptance dependency.
+
 ## Actual uploadable fixtures — no fake text-extension upload
 
 `scripts/hm_multidoc_packs.py` validates the finite in-repo source
