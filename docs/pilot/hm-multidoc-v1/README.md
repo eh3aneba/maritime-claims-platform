@@ -61,6 +61,52 @@ pretend expert approval. Historical records may remain available to
 authorized humans; excluding them from a *new/current* assessment
 does not erase the old immutable assessment version. **Pilot GO=NO.**
 
+## HM-05 genuine Persian OCR — processing proof and open quality defect
+
+`tests/browser/hm_multidoc_persian_ocr_e2e.py` exercises the real,
+authenticated **local** worker and Tesseract, with an image-only PNG
+rendered from the fixed invented Persian source through Chromium.
+Four documents must be admitted, malware-clean and processed; the
+persisted PNG extraction must report `tesseract:eng+fas`, positive
+char/segment counts, a document-bound text hash and page locator.
+The generated Initial Assessment remains **preliminary/unapproved**.
+
+**Observed on the previous CI head**: The complete original test
+failed in real browser run [#40207012936](https://github.com/eh3aneba/maritime-claims-platform/actions/runs/40207012936)
+because a source phrase could not be retrieved despite successful
+OCR processing. Independent reproduction of the synthetic raster
+showed the technical equipment term `توربوشارژر` recovered, while
+the visually present line containing `نیست` was omitted by Tesseract.
+This is a **material OCR negation-quality failure**, now tracked in
+[Issue #810](https://github.com/eh3aneba/maritime-claims-platform/issues/810),
+not a successful two-phrase acceptance result.
+
+This protected browser regression now asserts real OCR/locator evidence
+for the **technical equipment term** and *records* the negation probe
+outcome. If missing, `critical_negation_omission_observed=true`,
+`negation_retrieved=false`, `quality_disposition=negation_missing_review_required`
+and `both_literal_probes_retrieved=false` are written to a bounded
+synthetic CI artifact. No missing word is constructed, guessed or used
+as an extracted fact. Even if both literal probes are observed, the
+result remains **machine-unverified** and `negation_scope_verified=false`,
+`human_bilingual_review_required=true`,
+`critical_fact_authorization_granted=false` and
+`pilot_accepted=false`. A green CI after this revised check proves
+**safe omission reporting and system integration**, not semantic OCR
+accuracy, not that negation was recovered. The independent bilingual
+original-vs-transcript comparison remains open and **quality NO-GO**.
+
+There is no external model, no customer evidence, no human source
+approval and no cover/causation/payment decision in this test. Future
+work must measure Persian critical negation/time/term accuracy on
+separately controlled unseen scans and remediate [#810](https://github.com/eh3aneba/maritime-claims-platform/issues/810).
+Do not silently waive that independent quality gate to ship a pilot.
+
+HM-05 was designated a holdout at corpus creation, but its source
+phrases now inform regression engineering in a public repo; **it is
+not a sealed blind LLM holdout**. A fresh independently held evaluation
+set is required.
+
 ## Actual uploadable fixtures — no fake text-extension upload
 
 `scripts/hm_multidoc_packs.py` validates the finite in-repo source

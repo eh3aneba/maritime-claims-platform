@@ -46,6 +46,9 @@ jobs:
           # Validate every invented source pack, version edge and uploadable DOCX
           # before spending runner time on full Backend matrix shards.
           python -m unittest scripts.tests.test_hm_multidoc_packs -v
+          # OCR omission classification must never fabricate the missing
+          # negation or mark human/semantic/pilot quality as accepted.
+          python -m unittest scripts.tests.test_hm_persian_ocr_probe -v
 
       - name: Classify exact-head Backend scope
         id: scope
