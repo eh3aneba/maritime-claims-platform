@@ -83,6 +83,10 @@ def _docs(db: Session, claim: Claim) -> list[Document]:
                 Document.organization_id == claim.organization_id,
                 Document.claim_id == claim.id,
                 Document.deleted_at.is_(None),
+                # Superseded versions remain in the bound source snapshot for
+                # history/staleness detection, but cannot be shown as CURRENT
+                # received evidence or cited in a newly generated assessment.
+                Document.is_current.is_(True),
             )
             .order_by(Document.created_at.asc())
         )

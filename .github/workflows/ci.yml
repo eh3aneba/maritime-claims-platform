@@ -359,6 +359,9 @@ jobs:
           # Run after existing MT ORION E2Es: it creates an extra throwaway claim.
           # Actual synthetic manual upload -> worker -> preliminary Assessment -> export.
           python tests/browser/hm_multidoc_journey_e2e.py
+          # Real HM-04 v1->v2 replacement: historical source remains immutable
+          # and stale Assessment cannot be reviewed; new manifest is current-only.
+          python tests/browser/hm_multidoc_replacement_e2e.py
 
       - name: Capture container diagnostics
         if: failure()

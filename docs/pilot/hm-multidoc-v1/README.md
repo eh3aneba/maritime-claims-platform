@@ -27,6 +27,40 @@ is designated now, but true held-out blindness needs restricted access to
 model/prompt development and independent reviewers; a public GitHub repo
 alone cannot enforce it.
 
+## HM-04 actual replacement/source-freshness acceptance (new)
+
+`tests/browser/hm_multidoc_replacement_e2e.py` executes a **second**
+disposable, authenticated, wholly synthetic product journey in the
+protected browser CI. Four actual DOCX files are admitted and processed,
+including the v1 engineer statement. A source-bound v1 Initial Assessment
+is generated, then the actual authenticated `/documents/{id}/replacements`
+API admits the corrected engineer report as **v2** with a recorded reason.
+
+The acceptance rejects a broken family/supersedes/version/file-hash
+chain, checks that the old Document remains readable in metadata but
+`is_current=false` and bytes/hash preserved, and that attempting to
+write a review to the stale v1 Assessment returns **409**. A further
+attempt to replace the superseded old version must also return **409**.
+After real malware scan / worker processing of v2, a new preliminary
+v2 Initial Assessment must have a **different bound source fingerprint**
+and cite the *current* engineer v2 plus the other three current sources
+without citing superseded engineer v1. The UI must still render both
+document versions and the Initial Assessment workspace; history must
+mark v1 stale and v2 current.
+
+To enforce this semantic boundary, the new Initial Assessment
+`Documents Received` projection excludes `is_current=false`
+document rows. Historical source fingerprints continue to include
+non-deleted older versions via the separate source-integrity snapshot;
+**no original source or chronology audit is deleted**. The prior
+`HM-01` journey is retained unchanged and runs first.
+
+CI measures only machine elapsed stage time, not handler productivity.
+The script never calls a model, writes a real claim or records
+pretend expert approval. Historical records may remain available to
+authorized humans; excluding them from a *new/current* assessment
+does not erase the old immutable assessment version. **Pilot GO=NO.**
+
 ## Actual uploadable fixtures — no fake text-extension upload
 
 `scripts/hm_multidoc_packs.py` validates the finite in-repo source
