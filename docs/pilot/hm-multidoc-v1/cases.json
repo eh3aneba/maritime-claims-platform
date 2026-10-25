@@ -1,0 +1,402 @@
+{
+  "corpus_id": "hm-machinery-six-multidoc-v1",
+  "corpus_version": "1.0.0",
+  "fictional": true,
+  "real_customer_data": false,
+  "approved_expert_reference_included": false,
+  "training_split_policy": "Four development cases and two designated holdout cases. No independent expert labels or expected model responses are provided.",
+  "cases": [
+    {
+      "case_id": "HM-01",
+      "dataset_split": "development",
+      "scenario_focus": "complete",
+      "incident_date": "2026-09-03",
+      "notification_date": "2026-09-04",
+      "claim_description": "Synthetic turbocharger vibration and shutdown on MT ALDER; reported mechanical damage requires independent verification.",
+      "currency": "USD",
+      "documents": [
+        {
+          "source_id": "notice",
+          "source_version": 1,
+          "file_name": "notice.docx",
+          "document_type": "claim_notification",
+          "format": "docx",
+          "replaces_source_id": null,
+          "source_lines": [
+            "Synthetic MT ALDER casualty notice",
+            "Turbocharger vibration was reported on 2026-09-03.",
+            "Causation, policy coverage and responsibility have not been established."
+          ]
+        },
+        {
+          "source_id": "engineer",
+          "source_version": 1,
+          "file_name": "engineer.docx",
+          "document_type": "chief_engineer_report",
+          "format": "docx",
+          "replaces_source_id": null,
+          "source_lines": [
+            "Synthetic MT ALDER Chief Engineer account",
+            "Alarm reported at 14:20 UTC, load reduction at 14:24 UTC, shutdown at 14:31 UTC.",
+            "The account is not independently verified."
+          ]
+        },
+        {
+          "source_id": "engine-log",
+          "source_version": 1,
+          "file_name": "engine-log.docx",
+          "document_type": "engine_log",
+          "format": "docx",
+          "replaces_source_id": null,
+          "source_lines": [
+            "Synthetic MT ALDER engine log extract",
+            "At 14:20 UTC an alarm was recorded; at 14:31 UTC shutdown was recorded.",
+            "This supplied extract is not proof of an original complete log."
+          ]
+        },
+        {
+          "source_id": "pms",
+          "source_version": 1,
+          "file_name": "pms.docx",
+          "document_type": "pms_record",
+          "format": "docx",
+          "replaces_source_id": null,
+          "source_lines": [
+            "Synthetic MT ALDER maintenance record",
+            "Inspection entered on 2026-08-12; maintenance pages were supplied.",
+            "Completeness and authenticity of this extract are unverified."
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "HM-02",
+      "dataset_split": "development",
+      "scenario_focus": "missing",
+      "incident_date": "2026-09-05",
+      "notification_date": "2026-09-06",
+      "claim_description": "Synthetic MT BIRCH reported turbine damage with missing maintenance and engine-log extracts.",
+      "currency": "USD",
+      "documents": [
+        {
+          "source_id": "notice",
+          "source_version": 1,
+          "file_name": "notice.docx",
+          "document_type": "claim_notification",
+          "format": "docx",
+          "replaces_source_id": null,
+          "source_lines": [
+            "Synthetic MT BIRCH casualty notice",
+            "Turbine blade damage reportedly occurred on 2026-09-05.",
+            "Reported damage is not a verified root cause."
+          ]
+        },
+        {
+          "source_id": "statement",
+          "source_version": 1,
+          "file_name": "statement.docx",
+          "document_type": "chief_engineer_report",
+          "format": "docx",
+          "replaces_source_id": null,
+          "source_lines": [
+            "Synthetic MT BIRCH engineer statement",
+            "Abnormal vibration and high exhaust temperature were reported.",
+            "Whether original instrument readings exist elsewhere is unknown."
+          ]
+        },
+        {
+          "source_id": "requests",
+          "source_version": 1,
+          "file_name": "requests.docx",
+          "document_type": "survey_report",
+          "format": "docx",
+          "replaces_source_id": null,
+          "source_lines": [
+            "Synthetic MT BIRCH evidence request status",
+            "Last ten days of engine logs NOT SUPPLIED.",
+            "PMS overhaul records NOT SUPPLIED; existence is unknown.",
+            "Maker report and class attendance record requested but not received."
+          ]
+        },
+        {
+          "source_id": "appointment",
+          "source_version": 1,
+          "file_name": "appointment.docx",
+          "document_type": "workshop_report",
+          "format": "docx",
+          "replaces_source_id": null,
+          "source_lines": [
+            "Synthetic MT BIRCH workshop appointment",
+            "Onboard attendance has been proposed, not completed.",
+            "No technical causation conclusion was supplied."
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "HM-03",
+      "dataset_split": "development",
+      "scenario_focus": "conflict",
+      "incident_date": "2026-09-07",
+      "notification_date": "2026-09-08",
+      "claim_description": "Synthetic MT CEDAR has conflicting alarm-time observations from different persons.",
+      "currency": "USD",
+      "documents": [
+        {
+          "source_id": "notice",
+          "source_version": 1,
+          "file_name": "notice.docx",
+          "document_type": "claim_notification",
+          "format": "docx",
+          "replaces_source_id": null,
+          "source_lines": [
+            "Synthetic MT CEDAR notification",
+            "Turbocharger event reportedly occurred 2026-09-07.",
+            "The notification does not resolve the machinery timeline."
+          ]
+        },
+        {
+          "source_id": "engineer",
+          "source_version": 1,
+          "file_name": "engineer.docx",
+          "document_type": "chief_engineer_report",
+          "format": "docx",
+          "replaces_source_id": null,
+          "source_lines": [
+            "Synthetic MT CEDAR engineer account",
+            "First alarm occurred at 11:30 UTC, according to the engineer.",
+            "Original logger timestamps are unavailable for independent verification."
+          ]
+        },
+        {
+          "source_id": "workshop",
+          "source_version": 1,
+          "file_name": "workshop.docx",
+          "document_type": "workshop_report",
+          "format": "docx",
+          "replaces_source_id": null,
+          "source_lines": [
+            "Synthetic MT CEDAR workshop account",
+            "First alarm occurred at 11:55 UTC, according to the workshop.",
+            "Its source clock and original log have not been verified."
+          ]
+        },
+        {
+          "source_id": "status",
+          "source_version": 1,
+          "file_name": "status.docx",
+          "document_type": "survey_report",
+          "format": "docx",
+          "replaces_source_id": null,
+          "source_lines": [
+            "Synthetic MT CEDAR survey record status",
+            "Two attributed alarm times conflict.",
+            "No independent reconciliation was supplied."
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "HM-04",
+      "dataset_split": "development",
+      "scenario_focus": "replacement",
+      "incident_date": "2026-09-09",
+      "notification_date": "2026-09-10",
+      "claim_description": "Synthetic MT DUNE corrected a prior shutdown-time report; preserve superseded and current document versions.",
+      "currency": "USD",
+      "documents": [
+        {
+          "source_id": "notice",
+          "source_version": 1,
+          "file_name": "notice.docx",
+          "document_type": "claim_notification",
+          "format": "docx",
+          "replaces_source_id": null,
+          "source_lines": [
+            "Synthetic MT DUNE claim notice",
+            "A high-temperature alarm was reported 2026-09-09.",
+            "Investigation remains preliminary."
+          ]
+        },
+        {
+          "source_id": "engineer",
+          "source_version": 1,
+          "file_name": "engineer.docx",
+          "document_type": "chief_engineer_report",
+          "format": "docx",
+          "replaces_source_id": null,
+          "source_lines": [
+            "Synthetic MT DUNE engineer report first issue",
+            "Shutdown is recorded at 13:15 UTC.",
+            "This is the first issue; original logger not yet reconciled."
+          ]
+        },
+        {
+          "source_id": "logger",
+          "source_version": 1,
+          "file_name": "logger.docx",
+          "document_type": "engine_log",
+          "format": "docx",
+          "replaces_source_id": null,
+          "source_lines": [
+            "Synthetic MT DUNE recorder extract",
+            "Alarm at 13:04 UTC; shutdown at 13:51 UTC.",
+            "The supplied recorder extract has not been independently authenticated."
+          ]
+        },
+        {
+          "source_id": "workshop",
+          "source_version": 1,
+          "file_name": "workshop.docx",
+          "document_type": "workshop_report",
+          "format": "docx",
+          "replaces_source_id": null,
+          "source_lines": [
+            "Synthetic MT DUNE workshop note",
+            "Scoring to turbocharger housing observed.",
+            "Root cause and coverage are not determined."
+          ]
+        },
+        {
+          "source_id": "engineer-v2",
+          "source_version": 2,
+          "file_name": "engineer-v2.docx",
+          "document_type": "chief_engineer_report",
+          "format": "docx",
+          "replaces_source_id": "engineer",
+          "source_lines": [
+            "Synthetic MT DUNE engineer report corrected issue",
+            "The previous 13:15 UTC shutdown notation was a transposition error.",
+            "Corrected reported shutdown: 13:51 UTC; recorder authenticity remains unverified."
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "HM-05",
+      "dataset_split": "holdout",
+      "scenario_focus": "scanned-persian",
+      "incident_date": "2026-09-11",
+      "notification_date": "2026-09-12",
+      "claim_description": "Synthetic MT ELM report includes a photographed Persian text document requiring OCR and language-aware review.",
+      "currency": "USD",
+      "documents": [
+        {
+          "source_id": "notice",
+          "source_version": 1,
+          "file_name": "notice.docx",
+          "document_type": "claim_notification",
+          "format": "docx",
+          "replaces_source_id": null,
+          "source_lines": [
+            "Synthetic MT ELM casualty notice",
+            "Main engine load reduction reported 2026-09-11.",
+            "No established mechanical cause."
+          ]
+        },
+        {
+          "source_id": "persian-scan",
+          "source_version": 1,
+          "file_name": "persian-scan.png",
+          "document_type": "engine_log",
+          "format": "png",
+          "replaces_source_id": null,
+          "source_lines": [
+            "گزارش آزمایشی مهندس کشتی الم",
+            "در تاریخ ۲۰۲۶-۰۹-۱۱ لرزش غیرعادی توربوشارژر موتور اصلی گزارش شد.",
+            "علت قطعی خرابی هنوز معلوم نیست و بررسی سوابق ضروری است."
+          ]
+        },
+        {
+          "source_id": "register",
+          "source_version": 1,
+          "file_name": "register.docx",
+          "document_type": "survey_report",
+          "format": "docx",
+          "replaces_source_id": null,
+          "source_lines": [
+            "Synthetic MT ELM survey register",
+            "Image-only Persian engineer note was received.",
+            "OCR result and negation require qualified human verification."
+          ]
+        },
+        {
+          "source_id": "maintenance",
+          "source_version": 1,
+          "file_name": "maintenance.docx",
+          "document_type": "pms_record",
+          "format": "docx",
+          "replaces_source_id": null,
+          "source_lines": [
+            "Synthetic MT ELM PMS summary",
+            "PMS documentation partial; overhaul report not supplied.",
+            "Unknown if the missing pages existed."
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "HM-06",
+      "dataset_split": "holdout",
+      "scenario_focus": "financial",
+      "incident_date": "2026-09-13",
+      "notification_date": "2026-09-14",
+      "claim_description": "Synthetic MT FIR competing repair quotations in USD/EUR and a separate inspection invoice.",
+      "currency": "USD",
+      "documents": [
+        {
+          "source_id": "notice",
+          "source_version": 1,
+          "file_name": "notice.docx",
+          "document_type": "claim_notification",
+          "format": "docx",
+          "replaces_source_id": null,
+          "source_lines": [
+            "Synthetic MT FIR casualty notice",
+            "Compressor wheel damage reportedly occurred 2026-09-13.",
+            "Technical causation and insurer coverage remain open."
+          ]
+        },
+        {
+          "source_id": "quote-usd",
+          "source_version": 1,
+          "file_name": "quote-usd.docx",
+          "document_type": "quotation",
+          "format": "docx",
+          "replaces_source_id": null,
+          "source_lines": [
+            "Synthetic MT FIR quotation A",
+            "Quote A USD 265000 includes parts and labor.",
+            "A quotation is not an incurred and verified loss."
+          ]
+        },
+        {
+          "source_id": "quote-eur",
+          "source_version": 1,
+          "file_name": "quote-eur.docx",
+          "document_type": "quotation",
+          "format": "docx",
+          "replaces_source_id": null,
+          "source_lines": [
+            "Synthetic MT FIR quotation B",
+            "Quote B EUR 231000 covers an alternative repair, transport excluded.",
+            "This is an alternative to A; costs must not be summed as if both incurred."
+          ]
+        },
+        {
+          "source_id": "invoice",
+          "source_version": 1,
+          "file_name": "invoice.docx",
+          "document_type": "invoice",
+          "format": "docx",
+          "replaces_source_id": null,
+          "source_lines": [
+            "Synthetic MT FIR inspection invoice",
+            "Inspection invoice USD 18200; payment not confirmed.",
+            "FX evidence, policy deductible and indemnity not supplied."
+          ]
+        }
+      ]
+    }
+  ]
+}

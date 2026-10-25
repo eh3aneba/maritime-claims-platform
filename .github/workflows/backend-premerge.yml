@@ -43,6 +43,9 @@ jobs:
           # Phase-two may reveal only fixed synthetic source-backed excerpts;
           # require an always-on, no-network policy regression before shards.
           python -m unittest scripts.tests.test_pilot_local_ai_hm_postblind_quote_policy -v
+          # Validate every invented source pack, version edge and uploadable DOCX
+          # before spending runner time on full Backend matrix shards.
+          python -m unittest scripts.tests.test_hm_multidoc_packs -v
 
       - name: Classify exact-head Backend scope
         id: scope
