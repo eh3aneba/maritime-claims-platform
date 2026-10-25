@@ -3,7 +3,7 @@ from uuid import UUID
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, computed_field
 
 from app.modules.processing.models import ProcessingJobStatus, ProcessingJobType
 
@@ -33,6 +33,21 @@ class TextExtractionSummary(BaseModel):
     requires_ocr: bool
     text_hash: str | None
     warnings: list | None
+
+    @computed_field
+    @property
+    def source_text_quality_state(self) -> Literal[
+        "ocr_human_source_comparison_required", "not_an_ocr_extraction"
+    ]:
+        """OCR completion is text availability, never source-text accuracy.
+
+        Missing negations, dates or engineering qualifiers cannot be
+        detected from an OCR transcript alone. This is a deterministic
+        disclosure for the operator, not a verification/approval flag.
+        """
+        if "tesseract:" in self.extraction_method.lower():
+            return "ocr_human_source_comparison_required"
+        return "not_an_ocr_extraction"
 
 
 class OperatorProcessingJobResponse(BaseModel):
