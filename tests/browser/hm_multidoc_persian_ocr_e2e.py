@@ -19,14 +19,13 @@ from playwright.sync_api import expect, sync_playwright
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 from scripts.hm_multidoc_packs import load_corpus, make_upload_bytes
+from scripts.hm_persian_ocr_probe import PROBES, evaluate_literal_probe_retrieval
 from hm_multidoc_journey_e2e import (
     API, WEB, ORG, EMAIL, PASSWORD, _ok, _milliseconds,
 )
 
-# Only *literal* synthetic source phrases are used as probes, not
-# authored expert reference labels. If a phrase is not recovered,
-# record a genuine failure for investigation; do not invent OCR accuracy.
-PROBES = ("توربوشارژر", "نیست")
+# Only invented fixed source phrases are probed. A recovered phrase is
+# NOT a verified claim fact, and missing negation is a quality blocker.
 
 
 def _guard() -> None:
@@ -184,9 +183,9 @@ def main() -> None:
         stages["real_worker_and_ocr_ms"] = _milliseconds(stage)
 
         stage = time.monotonic()
-        # Retrieval verifies the *persisted* OCR text rather than a local
-        # synthetic transcript. Both the machinery term and uncertainty
-        # negation must be available for a reviewer to locate.
+        # Retrieve *persisted* OCR rather than the synthetic transcript.
+        # Do not claim complete negation recognition when the worker omits it.
+        observed_probes: dict[str, bool] = {}
         for probe in PROBES:
             result = _ok(
                 request.post(
@@ -212,10 +211,20 @@ def main() -> None:
             ]
             if result["retrieval_mode"] != "lexical" or result["semantic_used"]:
                 raise AssertionError("hm05_nonlocal_model_retrieval_unexpected")
-            if not matches:
-                # Never print OCR text, even when synthetic, or invent a
-                # quality score after a failed source-phrase match.
-                raise AssertionError("hm05_persian_ocr_missing_retrievable_source_phrase")
+            observed_probes[probe] = bool(matches)
+        quality = evaluate_literal_probe_retrieval(observed_probes)
+        # Fail closed on loss of even the baseline technical identifier:
+        # the controlled Persian OCR search path must remain usable.
+        if not quality["machinery_term_retrieved"]:
+            raise AssertionError("hm05_technical_identifier_not_retrievable")
+        # Negation omission is a captured quality **failure**, not
+        # an invented positive probe and not a claimed acceptance.
+        if (
+            quality["critical_fact_authorization_granted"]
+            or not quality["human_bilingual_review_required"]
+            or quality["pilot_accepted"]
+        ):
+            raise AssertionError("hm05_ocr_quality_was_falsely_approved")
         stages["persian_search_locator_ms"] = _milliseconds(stage)
 
         stage = time.monotonic()
@@ -260,8 +269,8 @@ def main() -> None:
             "real_image_only_raster_used": True,
             "real_tesseract_eng_fas_executed": True,
             "malware_clean_and_worker_processed_documents": 4,
-            "ocr_source_locator_is_page_one": True,
-            "two_lexical_source_probes_retrievable": True,
+            "ocr_source_locator_is_page_one_for_observed_matches": True,
+            "literal_probe_observations": quality,
             "ocr_char_count_observed": ocr["char_count"],
             "ocr_segment_count_observed": ocr["segment_count"],
             "full_transcript_accuracy_verified": False,
@@ -282,7 +291,9 @@ def main() -> None:
             encoding="utf-8",
         )
         browser.close()
-    print("Synthetic HM-05 real Persian OCR evidence locator test: PASS.")
+    print("Synthetic HM-05 OCR availability and fail-closed quality labeling: PASS.")
+    print("OCR negation literal recovered:", quality["negation_retrieved"])
+    print("OCR semantic quality / pilot: NOT ACCEPTED, bilingual review required.")
     print("Machine stage timings only:", json.dumps(stages, sort_keys=True))
 
 
