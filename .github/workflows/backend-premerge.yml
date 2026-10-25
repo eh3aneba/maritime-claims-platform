@@ -35,7 +35,11 @@ jobs:
           fetch-depth: 0
 
       - name: Verify stable shards and fail-closed narrow scope
-        run: python -m unittest scripts.tests.test_backend_shard_selector scripts.tests.test_ci_backend_narrow_scope -v
+        run: |
+          python -m unittest scripts.tests.test_backend_shard_selector scripts.tests.test_ci_backend_narrow_scope -v
+          # Pure offline, source-only synthetic packet; fail before expensive shards
+          # if a neutral-blindness contract or approval-leak regression fails.
+          python -m unittest scripts.tests.test_pilot_local_ai_hm_neutral_blind_packet -v
 
       - name: Classify exact-head Backend scope
         id: scope
