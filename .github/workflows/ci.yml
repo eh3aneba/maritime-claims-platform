@@ -332,6 +332,9 @@ jobs:
           export MCRI_E2E_RETRY_INFRA=true
           export MCRI_COMPOSE_ENV_FILE=.env.ci
           python tests/browser/design_partner_e2e.py
+          # Real isolated synthetic manual-upload -> worker -> preliminary
+          # assessment -> immutable Excel export; never runs Ollama/external AI.
+          python tests/browser/hm_multidoc_journey_e2e.py
           python tests/browser/claim_qa_synthesis_e2e.py
           python tests/browser/ai_operations_e2e.py
           python tests/browser/governance_webhooks_e2e.py
