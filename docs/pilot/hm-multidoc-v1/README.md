@@ -61,40 +61,51 @@ pretend expert approval. Historical records may remain available to
 authorized humans; excluding them from a *new/current* assessment
 does not erase the old immutable assessment version. **Pilot GO=NO.**
 
-## HM-05 genuine Persian OCR regression (local, invented)
+## HM-05 genuine Persian OCR — processing proof and open quality defect
 
-The new `tests/browser/hm_multidoc_persian_ocr_e2e.py` extends the
-protected disposable browser suite with **real Tesseract OCR**, not a
-pre-written text or fake PDF parser. It creates an invented HM-05
-tanker claim; activates legitimate TRIAGE; renders the exact fixed
-source lines as a **Chromium image-only PNG**, then uploads it plus
-three valid DOCX companion records using authenticated manual
-evidence upload. Requires all four to pass ClamAV and the real
-processing worker.
+`tests/browser/hm_multidoc_persian_ocr_e2e.py` exercises the real,
+authenticated **local** worker and Tesseract, with an image-only PNG
+rendered from the fixed invented Persian source through Chromium.
+Four documents must be admitted, malware-clean and processed; the
+persisted PNG extraction must report `tesseract:eng+fas`, positive
+char/segment counts, a document-bound text hash and page locator.
+The generated Initial Assessment remains **preliminary/unapproved**.
 
-The dedicated document-processing summary must report
-`tesseract:eng+fas`, nonempty OCR characters/segments, a persisted
-SHA-256 text hash and `requires_ocr=false`. Actual, *post-worker*
-lexical evidence search restricted to the PNG source must recover
-both an exact technical term (`توربوشارژر`) and the uncertainty negation
-(`نیست`) with the correct document ID/version/file hash/extraction
-hash and page 1 locator. A source-bound, **preliminary and unapproved**
-Initial Assessment must cite that document ID; it does not
-automatically assert a mechanical cause.
+**Observed on the previous CI head**: The complete original test
+failed in real browser run [#40207012936](https://github.com/eh3aneba/maritime-claims-platform/actions/runs/40207012936)
+because a source phrase could not be retrieved despite successful
+OCR processing. Independent reproduction of the synthetic raster
+showed the technical equipment term `توربوشارژر` recovered, while
+the visually present line containing `نیست` was omitted by Tesseract.
+This is a **material OCR negation-quality failure**, now tracked in
+[Issue #810](https://github.com/eh3aneba/maritime-claims-platform/issues/810),
+not a successful two-phrase acceptance result.
 
-**This is a bounded smoke test of two recoverable Persian phrases,
-NOT a statement that the whole OCR transcript, times, negation scope,
-technical meaning or insurance consequence is correct.** An independent
-bilingual technical reviewer must compare the full recovered text
-against the original scan and record omissions, insertion, timing and
-negation errors. All human-quality and pilot approval flags remain
-false. Only local `AI_PROVIDER=disabled` operation is tested.
+This protected browser regression now asserts real OCR/locator evidence
+for the **technical equipment term** and *records* the negation probe
+outcome. If missing, `critical_negation_omission_observed=true`,
+`negation_retrieved=false`, `quality_disposition=negation_missing_review_required`
+and `both_literal_probes_retrieved=false` are written to a bounded
+synthetic CI artifact. No missing word is constructed, guessed or used
+as an extracted fact. Even if both literal probes are observed, the
+result remains **machine-unverified** and `negation_scope_verified=false`,
+`human_bilingual_review_required=true`,
+`critical_fact_authorization_granted=false` and
+`pilot_accepted=false`. A green CI after this revised check proves
+**safe omission reporting and system integration**, not semantic OCR
+accuracy, not that negation was recovered. The independent bilingual
+original-vs-transcript comparison remains open and **quality NO-GO**.
 
-HM-05's name is *designated holdout*, but its fixtures are public
-and its OCR phrases are now used for regression engineering; do
-**not** treat these probes as a sealed blinded LLM evaluation set.
-A sealed, independently controlled holdout remains a separate
-acceptance dependency.
+There is no external model, no customer evidence, no human source
+approval and no cover/causation/payment decision in this test. Future
+work must measure Persian critical negation/time/term accuracy on
+separately controlled unseen scans and remediate [#810](https://github.com/eh3aneba/maritime-claims-platform/issues/810).
+Do not silently waive that independent quality gate to ship a pilot.
+
+HM-05 was designated a holdout at corpus creation, but its source
+phrases now inform regression engineering in a public repo; **it is
+not a sealed blind LLM holdout**. A fresh independently held evaluation
+set is required.
 
 ## Actual uploadable fixtures — no fake text-extension upload
 
