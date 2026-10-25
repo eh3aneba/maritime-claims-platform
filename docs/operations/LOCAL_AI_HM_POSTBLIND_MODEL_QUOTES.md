@@ -60,7 +60,8 @@ The output intentionally includes **invented synthetic quotations** on
 the local console. Do not show Phase 2 output during the initial blind
 review, and do not route real insurer Evidence through this tool.
 The separate count-only diagnostics remain preferable for routine
-operator checks.
+operator checks. The resulting synthetic excerpts are for human review
+only, not automated claim assessment or approval.
 
 This tool does not independently verify actual execution identity or
 model weights. Its Phase 1 packet digest is an *unattested drift
