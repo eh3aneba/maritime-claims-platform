@@ -1,4 +1,4 @@
-import type { AIReviewDetail, AIReviewGroupQueueResponse, AIReviewQueueResponse, AIReviewResult, AISourcePreview, Claim, ClaimDocument, ClaimDocumentRequirement, ClaimFactListResponse, ClaimListResponse, CurrentUser, DocumentListResponse, EngineLogEventsResponse, ClaimChronologyResponse, ClaimRuleSummary, ClaimTaskListResponse, DocumentRequestResult, Vessel, VesselListResponse, TechnicalReviewResponse, FinancialReviewResponse, CostReviewStatus, LegacyRescanResponse, QuarantineRetryResponse, ClaimIntakeApprovalResult, ClaimIntakeDraft, DocumentProcessingSummary, ProcessingJobSummary, ExternalEvidenceProcessingRelease, SourceExtractionSegmentsResponse } from "./types";
+import type { AIReviewDetail, AIReviewGroupQueueResponse, AIReviewQueueResponse, AIReviewResult, AISourcePreview, Claim, ClaimDocument, ClaimDocumentRequirement, ClaimFactListResponse, ClaimListResponse, CurrentUser, DocumentListResponse, EngineLogEventsResponse, ClaimChronologyResponse, ClaimRuleSummary, ClaimTaskListResponse, DocumentRequestResult, Vessel, VesselListResponse, TechnicalReviewResponse, FinancialReviewResponse, CostReviewStatus, LegacyRescanResponse, QuarantineRetryResponse, ClaimIntakeApprovalResult, ClaimIntakeDraft, DocumentProcessingSummary, ProcessingJobSummary, ExternalEvidenceProcessingRelease, SourceExtractionSegmentsResponse, OcrDiscrepancyKind, OcrDiscrepancyList, OcrDiscrepancyReceipt } from "./types";
 import type { EvidenceMatrixResponse } from "./types";
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api/v1";
@@ -190,6 +190,32 @@ export function getUnverifiedSourceSegments(
 ) {
   return apiFetch<SourceExtractionSegmentsResponse>(
     `/claims/${claimId}/documents/${documentId}/processing/source-segments?offset=${offset}&limit=5`,
+    { cache: "no-store" },
+  );
+}
+
+/** Append a content-free observation, never a source correction or approval. */
+export function reportOcrSourceDiscrepancy(
+  claimId: string,
+  documentId: string,
+  payload: {
+    document_version: number;
+    source_file_hash: string;
+    extraction_text_hash: string;
+    segment_index: number;
+    issue_kind: OcrDiscrepancyKind;
+    source_compared_by_operator: true;
+  },
+) {
+  return apiFetch<OcrDiscrepancyReceipt>(
+    `/claims/${claimId}/documents/${documentId}/processing/source-discrepancies`,
+    { method: "POST", body: JSON.stringify(payload), cache: "no-store" },
+  );
+}
+
+export function listOcrSourceDiscrepancies(claimId: string, documentId: string) {
+  return apiFetch<OcrDiscrepancyList>(
+    `/claims/${claimId}/documents/${documentId}/processing/source-discrepancies?offset=0&limit=25`,
     { cache: "no-store" },
   );
 }

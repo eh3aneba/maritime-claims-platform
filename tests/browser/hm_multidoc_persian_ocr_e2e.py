@@ -339,6 +339,21 @@ def main() -> None:
         expect(preview_panel.get_by_test_id("ocr-transcript-segment-0")).to_contain_text(
             "توربوشارژر"
         )
+        # Read-only UX check. A scripted test must never impersonate a
+        # real bilingual reviewer or assert human source comparison.
+        operator_report = preview_panel.get_by_test_id("ocr-discrepancy-workspace")
+        expect(operator_report.get_by_role(
+            "button", name="Report an OCR discrepancy"
+        )).to_be_visible()
+        operator_report.get_by_role(
+            "button", name="Report an OCR discrepancy"
+        ).click()
+        submit_report = operator_report.get_by_test_id("ocr-report-submit")
+        expect(submit_report).to_be_disabled()
+        operator_report.get_by_test_id("ocr-report-segment").select_option("0")
+        expect(submit_report).to_be_disabled()
+        expect(operator_report.get_by_test_id("ocr-report-attestation")).not_to_be_checked()
+        # Do not click attestation, do not POST or fabricate a human report.
         preview_panel.get_by_role("button", name="Close and clear preview").click()
         expect(preview_panel).to_have_count(0)
         page.goto(WEB + f"/claims/{claim_id}/assessment", wait_until="networkidle")
