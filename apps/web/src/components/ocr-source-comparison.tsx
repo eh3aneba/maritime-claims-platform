@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 
 import { useLocale } from "@/components/locale-provider";
+import { OcrDiscrepancyWorkspace } from "@/components/ocr-discrepancy-workspace";
 import { downloadClaimDocument, getUnverifiedSourceSegments } from "@/lib/api";
 import { evidenceT } from "@/lib/i18n-evidence";
 import type { ClaimDocument, SourceExtractionSegmentsResponse } from "@/lib/types";
@@ -137,6 +138,12 @@ export function OcrSourceComparison({
               </div>
             ))}
           </div>
+          <OcrDiscrepancyWorkspace
+            key={`${document.id}:${source.extraction_text_hash}:${source.offset}`}
+            claimId={claimId}
+            document={document}
+            source={source}
+          />
           <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-sm">
             <span className="text-slate-600">
               {t("ocrPreview.count", {
