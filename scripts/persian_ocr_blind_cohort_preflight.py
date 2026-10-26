@@ -75,8 +75,8 @@ def check_blind_cohort(manifest: Any, measurements: Any) -> dict[str, Any]:
         digest = _digest(source["source_file_sha256"])
         split = source["split"]
         _require(type(split) is str and split in _SPLITS)
-        _require(source["source_kind"] in _SOURCE_TYPES)
-        _require(source["script_mix"] in _SCRIPT_TYPES)
+        _require(type(source["source_kind"]) is str and source["source_kind"] in _SOURCE_TYPES)
+        _require(type(source["script_mix"]) is str and source["script_mix"] in _SCRIPT_TYPES)
         kinds = source["expected_critical_kinds"]
         _require(type(kinds) is list and 1 <= len(kinds) <= len(KINDS))
         _require(all(type(k) is str and k in KINDS for k in kinds))
