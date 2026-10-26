@@ -207,6 +207,51 @@ sampling, assessor independence, correct transcription, or a false
 operator declaration. Independent H&M and security oversight remains
 mandatory and the pilot stays **NO-GO**.
 
+## Local source-byte integrity check (does not authenticate file origins)
+
+The manifest used in the blind-cohort check currently contains SHA-256
+strings, which by themselves do **not** prove actual file integrity. On a
+separately authorized offline study machine, prepare a **private**, local-only
+inventory JSON:
+
+```json
+{
+  "schema_version": 1,
+  "files": [
+    {"case_ref": "PRIVATE-OPAQUE-CASE-ID", "relative_path": "scans/file001.png"}
+  ]
+}
+```
+
+The inventory must contain exactly one row for **every** source registered in
+the private `cohort.json` manifest, including development sources. Relative
+paths are interpreted inside an approved `--source-root` directory; no
+absolute paths, `..` traversal, symlinks or non-regular files are accepted.
+Run:
+
+```text
+python -m scripts.persian_ocr_local_source_integrity --manifest /secure/local/cohort.json --inventory /secure/local/files.json --source-root /secure/local/source-files
+```
+
+The verifier streams each local file in bounded chunks, calculates SHA-256
+from the bytes, and compares with that source's recorded hash. A changed,
+missing, duplicate, misbound, symlinked, oversized or unreadable source fails
+the entire invocation without printing a filename, source quote, identifier
+or hash; successful output includes only aggregate file counts/byte totals
+and `local_source_hashes_matched=true`. The inventory and source files
+must remain **outside public CI / GitHub / connected storage**, and the
+repository tests use only fictional tiny binary files. File limit is 256 MiB.
+Use an appropriately protected machine and source store; this helper has
+no network client and is not an evidence ingestion path.
+
+**A local hash match proves only consistency between supplied local bytes
+and the supplied SHA-256.** It does not prove chain-of-custody, trusted
+enrollment, genuine original scans, source authorization, independent reviewer
+adjudication, semantic OCR accuracy, or an unseen test set; none of these
+claims may be inferred from `local_source_hashes_matched`. Source-file
+integrity and measured accuracy remain different gates. The real claims
+pilot remains **NO-GO**.
+
 ## Required independent reference study (not yet carried out)
 
 1. Assemble a *separate, previously unseen* permission-cleared cohort of
