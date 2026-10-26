@@ -7,6 +7,7 @@ lexical retrieval. No fake OCR transcript, AI generation or human signoff.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -185,6 +186,44 @@ def main() -> None:
             or len(ocr.get("text_hash") or "") != 64
         ):
             raise AssertionError("hm05_real_persian_ocr_not_available_for_review")
+        # Compare the *persisted* OCR text itself with lexical retrieval.
+        # The tenant-scoped endpoint returns exact text only when its
+        # bounded preview is not truncated. Never infer a word from source.
+        source_read = _ok(
+            request.get(
+                API + f"/api/v1/claims/{claim_id}/documents/"
+                + uploaded[scan["source_id"]]["id"]
+                + "/processing/source-segments",
+                params={"offset": 0, "limit": 5},
+            ), "hm05_unverified_persisted_ocr_segment_read",
+        )
+        source_segments = source_read["segments"]
+        if (
+            source_read["review_disposition"] != "machine_unverified"
+            or source_read["source_text_quality_state"]
+            != "ocr_human_source_comparison_required"
+            or source_read["document_id"] != uploaded[scan["source_id"]]["id"]
+            or source_read["document_version"] != 1
+            or source_read["source_file_hash"] != uploaded[scan["source_id"]]["file_hash"]
+            or source_read["extraction_text_hash"] != ocr["text_hash"]
+            or source_read["extraction_method"] != "tesseract:eng+fas"
+            or source_read["total_segments"] != 1
+            or len(source_segments) != 1
+            or source_segments[0]["segment_index"] != 0
+            or source_segments[0]["locator_type"] != "page"
+            or source_segments[0]["locator_value"] != "1"
+            or source_segments[0]["text_truncated"]
+        ):
+            raise AssertionError("hm05_ocr_machine_transcript_unavailable_or_incomplete")
+        raw_ocr_text = source_segments[0]["text_preview"]
+        if (
+            source_segments[0]["source_char_count"] != len(raw_ocr_text)
+            or hashlib.sha256(raw_ocr_text.strip().encode("utf-8")).hexdigest()
+            != ocr["text_hash"]
+        ):
+            raise AssertionError("hm05_ocr_persisted_text_hash_mismatch")
+        raw_ocr_probes = {probe: probe in raw_ocr_text for probe in PROBES}
+        raw_ocr_scoped_phrase = SCOPED_NEGATION_PHRASE in raw_ocr_text
         stages["real_worker_and_ocr_ms"] = _milliseconds(stage)
 
         stage = time.monotonic()
@@ -225,6 +264,7 @@ def main() -> None:
                 API + f"/api/v1/claims/{claim_id}/evidence-search",
                 data={
                     "query": SCOPED_NEGATION_PHRASE,
+                    "exact_phrase": True,
                     "top_k": 10,
                     "retrieval_mode": "lexical",
                     "document_ids": [uploaded[scan["source_id"]]["id"]],
@@ -247,6 +287,18 @@ def main() -> None:
         ]
         quality = evaluate_literal_probe_retrieval(
             observed_probes, scoped_phrase_retrieved=bool(scoped_matches)
+        )
+        if (
+            any(observed_probes[probe] and not raw_ocr_probes[probe] for probe in PROBES)
+            or (bool(scoped_matches) and not raw_ocr_scoped_phrase)
+        ):
+            raise AssertionError("hm05_search_results_not_supported_by_persisted_ocr")
+        missing_clause_stage = (
+            "ocr_extraction_or_persistence"
+            if not raw_ocr_scoped_phrase
+            else "lexical_search_or_snippet"
+            if not scoped_matches
+            else "not_missing_but_semantics_unverified"
         )
         # Fail closed on loss of even the baseline technical identifier:
         # the controlled Persian OCR search path must remain usable.
@@ -315,6 +367,11 @@ def main() -> None:
             "malware_clean_and_worker_processed_documents": 4,
             "ocr_source_locator_is_page_one_for_observed_matches": True,
             "literal_probe_observations": quality,
+            "persisted_machine_ocr_token_presence": raw_ocr_probes,
+            "persisted_machine_ocr_whole_clause_present": raw_ocr_scoped_phrase,
+            "whole_clause_missing_stage": missing_clause_stage,
+            "persisted_machine_transcript_hash_matched": True,
+            "source_extraction_preview_complete": True,
             "ocr_char_count_observed": ocr["char_count"],
             "ocr_segment_count_observed": ocr["segment_count"],
             "full_transcript_accuracy_verified": False,
@@ -338,6 +395,7 @@ def main() -> None:
     print("Synthetic HM-05 OCR availability and fail-closed quality labeling: PASS.")
     print("OCR negation literal recovered:", quality["negation_retrieved"])
     print("OCR full negation clause retrieved:", quality["scoped_negation_phrase_retrieved"])
+    print("OCR-vs-search missing stage:", missing_clause_stage)
     print("OCR semantic quality / pilot: NOT ACCEPTED, bilingual review required.")
     print("Machine stage timings only:", json.dumps(stages, sort_keys=True))
 
