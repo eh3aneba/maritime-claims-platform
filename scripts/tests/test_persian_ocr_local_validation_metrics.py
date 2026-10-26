@@ -181,5 +181,25 @@ class LocalPersianOcrValidationTests(unittest.TestCase):
             self.assertEqual(stderr.getvalue().strip(), "ocr_validation_input_rejected")
 
 
+    def test_duplicate_keys_fail_without_echoing_private_input(self):
+        study = example_study()
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "sensitive.json"
+            encoded = json.dumps(study, ensure_ascii=False)
+            # The second key could otherwise silently override the first.
+            encoded = encoded.replace(
+                '"schema_version": 1,',
+                '"schema_version": 1, "schema_version": 1,',
+                1,
+            )
+            path.write_text(encoded, encoding="utf-8")
+            stdout, stderr = StringIO(), StringIO()
+            with redirect_stdout(stdout), redirect_stderr(stderr):
+                result = main(["--input", str(path)])
+            self.assertEqual(result, 2)
+            self.assertEqual(stdout.getvalue(), "")
+            self.assertEqual(stderr.getvalue().strip(), "ocr_validation_input_rejected")
+
+
 if __name__ == "__main__":
     unittest.main()
