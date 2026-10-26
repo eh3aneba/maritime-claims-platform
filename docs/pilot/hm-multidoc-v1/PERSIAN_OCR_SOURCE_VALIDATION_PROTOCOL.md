@@ -252,6 +252,33 @@ claims may be inferred from `local_source_hashes_matched`. Source-file
 integrity and measured accuracy remain different gates. The real claims
 pilot remains **NO-GO**.
 
+## One-command technical study runner (offline; no approval)
+
+After the independent study owner has **separately** approved the source
+permissions, blinded allocation, protocol and review responsibilities,
+the local operator may run the same input files through all three
+technical validations using **one process**:
+
+```text
+python -m scripts.persian_ocr_offline_study_run --manifest /secure/local/cohort.json --inventory /secure/local/files.json --measurements /secure/local/study.json --source-root /secure/local/source-files
+```
+
+It binds the same in-memory manifest to: (1) a streamed source-file SHA-256
+comparison; (2) structural development/holdout split and declared coverage
+checks; and (3) page-scoped literal OCR omission, insertion and conditional
+search-gap measures. It **refuses to print any partial result** when a
+source file, declared case, page coverage or typed reference input is invalid.
+Successful stdout contains **aggregate counts only** and every
+independent-approval and `pilot_accepted` field stays false.
+
+The runner does not use external AI, make remote requests, persist source
+text or supply an expert's judgment. Hashes remain self-declared until
+independently witnessed custody is provided; comparing bytes to a manifest
+does not prove authenticity. A syntactically complete study with high literal
+recall cannot establish negation **scope**, causation accuracy or readiness
+for live H&M claims. If the corpus has not been approved and adjudicated,
+any local result is only a technical rehearsal, NOT validation evidence.
+
 ## Required independent reference study (not yet carried out)
 
 1. Assemble a *separate, previously unseen* permission-cleared cohort of
