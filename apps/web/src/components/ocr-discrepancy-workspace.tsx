@@ -151,7 +151,7 @@ export function OcrDiscrepancyWorkspace({ claimId, document, source }: Props) {
       {showForm && sourceMatched ? (
         <div className="mt-3 max-w-xl rounded-lg border border-amber-200 bg-amber-50/50 p-3">
           <label className="block text-sm font-semibold text-slate-800" htmlFor="ocr-report-segment">
-            {t("ocrPreview.page", { locatorType: "", locatorValue: "", index: "" })}
+            {t("ocrIssue.segment")}
           </label>
           <select
             id="ocr-report-segment"
