@@ -187,6 +187,15 @@ def evaluate_local_study(payload: Any) -> dict[str, Any]:
     }
 
 
+def _reject_duplicate_json_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    """Duplicate study keys must never silently replace reference labels."""
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        _require(key not in result)
+        result[key] = value
+    return result
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Offline descriptive OCR validation; no source text output")
     parser.add_argument("--input", required=True, type=Path, help="Local JSON; permission-cleared input only")
@@ -196,7 +205,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.input.stat().st_size > 30_000_000:
             raise ValueError("oversized")
         with args.input.open("r", encoding="utf-8") as stream:
-            obj = json.load(stream)
+            obj = json.load(stream, object_pairs_hook=_reject_duplicate_json_keys)
         report = evaluate_local_study(obj)
     except (OSError, UnicodeError, ValueError, TypeError, KeyError, json.JSONDecodeError):
         print("ocr_validation_input_rejected", file=sys.stderr)
