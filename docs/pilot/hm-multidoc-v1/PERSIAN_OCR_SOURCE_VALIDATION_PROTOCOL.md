@@ -96,6 +96,25 @@ A report always has `review_state=reported_unverified` and
 not adjudication, a two-reviewer verification ledger, signed go-live
 authorization, or an OCR improvement itself.
 
+## Handler discrepancy reporting UI (unverified observations)
+
+On the document's **machine OCR comparison** pane, the authenticated
+operator can select a visible, untruncated source segment and a controlled
+discrepancy category. The **Record unverified discrepancy** action is
+disabled until the operator explicitly attests personally comparing that
+segment with the unchanged source. A browser-only CI check intentionally
+does **not** provide this attestation or create a fake reviewer report.
+The backend validates a current exact file/extraction/version/segment again
+at submission; stale reports are denied. A successful response shows its
+immutable audit receipt ID; users may view a bounded history of previous
+*reported, not verified* observations.
+
+This tool does not accept replacement text or rewrite recognized OCR.
+Attestation only records the operator's **assertion**, not evidence that
+a specialist independently confirmed their comparison. Reports neither
+approve a Claim Fact nor change any OCR quality/GO gate. The history
+returns up to 25 receipts and is not an exhaustive audit export.
+
 ## Required independent reference study (not yet carried out)
 
 1. Assemble a *separate, previously unseen* permission-cleared cohort of
