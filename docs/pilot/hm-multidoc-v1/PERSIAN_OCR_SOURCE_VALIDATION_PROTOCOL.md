@@ -52,6 +52,25 @@ and source/version/page binding, but does not log raw text or claim
 OCR scope fidelity. Even when both checks pass, the independent blinded
 human source study is still required.
 
+## Human-handler review aid (no approval workflow)
+
+The Evidence & Documents screen now provides an on-demand
+**Inspect machine OCR text** control for a current, clean, processed,
+locally authorized OCR source. It shows the bounded persisted text preview
+with page/segment locator, an explicit truncation warning, and a separate
+**Download original for comparison** action. The browser checks
+document version, original file hash and extraction text hash against the
+selected source before displaying a preview. Closing the panel clears the
+transcript from its component state; the response is requested without
+browser caching. No transcript or original is put in public CI logs.
+
+This aid does **not** display or certify the original page inline. It
+does not record which original sentences a reviewer checked, cannot fix a
+missing negation, and has **no approve/accept** action. Human reviewers
+must use the unchanged source file and the separate controlled protocol
+below. A green UX test is not evidence that any reviewer has completed
+this comparison. Issue #810 and pilot NO-GO remain unchanged.
+
 ## Required independent reference study (not yet carried out)
 
 1. Assemble a *separate, previously unseen* permission-cleared cohort of
