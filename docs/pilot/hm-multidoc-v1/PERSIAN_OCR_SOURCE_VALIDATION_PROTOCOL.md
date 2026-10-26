@@ -71,6 +71,31 @@ must use the unchanged source file and the separate controlled protocol
 below. A green UX test is not evidence that any reviewer has completed
 this comparison. Issue #810 and pilot NO-GO remain unchanged.
 
+## Append-only handler discrepancy receipt (operator-reported, not expert-certified)
+
+The `POST .../processing/source-discrepancies` endpoint records one
+**operator-reported** OCR source discrepancy on the existing immutable
+organization-scoped audit ledger. The operator must attest that they
+compared the original source with the machine transcript; the service
+cannot independently prove that comparison happened. It binds to the
+**exact current document version, file SHA-256, extraction-text SHA-256
+and stored segment/page locator**, and refuses stale versions, missing
+segments, dirty/unfinished evidence, unapproved external processing and
+non-OCR extraction methods.
+
+Only controlled kind codes are accepted: `negation_missing`,
+`negation_scope_changed`, `date_time_changed`,
+`technical_term_changed`, and `other_transcription_discrepancy`.
+**No text, corrected wording, free-text rationale, or original image**
+is submitted/stored in this report. `GET .../processing/source-discrepancies`
+provides a tenant-scoped, bounded readback of immutable receipts with
+reporter identity, timestamp, source locator and hashes.
+Duplicate submissions are *distinct reports*, not automatic corrections.
+A report always has `review_state=reported_unverified` and
+`claim_fact_approved=false`. This is a **defect observation workflow**,
+not adjudication, a two-reviewer verification ledger, signed go-live
+authorization, or an OCR improvement itself.
+
 ## Required independent reference study (not yet carried out)
 
 1. Assemble a *separate, previously unseen* permission-cleared cohort of

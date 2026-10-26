@@ -228,5 +228,11 @@ def retry_processing(
     db.refresh(job)
     return ProcessingJobResponse.model_validate(job)
 
+# Human-reported OCR transcription discrepancies are audit-only observations.
+# They cannot approve facts, source accuracy or the real claims pilot.
+from app.modules.processing.ocr_discrepancy import router as ocr_discrepancy_router  # noqa: E402
+
+router.include_router(ocr_discrepancy_router)
+
 # Phase 17.5-Z mounts the explicit processing-release endpoints on this router.
 from app.modules.external_document_sources import processing_release_router as _processing_release_router  # noqa: E402,F401
