@@ -323,6 +323,24 @@ def main() -> None:
         )
         expect(scan_warning).to_be_visible()
         expect(scan_warning).to_contain_text("OCR text is not verified")
+        # The operator can open a bounded, read-only page of *persisted*
+        # OCR, compare it with the original download, then close it.
+        # This is neither expert approval nor transcript correction.
+        page.get_by_role("button", name="Inspect machine OCR text").click()
+        preview_panel = page.get_by_test_id(
+            "ocr-comparison-" + uploaded[scan["source_id"]]["id"]
+        )
+        expect(preview_panel).to_be_visible()
+        expect(preview_panel.get_by_text("UNVERIFIED · no human approval recorded")).to_be_visible()
+        expect(preview_panel.get_by_role(
+            "button", name="Download original for comparison"
+        )).to_be_visible()
+        expect(preview_panel.get_by_test_id("ocr-transcript-segment-0")).to_be_visible()
+        expect(preview_panel.get_by_test_id("ocr-transcript-segment-0")).to_contain_text(
+            "توربوشارژر"
+        )
+        preview_panel.get_by_role("button", name="Close and clear preview").click()
+        expect(preview_panel).to_have_count(0)
         page.goto(WEB + f"/claims/{claim_id}/assessment", wait_until="networkidle")
         expect(page.get_by_role(
             "heading", name="Initial Assessment", exact=True,
@@ -364,6 +382,7 @@ def main() -> None:
             "real_image_only_raster_used": True,
             "real_tesseract_eng_fas_executed": True,
             "operator_ocr_human_source_comparison_warning_visible": True,
+            "operator_unverified_ocr_read_only_preview_exercised": True,
             "malware_clean_and_worker_processed_documents": 4,
             "ocr_source_locator_is_page_one_for_observed_matches": True,
             "literal_probe_observations": quality,
