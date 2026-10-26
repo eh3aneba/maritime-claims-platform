@@ -115,6 +115,56 @@ a specialist independently confirmed their comparison. Reports neither
 approve a Claim Fact nor change any OCR quality/GO gate. The history
 returns up to 25 receipts and is not an exhaustive audit export.
 
+## Offline critical-span measurement instrument (descriptive only)
+
+`python -m scripts.persian_ocr_local_validation_metrics --input /secure/local/study.json`
+runs entirely on the operator's machine. Keep private permission-cleared study
+JSON **outside the repository**, public CI, terminal histories and connected
+cloud folders. Never commit real reference scans or extracted text.
+The instrument reads reference/recognized full-page strings in process memory
+but emits **only aggregate JSON counts**, with no original text, identifiers,
+raw spans or paths in stdout/stderr. It does not contact any external AI,
+network endpoint, claims database or web service.
+
+Input `schema_version: 1`, `records: [...]` contains one page per record:
+
+- `case_ref`, `page_locator`, `document_version`,
+  `source_file_sha256`, `extraction_sha256`,
+  `reference_page_text`, `ocr_page_text`,
+  `ocr_page_complete` (a real full-page, untruncated observation), and
+  `critical_spans`.
+- Each critical span contains a unique `span_ref`, `kind` (negation,
+  uncertainty, time, causation, technical_term or other_critical_phrase),
+  `literal`, `expected_present` and nullable `search_exact_hit`.
+  The search flag must come from an **actual exact-phrase, same-source/page/
+  version/hash retrieval attempt**; null means not tested. Unknown is NOT
+  false. Negative-control literals must be absent from the reference and
+  have a null search flag.
+- All text is **literal**, intentionally not automatically normalized,
+  repaired, paraphrased or matched by AI. A reference-positive phrase found
+  in complete OCR counts as exact-literal present; absent counts as an
+  extraction-stage miss. When OCR contains the phrase and exact search
+  returns false, it counts as a conditional retrieval-stage miss. A
+  reference-absent negative-control literal present in OCR counts as a
+  possible false insertion. An incomplete OCR page contributes only
+  **unknown**, never an inferred missing phrase.
+- Output reports denominators and per-kind/total counts, descriptive
+  Wilson 95% intervals for *measured* literal recall, and separate
+  false-insertion/retrieval counts. The tool rejects contradictory reports,
+  out-of-scope fields and inconsistent literal labels. These intervals do
+  not correct biased/non-random sampling.
+
+**This instrument checks the syntactic shape of hash metadata, not the
+image bytes, reviewer qualifications, independent source/adjudication,
+negation scope semantics, authorization or true holdout status.** Even if
+all literal matches are observed, it always reports
+`reference_transcript_independently_adjudicated=false`,
+`negation_scope_semantics_verified=false`,
+`human_bilingual_review_completed=false` and `pilot_accepted=false`.
+The only checked-in examples are deliberately fictional. A real
+independent blind evaluation and H&M/security signoff remain separate
+external obligations. Never turn green synthetic tests into pilot GO.
+
 ## Required independent reference study (not yet carried out)
 
 1. Assemble a *separate, previously unseen* permission-cleared cohort of
