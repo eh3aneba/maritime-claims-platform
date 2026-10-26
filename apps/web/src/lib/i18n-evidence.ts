@@ -103,6 +103,7 @@ export const evidenceEn = {
   "ocrIssue.title": "Operator-reported OCR discrepancy",
   "ocrIssue.help": "Report only a discrepancy actually compared against the original. This creates a permanent observation, not a corrected OCR transcript or an approved claim fact.",
   "ocrIssue.kind": "Discrepancy category",
+  "ocrIssue.segment": "Source page / text segment",
   "ocrIssue.negation_missing": "Missing negation",
   "ocrIssue.negation_scope_changed": "Changed scope of negation",
   "ocrIssue.date_time_changed": "Incorrect date or time",
@@ -119,7 +120,7 @@ export const evidenceEn = {
   "ocrIssue.historyFailed": "Previous reports could not be loaded. This does not mean that none exist.",
   "ocrIssue.historyEmpty": "No reports in this view.",
   "ocrIssue.historyLimited": "Additional reports may exist. This is a limited readback, not the complete audit history.",
-  "ocrIssue.record": "{kind} · segment {segment} · {time}",
+  "ocrIssue.record": "{kind} · v{version} · segment {segment} · {time}",
   "ocrIssue.unverified": "Reported only; not verified or approved.",
 
 
@@ -278,6 +279,7 @@ export const evidenceFa: Record<EvidenceKey, string> = {
   "ocrIssue.title": "گزارش مغایرت OCR توسط کارشناس",
   "ocrIssue.help": "فقط مغایرتی را ثبت کنید که واقعاً با اصل سند مقایسه کرده‌اید. گزارش دائمی است؛ اما متن OCR را اصلاح نمی‌کند و هیچ واقعۀ خسارتی را تأیید نمی‌کند.",
   "ocrIssue.kind": "نوع مغایرت",
+  "ocrIssue.segment": "صفحه / بخش متن منبع",
   "ocrIssue.negation_missing": "حذف عبارت نفی",
   "ocrIssue.negation_scope_changed": "تغییر دامنه نفی",
   "ocrIssue.date_time_changed": "اشتباه تاریخ یا زمان",
@@ -294,7 +296,7 @@ export const evidenceFa: Record<EvidenceKey, string> = {
   "ocrIssue.historyFailed": "گزارش‌های قبلی دریافت نشدند؛ این به معنی نبود گزارش نیست.",
   "ocrIssue.historyEmpty": "در این نما گزارشی ثبت نشده است.",
   "ocrIssue.historyLimited": "ممکن است گزارش‌های بیشتری وجود داشته باشد؛ این نما تاریخچه کامل ممیزی نیست.",
-  "ocrIssue.record": "{kind} · بخش {segment} · {time}",
+  "ocrIssue.record": "{kind} · نسخه {version} · بخش {segment} · {time}",
   "ocrIssue.unverified": "صرفاً گزارش‌شده؛ نه تأیید و نه تصویب شده.",
 
 
