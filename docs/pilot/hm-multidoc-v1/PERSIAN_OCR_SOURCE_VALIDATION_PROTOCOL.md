@@ -29,6 +29,29 @@ critical-fact authorization. `full_transcription_verified`,
 `negation_scope_verified`, `critical_fact_authorization_granted` and
 `pilot_accepted` remain **false**, irrespective of lexical probe success.
 
+## Current diagnostic: persisted extraction vs search
+
+Authorized handlers can inspect a **bounded, read-only** machine text
+preview from
+`GET /api/v1/claims/{claim_id}/documents/{document_id}/processing/source-segments`.
+The endpoint enforces tenant + claim + document scope, clean/processed Evidence
+and existing external-Evidence processing-release authorization. It returns
+source file hash, extraction hash, version, method, page locator, byte-agnostic
+character count, and explicit `text_truncated` flags. Responses are
+`Cache-Control: no-store`. This endpoint does **not** provide a reviewer
+approval workflow, a source image rendering or a verified transcription.
+
+For the **synthetic** HM-05 PNG only, the E2E test now compares the complete
+(untruncated) one-page persisted OCR transcript with the fixed negative
+clause and separately executes an exact-phrase lexical search. This
+distinguishes a clause absent in stored OCR (extraction/persistence stage)
+from a clause present in OCR but absent in search (index/query/snippet stage).
+If the stored preview is truncated, the test fails rather than asserting
+that unobserved text was absent. The test validates stored-transcript hash
+and source/version/page binding, but does not log raw text or claim
+OCR scope fidelity. Even when both checks pass, the independent blinded
+human source study is still required.
+
 ## Required independent reference study (not yet carried out)
 
 1. Assemble a *separate, previously unseen* permission-cleared cohort of
