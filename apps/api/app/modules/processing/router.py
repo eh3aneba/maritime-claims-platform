@@ -1,22 +1,32 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.modules.auth.dependencies import CurrentUser
 from app.modules.claims.security import get_claim_for_tenant
+from app.modules.documents.models import DocumentMalwareScanStatus, DocumentProcessingStatus
 from app.modules.documents.security import get_document_for_tenant
 from app.modules.processing.lease_recovery import (
     is_processing_job_stale,
     recover_stale_processing_jobs,
 )
-from app.modules.processing.models import ProcessingJobStatus, ProcessingJobType
+from app.modules.processing.models import (
+    DocumentTextExtraction,
+    DocumentTextSegment,
+    ProcessingJobStatus,
+    ProcessingJobType,
+)
 from app.modules.processing.schemas import (
     DocumentProcessingSummary,
     OperatorProcessingJobResponse,
     ProcessingJobResponse,
+    SourceExtractionSegment,
+    SourceExtractionSegmentsResponse,
+    TextExtractionSummary,
 )
 from app.modules.processing.service import (
     ExternalEvidenceProcessingAuthorizationRequired,
@@ -86,6 +96,93 @@ def processing_summary(
         retry_recommended=retry_recommended,
         processing_release_required=processing_release_required,
         processing_release_status=processing_release_status,
+    )
+
+
+# Only an authenticated claimant-side reviewer can inspect the persisted
+# machine extraction. No customer transcript enters CI logs or search audit.
+# A bounded preview avoids huge API responses and cannot be treated as
+# a complete transcription when text_truncated=True.
+_SOURCE_SEGMENT_TEXT_LIMIT = 12_000
+
+
+@router.get("/source-segments", response_model=SourceExtractionSegmentsResponse)
+def read_unverified_source_segments(
+    claim_id: UUID,
+    document_id: UUID,
+    current_user: CurrentUser,
+    db: Annotated[Session, Depends(get_db)],
+    response: Response,
+    offset: Annotated[int, Query(ge=0, le=10000)] = 0,
+    limit: Annotated[int, Query(ge=1, le=5)] = 5,
+) -> SourceExtractionSegmentsResponse:
+    response.headers["Cache-Control"] = "no-store"
+    claim = get_claim_for_tenant(
+        db, claim_id=claim_id, organization_id=current_user.organization_id
+    )
+    if claim is None:
+        raise HTTPException(status_code=404, detail="Claim not found")
+    document = get_document_for_tenant(
+        db, document_id=document_id, claim_id=claim.id,
+        organization_id=current_user.organization_id,
+    )
+    if document is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+    if (
+        document.malware_scan_status != DocumentMalwareScanStatus.CLEAN
+        or document.processing_status != DocumentProcessingStatus.PROCESSED
+        or external_evidence_requires_processing_release(db, document=document)
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="Clean, processed, authorized evidence is required for source comparison",
+        )
+
+    extraction = db.scalar(
+        select(DocumentTextExtraction).where(
+            DocumentTextExtraction.organization_id == current_user.organization_id,
+            DocumentTextExtraction.document_id == document.id,
+        )
+    )
+    if extraction is None:
+        raise HTTPException(status_code=409, detail="Document text extraction is unavailable")
+
+    rows = list(
+        db.scalars(
+            select(DocumentTextSegment)
+            .where(
+                DocumentTextSegment.organization_id == current_user.organization_id,
+                DocumentTextSegment.document_id == document.id,
+                DocumentTextSegment.extraction_id == extraction.id,
+            )
+            .order_by(DocumentTextSegment.segment_index, DocumentTextSegment.id)
+            .offset(offset)
+            .limit(limit)
+        )
+    )
+    quality = TextExtractionSummary.model_validate(extraction).source_text_quality_state
+    return SourceExtractionSegmentsResponse(
+        document_id=document.id,
+        document_version=document.version_number,
+        source_file_hash=document.file_hash,
+        extraction_text_hash=extraction.text_hash,
+        extraction_method=extraction.extraction_method,
+        source_text_quality_state=quality,
+        review_disposition="machine_unverified",
+        total_segments=extraction.segment_count,
+        offset=offset,
+        limit=limit,
+        segments=[
+            SourceExtractionSegment(
+                segment_index=segment.segment_index,
+                locator_type=segment.locator_type,
+                locator_value=segment.locator_value,
+                text_preview=segment.text[:_SOURCE_SEGMENT_TEXT_LIMIT],
+                source_char_count=len(segment.text),
+                text_truncated=len(segment.text) > _SOURCE_SEGMENT_TEXT_LIMIT,
+            )
+            for segment in rows
+        ],
     )
 
 
