@@ -1,0 +1,35 @@
+name: Persian OCR Local Metrics
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - scripts/persian_ocr_local_validation_metrics.py
+      - scripts/tests/test_persian_ocr_local_validation_metrics.py
+      - .github/workflows/persian-ocr-local-metrics.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: persian-ocr-metrics-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  synthetic-offline-measurement:
+    name: Synthetic Persian OCR metrics regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out exact pull request source
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Validate local-only synthetic OCR metrics and safety boundaries
+        run: python -m unittest scripts.tests.test_persian_ocr_local_validation_metrics -v
