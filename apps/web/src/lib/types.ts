@@ -393,6 +393,28 @@ export interface DocumentProcessingSummary {
   processing_release_status: "not_applicable" | "required" | "active" | "revoked";
 }
 
+/** Bounded, unapproved extraction preview; never an OCR accuracy attestation. */
+export interface SourceExtractionSegmentsResponse {
+  document_id: string;
+  document_version: number;
+  source_file_hash: string;
+  extraction_text_hash: string | null;
+  extraction_method: string;
+  source_text_quality_state: "ocr_human_source_comparison_required" | "not_an_ocr_extraction";
+  review_disposition: "machine_unverified";
+  total_segments: number;
+  offset: number;
+  limit: number;
+  segments: Array<{
+    segment_index: number;
+    locator_type: string;
+    locator_value: string;
+    text_preview: string;
+    source_char_count: number;
+    text_truncated: boolean;
+  }>;
+}
+
 export interface ExternalEvidenceProcessingRelease {
   id: string;
   organization_id: string;

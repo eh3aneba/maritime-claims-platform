@@ -1,4 +1,4 @@
-import type { AIReviewDetail, AIReviewGroupQueueResponse, AIReviewQueueResponse, AIReviewResult, AISourcePreview, Claim, ClaimDocument, ClaimDocumentRequirement, ClaimFactListResponse, ClaimListResponse, CurrentUser, DocumentListResponse, EngineLogEventsResponse, ClaimChronologyResponse, ClaimRuleSummary, ClaimTaskListResponse, DocumentRequestResult, Vessel, VesselListResponse, TechnicalReviewResponse, FinancialReviewResponse, CostReviewStatus, LegacyRescanResponse, QuarantineRetryResponse, ClaimIntakeApprovalResult, ClaimIntakeDraft, DocumentProcessingSummary, ProcessingJobSummary, ExternalEvidenceProcessingRelease } from "./types";
+import type { AIReviewDetail, AIReviewGroupQueueResponse, AIReviewQueueResponse, AIReviewResult, AISourcePreview, Claim, ClaimDocument, ClaimDocumentRequirement, ClaimFactListResponse, ClaimListResponse, CurrentUser, DocumentListResponse, EngineLogEventsResponse, ClaimChronologyResponse, ClaimRuleSummary, ClaimTaskListResponse, DocumentRequestResult, Vessel, VesselListResponse, TechnicalReviewResponse, FinancialReviewResponse, CostReviewStatus, LegacyRescanResponse, QuarantineRetryResponse, ClaimIntakeApprovalResult, ClaimIntakeDraft, DocumentProcessingSummary, ProcessingJobSummary, ExternalEvidenceProcessingRelease, SourceExtractionSegmentsResponse } from "./types";
 import type { EvidenceMatrixResponse } from "./types";
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api/v1";
@@ -179,6 +179,18 @@ export function listClaimDocuments(claimId: string) {
 export function getDocumentProcessingSummary(claimId: string, documentId: string) {
   return apiFetch<DocumentProcessingSummary>(
     `/claims/${claimId}/documents/${documentId}/processing`,
+  );
+}
+
+/** No cache, no approval: read only a bounded page of stored OCR text. */
+export function getUnverifiedSourceSegments(
+  claimId: string,
+  documentId: string,
+  offset = 0,
+) {
+  return apiFetch<SourceExtractionSegmentsResponse>(
+    `/claims/${claimId}/documents/${documentId}/processing/source-segments?offset=${offset}&limit=5`,
+    { cache: "no-store" },
   );
 }
 
