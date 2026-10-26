@@ -93,6 +93,39 @@ pretend expert approval. Historical records may remain available to
 authorized humans; excluding them from a *new/current* assessment
 does not erase the old immutable assessment version. **Pilot GO=NO.**
 
+## Visible OCR source-comparison guard for human handlers (#810)
+
+A machine extraction reaching `operator_status=completed` and
+`requires_ocr=false` means **text is available**. It is NOT a
+source-transcript quality check, and in synthetic HM-05 the local
+Tesseract run has demonstrably dropped a material negation.
+
+The existing authenticated `GET /claims/{claim_id}/documents/{document_id}/processing`
+response now computes `text_extraction.source_text_quality_state`
+from the **actual persisted extraction method**:
+`ocr_human_source_comparison_required` for image Tesseract or
+selective PDF Tesseract; `not_an_ocr_extraction` otherwise. No claim
+that the latter is independently verified. No text is reconstructed
+or forwarded to another provider; extraction bytes/hashes and worker
+state are unchanged.
+
+The Evidence & Documents table shows a **document-specific,
+English/Persian warning** for current OCR-derived files, advising
+comparison of the original scan against the output, especially
+negation, dates and technical qualifiers. The actual HM-05 browser
+journey verifies that the persisted processing summary includes
+this machine-unverified state and the *handler-facing warning is
+visible*, alongside its existing real image OCR/locator and
+preliminary Assessment checks. Focused backend tests cover image
+OCR, selective PDF OCR, non-OCR PDF and DOCX, and verify that worker
+completion never creates a `verified` or `approved` field.
+
+This is **operational risk disclosure only**. There is no mechanism
+yet to record a full document-by-document bilingual original-scan
+comparison or prove fidelity of Persian negation/scope. Issue #810
+stays OPEN for independent qualitative measurement/remediation and
+the real pilot stays NO-GO.
+
 ## HM-05 genuine Persian OCR — processing proof and open quality defect
 
 `tests/browser/hm_multidoc_persian_ocr_e2e.py` exercises the real,

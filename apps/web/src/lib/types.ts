@@ -384,6 +384,7 @@ export interface DocumentProcessingSummary {
     requires_ocr: boolean;
     text_hash: string | null;
     warnings: unknown[] | null;
+    source_text_quality_state: "ocr_human_source_comparison_required" | "not_an_ocr_extraction";
   } | null;
   operator_status: OperatorProcessingStatus;
   can_retry: boolean;
