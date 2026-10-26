@@ -165,6 +165,48 @@ The only checked-in examples are deliberately fictional. A real
 independent blind evaluation and H&M/security signoff remain separate
 external obligations. Never turn green synthetic tests into pilot GO.
 
+## Blind-cohort manifest cross-check (offline, structure only)
+
+For independent evaluation, keep a **local, private** registration manifest
+separate from the study's page transcripts. Run both tools on the authorized
+host before interpreting any descriptive metric:
+
+```text
+python -m scripts.persian_ocr_blind_cohort_preflight --manifest /secure/local/cohort.json --measurements /secure/local/study.json
+python -m scripts.persian_ocr_local_validation_metrics --input /secure/local/study.json
+```
+
+The manifest requires `schema_version: 1`, opaque `protocol_ref`, an
+**operator-predeclared** `minimum_blind_holdout_sources`, at least one
+`predeclared_critical_kinds` category, and `sources`. Each source has an
+opaque `case_ref`, `source_file_sha256`, `split`
+(`development` or `blind_holdout`), `source_kind`
+(`native_scan`, `photograph`, `scanned_pdf`, `born_digital`),
+`script_mix` (`persian` or `mixed_persian_latin`), and
+`expected_critical_kinds`. Choose appropriate sample size and target
+critical categories **before any evaluation**, with the qualified H&M study
+owner. This utility does not choose thresholds for them or verify the
+timestamp/freeze of those choices.
+
+The cross-check refuses duplicate source hashes or case IDs (including
+cross-split reuse), any metric page from the development split, unknown
+source hashes, changed source-to-case bindings, and critical categories
+outside those declared for the source. It reports only **aggregate** counts
+for registered development/holdout sources, holdout sources with/without
+pages, predeclared minimum coverage, and missing critical categories.
+`submitted_holdout_structure_complete` is solely about **self-supplied
+metadata completeness**, NEVER evaluation acceptance, independent
+blindness, or real-case permission. All approval, expert signoff,
+source-byte checking and semantic-accuracy flags remain `false`.
+
+Do not store source scans, private references, reviewer identities, or the
+manifest in the public repo. Both programs run locally and do not make
+network calls; test fixtures are invented. This guard **cannot** detect
+prior model exposure, unseen near-duplicates with different hashes, biased
+sampling, assessor independence, correct transcription, or a false
+operator declaration. Independent H&M and security oversight remains
+mandatory and the pilot stays **NO-GO**.
+
 ## Required independent reference study (not yet carried out)
 
 1. Assemble a *separate, previously unseen* permission-cleared cohort of

@@ -7,6 +7,8 @@ on:
     paths:
       - scripts/persian_ocr_local_validation_metrics.py
       - scripts/tests/test_persian_ocr_local_validation_metrics.py
+      - scripts/persian_ocr_blind_cohort_preflight.py
+      - scripts/tests/test_persian_ocr_blind_cohort_preflight.py
       - .github/workflows/persian-ocr-local-metrics.yml
   workflow_dispatch:
 
@@ -32,4 +34,4 @@ jobs:
           python-version: "3.13"
 
       - name: Validate local-only synthetic OCR metrics and safety boundaries
-        run: python -m unittest scripts.tests.test_persian_ocr_local_validation_metrics -v
+        run: python -m unittest scripts.tests.test_persian_ocr_local_validation_metrics scripts.tests.test_persian_ocr_blind_cohort_preflight -v
