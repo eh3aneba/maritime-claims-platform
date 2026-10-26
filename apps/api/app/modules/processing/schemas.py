@@ -71,3 +71,29 @@ class DocumentProcessingSummary(BaseModel):
     retry_recommended: bool
     processing_release_required: bool
     processing_release_status: Literal["not_applicable", "required", "active", "revoked"]
+
+# Read-only, bounded source comparison. Text here is a machine transcript
+# and carries NO approval, correction or semantic-negation guarantee.
+class SourceExtractionSegment(BaseModel):
+    segment_index: int
+    locator_type: str
+    locator_value: str
+    text_preview: str
+    source_char_count: int
+    text_truncated: bool
+
+
+class SourceExtractionSegmentsResponse(BaseModel):
+    document_id: UUID
+    document_version: int
+    source_file_hash: str
+    extraction_text_hash: str | None
+    extraction_method: str
+    source_text_quality_state: Literal[
+        "ocr_human_source_comparison_required", "not_an_ocr_extraction"
+    ]
+    review_disposition: Literal["machine_unverified"]
+    total_segments: int
+    offset: int
+    limit: int
+    segments: list[SourceExtractionSegment]
