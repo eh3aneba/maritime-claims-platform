@@ -415,6 +415,36 @@ export interface SourceExtractionSegmentsResponse {
   }>;
 }
 
+/** A user-reported source discrepancy is NOT a verified OCR correction. */
+export type OcrDiscrepancyKind =
+  | "negation_missing"
+  | "negation_scope_changed"
+  | "date_time_changed"
+  | "technical_term_changed"
+  | "other_transcription_discrepancy";
+
+export interface OcrDiscrepancyReceipt {
+  id: string;
+  document_id: string;
+  document_version: number;
+  source_file_hash: string;
+  extraction_text_hash: string;
+  segment_index: number;
+  locator_type: string;
+  locator_value: string;
+  issue_kind: OcrDiscrepancyKind;
+  reported_by_id: string;
+  reported_at: string;
+  review_state: "reported_unverified";
+  claim_fact_approved: false;
+}
+
+export interface OcrDiscrepancyList {
+  items: OcrDiscrepancyReceipt[];
+  offset: number;
+  limit: number;
+}
+
 export interface ExternalEvidenceProcessingRelease {
   id: string;
   organization_id: string;
