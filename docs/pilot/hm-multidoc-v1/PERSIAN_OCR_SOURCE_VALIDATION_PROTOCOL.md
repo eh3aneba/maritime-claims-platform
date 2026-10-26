@@ -279,6 +279,51 @@ recall cannot establish negation **scope**, causation accuracy or readiness
 for live H&M claims. If the corpus has not been approved and adjudicated,
 any local result is only a technical rehearsal, NOT validation evidence.
 
+## Two-reviewer semantic disagreement ledger (self-reported observations only)
+
+The literal-match study is insufficient to establish H&M source fidelity:
+a recognized `نیست` may have moved to a different clause, reversing the
+causation conclusion. A **separate local-only descriptive tool** supports
+structured recording of two *reported* source-comparison judgments and
+specialist escalation at each positive critical span:
+
+```text
+python -m scripts.persian_ocr_review_disagreement_metrics --manifest /secure/local/cohort.json --measurements /secure/local/study.json --reviews /secure/local/reviewer_observations.json
+```
+
+The private file uses `schema_version: 1`, a `protocol_ref` **identical
+to the cohort manifest**, and `rows`. Each row references a declared
+`case_ref`, `page_locator`, `span_ref`, `source_file_sha256` and
+`extraction_sha256` from an existing *reference-positive* study span.
+It contains `reviewer_one` and `reviewer_two` objects, each with a distinct
+opaque `reviewer_ref` and one `finding` value:
+
+- `meaning_preserved`: reviewer claims the phrase preserves the source
+  **meaning and scope**; does not certify a correct OCR engine.
+- `material_meaning_changed`: reviewer claims a material omission,
+  substitution, negation scope, temporal or technical meaning error.
+- `source_unreadable`: unreadable source or insufficient comparison.
+
+The row's `specialist_adjudication` is **null** unless one reviewer
+reports an error/unreadable source or their judgments differ. In those
+cases it may contain a third, distinct `specialist_ref` and `finding`.
+The instrument explicitly counts required, supplied and **missing**
+specialist records, all reference-positive spans with no pair of review
+rows, disagreements, reported material changes, unreadable source and
+reported pairwise agreement. It **rejects duplicate/unknown/stale/misbound
+spans**, undeclared fields and forged approval fields.
+
+Use only pseudonyms; record actual authorization, signed independence,
+review dates, reviewer notes, original visual page regions, professional
+credentials, adjudicator rationale and disputes in a **separately controlled
+evidence/audit system**, not in public GitHub or these aggregate-only logs.
+Reviewer-ref inequality is **not proof of two actual people**. A supplied
+specialist record is **not** authenticated specialist signoff. All
+verification and pilot-acceptance flags are hardcoded **false**.
+Keep real files and even private JSON observations on an approved offline
+machine; synthetic test cases alone run in CI. An apparent 100% agreement
+rate never authorizes critical causation or coverage extraction.
+
 ## Required independent reference study (not yet carried out)
 
 1. Assemble a *separate, previously unseen* permission-cleared cohort of
