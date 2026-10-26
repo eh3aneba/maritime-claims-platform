@@ -7,6 +7,8 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import select
 
+from app.modules.documents import service as document_service
+from app.modules.documents.malware import MalwareScanResult, MalwareScanVerdict
 from app.modules.documents.models import Document, DocumentMalwareScanStatus
 from app.modules.processing.models import DocumentTextSegment
 from app.modules.processing.service import claim_next_job, process_job
@@ -21,6 +23,25 @@ from tests.test_document_processing import (
 
 def setup_function() -> None:
     reset_database()
+
+
+def _fake_clean_malware_scan(monkeypatch) -> list[str]:
+    """Only synthetic unit-test upload gets a stubbed clean scanner verdict.
+
+    Do not weaken the actual API's CLEAN-only source read guard. The real
+    browser E2E still uses ClamAV; no real scan is claimed by this unit test.
+    """
+    scanned: list[str] = []
+
+    def synthetic_verdict(path, **kwargs):
+        del kwargs
+        assert path.is_file()
+        scanned.append(str(path))
+        return MalwareScanResult(verdict=MalwareScanVerdict.CLEAN)
+
+    monkeypatch.setattr(document_service.settings, "malware_scan_enabled", True)
+    monkeypatch.setattr(document_service, "scan_file", synthetic_verdict)
+    return scanned
 
 
 def _upload(claim_id: str) -> str:
@@ -46,11 +67,20 @@ def _run_worker() -> None:
         process_job(db, job=job)
 
 
-def test_source_segments_are_tenant_scoped_machine_unverified_and_read_only(tmp_path) -> None:
+def test_source_segments_are_tenant_scoped_machine_unverified_and_read_only(
+    tmp_path, monkeypatch
+) -> None:
+    scanned = _fake_clean_malware_scan(monkeypatch)
     ids = seed_claim()
     configure_storage(tmp_path)
     login("alpha", "alpha@example.com")
     document_id = _upload(ids["claim_id"])
+    assert len(scanned) == 1
+    with TestingSessionLocal() as db:
+        source = db.get(Document, UUID(document_id))
+        assert source is not None
+        assert source.malware_scan_status == DocumentMalwareScanStatus.CLEAN
+        assert source.malware_scanned_at is not None
     url = f"/api/v1/claims/{ids['claim_id']}/documents/{document_id}/processing/source-segments"
 
     before = client.get(url)
@@ -105,11 +135,15 @@ def test_source_segments_are_tenant_scoped_machine_unverified_and_read_only(tmp_
     ).status_code == 404
 
 
-def test_source_segments_deny_unclean_documents_and_label_bounded_previews(tmp_path) -> None:
+def test_source_segments_deny_unclean_documents_and_label_bounded_previews(
+    tmp_path, monkeypatch
+) -> None:
+    scanned = _fake_clean_malware_scan(monkeypatch)
     ids = seed_claim()
     configure_storage(tmp_path)
     login("alpha", "alpha@example.com")
     document_id = _upload(ids["claim_id"])
+    assert len(scanned) == 1
     _run_worker()
     url = f"/api/v1/claims/{ids['claim_id']}/documents/{document_id}/processing/source-segments"
     with TestingSessionLocal() as db:
@@ -138,3 +172,24 @@ def test_source_segments_deny_unclean_documents_and_label_bounded_previews(tmp_p
     assert row["source_char_count"] == 12_010
     assert row["text_truncated"] is True
     assert result.json()["review_disposition"] == "machine_unverified"
+
+
+def test_unscanned_document_stays_denied_even_after_extraction(tmp_path, monkeypatch) -> None:
+    """Processing success must not silently upgrade legacy-unscanned custody."""
+    monkeypatch.setattr(document_service.settings, "malware_scan_enabled", False)
+    ids = seed_claim()
+    configure_storage(tmp_path)
+    login("alpha", "alpha@example.com")
+    document_id = _upload(ids["claim_id"])
+    url = f"/api/v1/claims/{ids['claim_id']}/documents/{document_id}/processing/source-segments"
+    _run_worker()
+    with TestingSessionLocal() as db:
+        document = db.get(Document, UUID(document_id))
+        assert document is not None
+        assert document.malware_scan_status == DocumentMalwareScanStatus.LEGACY_UNSCANNED
+        assert document.processing_status.value == "processed"
+    denied = client.get(url)
+    assert denied.status_code == 409
+    assert denied.json()["detail"] == (
+        "Clean, processed, authorized evidence is required for source comparison"
+    )
