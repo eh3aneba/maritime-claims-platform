@@ -19,7 +19,9 @@ from playwright.sync_api import expect, sync_playwright
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 from scripts.hm_multidoc_packs import load_corpus, make_upload_bytes
-from scripts.hm_persian_ocr_probe import PROBES, evaluate_literal_probe_retrieval
+from scripts.hm_persian_ocr_probe import (
+    PROBES, SCOPED_NEGATION_PHRASE, evaluate_literal_probe_retrieval,
+)
 from hm_multidoc_journey_e2e import (
     API, WEB, ORG, EMAIL, PASSWORD, _ok, _milliseconds,
 )
@@ -76,6 +78,8 @@ def main() -> None:
     scan = next(x for x in case["documents"] if x["format"] == "png")
     if not all(any(probe in line for line in scan["source_lines"]) for probe in PROBES):
         raise ValueError("synthetic_farsi_source_probe_not_anchored")
+    if not any(SCOPED_NEGATION_PHRASE in line for line in scan["source_lines"]):
+        raise ValueError("synthetic_farsi_scoped_phrase_not_anchored")
 
     stages: dict[str, int] = {}
     started = time.monotonic()
@@ -213,7 +217,37 @@ def main() -> None:
             if result["retrieval_mode"] != "lexical" or result["semantic_used"]:
                 raise AssertionError("hm05_nonlocal_model_retrieval_unexpected")
             observed_probes[probe] = bool(matches)
-        quality = evaluate_literal_probe_retrieval(observed_probes)
+        # A whole-clause retrieval is diagnostically stronger than isolated
+        # token presence. This is still a lexical snippet test, NOT
+        # verification that negation correctly scopes the causal statement.
+        scoped_result = _ok(
+            request.post(
+                API + f"/api/v1/claims/{claim_id}/evidence-search",
+                data={
+                    "query": SCOPED_NEGATION_PHRASE,
+                    "top_k": 10,
+                    "retrieval_mode": "lexical",
+                    "document_ids": [uploaded[scan["source_id"]]["id"]],
+                },
+            ), "hm05_scoped_negation_source_search",
+        )
+        if scoped_result["retrieval_mode"] != "lexical" or scoped_result["semantic_used"]:
+            raise AssertionError("hm05_scoped_probe_used_nonlocal_retrieval")
+        scoped_matches = [
+            entry for entry in scoped_result["results"]
+            if entry["document_id"] == uploaded[scan["source_id"]]["id"]
+            and entry["document_version"] == 1
+            and entry["is_current_document"] is True
+            and entry["source_file_hash"] == uploaded[scan["source_id"]]["file_hash"]
+            and entry["extraction_text_hash"] == ocr["text_hash"]
+            and entry["locator_type"] == "page"
+            and entry["locator_value"] == "1"
+            and entry["snippet"]
+            and SCOPED_NEGATION_PHRASE in entry["snippet"]
+        ]
+        quality = evaluate_literal_probe_retrieval(
+            observed_probes, scoped_phrase_retrieved=bool(scoped_matches)
+        )
         # Fail closed on loss of even the baseline technical identifier:
         # the controlled Persian OCR search path must remain usable.
         if not quality["machinery_term_retrieved"]:
@@ -303,6 +337,7 @@ def main() -> None:
         browser.close()
     print("Synthetic HM-05 OCR availability and fail-closed quality labeling: PASS.")
     print("OCR negation literal recovered:", quality["negation_retrieved"])
+    print("OCR full negation clause retrieved:", quality["scoped_negation_phrase_retrieved"])
     print("OCR semantic quality / pilot: NOT ACCEPTED, bilingual review required.")
     print("Machine stage timings only:", json.dumps(stages, sort_keys=True))
 

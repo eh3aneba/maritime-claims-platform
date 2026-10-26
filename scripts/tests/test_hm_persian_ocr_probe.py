@@ -2,7 +2,7 @@
 import unittest
 
 from scripts.hm_persian_ocr_probe import (
-    PROBES, evaluate_literal_probe_retrieval,
+    PROBES, SCOPED_NEGATION_PHRASE, evaluate_literal_probe_retrieval,
 )
 
 
@@ -56,6 +56,57 @@ class PersianOCRQualityTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     evaluate_literal_probe_retrieval(malformed)
         self.assertEqual(PROBES, ("توربوشارژر", "نیست"))
+
+
+    def test_two_words_with_missing_scoped_clause_remain_unretrieved(self):
+        result = evaluate_literal_probe_retrieval(
+            {"توربوشارژر": True, "نیست": True},
+            scoped_phrase_retrieved=False,
+        )
+        self.assertTrue(result["both_literal_probes_retrieved"])
+        self.assertTrue(result["scoped_negation_phrase_measured"])
+        self.assertFalse(result["scoped_negation_phrase_retrieved"])
+        self.assertEqual(
+            result["quality_disposition"],
+            "scoped_negation_phrase_unretrieved_review_required",
+        )
+        self.assertFalse(result["negation_scope_verified"])
+        self.assertTrue(result["human_bilingual_review_required"])
+        self.assertFalse(result["critical_fact_authorization_granted"])
+        self.assertFalse(result["pilot_accepted"])
+
+    def test_scoped_clause_retrieval_is_not_semantic_accuracy_or_approval(self):
+        result = evaluate_literal_probe_retrieval(
+            {"توربوشارژر": True, "نیست": True},
+            scoped_phrase_retrieved=True,
+        )
+        self.assertTrue(result["scoped_negation_phrase_retrieved"])
+        self.assertEqual(
+            result["quality_disposition"], "two_literals_present_semantics_unverified",
+        )
+        self.assertFalse(result["full_transcription_verified"])
+        self.assertFalse(result["negation_scope_verified"])
+        self.assertFalse(result["critical_fact_authorization_granted"])
+        self.assertFalse(result["pilot_accepted"])
+
+    def test_unmeasured_clause_cannot_be_reported_as_retrieved(self):
+        result = evaluate_literal_probe_retrieval(
+            {"توربوشارژر": True, "نیست": True},
+        )
+        self.assertFalse(result["scoped_negation_phrase_measured"])
+        self.assertIsNone(result["scoped_negation_phrase_retrieved"])
+        self.assertIn("نیست", SCOPED_NEGATION_PHRASE)
+        self.assertFalse(result["pilot_accepted"])
+
+    def test_scoped_observation_must_be_an_actual_boolean_or_unmeasured(self):
+        for invalid in ("true", "false", 1, 0, [], {}, float("nan")):
+            with self.subTest(invalid=invalid):
+                with self.assertRaises(ValueError):
+                    evaluate_literal_probe_retrieval(
+                        {"توربوشارژر": True, "نیست": True},
+                        scoped_phrase_retrieved=invalid,
+                    )
+
 
 
 if __name__ == "__main__":
