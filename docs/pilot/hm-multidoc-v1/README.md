@@ -146,6 +146,18 @@ This is a **material OCR negation-quality failure**, now tracked in
 [Issue #810](https://github.com/eh3aneba/maritime-claims-platform/issues/810),
 not a successful two-phrase acceptance result.
 
+**New scoped-clause retrieval diagnostic:** the browser also requests the
+complete fixed HM-05 negated sentence and checks whether it appears in a
+single original-page-linked persisted lexical snippet, with matching
+file/version and extraction hashes. Its separate
+`scoped_negation_phrase_measured` / `scoped_negation_phrase_retrieved` flags
+do **not** certify negation semantics, OCR transcription completeness or
+independent review. Even when isolated terms are found, an absent complete
+clause retains `scoped_negation_phrase_unretrieved_review_required`.
+The required separate expert study, OCR-vs-search attribution and no-customer
+data safeguards are specified in
+[PERSIAN_OCR_SOURCE_VALIDATION_PROTOCOL.md](PERSIAN_OCR_SOURCE_VALIDATION_PROTOCOL.md).
+
 This protected browser regression now asserts real OCR/locator evidence
 for the **technical equipment term** and *records* the negation probe
 outcome. If missing, `critical_negation_omission_observed=true`,
