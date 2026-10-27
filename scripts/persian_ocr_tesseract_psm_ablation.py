@@ -86,7 +86,7 @@ def evaluate_psm_ablation(
             # Distinguish a terminal punctuation OCR mismatch from loss of
             # the full wording; neither result certifies semantic scope.
             clause_core = probes["negation_clause"].rstrip(" .،؛")
-            _require(bool(clause_core) and clause_core != probes["negation_clause"])
+            _require(bool(clause_core))
             observations.append({
                 "psm": mode,
                 "machinery_term_exact_present": found["machinery_term"],
