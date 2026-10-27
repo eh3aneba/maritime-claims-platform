@@ -29,6 +29,7 @@ def invented_source():
             {"kind": "machinery_term", "literal": PROBES[0]},
             {"kind": "negation_token", "literal": PROBES[1]},
             {"kind": "negation_clause", "literal": SCOPED_NEGATION_PHRASE},
+            {"kind": "incident_date", "literal": "۲۰۲۶-۰۹-۱۱"},
         ],
     }
     return image, reference
@@ -48,8 +49,8 @@ class PersianOcrPsmAblationTests(unittest.TestCase):
             modes_seen.append(mode)
             content = {
                 3: PROBES[0],
-                4: PROBES[0] + " " + PROBES[1],
-                6: PROBES[0] + " " + SCOPED_NEGATION_PHRASE,
+                4: PROBES[0] + " " + SCOPED_NEGATION_PHRASE.rstrip("."),
+                6: PROBES[0] + " " + SCOPED_NEGATION_PHRASE + " ۲۰۲۶-۰۹-۱۱",
                 11: "",
             }[mode]
             return subprocess.CompletedProcess(command, 0, stdout=content, stderr="")
@@ -57,16 +58,19 @@ class PersianOcrPsmAblationTests(unittest.TestCase):
         self.assertEqual(tuple(modes_seen), MODES)
         self.assertEqual(report["baseline_default_psm"], 3)
         rows = report["observations"]
-        self.assertEqual([x["number_of_exact_probes_present"] for x in rows], [1, 2, 3, 0])
+        self.assertEqual([x["number_of_exact_probes_present"] for x in rows], [1, 2, 4, 0])
         self.assertFalse(rows[0]["negation_token_exact_present"])
         self.assertFalse(rows[1]["full_negation_clause_exact_present"])
+        self.assertTrue(rows[1]["negation_clause_core_without_terminal_punctuation_present"])
+        self.assertFalse(rows[1]["incident_date_exact_present"])
+        self.assertTrue(rows[2]["incident_date_exact_present"])
         self.assertTrue(rows[2]["full_negation_clause_exact_present"])
         self.assertFalse(report["production_settings_changed"])
         self.assertFalse(report["best_mode_selected"])
         self.assertFalse(report["negation_scope_semantics_verified"])
         self.assertFalse(report["pilot_accepted"])
         raw = json.dumps(report, ensure_ascii=False)
-        for marker in (PROBES[0], PROBES[1], SCOPED_NEGATION_PHRASE, "FIXTURE"):
+        for marker in (PROBES[0], PROBES[1], SCOPED_NEGATION_PHRASE, "۲۰۲۶-۰۹-۱۱", "FIXTURE"):
             self.assertNotIn(marker, raw)
 
     def test_malformed_source_probe_hash_or_reference_fail_closed(self):
@@ -81,6 +85,7 @@ class PersianOcrPsmAblationTests(unittest.TestCase):
             lambda r: r["probes"][0].update({"literal": 123}),
             lambda r: r["probes"][0].update({"human_verified": True}),
             lambda r: r["probes"][2].update({"literal": "not a negative phrase"}),
+            lambda r: r["probes"][3].update({"kind": "machinery_term"}),
         ]
         for n, mutate in enumerate(mutation_cases):
             clone = json.loads(json.dumps(reference, ensure_ascii=False))
