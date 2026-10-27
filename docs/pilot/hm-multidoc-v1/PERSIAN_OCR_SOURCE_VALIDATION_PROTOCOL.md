@@ -573,6 +573,30 @@ and explicit handling of any previously approved facts remain required.
 This is provenance defense, **not** independent Persian OCR fidelity
 validation, source authentication or pilot signoff.
 
+## Read-only source revalidation warning for previously approved AI facts
+
+A reprocessed AI citation can belong to a Claim Fact that had **already
+been approved by a human** before the OCR run was repeated. Blocking
+new approvals alone does not erase that existing canonical fact. To
+avoid silently presenting its source lineage as still fresh, the
+tenant-scoped `GET /api/v1/claims/{claim_id}/facts` endpoint now
+returns `source_revalidation_required` and a short machine-readable
+`source_revalidation_reason` on affected current AI-review facts.
+
+The reason distinguishes source reprocessing from an unusable document
+version and an unavailable AI-source citation. The claim overview
+displays a bilingual warning beside affected prior approvals, directing
+the handler to original-source comparison and explicit human follow-up.
+The warning is computed at **read time** using tenant/claim-scoped
+source metadata. There is no automatic rescission, overwriting of a
+previous adjuster's decision, or new approval authority.
+
+This is a descriptive provenance status, not a proof that the earlier
+fact was wrong or that OCR elsewhere is correct. Any correction of an
+already-approved current fact requires its own authorized review and
+audit trail; merely suppressing a warning must not be treated as pilot
+acceptance.
+
 ## Required independent reference study (not yet carried out)
 
 1. Assemble a *separate, previously unseen* permission-cleared cohort of
