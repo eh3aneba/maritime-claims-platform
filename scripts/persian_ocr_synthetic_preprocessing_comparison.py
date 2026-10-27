@@ -160,7 +160,7 @@ def compare_synthetic_preprocessing(
 class _RedactingArgumentParser(argparse.ArgumentParser):
     def error(self, message: str) -> None:
         # argparse normally echoes unknown parameters including private paths.
-        self.exit(2, "synthetic_persian_preprocessing_probe_rejected\\n")
+        self.exit(2, "synthetic_persian_preprocessing_probe_rejected\n")
 
 
 def main(argv: list[str] | None = None) -> int:
