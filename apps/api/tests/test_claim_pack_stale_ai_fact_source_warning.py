@@ -5,6 +5,7 @@ from uuid import UUID
 
 from openpyxl import load_workbook
 from pypdf import PdfReader
+from sqlalchemy import select
 
 from app.modules.claim_packs.recovery_renderers import render_pdf, render_xlsx
 from app.modules.claim_packs.recovery_service import build_claim_pack_snapshot
@@ -23,7 +24,10 @@ def setup_function() -> None:
 def _pack(ids: dict[str, str]) -> dict:
     with TestingSessionLocal() as db:
         claim = db.get(Claim, UUID(ids["claim_id"]))
-        user = db.get(User, UUID(ids["alpha_user_id"]))
+        user = db.scalar(select(User).where(
+            User.organization_id == claim.organization_id,
+            User.email == "alpha@example.com",
+        ))
         assert claim is not None and user is not None
         return build_claim_pack_snapshot(
             db,
