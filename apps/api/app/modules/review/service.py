@@ -65,6 +65,10 @@ NON_PROMOTABLE_PATH_FRAGMENTS = {
     "invoice.",
 }
 
+# Explicit allowlist: a new OCR/extraction engine must not implicitly acquire
+# low-friction bulk-fact approval just because its method lacks "tesseract:".
+_NATIVE_TEXT_EXTRACTION_METHODS_FOR_BULK = frozenset({"python-docx", "pypdf", "openpyxl"})
+
 _GROUP_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"^(policy\.[a-z_]+\[\d+\])"), "policy_term"),
     (re.compile(r"^(engine_log\.events\[\d+\])\."), "engine_log_row"),
@@ -232,7 +236,11 @@ def _source_needs_original_visual_review(
             DocumentTextExtraction.document_id == document_id,
         )
     ).one_or_none()
-    return row is None or bool(row.requires_ocr) or "tesseract:" in row.extraction_method.lower()
+    return (
+        row is None
+        or bool(row.requires_ocr)
+        or row.extraction_method.lower() not in _NATIVE_TEXT_EXTRACTION_METHODS_FOR_BULK
+    )
 
 
 def is_bulk_approvable(
@@ -327,7 +335,7 @@ def list_review_queue(
         ).all()
         native_source_ready = {
             source_id for source_id, method, requires_ocr in text_sources
-            if not requires_ocr and "tesseract:" not in method.lower()
+            if not requires_ocr and method.lower() in _NATIVE_TEXT_EXTRACTION_METHODS_FOR_BULK
         }
     items = [
         ReviewQueueItem(
