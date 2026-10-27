@@ -146,7 +146,7 @@ def test_ai_review_endpoint_records_server_telemetry_for_active_pilot():
         db.add(extraction);db.commit(); extraction_id=extraction.id; session_id=session.id
 
     login()
-    response=client.post(f"/api/v1/ai-review/{extraction_id}",json={"action":"approve"})
+    response=client.post(f"/api/v1/ai-review/{extraction_id}",json={"action":"approve","reason":"Synthetic reviewer reason; no original source attestation."})
     assert response.status_code == 200, response.text
     metrics=client.get(f"/api/v1/pilot/sessions/{session_id}/metrics")
     assert metrics.status_code == 200
