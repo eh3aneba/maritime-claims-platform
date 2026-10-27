@@ -15,7 +15,7 @@ from app.modules.claims.facts import ClaimFact, ClaimFactRevision
 from app.modules.claims.models import Claim
 from app.modules.documents.models import Document, DocumentProcessingStatus, DocumentMalwareScanStatus
 from app.modules.intelligence.models import AIFeedback, AISemanticKind, AIReviewStatus, DocumentExtraction
-from app.modules.processing.models import DocumentTextExtraction, DocumentTextSegment
+from app.modules.processing.models import AI_SOURCE_REPROCESSED_WARNING, DocumentTextExtraction, DocumentTextSegment
 from app.modules.review.schemas import ReviewGroup, ReviewQueueItem
 from app.modules.users.models import User
 from app.modules.vessels.models import Vessel
@@ -380,7 +380,10 @@ def list_review_queue(
             source_locator_value=extraction.source_locator_value,
             source_quote=extraction.source_quote,
             source_verified=extraction.source_verified,
-            source_approval_blocked=not _document_usable_for_fact_approval(document),
+            source_approval_blocked=(
+                not _document_usable_for_fact_approval(document)
+                or AI_SOURCE_REPROCESSED_WARNING in (extraction.validation_warnings or [])
+            ),
             original_source_comparison_required=document.id not in native_source_ready,
             validation_warnings=(
                 [
@@ -402,6 +405,7 @@ def list_review_queue(
             reviewed_at=extraction.reviewed_at,
             bulk_approvable=(
                 _document_usable_for_fact_approval(document)
+                and AI_SOURCE_REPROCESSED_WARNING not in (extraction.validation_warnings or [])
                 and is_bulk_approvable(
                     extraction, native_source_ready=document.id in native_source_ready,
                 )
@@ -578,6 +582,15 @@ def review_extraction(
     if locked_extraction is None:
         raise ValueError("Extraction is unavailable for review.")
     extraction = locked_extraction
+
+    if (
+        action in {"approve", "edit"}
+        and AI_SOURCE_REPROCESSED_WARNING in (extraction.validation_warnings or [])
+    ):
+        raise ValueError(
+            "AI source segments were reprocessed after this candidate was generated; "
+            "rerun AI extraction before approval or editing. Reject the stale candidate."
+        )
 
     # Re-check the CURRENT persisted source, not only the candidate or a
     # potentially stale UI queue view. A manual reason cannot authorize facts
