@@ -15,7 +15,7 @@ from app.modules.claims.facts import ClaimFact, ClaimFactRevision
 from app.modules.claims.models import Claim
 from app.modules.documents.models import Document
 from app.modules.intelligence.models import AIFeedback, AISemanticKind, AIReviewStatus, DocumentExtraction
-from app.modules.processing.models import DocumentTextSegment
+from app.modules.processing.models import DocumentTextExtraction, DocumentTextSegment
 from app.modules.review.schemas import ReviewGroup, ReviewQueueItem
 from app.modules.users.models import User
 from app.modules.vessels.models import Vessel
@@ -217,9 +217,30 @@ def validate_same_review_group(extractions: list[DocumentExtraction]) -> tuple[s
     return next(iter(keys))
 
 
-def is_bulk_approvable(extraction: DocumentExtraction) -> bool:
+def _source_needs_original_visual_review(
+    db: Session, *, organization_id: UUID, document_id: UUID,
+) -> bool:
+    """Fail closed for missing/incomplete source metadata and any machine OCR.
+
+    A quote matching the machine transcript never proves the original scan
+    contains the same negation, date or technical qualifier.
+    """
+    row = db.execute(
+        select(DocumentTextExtraction.extraction_method, DocumentTextExtraction.requires_ocr)
+        .where(
+            DocumentTextExtraction.organization_id == organization_id,
+            DocumentTextExtraction.document_id == document_id,
+        )
+    ).one_or_none()
+    return row is None or bool(row.requires_ocr) or "tesseract:" in row.extraction_method.lower()
+
+
+def is_bulk_approvable(
+    extraction: DocumentExtraction, *, native_source_ready: bool = True,
+) -> bool:
     return (
-        extraction.human_status == AIReviewStatus.PENDING
+        native_source_ready
+        and extraction.human_status == AIReviewStatus.PENDING
         and extraction.semantic_kind == AISemanticKind.FACT
         and extraction.field_path in BULK_APPROVE_FIELDS
         and extraction.source_verified
@@ -291,6 +312,23 @@ def list_review_queue(
         )
 
     rows = db.execute(query.order_by(*ordering).limit(limit).offset(offset)).all()
+    document_ids = {document.id for _, _, _, document in rows}
+    native_source_ready: set[UUID] = set()
+    if document_ids:
+        text_sources = db.execute(
+            select(
+                DocumentTextExtraction.document_id,
+                DocumentTextExtraction.extraction_method,
+                DocumentTextExtraction.requires_ocr,
+            ).where(
+                DocumentTextExtraction.organization_id == organization_id,
+                DocumentTextExtraction.document_id.in_(document_ids),
+            )
+        ).all()
+        native_source_ready = {
+            source_id for source_id, method, requires_ocr in text_sources
+            if not requires_ocr and "tesseract:" not in method.lower()
+        }
     items = [
         ReviewQueueItem(
             extraction_id=extraction.id,
@@ -308,11 +346,18 @@ def list_review_queue(
             source_locator_value=extraction.source_locator_value,
             source_quote=extraction.source_quote,
             source_verified=extraction.source_verified,
-            validation_warnings=extraction.validation_warnings,
+            validation_warnings=(
+                [*(extraction.validation_warnings or []),
+                 "Source OCR is not visually verified; compare the original scan before any individual approval."]
+                if document.id not in native_source_ready
+                else extraction.validation_warnings
+            ),
             human_status=extraction.human_status,
             approved_value=extraction.approved_value,
             reviewed_at=extraction.reviewed_at,
-            bulk_approvable=is_bulk_approvable(extraction),
+            bulk_approvable=is_bulk_approvable(
+                extraction, native_source_ready=document.id in native_source_ready,
+            ),
             created_at=extraction.created_at,
         )
         for extraction, claim, vessel, document in rows
@@ -464,6 +509,7 @@ def review_extraction(
     reason: str | None = None,
     confirm_re_review: bool = False,
     require_pending: bool = False,
+    require_native_source_for_bulk: bool = False,
 ) -> tuple[DocumentExtraction, ClaimFact | None, bool]:
     if extraction.organization_id != reviewer.organization_id:
         raise ValueError("Extraction does not belong to the current organization.")
@@ -494,10 +540,25 @@ def review_extraction(
         )
 
     normalized_reason = (reason or "").strip() or None
-    if not extraction.source_verified and action in {"approve", "edit"} and normalized_reason is None:
+    source_needs_review = _source_needs_original_visual_review(
+        db,
+        organization_id=extraction.organization_id,
+        document_id=extraction.document_id,
+    ) if action in {"approve", "edit"} else False
+    if require_native_source_for_bulk and source_needs_review:
         raise ValueError(
-            "A reason is required when approving or editing an extraction whose source quote is not verified."
+            "Machine OCR or missing source metadata is not eligible for bulk approval."
         )
+    if action in {"approve", "edit"} and normalized_reason is None:
+        if source_needs_review:
+            raise ValueError(
+                "Machine OCR or incomplete source extraction requires a documented "
+                "individual comparison with the original document before approval."
+            )
+        if not extraction.source_verified:
+            raise ValueError(
+                "A reason is required when approving or editing an extraction whose source quote is not verified."
+            )
 
     ai_value = extraction.normalized_value if extraction.normalized_value is not None else extraction.raw_value
     if action == "approve":
