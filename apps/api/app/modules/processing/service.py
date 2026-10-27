@@ -18,6 +18,7 @@ from app.modules.documents.models import (
 from app.modules.documents.storage import LocalDocumentStorage
 from app.modules.processing.extractors import EXTRACTOR_VERSION, extract_document_text
 from app.modules.processing.models import (
+    AI_SOURCE_REPROCESSED_WARNING,
     DocumentProcessingJob,
     DocumentTextExtraction,
     DocumentTextSegment,
@@ -464,6 +465,31 @@ def _block_job_for_quarantined_evidence(
     )
 
 
+def _invalidate_ai_citations_after_text_reprocessing(db: Session, *, document: Document) -> int:
+    """Invalidate previously produced AI citations when source segments are replaced.
+
+    Keep immutable AI field values, append-only review decisions and canonical
+    facts untouched. Previously approved facts require a separate human
+    re-review; do not silently accept or revoke a claim decision here.
+    """
+    from app.modules.intelligence.models import DocumentExtraction
+
+    candidates = list(db.scalars(
+        select(DocumentExtraction).where(
+            DocumentExtraction.organization_id == document.organization_id,
+            DocumentExtraction.document_id == document.id,
+            DocumentExtraction.claim_id == document.claim_id,
+        )
+    ))
+    for item in candidates:
+        warnings = list(item.validation_warnings or [])
+        if AI_SOURCE_REPROCESSED_WARNING not in warnings:
+            warnings.append(AI_SOURCE_REPROCESSED_WARNING)
+        item.validation_warnings = warnings
+        item.source_verified = False
+    return len(candidates)
+
+
 def _process_text_job(db: Session, *, job: DocumentProcessingJob) -> None:
     document = db.get(Document, job.document_id)
     if document is None or document.deleted_at is not None:
@@ -491,6 +517,9 @@ def _process_text_job(db: Session, *, job: DocumentProcessingJob) -> None:
             db.add(extraction)
             db.flush()
         else:
+            # Existing AI candidates were generated from the *previous* source
+            # segments. Invalidate them in the same transaction as replacement.
+            _invalidate_ai_citations_after_text_reprocessing(db, document=document)
             db.execute(delete(DocumentTextSegment).where(DocumentTextSegment.extraction_id == extraction.id))
             extraction.extraction_method = result.method
             extraction.extractor_version = EXTRACTOR_VERSION
