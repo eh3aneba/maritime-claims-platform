@@ -20,7 +20,7 @@ from scripts.hm_persian_ocr_probe import PROBES, SCOPED_NEGATION_PHRASE
 from scripts.persian_ocr_local_validation_metrics import _reject_duplicate_json_keys
 
 MODES = (3, 4, 6, 11)
-CATEGORIES = ("machinery_term", "negation_token", "negation_clause")
+CATEGORIES = ("machinery_term", "negation_token", "negation_clause", "incident_date")
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 MAX_IMAGE_BYTES = 20 * 1024 * 1024
 MAX_REFERENCE_BYTES = 64 * 1024
@@ -83,11 +83,17 @@ def evaluate_psm_ablation(
             ocr = result.stdout
             _require(type(ocr) is str and len(ocr) <= MAX_OCR_OUTPUT_CHARS)
             found = {kind: literal in ocr for kind, literal in probes.items()}
+            # Distinguish a terminal punctuation OCR mismatch from loss of
+            # the full wording; neither result certifies semantic scope.
+            clause_core = probes["negation_clause"].rstrip(" .،؛")
+            _require(bool(clause_core) and clause_core != probes["negation_clause"])
             observations.append({
                 "psm": mode,
                 "machinery_term_exact_present": found["machinery_term"],
                 "negation_token_exact_present": found["negation_token"],
                 "full_negation_clause_exact_present": found["negation_clause"],
+                "negation_clause_core_without_terminal_punctuation_present": clause_core in ocr,
+                "incident_date_exact_present": found["incident_date"],
                 "number_of_exact_probes_present": sum(found.values()),
                 "probes_tested": len(probes),
                 "ocr_text_human_verified": False,
@@ -124,7 +130,8 @@ def synthetic_hm05_image_and_reference() -> tuple[bytes, dict[str, Any]]:
     _require(case["case_id"] == "HM-05")
     scan = next(doc for doc in case["documents"] if doc["format"] == "png")
     source = "\n".join(scan["source_lines"])
-    _require(all(x in source for x in (*PROBES, SCOPED_NEGATION_PHRASE)))
+    date_phrase = "۲۰۲۶-۰۹-۱۱"
+    _require(all(x in source for x in (*PROBES, SCOPED_NEGATION_PHRASE, date_phrase)))
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)
         try:
@@ -140,6 +147,7 @@ def synthetic_hm05_image_and_reference() -> tuple[bytes, dict[str, Any]]:
             {"kind": "machinery_term", "literal": PROBES[0]},
             {"kind": "negation_token", "literal": PROBES[1]},
             {"kind": "negation_clause", "literal": SCOPED_NEGATION_PHRASE},
+            {"kind": "incident_date", "literal": date_phrase},
         ],
     }
 
