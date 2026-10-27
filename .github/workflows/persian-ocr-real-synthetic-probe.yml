@@ -1,0 +1,142 @@
+name: Real Synthetic Persian OCR Probe
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/persian-ocr-real-synthetic-probe.yml
+      - scripts/persian_ocr_tesseract_psm_ablation.py
+      - scripts/hm_multidoc_packs.py
+      - scripts/hm_persian_ocr_probe.py
+      - docs/pilot/hm-multidoc-v1/cases.json
+  workflow_dispatch:
+
+# The only source is the public fictional HM-05 image constructed in memory.
+# Never accept user-supplied file paths, external inputs, API keys or AI endpoints.
+permissions:
+  contents: read
+
+concurrency:
+  group: real-synthetic-persian-ocr-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fixed-source-real-tesseract:
+    name: Real Tesseract on fictional HM-05 (diagnostic, NOT quality gate)
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      AI_PROVIDER: disabled
+      OPENAI_API_KEY: ""
+      PYTHONNOUSERSITE: "1"
+    steps:
+      - name: Check out exact candidate
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up isolated Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: tests/browser/requirements.lock
+
+      - name: Install fixed Python browser requirements from hashed lock
+        run: python -m pip install --require-hashes -r tests/browser/requirements.lock
+
+      - name: Install local Tesseract with Persian data and open-source Arabic font
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            tesseract-ocr tesseract-ocr-eng tesseract-ocr-fas fonts-noto-core
+          tesseract --list-langs 2>&1 | grep -Fx fas
+          tesseract --list-langs 2>&1 | grep -Fx eng
+
+      - name: Install headless Chromium in the ephemeral runner
+        run: python -m playwright install --with-deps chromium
+
+      - name: Run genuine local OCR on fixed fictional source
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Never save/emit the PNG or OCR transcript: diagnostic only.
+          python -m scripts.persian_ocr_tesseract_psm_ablation \
+            --fixed-synthetic-hm05 > "${RUNNER_TEMP}/synthetic-hm05-psm-observations.json"
+
+      - name: Validate bounded aggregate report and publish NON-GO summary
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          from scripts.persian_ocr_tesseract_psm_ablation import MODES
+
+          report = json.loads(
+              (Path(os.environ["RUNNER_TEMP"]) / "synthetic-hm05-psm-observations.json")
+              .read_text(encoding="utf-8")
+          )
+          assert report["measurement_kind"] == "fixed_source_tesseract_psm_exact_literal_ablation"
+          assert report["mode_count"] == len(MODES)
+          assert report["pilot_accepted"] is False
+          assert report["best_mode_selected"] is False
+          assert report["production_settings_changed"] is False
+          assert report["negation_scope_semantics_verified"] is False
+          observations = report["observations"]
+          assert [v["psm"] for v in observations] == list(MODES)
+          safe_keys = {
+              "psm", "machinery_term_exact_present",
+              "negation_token_exact_present",
+              "full_negation_clause_exact_present",
+              "negation_clause_core_without_terminal_punctuation_present",
+              "incident_date_exact_present",
+              "number_of_exact_probes_present", "probes_tested",
+              "ocr_text_human_verified",
+          }
+          for item in observations:
+              assert set(item) == safe_keys
+              assert item["ocr_text_human_verified"] is False
+              assert item["probes_tested"] == 4
+              assert all(
+                  type(item[key]) is bool
+                  for key in safe_keys
+                  if (key.endswith("_exact_present")
+                  or key == "negation_clause_core_without_terminal_punctuation_present"
+                  or key == "ocr_text_human_verified")
+              )
+          summary = [
+              "### Real Tesseract / fictional HM-05 (engineering diagnostic only)",
+              "",
+              "**Not a quality pass. Not a pilot GO. No human approval.**",
+              "",
+              "| PSM | Machinery | Negation token | Clause core | Full clause | Incident date |",
+              "|---|---|---|---|---|---|",
+          ]
+          for item in observations:
+              value = lambda name: "yes" if item[name] else "no"
+              summary.append(
+                  f"| {item['psm']} | {value('machinery_term_exact_present')} "
+                  f"| {value('negation_token_exact_present')} "
+                  f"| {value('negation_clause_core_without_terminal_punctuation_present')} "
+                  f"| {value('full_negation_clause_exact_present')} "
+                  f"| {value('incident_date_exact_present')} |"
+              )
+          summary.extend([
+              "",
+              "All outputs are from **one known invented image** on this runner; "
+              "no human-reviewed reference, unseen scan, semantic accuracy, "
+              "or safe production OCR settings have been established.",
+              "Successful job status means experiment execution only.",
+          ])
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as stream:
+              stream.write("\n".join(summary) + "\n")
+          PY
+
+      - name: Remove aggregate-only temporary report
+        if: always()
+        shell: bash
+        run: rm -f "${RUNNER_TEMP}/synthetic-hm05-psm-observations.json"
