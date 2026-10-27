@@ -384,15 +384,18 @@ def list_review_queue(
             original_source_comparison_required=document.id not in native_source_ready,
             validation_warnings=(
                 [
+                    *(extraction.validation_warnings or []),
                     *(
                         ["Source document is superseded, not processed, or not malware-downloadable; approval is blocked."]
                         if not _document_usable_for_fact_approval(document)
                         else []
                     ),
-                    *(extraction.validation_warnings or []),
-                 "Source OCR is not visually verified; compare the original scan before any individual approval."]
-                if document.id not in native_source_ready
-                else extraction.validation_warnings
+                    *(
+                        ["Source OCR is not visually verified; compare the original scan before any individual approval."]
+                        if document.id not in native_source_ready
+                        else []
+                    ),
+                ] or None
             ),
             human_status=extraction.human_status,
             approved_value=extraction.approved_value,
