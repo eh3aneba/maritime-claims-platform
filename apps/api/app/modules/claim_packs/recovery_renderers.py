@@ -373,6 +373,25 @@ def render_xlsx(snapshot: dict[str, Any]) -> bytes:
             cell.alignment = Alignment(vertical="top", wrap_text=True)
     sheet.freeze_panes = "A2"
     _prepare_correspondence_sheet(workbook, snapshot)
+    if "AI Fact Source Review" in workbook.sheetnames:
+        del workbook["AI Fact Source Review"]
+    revalidation_sheet = workbook.create_sheet("AI Fact Source Review")
+    revalidation_sheet.append(["Source integrity", "Historical human approval; revalidate against original evidence"])
+    revalidation_sheet.append(["AI facts requiring revalidation", snapshot["summary"].get("approved_ai_fact_source_revalidation_count", 0)])
+    revalidation_sheet.append(["Review note", "Warning only. No human decision is automatically revoked or reapproved."])
+    revalidation_sheet.append([])
+    revalidation_sheet.append(["Claim Fact field", "Source document ID", "Reason"])
+    for item in snapshot.get("approved_ai_fact_source_revalidation") or []:
+        field = str(item["field_path"])
+        # Never let AI-generated field identifiers become executable XLSX formulas.
+        if field.lstrip().startswith(("=", "+", "-", "@")):
+            field = "'" + field
+        revalidation_sheet.append([field, str(item["source_document_id"]), str(item["reason"])])
+    for index, width in enumerate((52, 42, 34), start=1):
+        revalidation_sheet.column_dimensions[chr(64 + index)].width = width
+    for cell in revalidation_sheet[5]:
+        cell.font = Font(bold=True)
+    revalidation_sheet.freeze_panes = "A6"
     output = BytesIO()
     workbook.save(output)
     return output.getvalue()

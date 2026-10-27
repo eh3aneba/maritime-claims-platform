@@ -597,6 +597,34 @@ already-approved current fact requires its own authorized review and
 audit trail; merely suppressing a warning must not be treated as pilot
 acceptance.
 
+## Claim Pack PDF/XLSX handoff of historical AI-fact provenance warnings
+
+The immutable governed Claim Pack snapshot now includes an additive
+`approved_ai_fact_source_revalidation` list and
+`approved_ai_fact_source_revalidation_count` summary. These fields
+are computed from the same tenant-scoped current Claim Facts and
+read-only source integrity rules as the claim overview. If any
+human-approved AI fact depends on reprocessed text, an unusable
+source version or a missing citation, the pack review-state is set
+to `attention_required`. Existing more restrictive review-state
+controls remain in place.
+
+The PDF includes an explicit list of affected **field paths**,
+reason codes and original document identifiers; the XLSX includes
+an **AI Fact Source Review** tab and a summary count. This preserves
+the warning beyond the browser view when an H&M adjuster shares a
+controlled pack with another authorized handler. Workbook cells
+derived from AI field labels are protected against spreadsheet
+formula execution.
+
+This is *historical source-lineage disclosure*, not automatic
+withdrawal of a Claim Fact, not a new coverage recommendation
+and not a substitute for an adjuster's comparison with the
+original document. It adds backward-compatible snapshot metadata
+under the existing v1.4 snapshot format, retaining prior report
+content and prior approval records. Only authorized claim-pack
+generation and download endpoints expose the information.
+
 ## Required independent reference study (not yet carried out)
 
 1. Assemble a *separate, previously unseen* permission-cleared cohort of
