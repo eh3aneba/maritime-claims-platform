@@ -46,7 +46,16 @@ def test_ocr_citation_match_does_not_enable_bulk_approval(method: str) -> None:
     maker = next(x for x in queued.json()["items"] if x["extraction_id"] == ids["maker_id"])
     assert maker["source_verified"] is True  # matched machine text, NOT the actual scan
     assert maker["bulk_approvable"] is False
+    assert maker["original_source_comparison_required"] is True
     assert any("original scan" in warning for warning in maker["validation_warnings"])
+    grouped = client.get("/api/v1/ai-review/groups?attention_only=false")
+    assert grouped.status_code == 200, grouped.text
+    group = next(g for g in grouped.json()["groups"] if any(
+        x["extraction_id"] == ids["maker_id"] for x in g["items"]
+    ))
+    assert group["needs_attention"] is True
+    assert group["requires_reason"] is True
+    assert any("original source" in value for value in group["attention_reasons"])
 
     # Even a nonempty reason must not turn machine OCR into bulk eligibility.
     denied = client.post(
@@ -117,6 +126,7 @@ def test_native_document_remains_eligible_for_prior_bulk_flow() -> None:
     assert queued.status_code == 200
     maker = next(x for x in queued.json()["items"] if x["extraction_id"] == ids["maker_id"])
     assert maker["bulk_approvable"] is True
+    assert maker["original_source_comparison_required"] is False
     approved = client.post(
         "/api/v1/ai-review/bulk/approve",
         json={"extraction_ids": [ids["maker_id"]]},
