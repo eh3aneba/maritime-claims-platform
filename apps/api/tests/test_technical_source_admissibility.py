@@ -79,12 +79,14 @@ def _review_workshop_evidence():
             extraction=rows["workshop.suspected_cause_opinions[0]"],
             reviewer=user,
             action="approve",
+            reason="Synthetic reviewer record: workshop page inspected; not independently attested.",
         )
         review_extraction(
             db,
             extraction=rows["workshop.damage_findings[0].description"],
             reviewer=user,
             action="approve",
+            reason="Synthetic reviewer record: workshop page inspected; not independently attested.",
         )
         db.commit()
     return claim_id, document_id, user_id

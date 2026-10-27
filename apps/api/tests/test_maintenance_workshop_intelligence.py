@@ -69,7 +69,7 @@ def test_running_hours_extracts_promotable_maintenance_facts():
         assert rows["maintenance.running_hours_since_overhaul"].normalized_value == {"value":14800.0,"unit":"hours","raw":"14,800 hours"}
         user=db.get(User,user_id)
         for path in ["maintenance.running_hours_since_overhaul","maintenance.last_overhaul_date","maintenance.recommended_overhaul_interval"]:
-            review_extraction(db, extraction=rows[path], reviewer=user, action="approve")
+            review_extraction(db, extraction=rows[path], reviewer=user, action="approve", reason="Synthetic reviewer record: original-file comparison required; not independently attested.")
         db.commit()
         claim=db.get(Claim,claim_id); evaluate_claim_rules(db, claim=claim, user=user)
         tech = build_technical_review(db, claim_id=claim.id, organization_id=claim.organization_id)
@@ -85,9 +85,9 @@ def test_pms_rows_are_repeatable_and_deferred_maintenance_creates_issue():
         run=run_pms_history_intelligence(db, document=db.get(Document,document_id), requested_by_id=user_id, provider=FakeProvider(payload))
         rows={r.field_path:r for r in db.scalars(select(DocumentExtraction).where(DocumentExtraction.ai_run_id==run.id))}
         user=db.get(User,user_id)
-        review_extraction(db, extraction=rows["maintenance.overhaul_deferred"], reviewer=user, action="approve")
+        review_extraction(db, extraction=rows["maintenance.overhaul_deferred"], reviewer=user, action="approve", reason="Synthetic reviewer record: original-file comparison required; not independently attested.")
         repeat=rows["pms.records[0].status"]
-        _, fact, promoted = review_extraction(db, extraction=repeat, reviewer=user, action="approve")
+        _, fact, promoted = review_extraction(db, extraction=repeat, reviewer=user, action="approve", reason="Synthetic reviewer record: original-file comparison required; not independently attested.")
         assert promoted is False and fact is None
         db.commit(); claim=db.get(Claim,claim_id); evaluate_claim_rules(db, claim=claim, user=user)
         tech=build_technical_review(db,claim_id=claim.id,organization_id=claim.organization_id)
@@ -105,9 +105,9 @@ def test_workshop_opinion_stays_opinion_and_enters_matrix_after_human_review():
         opinion=rows["workshop.suspected_cause_opinions[0]"]
         assert opinion.semantic_kind == AISemanticKind.OPINION
         user=db.get(User,user_id)
-        _, fact, promoted=review_extraction(db, extraction=opinion, reviewer=user, action="approve")
+        _, fact, promoted=review_extraction(db, extraction=opinion, reviewer=user, action="approve", reason="Synthetic reviewer record: original-file comparison required; not independently attested.")
         assert fact is None and promoted is False
-        review_extraction(db, extraction=rows["workshop.damage_findings[0].description"], reviewer=user, action="approve")
+        review_extraction(db, extraction=rows["workshop.damage_findings[0].description"], reviewer=user, action="approve", reason="Synthetic reviewer record: original-file comparison required; not independently attested.")
         db.commit()
         tech=build_technical_review(db,claim_id=claim_id,organization_id=db.get(Claim,claim_id).organization_id)
         opinion_rows=[r for r in tech["matrix"] if r["key"].startswith("workshop_opinion_")]

@@ -24,6 +24,7 @@ class ReviewQueueItem(BaseModel):
     source_locator_value: str | None
     source_quote: str | None
     source_verified: bool
+    original_source_comparison_required: bool = False
     validation_warnings: list | None
     human_status: AIReviewStatus
     approved_value: Any

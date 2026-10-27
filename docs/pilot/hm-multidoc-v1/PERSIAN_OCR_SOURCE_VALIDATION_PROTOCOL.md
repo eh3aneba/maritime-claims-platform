@@ -475,6 +475,37 @@ independent bilingual adjudication of held-out original scans across
 critical negation **scope**, timeline/date, causation, and technical
 terms, with a separately approved acceptance protocol.
 
+## Guardrail: OCR text matches do not authorize bulk AI fact approval
+
+AI extraction candidates can contain a `source_verified=true` marker when
+a quoted value matches the **machine-extracted text**. For local Tesseract
+output this is **not evidence that the original scan contains the same
+wording**. In particular a recognized maker name may coexist with a
+lost negation, a corrupted incident date, or misleading OCR context.
+
+The H&M AI review service now checks the persisted, organization-bound
+`DocumentTextExtraction` method **at the review decision**, rather than
+relying only on a high model confidence or quoted OCR substring:
+
+- Text produced by Tesseract (including mixed native-PDF plus selective
+  OCR), incomplete OCR, unknown or newly introduced extraction methods,
+  or a missing text-extraction record cannot be **bulk-approved** as AI-derived Claim Facts—even if the matched quote
+  and model confidence would otherwise qualify it.
+- Queue entries surface a caution that the original page requires visual
+  comparison and show `bulk_approvable=false` for those sources.
+- An individual or grouped human `approve`/`edit` action using such
+  sources requires a nonempty **reason** documenting review against the
+  original document. Group review remains atomic; native-text-only
+  documents retain their established workflows.
+- A supplied reason is an **operator assertion**, not independent
+  source fidelity attestation, qualified expert adjudication, OCR
+  accuracy certification, or permission to use real customer records.
+
+This guard is an additional protection, **not** a replacement for the
+independent blind Persian OCR study and H&M/security signoffs. It does
+not modify OCR transcription, silently correct evidence, or grant
+machine autonomy; the real pilot remains **NO-GO**.
+
 ## Required independent reference study (not yet carried out)
 
 1. Assemble a *separate, previously unseen* permission-cleared cohort of
