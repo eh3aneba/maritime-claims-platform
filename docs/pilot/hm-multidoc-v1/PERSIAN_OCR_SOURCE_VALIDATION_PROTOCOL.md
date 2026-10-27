@@ -523,6 +523,29 @@ and machinery terminology before documenting any decision. Pressing
 Download is **not** an attestation, review completion, automatic
 approval, or pilot authorization.
 
+## Source admissibility guard for AI fact review
+
+Even an individually reviewed OCR or native-text AI candidate must not be
+promoted from an **unusable evidence version**. Before any `approve` or
+`edit` decision, the server re-reads the tenant-/claim-bound current
+`Document` state and rejects the action if the source is superseded,
+unprocessed, failed, quarantined or has a malware scan error. A note
+cannot override this condition. Original-source rejection and prior
+review history remain available.
+
+The review queue exposes `source_approval_blocked`, displays a warning,
+disables individual approve/edit and grouped approval, and never offers
+bulk approval for unusable source documents. These cues are advisory;
+server-side enforcement applies even if the UI is bypassed.
+
+For compatibility with the current authenticated document-download
+policy, **legacy-unscanned** original documents are not counted as
+malware-clear; the guard permits their original handling state but does
+not create a clean-scan certificate. In production, malware scanning
+and authorization remain separate requirements. Tests use invented H&M
+claim records only; they do not certify real source validity, reviewer
+authority or pilot acceptance.
+
 ## Required independent reference study (not yet carried out)
 
 1. Assemble a *separate, previously unseen* permission-cleared cohort of
