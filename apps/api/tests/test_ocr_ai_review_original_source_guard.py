@@ -120,9 +120,9 @@ def test_native_document_remains_eligible_for_prior_bulk_flow() -> None:
     assert approved.status_code == 200, approved.text
 
 
-def test_missing_text_extraction_metadata_fails_closed_for_bulk_and_requires_reason() -> None:
-    # Deliberately make the extraction metadata unavailable without deleting
-    # real linked segments, which would violate foreign key restrictions.
+def test_incomplete_text_extraction_status_fails_closed_for_bulk() -> None:
+    # Simulate an incomplete/failed OCR source even though an AI candidate exists
+    # in the fictional fixture, to ensure status never makes bulk review safe.
     ids = seed_review_candidates()
     _set_method(ids, method="pypdf+ocr_unavailable", requires_ocr=True)
     login("alpha", "alpha@example.com")
