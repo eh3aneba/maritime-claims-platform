@@ -64,6 +64,14 @@ class DocumentProcessingJob(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
 
+# Platform-owned marker; never supplied by an AI model or treated as expert
+# attestation. Reprocessing old source segments invalidates old AI citations.
+AI_SOURCE_REPROCESSED_WARNING = (
+    "Original document text was reprocessed after this AI candidate was generated; "
+    "run AI extraction again before approving a Claim Fact."
+)
+
+
 class DocumentTextExtraction(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "document_text_extractions"
     __table_args__ = (UniqueConstraint("document_id", name="uq_document_text_extractions_document"),)
