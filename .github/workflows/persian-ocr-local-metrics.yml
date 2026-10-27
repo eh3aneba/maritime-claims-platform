@@ -13,6 +13,8 @@ on:
       - scripts/tests/test_persian_ocr_local_source_integrity.py
       - scripts/persian_ocr_offline_study_run.py
       - scripts/tests/test_persian_ocr_offline_study_run.py
+      - scripts/persian_ocr_review_disagreement_metrics.py
+      - scripts/tests/test_persian_ocr_review_disagreement_metrics.py
       - .github/workflows/persian-ocr-local-metrics.yml
   workflow_dispatch:
 
@@ -38,4 +40,4 @@ jobs:
           python-version: "3.13"
 
       - name: Validate local-only synthetic OCR metrics and safety boundaries
-        run: python -m unittest scripts.tests.test_persian_ocr_local_validation_metrics scripts.tests.test_persian_ocr_blind_cohort_preflight scripts.tests.test_persian_ocr_local_source_integrity scripts.tests.test_persian_ocr_offline_study_run -v
+        run: python -m unittest scripts.tests.test_persian_ocr_local_validation_metrics scripts.tests.test_persian_ocr_blind_cohort_preflight scripts.tests.test_persian_ocr_local_source_integrity scripts.tests.test_persian_ocr_offline_study_run scripts.tests.test_persian_ocr_review_disagreement_metrics -v
