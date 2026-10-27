@@ -157,8 +157,14 @@ def compare_synthetic_preprocessing(
     }
 
 
+class _RedactingArgumentParser(argparse.ArgumentParser):
+    def error(self, message: str) -> None:
+        # argparse normally echoes unknown parameters including private paths.
+        self.exit(2, "synthetic_persian_preprocessing_probe_rejected\\n")
+
+
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Synthetic-only optical preprocessing diagnostic")
+    parser = _RedactingArgumentParser(description="Synthetic-only optical preprocessing diagnostic")
     parser.add_argument("--fixed-synthetic-hm05", action="store_true", required=True)
     args = parser.parse_args(argv)
     try:
