@@ -605,6 +605,8 @@ export interface ClaimFact {
   approved_by_id: string | null;
   approved_at: string;
   version: number;
+  source_revalidation_required: boolean;
+  source_revalidation_reason: "source_reprocessed" | "source_document_unusable" | "source_candidate_unavailable" | null;
 }
 
 export interface AIReviewResult {
