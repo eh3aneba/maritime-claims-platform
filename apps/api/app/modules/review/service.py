@@ -136,6 +136,8 @@ def _attention_reasons(items: list[ReviewQueueItem]) -> list[str]:
     reasons: list[str] = []
     if any(not item.source_verified for item in items):
         reasons.append("Unverified source citation")
+    if any(item.original_source_comparison_required for item in items):
+        reasons.append("Machine OCR: original source comparison required")
     if any(item.validation_warnings for item in items):
         reasons.append("Validation warning")
     if any(item.confidence < Decimal("0.800") for item in items):
@@ -193,7 +195,10 @@ def list_review_groups(
             needs_attention=bool(reasons),
             attention_reasons=reasons,
             group_approvable=bool(pending),
-            requires_reason=any(not item.source_verified for item in pending),
+            requires_reason=any(
+                not item.source_verified or item.original_source_comparison_required
+                for item in pending
+            ),
             min_confidence=min(item.confidence for item in group_items),
         )
         if not attention_only or group.needs_attention:
@@ -354,6 +359,7 @@ def list_review_queue(
             source_locator_value=extraction.source_locator_value,
             source_quote=extraction.source_quote,
             source_verified=extraction.source_verified,
+            original_source_comparison_required=document.id not in native_source_ready,
             validation_warnings=(
                 [*(extraction.validation_warnings or []),
                  "Source OCR is not visually verified; compare the original scan before any individual approval."]
