@@ -148,7 +148,18 @@ def list_claim_facts_endpoint(
         facts = list_claim_facts(db, claim_id=claim_id, organization_id=current_user.organization_id)
     except ClaimNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Claim not found") from exc
-    return ClaimFactListResponse(items=[ClaimFactRead.model_validate(fact) for fact in facts], total=len(facts))
+    revalidation = approved_ai_fact_source_revalidation_reasons(
+        db, facts=facts, claim_id=claim_id,
+        organization_id=current_user.organization_id,
+    )
+    items = []
+    for fact in facts:
+        item = ClaimFactRead.model_validate(fact)
+        if fact.id in revalidation:
+            item.source_revalidation_required = True
+            item.source_revalidation_reason = revalidation[fact.id]
+        items.append(item)
+    return ClaimFactListResponse(items=items, total=len(items))
 
 
 @router.patch("/{claim_id}", response_model=ClaimRead)
