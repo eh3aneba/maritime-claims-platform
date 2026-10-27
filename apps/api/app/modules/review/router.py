@@ -34,6 +34,7 @@ from app.modules.review.service import (
     get_feedback_history,
     get_source_segment_for_extraction,
     is_bulk_approvable,
+    _source_needs_original_visual_review,
     is_promotable,
     list_review_groups,
     list_review_queue,
@@ -387,7 +388,14 @@ def bulk_approve(
         extraction = get_extraction_for_tenant(db, extraction_id=extraction_id, organization_id=current_user.organization_id)
         if extraction is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="AI extraction not found")
-        if not is_bulk_approvable(extraction):
+        if (
+            not is_bulk_approvable(extraction)
+            or _source_needs_original_visual_review(
+                db,
+                organization_id=current_user.organization_id,
+                document_id=extraction.document_id,
+            )
+        ):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=f"Extraction {extraction.id} is not eligible for bulk approval.",
@@ -405,6 +413,7 @@ def bulk_approve(
                 action="approve",
                 reason=payload.reason,
                 require_pending=True,
+                require_native_source_for_bulk=True,
             )
             reviewed.append(
                 ReviewResult(
