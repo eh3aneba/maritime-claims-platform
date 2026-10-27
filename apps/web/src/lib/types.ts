@@ -553,6 +553,7 @@ export interface AIReviewItem {
   source_quote: string | null;
   source_verified: boolean;
   original_source_comparison_required: boolean;
+  source_approval_blocked: boolean;
   validation_warnings: string[] | null;
   human_status: AIReviewStatus;
   approved_value: unknown;
