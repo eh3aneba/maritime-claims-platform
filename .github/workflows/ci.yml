@@ -368,6 +368,9 @@ jobs:
           # Two alternative quotations in different currencies + unpaid-status
           # invoice must remain three unreviewed source files, not summed loss.
           python tests/browser/hm_multidoc_financial_intake_e2e.py
+          # HM-03 actual conflicting engineer/workshop alarm statements are
+          # separately retained, with NO unreviewed automatic time resolution.
+          python tests/browser/hm_multidoc_conflicting_alarm_e2e.py
 
       - name: Capture container diagnostics
         if: failure()
