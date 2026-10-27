@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from app.modules.audit.service import write_audit_log
 from app.modules.claims.facts import ClaimFact, ClaimFactRevision
 from app.modules.claims.models import Claim
-from app.modules.documents.models import Document
+from app.modules.documents.models import Document, DocumentProcessingStatus, DocumentMalwareScanStatus
 from app.modules.intelligence.models import AIFeedback, AISemanticKind, AIReviewStatus, DocumentExtraction
 from app.modules.processing.models import DocumentTextExtraction, DocumentTextSegment
 from app.modules.review.schemas import ReviewGroup, ReviewQueueItem
@@ -68,6 +68,25 @@ NON_PROMOTABLE_PATH_FRAGMENTS = {
 # Explicit allowlist: a new OCR/extraction engine must not implicitly acquire
 # low-friction bulk-fact approval just because its method lacks "tesseract:".
 _NATIVE_TEXT_EXTRACTION_METHODS_FOR_BULK = frozenset({"python-docx", "pypdf", "openpyxl"})
+
+
+def _document_usable_for_fact_approval(document: Document | None) -> bool:
+    """An AI source must still be current, processed and safe at decision time.
+
+    Rejection and prior review history remain available on stale sources.
+    Legacy-unscanned evidence follows the existing authorized-download policy;
+    do not silently convert it into a malware-clear assertion.
+    """
+    return bool(
+        document is not None
+        and document.deleted_at is None
+        and document.is_current
+        and document.processing_status == DocumentProcessingStatus.PROCESSED
+        and document.malware_scan_status in {
+            DocumentMalwareScanStatus.CLEAN,
+            DocumentMalwareScanStatus.LEGACY_UNSCANNED,
+        }
+    )
 
 _GROUP_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"^(policy\.[a-z_]+\[\d+\])"), "policy_term"),
@@ -136,6 +155,8 @@ def _attention_reasons(items: list[ReviewQueueItem]) -> list[str]:
     reasons: list[str] = []
     if any(not item.source_verified for item in items):
         reasons.append("Unverified source citation")
+    if any(item.source_approval_blocked for item in items):
+        reasons.append("Original source no longer usable for fact approval")
     if any(item.original_source_comparison_required for item in items):
         reasons.append("Machine OCR: original source comparison required")
     if any(item.validation_warnings for item in items):
@@ -194,7 +215,7 @@ def list_review_groups(
             pending_count=len(pending),
             needs_attention=bool(reasons),
             attention_reasons=reasons,
-            group_approvable=bool(pending),
+            group_approvable=bool(pending) and all(not item.source_approval_blocked for item in pending),
             requires_reason=any(
                 not item.source_verified or item.original_source_comparison_required
                 for item in pending
@@ -359,9 +380,16 @@ def list_review_queue(
             source_locator_value=extraction.source_locator_value,
             source_quote=extraction.source_quote,
             source_verified=extraction.source_verified,
+            source_approval_blocked=not _document_usable_for_fact_approval(document),
             original_source_comparison_required=document.id not in native_source_ready,
             validation_warnings=(
-                [*(extraction.validation_warnings or []),
+                [
+                    *(
+                        ["Source document is superseded, not processed, or not malware-downloadable; approval is blocked."]
+                        if not _document_usable_for_fact_approval(document)
+                        else []
+                    ),
+                    *(extraction.validation_warnings or []),
                  "Source OCR is not visually verified; compare the original scan before any individual approval."]
                 if document.id not in native_source_ready
                 else extraction.validation_warnings
@@ -369,8 +397,11 @@ def list_review_queue(
             human_status=extraction.human_status,
             approved_value=extraction.approved_value,
             reviewed_at=extraction.reviewed_at,
-            bulk_approvable=is_bulk_approvable(
-                extraction, native_source_ready=document.id in native_source_ready,
+            bulk_approvable=(
+                _document_usable_for_fact_approval(document)
+                and is_bulk_approvable(
+                    extraction, native_source_ready=document.id in native_source_ready,
+                )
             ),
             created_at=extraction.created_at,
         )
@@ -544,6 +575,24 @@ def review_extraction(
     if locked_extraction is None:
         raise ValueError("Extraction is unavailable for review.")
     extraction = locked_extraction
+
+    # Re-check the CURRENT persisted source, not only the candidate or a
+    # potentially stale UI queue view. A manual reason cannot authorize facts
+    # based on a superseded, failed or quarantined document.
+    if action in {"approve", "edit"}:
+        document = db.scalar(
+            select(Document).where(
+                Document.id == extraction.document_id,
+                Document.organization_id == extraction.organization_id,
+                Document.claim_id == extraction.claim_id,
+                Document.deleted_at.is_(None),
+            )
+        )
+        if not _document_usable_for_fact_approval(document):
+            raise ValueError(
+                "Source document is superseded, not processed or unsafe; "
+                "AI fact approval/edit is blocked. Reject or review the current source."
+            )
 
     # Group and bulk operations are intentionally pending-only. Re-check this
     # invariant after the locked current-state read so a concurrent human review
