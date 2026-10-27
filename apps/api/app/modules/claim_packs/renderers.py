@@ -33,8 +33,20 @@ def _display(value: Any) -> str:
     return str(value)
 
 
+class UnsupportedClaimPackPDFTextError(ValueError):
+    """The legacy PDF writer cannot faithfully render the supplied source text."""
+
+
 def _pdf_safe(value: str) -> str:
-    return value.encode("cp1252", "replace").decode("cp1252").replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+    # Never silently replace Persian negation or other evidence-bearing glyphs.
+    # Do not include untrusted claim content in an exception or API response.
+    try:
+        value.encode("cp1252", "strict")
+    except UnicodeEncodeError:
+        raise UnsupportedClaimPackPDFTextError(
+            "Claim Pack PDF cannot preserve all source characters; use XLSX or original evidence."
+        ) from None
+    return value.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
 
 
 def _pdf_lines(snapshot: dict[str, Any]) -> list[str]:
@@ -171,8 +183,8 @@ def _pdf_lines(snapshot: dict[str, Any]) -> list[str]:
 
 
 def render_pdf(snapshot: dict[str, Any]) -> bytes:
-    # Dependency-free, deterministic text PDF. CP1252 characters render through
-    # the standard Helvetica font; the XLSX companion preserves full Unicode.
+    # Legacy deterministic CP1252 text PDF; reject unsupported characters rather
+    # than corrupting claims evidence. The XLSX companion preserves Unicode.
     lines = _pdf_lines(snapshot)
     pages = [lines[index : index + 54] for index in range(0, len(lines), 54)] or [[]]
 
@@ -211,7 +223,7 @@ def render_pdf(snapshot: dict[str, Any]) -> bytes:
                 "ET",
             ]
         )
-        stream = "\n".join(commands).encode("cp1252", "replace")
+        stream = "\n".join(commands).encode("cp1252", "strict")
         content_object = (
             f"<< /Length {len(stream)} >>\nstream\n".encode("ascii")
             + stream
