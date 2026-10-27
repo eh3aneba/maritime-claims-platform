@@ -506,6 +506,23 @@ independent blind Persian OCR study and H&M/security signoffs. It does
 not modify OCR transcription, silently correct evidence, or grant
 machine autonomy; the real pilot remains **NO-GO**.
 
+## Download original source during AI Review (operator UX)
+
+The existing authenticated AI Review page now offers
+**Download original for visual comparison** in individual fields and
+**Download original document** in grouped review. The button uses the
+tenant-scoped claim-document listing and its established authenticated
+document-download operation. It fetches no unapproved external source
+and grants no new data-access permission. If the exact document is not
+available to the current reviewer, the action fails visibly.
+
+The adjacent source-context preview is marked as **machine-extracted
+text, not the original page**. Reviewers must independently open the
+original file and verify critical Persian negation scope, incident date
+and machinery terminology before documenting any decision. Pressing
+Download is **not** an attestation, review completion, automatic
+approval, or pilot authorization.
+
 ## Required independent reference study (not yet carried out)
 
 1. Assemble a *separate, previously unseen* permission-cleared cohort of
