@@ -546,6 +546,33 @@ and authorization remain separate requirements. Tests use invented H&M
 claim records only; they do not certify real source validity, reviewer
 authority or pilot acceptance.
 
+## AI citation invalidation on source reprocessing
+
+If the same document's OCR/native-text processing is rerun, its persisted
+page/segment records are **replaced** even if the original Document ID remains
+current and malware-allowed. Older AI candidate quotations no longer have
+valid source-segment lineage. The processing worker marks all earlier AI
+candidates for that claim/document with a platform-owned
+`AI_SOURCE_REPROCESSED_WARNING`, clears their machine
+`source_verified` flag, and retains original AI values and historical
+human feedback without rewriting them. This update and replacement
+occur in the **same database transaction** after successful text extraction.
+
+The AI Review queue labels such a candidate `source_approval_blocked`,
+disables approve/edit and bulk/group approval and exposes the warning.
+The server also checks the marker inside the locked individual/group
+review path; a manual reason does not override it. An operator can
+reject a stale candidate and rerun document intelligence against the
+new source segments, then review the newly generated proposal.
+
+For previously human-approved AI facts, this operation does **not**
+automatically revoke canonical Claim Facts or manufacture replacement
+human judgments. Their already-recorded source citations are flagged
+as stale at the AI-candidate level; follow-up technical adjudication
+and explicit handling of any previously approved facts remain required.
+This is provenance defense, **not** independent Persian OCR fidelity
+validation, source authentication or pilot signoff.
+
 ## Required independent reference study (not yet carried out)
 
 1. Assemble a *separate, previously unseen* permission-cleared cohort of
