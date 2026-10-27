@@ -7,6 +7,8 @@ import { useLocale } from "@/components/locale-provider";
 import {
   ApiError,
   bulkApproveAIExtractions,
+  downloadClaimDocument,
+  listClaimDocuments,
   getAIReviewDetail,
   getAISourcePreview,
   listAIReview,
@@ -259,6 +261,26 @@ export default function AIReviewPage() {
       }
     }
     await submitSingle(item, payload);
+  }
+
+  async function downloadOriginalForReview(claimId: string, documentId: string) {
+    // Existing tenant-scoped document listing and authenticated download.
+    // The OCR text preview is NOT the original source page.
+    setWorking(true);
+    setError("");
+    try {
+      const response = await listClaimDocuments(claimId);
+      const document = response.items.find((row) => row.id === documentId);
+      if (!document) {
+        setError(L("Original document is unavailable to this reviewer.", "سند اصلی برای این بازبین در دسترس نیست."));
+        return;
+      }
+      await downloadClaimDocument(claimId, document);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.detail : L("Original document could not be downloaded.", "دریافت سند اصلی ممکن نشد."));
+    } finally {
+      setWorking(false);
+    }
   }
 
   async function toggleSource(item: AIReviewItem) {
