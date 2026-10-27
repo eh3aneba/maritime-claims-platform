@@ -98,17 +98,28 @@ def test_invalidation_preserves_historical_human_decisions_and_current_fact_for_
     assert denied.status_code == 409, denied.text
 
 
-def test_reprocessing_different_tenant_or_document_does_not_mutate_other_candidates() -> None:
+def test_reprocessing_unrelated_document_does_not_mutate_original_candidates() -> None:
     ids = seed_review_candidates()
     with TestingSessionLocal() as db:
         maker = db.get(DocumentExtraction, UUID(ids["maker_id"]))
-        document = db.get(Document, UUID(ids["document_id"]))
+        original = db.get(Document, UUID(ids["document_id"]))
         old_warnings = list(maker.validation_warnings or [])
-        document.claim_id = UUID("00000000-0000-0000-0000-000000000001")
-        # Avoid committing a deliberately inconsistent FK: predicate must match
-        # document organization, claim and ID before mutating a candidate.
-        assert _invalidate_ai_citations_after_text_reprocessing(db, document=document) == 0
-        db.rollback()
-        maker = db.get(DocumentExtraction, UUID(ids["maker_id"]))
+        unrelated = Document(
+            organization_id=original.organization_id,
+            claim_id=original.claim_id,
+            uploaded_by_id=original.uploaded_by_id,
+            filename="unrelated.pdf",
+            original_filename="unrelated.pdf",
+            file_size_bytes=200,
+            file_hash="d" * 64,
+            mime_type="application/pdf",
+            storage_key="fictional/unrelated.pdf",
+            processing_status=DocumentProcessingStatus.PROCESSED,
+        )
+        db.add(unrelated)
+        db.flush()
+        assert _invalidate_ai_citations_after_text_reprocessing(db, document=unrelated) == 0
+        db.commit()
+        db.refresh(maker)
         assert maker.source_verified is True
         assert list(maker.validation_warnings or []) == old_warnings
