@@ -275,6 +275,14 @@ def main() -> None:
         page.get_by_label("Review view").select_option("fields")
         candidate = page.locator("article").filter(has_text="claim.incident_description").first
         expect(candidate).to_be_visible()
+        # Reviewers can fetch the authenticated original; OCR context alone
+        # is never presented as an original scan or visual source approval.
+        expect(candidate.get_by_role("button", name="Download original for visual comparison")).to_be_visible()
+        candidate.get_by_role("button", name="View source context").click()
+        expect(candidate.get_by_text(
+            "This preview shows extracted machine text, not the original page.",
+            exact=False,
+        )).to_be_visible()
         candidate.get_by_role("button", name="Approve", exact=True).click()
         warning = page.locator('div[role="alert"]:not(#__next-route-announcer__)').first
         expect(warning).to_contain_text("Canonical Claim Fact replacement requires confirmation")
@@ -284,6 +292,7 @@ def main() -> None:
         # Locale change changes presentation only; replacement is still pending explicit human confirmation.
         page.get_by_role("button", name="FA", exact=True).click()
         expect(page.locator("html")).to_have_attribute("dir", "rtl")
+        expect(candidate.get_by_role("button", name="دریافت سند اصلی برای مقایسه بصری")).to_be_visible()
         expect(warning).to_contain_text("جایگزینی واقعیت معتبر پرونده نیازمند تأیید است")
         detail_before_confirm = _api_detail(page, fixture["candidate_id"])
         assert detail_before_confirm["current_claim_fact"]["provenance_kind"] == "intake_review"
