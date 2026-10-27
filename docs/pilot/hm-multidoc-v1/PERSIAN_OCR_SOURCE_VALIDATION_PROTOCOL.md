@@ -488,8 +488,8 @@ The H&M AI review service now checks the persisted, organization-bound
 relying only on a high model confidence or quoted OCR substring:
 
 - Text produced by Tesseract (including mixed native-PDF plus selective
-  OCR), incomplete OCR, or a missing text-extraction record cannot be
-  **bulk-approved** as AI-derived Claim Facts—even if the matched quote
+  OCR), incomplete OCR, unknown or newly introduced extraction methods,
+  or a missing text-extraction record cannot be **bulk-approved** as AI-derived Claim Facts—even if the matched quote
   and model confidence would otherwise qualify it.
 - Queue entries surface a caution that the original page requires visual
   comparison and show `bulk_approvable=false` for those sources.
