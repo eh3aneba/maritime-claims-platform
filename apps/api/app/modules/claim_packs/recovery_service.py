@@ -19,7 +19,11 @@ from app.modules.claim_packs.service import (
     get_claim_pack_export,
     list_claim_pack_exports,
 )
-from app.modules.claims.service import get_claim
+from app.modules.claims.service import (
+    approved_ai_fact_source_revalidation_reasons,
+    get_claim,
+    list_claim_facts,
+)
 from app.modules.documents.service import _storage
 from app.modules.users.models import User
 
@@ -45,6 +49,21 @@ def build_claim_pack_snapshot(
     recovery = _jsonable(build_recovery_snapshot(db, claim=claim))
     approved_assessment = _jsonable(build_approved_assessment_handoff(db, claim=claim))
     correspondence = _jsonable(build_correspondence_snapshot(db, claim=claim))
+    approved_facts = list_claim_facts(
+        db, claim_id=claim.id, organization_id=claim.organization_id,
+    )
+    stale_reasons = approved_ai_fact_source_revalidation_reasons(
+        db, facts=approved_facts, claim_id=claim.id,
+        organization_id=claim.organization_id,
+    )
+    stale_approved_ai_facts = [
+        {
+            "field_path": fact.field_path,
+            "source_document_id": str(fact.source_document_id),
+            "reason": stale_reasons[fact.id],
+        }
+        for fact in approved_facts if fact.id in stale_reasons
+    ]
     summary = recovery["summary"]
     correspondence_summary = correspondence["summary"]
 
@@ -54,6 +73,9 @@ def build_claim_pack_snapshot(
     snapshot["approved_assessment"] = approved_assessment
     snapshot["recovery_review"] = recovery
     snapshot["correspondence_history"] = correspondence
+    # This is a read-time status of historical human-approved AI fact
+    # provenance. It does not revoke, edit or reapprove a Claim Fact.
+    snapshot["approved_ai_fact_source_revalidation"] = stale_approved_ai_facts
     snapshot["summary"].update(
         {
             "approved_assessment_version": approved_assessment["version"] if approved_assessment else None,
@@ -74,11 +96,14 @@ def build_claim_pack_snapshot(
             "recovery_unreviewed_counterparty_count": summary["unreviewed_counterparty_count"],
             "recovery_stale_timebar_scenario_count": summary["stale_timebar_scenario_count"],
             "recovery_unreviewed_timebar_scenario_count": summary["unreviewed_timebar_scenario_count"],
+            "approved_ai_fact_source_revalidation_count": len(stale_approved_ai_facts),
             "correspondence_included_count": correspondence_summary["included_count"],
             "correspondence_excluded_sensitive_count": correspondence_summary["excluded_sensitive_count"],
             "correspondence_omitted_for_bound_count": correspondence_summary["omitted_for_bound_count"],
         }
     )
+    if stale_approved_ai_facts:
+        snapshot["summary"]["review_state"] = "attention_required"
     if recovery["human_closure_review_state"] == "attention_required":
         snapshot["summary"]["review_state"] = "attention_required"
     elif (
