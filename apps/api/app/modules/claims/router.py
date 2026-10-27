@@ -38,6 +38,7 @@ from app.modules.claims.service import (
     get_claim,
     list_claims,
     list_claim_facts,
+    approved_ai_fact_source_revalidation_reasons,
     update_claim_details,
 )
 from app.modules.rules.service import evaluate_claim_rules
