@@ -33,7 +33,10 @@ def _set_method(ids: dict[str, str], *, method: str, requires_ocr: bool = False)
         db.commit()
 
 
-@pytest.mark.parametrize("method", ["tesseract:eng+fas", "pypdf+selective-tesseract:eng+fas"])
+@pytest.mark.parametrize(
+    "method",
+    ["tesseract:eng+fas", "pypdf+selective-tesseract:eng+fas", "future_ocr_engine:v1"],
+)
 def test_ocr_citation_match_does_not_enable_bulk_approval(method: str) -> None:
     ids = seed_review_candidates()
     _set_method(ids, method=method)
@@ -68,6 +71,7 @@ def test_ocr_citation_match_does_not_enable_bulk_approval(method: str) -> None:
         ("tesseract:eng+fas", False),
         ("pypdf+selective-tesseract:eng+fas", False),
         ("pypdf+ocr_unavailable", True),
+        ("future_ocr_engine:v1", False),
     ],
 )
 def test_individual_ocr_approval_needs_documented_original_comparison(
