@@ -176,6 +176,9 @@ class ClaimFactRead(BaseModel):
     approved_by_id: UUID | None
     approved_at: datetime
     version: int
+    # Read-only historical-source warning, not a reversal of human approval.
+    source_revalidation_required: bool = False
+    source_revalidation_reason: str | None = None
 
 
 class ClaimFactListResponse(BaseModel):

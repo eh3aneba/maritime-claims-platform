@@ -324,6 +324,86 @@ def update_current_reserve(db: Session, *, claim: Claim, amount: Decimal) -> Dec
     return old_reserve
 
 
+def approved_ai_fact_source_revalidation_reasons(
+    db: Session,
+    *,
+    facts: list[ClaimFact],
+    claim_id: UUID,
+    organization_id: UUID,
+) -> dict[UUID, str]:
+    """Read-only disclosure of known stale AI fact source lineage.
+
+    A canonical Claim Fact and its prior human approval are never altered by
+    this helper. It reports *known* source reprocessing or source inadmissibility,
+    not whether the earlier adjuster's conclusion was correct.
+    All lookups are scoped by tenant and claim; do not dereference untrusted
+    source references outside that scope.
+    """
+    from app.modules.documents.models import (
+        Document, DocumentMalwareScanStatus, DocumentProcessingStatus,
+    )
+    from app.modules.intelligence.models import DocumentExtraction
+    from app.modules.processing.models import AI_SOURCE_REPROCESSED_WARNING
+
+    relevant = [
+        fact for fact in facts
+        if fact.provenance_kind == "ai_review"
+        and fact.organization_id == organization_id
+        and fact.claim_id == claim_id
+    ]
+    if not relevant:
+        return {}
+
+    candidate_ids = {fact.source_extraction_id for fact in relevant if fact.source_extraction_id}
+    document_ids = {fact.source_document_id for fact in relevant}
+    candidates = {
+        item.id: item
+        for item in db.scalars(
+            select(DocumentExtraction).where(
+                DocumentExtraction.organization_id == organization_id,
+                DocumentExtraction.claim_id == claim_id,
+                DocumentExtraction.id.in_(candidate_ids),
+            )
+        )
+    } if candidate_ids else {}
+    documents = {
+        item.id: item
+        for item in db.scalars(
+            select(Document).where(
+                Document.organization_id == organization_id,
+                Document.claim_id == claim_id,
+                Document.id.in_(document_ids),
+            )
+        )
+    }
+
+    results: dict[UUID, str] = {}
+    for fact in relevant:
+        document = documents.get(fact.source_document_id)
+        if (
+            document is None
+            or document.deleted_at is not None
+            or not document.is_current
+            or document.processing_status != DocumentProcessingStatus.PROCESSED
+            or document.malware_scan_status not in {
+                DocumentMalwareScanStatus.CLEAN,
+                DocumentMalwareScanStatus.LEGACY_UNSCANNED,
+            }
+        ):
+            results[fact.id] = "source_document_unusable"
+            continue
+        candidate = candidates.get(fact.source_extraction_id)
+        if (
+            candidate is None
+            or candidate.document_id != fact.source_document_id
+        ):
+            results[fact.id] = "source_candidate_unavailable"
+            continue
+        if AI_SOURCE_REPROCESSED_WARNING in (candidate.validation_warnings or []):
+            results[fact.id] = "source_reprocessed"
+    return results
+
+
 def list_claim_facts(db: Session, *, claim_id: UUID, organization_id: UUID) -> list[ClaimFact]:
     # Reuse claim access semantics so facts cannot disclose a deleted/cross-tenant claim.
     get_claim(db, claim_id=claim_id, organization_id=organization_id)
