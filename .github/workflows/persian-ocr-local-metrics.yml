@@ -18,6 +18,8 @@ on:
       - scripts/persian_ocr_tesseract_psm_ablation.py
       - scripts/tests/test_persian_ocr_tesseract_psm_ablation.py
       - scripts/tests/test_persian_ocr_real_synthetic_workflow_policy.py
+      - scripts/persian_ocr_synthetic_preprocessing_comparison.py
+      - scripts/tests/test_persian_ocr_synthetic_preprocessing_comparison.py
       - .github/workflows/persian-ocr-real-synthetic-probe.yml
       - .github/workflows/persian-ocr-local-metrics.yml
   workflow_dispatch:
@@ -44,4 +46,4 @@ jobs:
           python-version: "3.13"
 
       - name: Validate local-only synthetic OCR metrics and safety boundaries
-        run: python -m unittest scripts.tests.test_persian_ocr_local_validation_metrics scripts.tests.test_persian_ocr_blind_cohort_preflight scripts.tests.test_persian_ocr_local_source_integrity scripts.tests.test_persian_ocr_offline_study_run scripts.tests.test_persian_ocr_review_disagreement_metrics scripts.tests.test_persian_ocr_tesseract_psm_ablation scripts.tests.test_persian_ocr_real_synthetic_workflow_policy -v
+        run: python -m unittest scripts.tests.test_persian_ocr_local_validation_metrics scripts.tests.test_persian_ocr_blind_cohort_preflight scripts.tests.test_persian_ocr_local_source_integrity scripts.tests.test_persian_ocr_offline_study_run scripts.tests.test_persian_ocr_review_disagreement_metrics scripts.tests.test_persian_ocr_tesseract_psm_ablation scripts.tests.test_persian_ocr_real_synthetic_workflow_policy scripts.tests.test_persian_ocr_synthetic_preprocessing_comparison -v

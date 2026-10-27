@@ -7,6 +7,7 @@ on:
     paths:
       - .github/workflows/persian-ocr-real-synthetic-probe.yml
       - scripts/persian_ocr_tesseract_psm_ablation.py
+      - scripts/persian_ocr_synthetic_preprocessing_comparison.py
       - scripts/hm_multidoc_packs.py
       - scripts/hm_persian_ocr_probe.py
       - docs/pilot/hm-multidoc-v1/cases.json
@@ -65,6 +66,8 @@ jobs:
           # Never save/emit the PNG or OCR transcript: diagnostic only.
           python -m scripts.persian_ocr_tesseract_psm_ablation \
             --fixed-synthetic-hm05 > "${RUNNER_TEMP}/synthetic-hm05-psm-observations.json"
+          python -m scripts.persian_ocr_synthetic_preprocessing_comparison \
+            --fixed-synthetic-hm05 > "${RUNNER_TEMP}/synthetic-hm05-preprocessing-observations.json"
 
       - name: Validate bounded aggregate report and publish NON-GO summary
         shell: bash
@@ -125,6 +128,63 @@ jobs:
                   f"| {value('full_negation_clause_exact_present')} "
                   f"| {value('incident_date_exact_present')} |"
               )
+          # The preprocessing experiment is a separate fixed single-image
+          # matrix. Validate booleans and structural limits before adding to
+          # the non-GO summary. OCR transcripts never leave subprocess memory.
+          pre = json.loads(
+              (Path(os.environ["RUNNER_TEMP"]) / "synthetic-hm05-preprocessing-observations.json")
+              .read_text(encoding="utf-8")
+          )
+          assert pre["measurement_kind"] == "single_fixed_fictional_image_preprocessing_ablation"
+          assert pre["variants"] == ["original", "grayscale_2x", "grayscale_threshold_2x"]
+          assert pre["psm_modes"] == [3, 6]
+          assert pre["independent_unseen_scans_evaluated"] == 0
+          assert pre["pilot_accepted"] is False
+          assert pre["winning_variant_selected"] is False
+          assert pre["production_ocr_changed"] is False
+          assert pre["negation_scope_semantics_verified"] is False
+          assert pre["human_expert_review_completed"] is False
+          candidates = pre["observations"]
+          assert len(candidates) == 6
+          fields = {
+              "variant", "psm", "machinery_term_exact_present",
+              "negation_token_exact_present", "negative_clause_core_present",
+              "negative_clause_punctuation_exact_present", "incident_date_exact_present",
+              "all_critical_literals_present", "date_missing_or_changed",
+          }
+          assert all(set(item) == fields for item in candidates)
+          assert [(item["variant"], item["psm"]) for item in candidates] == [
+              (v, p) for v in pre["variants"] for p in pre["psm_modes"]
+          ]
+          for item in candidates:
+              assert all(type(item[key]) is bool for key in fields - {"variant", "psm"})
+              assert item["date_missing_or_changed"] is not item["incident_date_exact_present"]
+              assert not item["all_critical_literals_present"] or (
+                  item["machinery_term_exact_present"]
+                  and item["negative_clause_core_present"]
+                  and item["incident_date_exact_present"]
+              )
+          summary.extend([
+              "",
+              "### Original vs optical-preprocessing variants (same fictional scan)",
+              "",
+              "| Image | PSM | Negation | Clause core | Date exact | All critical literals |",
+              "|---|---|---|---|---|---|",
+          ])
+          for item in candidates:
+              yn = lambda key: "yes" if item[key] else "no"
+              summary.append(
+                  f"| {item['variant']} | {item['psm']} | "
+                  f"{yn('negation_token_exact_present')} | "
+                  f"{yn('negative_clause_core_present')} | "
+                  f"{yn('incident_date_exact_present')} | "
+                  f"{yn('all_critical_literals_present')} |"
+              )
+          summary.append("")
+          summary.append(
+              "A recovered negative clause with an incorrect date is a "
+              "**critical regression**, not a successful OCR fix."
+          )
           summary.extend([
               "",
               "All outputs are from **one known invented image** on this runner; "
@@ -139,4 +199,6 @@ jobs:
       - name: Remove aggregate-only temporary report
         if: always()
         shell: bash
-        run: rm -f "${RUNNER_TEMP}/synthetic-hm05-psm-observations.json"
+        run: |
+          rm -f "${RUNNER_TEMP}/synthetic-hm05-psm-observations.json"
+          rm -f "${RUNNER_TEMP}/synthetic-hm05-preprocessing-observations.json"

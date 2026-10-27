@@ -436,6 +436,45 @@ scan test, a reference-transcript study, or a human reviewer signoff.
 The public synthetic HM-05 is deliberately not used as a blind
 acceptance cohort.
 
+## Experimental optical preprocessing comparison on fixed fictional HM-05
+
+A companion synthetic-only diagnostic compares the same base Chromium
+screenshot with two optical transformations generated in memory by
+Chromium Canvas: **2× grayscale** and **2× grayscale plus a fixed 180
+threshold**. Each variant is OCR'd by local Tesseract `eng+fas` at PSM
+3 and 6, yielding six *configuration observations on one already-known
+synthetic scan*, not six independently sampled documents.
+
+```text
+python -m scripts.persian_ocr_synthetic_preprocessing_comparison --fixed-synthetic-hm05
+```
+
+The fresh GitHub runner in
+`.github/workflows/persian-ocr-real-synthetic-probe.yml` executes this
+alongside the unchanged-image PSM experiment. Its job summary reports
+only these bounded boolean results: machinery term, negation token,
+negative-clause core without terminal punctuation, punctuation-exact
+clause, incident-date exact match, and whether **all required literal
+checks** were observed together. A separate `date_missing_or_changed`
+flag exposes the date fidelity trade-off. A core-clause lexical match
+does not establish correct semantic scope or reference authenticity,
+and an exact date match does not by itself establish date meaning.
+
+No OCR transcripts, page images or private documents are logged or
+uploaded. The tool accepts **only** the fixed invented HM-05 source;
+real scans must **not** be supplied to public GitHub Actions. A failed
+OCR subprocess, invalid reference hash, or incomplete variant matrix
+fails closed without a partial or falsely positive quality report.
+Even if every literal appears somewhere, `winning_variant_selected`,
+`human_expert_review_completed`, and `pilot_accepted` remain false.
+
+A recovered `نیست` with an altered incident date **must not be
+treated as a safe OCR improvement**. Production ingestion stays on
+its existing settings. Any future preprocessing decision requires
+independent bilingual adjudication of held-out original scans across
+critical negation **scope**, timeline/date, causation, and technical
+terms, with a separately approved acceptance protocol.
+
 ## Required independent reference study (not yet carried out)
 
 1. Assemble a *separate, previously unseen* permission-cleared cohort of
