@@ -552,6 +552,7 @@ export interface AIReviewItem {
   source_locator_value: string | null;
   source_quote: string | null;
   source_verified: boolean;
+  original_source_comparison_required: boolean;
   validation_warnings: string[] | null;
   human_status: AIReviewStatus;
   approved_value: unknown;
