@@ -324,6 +324,89 @@ Keep real files and even private JSON observations on an approved offline
 machine; synthetic test cases alone run in CI. An apparent 100% agreement
 rate never authorizes critical causation or coverage extraction.
 
+## Experimental local Tesseract page-segmentation ablation (no production change)
+
+The actual image-only HM-05 regression has shown that a successfully
+processed document can omit `نیست`. Instead of switching OCR engines
+based on guesswork, an optional **real Tesseract invocation** compares
+the **same PNG bytes** under page-segmentation modes 3 (the current
+Tesseract default), 4, 6 and 11. The experiment uses `eng+fas` and
+tests four exact probes: the machinery term, the negation token,
+the entire qualified negation clause **including punctuation**, and
+the incident date. Separately it checks qualified clause wording
+**without only terminal punctuation**; neither wording test proves
+that the negative clause is correctly applied to the right fact. It **does not** reconstruct
+missing text, repair OCR, write to the claims system, modify the
+production worker, or declare a successful semantic extraction.
+
+On an isolated local machine with the existing project's Chromium
+Playwright setup and Tesseract installed with `eng` and `fas` data:
+
+```text
+python -m scripts.persian_ocr_tesseract_psm_ablation --fixed-synthetic-hm05
+```
+
+This generates the existing fictional HM-05 PNG with Chromium **in
+memory**, invokes local Tesseract in a temporary directory, and prints
+only four mode records with critical literal-presence booleans. No OCR text,
+original phrase, source path, identifiers, screenshot, or Tesseract
+stderr is printed. This is a public engineering probe, **not** a
+blinded holdout or verified quality study; the real run must be executed
+explicitly on a machine with Tesseract and Playwright. The **CI unittest
+only tests command/privacy/error behavior with a mock engine**; it does
+not claim that a real OCR comparison was run.
+
+For a separately authorized private PNG, use:
+
+```text
+python -m scripts.persian_ocr_tesseract_psm_ablation --image /secure/local/source.png --reference /secure/local/three_probes.json
+```
+
+The private reference JSON must contain `schema_version: 1`,
+`source_file_sha256` (calculated from the image bytes) and exactly
+four `probes`: `machinery_term`, `negation_token`,
+`negation_clause`, and `incident_date`, each with a nonempty `literal`. The negation
+token must occur literally inside the reference full clause.
+Reference data stays offline and must come from authorized source
+reviewers; a valid JSON shape is not expert approval. This prototype
+accepts **PNG only**, limits input size and OCR runtime, and fails
+closed if any mode errors rather than publishing partial observations.
+
+### Observed local synthetic HM-05 diagnostic (not independent evaluation)
+
+A **real local trial** (Tesseract 5.5.0 with `eng+fas`, Chromium
+rendering with Noto Sans Arabic, the existing fictional HM-05 wording)
+found that the unchanged original PNG failed to recover the standalone
+`نیست` across PSM 3, 4, 6 and 11. In a separate exploratory
+**11-image-variant × 3-PSM = 33-setting sweep**, 21/33 outputs contained
+the standalone negation token. This is **not** 21/33 different scans,
+nor a sensitivity or recall estimate. The complete punctuation-exact
+negative clause was missing in all 33 outputs; that metric is strict
+and affected by sentence-final punctuation. Under 2× grayscale scaling
+and PSM 6, the core negation-clause wording appeared without its final
+period, **but the same OCR output changed the incident-year digits**.
+Therefore this experiment uncovered a potentially useful candidate
+and a simultaneous *critical temporal regression*; it did **not**
+demonstrate a safe OCR fix.
+
+These observations were performed on the assistant's isolated Linux
+environment, **not the pinned production worker image**, and have
+not been independently rerun or signed off. There are no customer
+files or expert labels in the study. The versioned script here allows
+replication and now reports negative-clause punctuation-sensitive,
+punctuation-free core, and incident-date checks separately. Do not
+treat a token recovered on one synthetic image as accuracy evidence.
+
+**Do not pick a winning PSM from lexical presence alone.** Recognizing
+a standalone `نیست` does not demonstrate its position or semantic
+scope in the causal sentence. Identical pages can behave differently
+under fonts, scans, rotations and marine terminology. Keep the current
+worker and safety flags unchanged. If an experiment reveals a candidate
+with better *complete-clause* retrieval, replicate on a separate
+permission-cleared, blind and independently adjudicated cohort and
+compare critical-span misses and false insertions **before** any
+processing-code change. The pilot remains **NO-GO**.
+
 ## Required independent reference study (not yet carried out)
 
 1. Assemble a *separate, previously unseen* permission-cleared cohort of
