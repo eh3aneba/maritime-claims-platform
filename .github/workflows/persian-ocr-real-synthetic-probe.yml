@@ -104,7 +104,9 @@ jobs:
               assert all(
                   type(item[key]) is bool
                   for key in safe_keys
-                  if key.endswith("_present") or key == "ocr_text_human_verified"
+                  if (key.endswith("_exact_present")
+                  or key == "negation_clause_core_without_terminal_punctuation_present"
+                  or key == "ocr_text_human_verified")
               )
           summary = [
               "### Real Tesseract / fictional HM-05 (engineering diagnostic only)",
