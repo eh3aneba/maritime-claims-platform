@@ -65,13 +65,35 @@ def _wait_processed(request, claim_id: str, expected_ids: set[str], timeout=90) 
 
 
 def _generate(request, claim_id: str, label: str) -> dict:
-    result = _ok(request.post(
-        API + f"/api/v1/claims/{claim_id}/initial-assessment/generate",
-        data={
-            "allow_if_not_ready": True,
-            "override_reason": f"HM-04 invented source-version rehearsal {label}; no human adjudication",
-        },
-    ), "generate_versioned_assessment")
+    # A worker can finish a source-state write just as assessment sections
+    # are being assembled. The API deliberately rejects that attempt without
+    # committing an assessment. Retry only this exact safe snapshot-drift
+    # conflict, never a generic 409 or a permission/readiness failure.
+    drift_detail = (
+        "Claim evidence changed while the assessment version was being generated. "
+        "No assessment version was committed; generate again from the current claim state."
+    )
+    result = None
+    for attempt in range(3):
+        response = request.post(
+            API + f"/api/v1/claims/{claim_id}/initial-assessment/generate",
+            data={
+                "allow_if_not_ready": True,
+                "override_reason": f"HM-04 invented source-version rehearsal {label}; no human adjudication",
+            },
+        )
+        if response.status == 409:
+            try:
+                detail = response.json().get("detail")
+            except (ValueError, TypeError, AttributeError):
+                detail = None
+            if detail == drift_detail and attempt < 2:
+                time.sleep(0.5)
+                continue
+        result = _ok(response, "generate_versioned_assessment")
+        break
+    if result is None:
+        raise AssertionError("synthetic_versioned_assessment_retry_exhausted")
     if (
         result["source_state"] != "current"
         or not result["is_preliminary"]
