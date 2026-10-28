@@ -13,7 +13,7 @@ from app.modules.assessments.models import InitialAssessment
 from app.modules.claims.facts import ClaimFact
 from app.modules.documents.models import Document, DocumentMalwareScanStatus
 from app.modules.intelligence.models import AIReviewStatus, DocumentExtraction
-from app.modules.processing.models import DocumentTextExtraction
+from app.modules.processing.models import AI_SOURCE_REPROCESSED_WARNING, DocumentTextExtraction
 from tests.db_harness import TestingSessionLocal, client, reset_database
 from tests.test_human_ai_review import login, seed_review_candidates
 
@@ -122,9 +122,12 @@ def test_later_ocr_report_flags_historical_fact_and_stales_assessment_without_re
             DocumentTextExtraction.document_id == UUID(ids["document_id"]),
         ))
         source.text_hash = "d" * 64
+        extraction.validation_warnings = [AI_SOURCE_REPROCESSED_WARNING]
         db.commit()
-    # Reprocessing the SAME original source must not clear the report.
-    assert _get_facts(ids)["source_revalidation_required"] is True
+    # Reprocessing the SAME original source cannot outrank/clear its dispute.
+    after_reprocess = _get_facts(ids)
+    assert after_reprocess["source_revalidation_required"] is True
+    assert after_reprocess["source_revalidation_reason"] == "source_ocr_discrepancy_reported_unverified"
 
 
 def test_mismatched_or_foreign_tenant_reports_do_not_mark_fact_stale() -> None:
