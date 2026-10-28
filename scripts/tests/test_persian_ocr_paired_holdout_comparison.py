@@ -97,6 +97,58 @@ class PairedOcrHoldoutComparisonTests(unittest.TestCase):
                         baseline=baseline, candidate=candidate, root=root,
                     )
 
+    def test_missing_declared_kind_on_one_source_does_not_hide_behind_global_coverage(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            manifest, inventory, baseline = bundled_study(root)
+            # Keep the globally required positive categories intact; remove
+            # only this source's causation negative control from both arms.
+            # Previously both study packets could pass global cohort coverage.
+            baseline["records"][0]["critical_spans"] = baseline["records"][0]["critical_spans"][:-1]
+            candidate = candidate_study(baseline)
+            with self.assertRaises(ValueError):
+                compare_paired_ocr_studies(
+                    manifest=manifest, inventory=inventory,
+                    baseline=baseline, candidate=candidate, root=root,
+                )
+            # The matching study with its per-source declared kind restored
+            # remains structurally valid, still without an accuracy approval.
+            baseline["records"][0]["critical_spans"].append({
+                "span_ref": "negative-control",
+                "kind": "causation",
+                "literal": "انفجار",
+                "expected_present": False,
+                "search_exact_hit": None,
+            })
+            candidate = candidate_study(baseline)
+            report = compare_paired_ocr_studies(
+                manifest=manifest, inventory=inventory,
+                baseline=baseline, candidate=candidate, root=root,
+            )
+            self.assertTrue(
+                report["all_declared_source_kind_classes_present_in_submitted_spans"]
+            )
+            self.assertFalse(report["pilot_accepted"])
+
+    def test_different_ocr_text_cannot_claim_unchanged_extraction_digest(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            manifest, inventory, baseline = bundled_study(root)
+            candidate = candidate_study(baseline)
+            candidate["records"][0]["extraction_sha256"] = baseline["records"][0]["extraction_sha256"]
+            with self.assertRaises(ValueError):
+                compare_paired_ocr_studies(
+                    manifest=manifest, inventory=inventory,
+                    baseline=baseline, candidate=candidate, root=root,
+                )
+            # Identical source text/hash for another page is not suspicious.
+            candidate["records"][0]["extraction_sha256"] = "1" * 64
+            report = compare_paired_ocr_studies(
+                manifest=manifest, inventory=inventory,
+                baseline=baseline, candidate=candidate, root=root,
+            )
+            self.assertFalse(report["candidate_automatically_selected"])
+
     def test_unknown_incomplete_candidate_is_not_reported_as_a_literal_loss(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)

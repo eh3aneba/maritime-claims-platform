@@ -77,6 +77,20 @@ def compare_paired_ocr_studies(
     right_pages = _page_index(candidate)
     _require(set(left_pages) == set(right_pages))
 
+    # The cohort preflight requires global kind coverage, but global
+    # coverage alone can hide a completely unmeasured category on one
+    # particular declared holdout source. Demand each source's own
+    # preregistered classes be represented by at least one positive or
+    # negative-control span across that source's submitted pages.
+    expected_kinds_by_source = {
+        entry["case_ref"]: set(entry["expected_critical_kinds"])
+        for entry in manifest["sources"]
+        if entry["split"] == "blind_holdout"
+    }
+    covered_kinds_by_source = {
+        case_ref: set() for case_ref in expected_kinds_by_source
+    }
+
     overall = _blank_counts()
     by_kind = {kind: _blank_counts() for kind in KINDS}
     for key, source in left_pages.items():
@@ -88,6 +102,18 @@ def compare_paired_ocr_studies(
         source_spans = _spans(source)
         candidate_spans = _spans(alternative)
         _require(set(source_spans) == set(candidate_spans))
+        if (
+            source["ocr_page_complete"] and alternative["ocr_page_complete"]
+            and source["ocr_page_text"] != alternative["ocr_page_text"]
+        ):
+            # Two *complete* different observed OCR transcripts cannot
+            # honestly claim the same extraction digest. Incomplete pages
+            # remain unmeasured rather than pretending preview fidelity.
+            # Hashes are still operator-supplied, not independently proven.
+            _require(source["extraction_sha256"] != alternative["extraction_sha256"])
+        covered_kinds_by_source[key[0]].update(
+            span["kind"] for span in source_spans.values()
+        )
         for span_id, critical in source_spans.items():
             tested = candidate_spans[span_id]
             for field in ("kind", "literal", "expected_present"):
@@ -123,9 +149,15 @@ def compare_paired_ocr_studies(
                     bucket["negative_control_spans"] += 1
                     bucket[counter] += 1
 
+    _require(all(
+        expected_kinds.issubset(covered_kinds_by_source[case_ref])
+        for case_ref, expected_kinds in expected_kinds_by_source.items()
+    ))
+
     return {
         "schema_version": 1,
         "measurement_kind": "self_supplied_paired_holdout_literal_comparison_only",
+        "all_declared_source_kind_classes_present_in_submitted_spans": True,
         "source_files_locally_hash_matched": files["locally_hash_matched_source_files"],
         "pages_matched": len(left_pages),
         "comparison": {"overall": overall, "by_kind": by_kind},

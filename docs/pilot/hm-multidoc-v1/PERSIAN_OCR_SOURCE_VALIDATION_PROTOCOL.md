@@ -370,6 +370,17 @@ study or tampered source files fail with a generic error and **no partial
 results**; an OCR page explicitly marked incomplete contributes `unmeasured`,
 never a false claim of missing words.
 
+For this paired runner, **global class coverage is not enough**: every
+individual holdout source must supply at least one positive or negative-control
+span for *each* critical kind predeclared for that source. Omitting the
+causation-control span for one Chief Engineer report is rejected even if
+another report still satisfies the overall category count. A present
+negative control is not positive reference coverage or a human finding; this
+is a source-level **structural completeness** condition only. When two
+complete submitted OCR page transcripts differ, they cannot claim the same
+extraction SHA-256; incomplete page previews stay unknown. The hashes
+themselves remain operator supplied rather than independently attested.
+
 The aggregate output counts **both-hit**, **both-miss**, candidate-only
 recovery, baseline-only hit / **candidate regression**, and unmeasured spans
 *by critical class*. Negative-control text newly inserted or removed is
