@@ -13,6 +13,7 @@ from app.modules.claim_packs.schemas import (
     ClaimPackExportResponse,
     ClaimPackGenerateRequest,
 )
+from app.modules.claim_packs.renderers import UnsupportedClaimPackPDFTextError
 from app.modules.claim_packs.recovery_service import (
     generate_claim_pack,
     get_claim_pack_export,
@@ -75,6 +76,14 @@ def create_export(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Claim not found",
+        ) from exc
+    except UnsupportedClaimPackPDFTextError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "Cannot generate a faithful Claim Pack PDF for these characters. "
+                "Use XLSX and consult the original evidence; no PDF was saved."
+            ),
         ) from exc
     return ClaimPackExportResponse.model_validate(item)
 

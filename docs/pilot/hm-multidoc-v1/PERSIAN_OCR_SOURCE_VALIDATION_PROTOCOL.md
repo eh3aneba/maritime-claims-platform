@@ -625,6 +625,25 @@ under the existing v1.4 snapshot format, retaining prior report
 content and prior approval records. Only authorized claim-pack
 generation and download endpoints expose the information.
 
+## PDF claim-pack Unicode fail-closed safety (#835)
+
+The current deterministic PDF Claim Pack writer uses CP1252 text and cannot
+faithfully reproduce Persian/Arabic evidential content. Both the core PDF
+and the governed assessment/recovery/correspondence appendix now **reject**
+unsupported text rather than replacing characters with question marks.
+The authenticated PDF generation endpoint returns HTTP 422 with a bounded,
+non-sensitive instruction to use the Unicode XLSX review aid and the
+original source evidence; the denied PDF is **not stored**, and no export
+record or audit endorsement is created. Existing ASCII/compatible text
+PDF exports remain available and existing Unicode XLSX exports keep their
+original strings.
+
+This is a temporary fail-closed boundary, **not** a Unicode PDF renderer,
+RTL shaping implementation, original-Persian OCR fidelity proof or a
+qualified adjuster's approval. Issue #835 remains open for a licensed,
+embedded Unicode font and end-to-end visual/extraction accuracy evidence.
+Issue #810 independently remains open for Persian OCR omissions.
+
 ## Required independent reference study (not yet carried out)
 
 1. Assemble a *separate, previously unseen* permission-cleared cohort of

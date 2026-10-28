@@ -8,6 +8,7 @@ from openpyxl import load_workbook
 from openpyxl.styles import Alignment, Font
 from pypdf import PdfReader, PdfWriter
 
+from app.modules.claim_packs.renderers import _pdf_safe
 from app.modules.claim_packs.renderers import render_pdf as _render_base_pdf
 from app.modules.claim_packs.renderers import render_xlsx as _render_base_xlsx
 
@@ -183,10 +184,6 @@ def _appendix_lines(snapshot: dict[str, Any]) -> list[str]:
     return wrapped
 
 
-def _pdf_safe(value: str) -> str:
-    return value.encode("cp1252", "replace").decode("cp1252").replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
-
-
 def _text_pdf(lines: list[str]) -> bytes:
     pages = [lines[index : index + 54] for index in range(0, len(lines), 54)] or [[]]
     objects: list[bytes] = []
@@ -206,7 +203,7 @@ def _text_pdf(lines: list[str]) -> bytes:
             commands.append(f"({_pdf_safe(line)}) Tj")
             commands.append("T*")
         commands.extend(["ET", "BT", "/F1 8 Tf", "54 28 Td", f"(Governed review appendix - page {page_index} of {len(pages)}) Tj", "ET"])
-        stream = "\n".join(commands).encode("cp1252", "replace")
+        stream = "\n".join(commands).encode("cp1252", "strict")
         content_obj = f"<< /Length {len(stream)} >>\nstream\n".encode("ascii") + stream + b"\nendstream"
         objects.extend([page_obj, content_obj])
     output = bytearray(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n")
