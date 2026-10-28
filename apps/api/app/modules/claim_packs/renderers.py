@@ -252,6 +252,24 @@ def render_pdf(snapshot: dict[str, Any]) -> bytes:
     return bytes(output)
 
 
+def _preserve_xlsx_text_literals(workbook) -> None:
+    """Keep source-derived strings literal in this formula-free reporting workbook.
+
+    openpyxl treats any user-supplied string beginning with '=' as an Excel
+    formula on assignment. Reclassify those cells as text without adding an
+    apostrophe or changing the exact original source quote/narrative. Every
+    Claim Pack sheet is a static review aid; executable formulas are not an
+    allowed output.
+    """
+    for sheet in workbook.worksheets:
+        for row in sheet.iter_rows():
+            for cell in row:
+                if cell.data_type == "f":
+                    if not isinstance(cell.value, str):
+                        raise ValueError("Claim Pack XLSX contains a non-text formula.")
+                    cell.data_type = "s"
+
+
 def _style_sheet(sheet, widths: list[int]) -> None:
     header_fill = PatternFill("solid", fgColor="0F766E")
     for cell in sheet[1]:
@@ -431,6 +449,7 @@ def render_xlsx(snapshot: dict[str, Any]) -> bytes:
     manifest_sheet.append(["Generation note", snapshot.get("generation_note") or ""])
     _style_sheet(manifest_sheet, [32, 110])
 
+    _preserve_xlsx_text_literals(workbook)
     output = BytesIO()
     workbook.save(output)
     return output.getvalue()
