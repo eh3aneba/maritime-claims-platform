@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.modules.audit.service import write_audit_log
-from app.modules.chronology.service import invalidate_chronology_for_document_replacement
+from app.modules.chronology.service import invalidate_chronology_for_document_retirement
 from app.modules.claims.models import Claim
 from app.modules.documents.malware import (
     MalwareScannerError,
@@ -336,7 +336,7 @@ async def create_document_from_upload(
         # both the invalidation and new document version are committed together.
         try:
             invalidated_events, invalidated_conflicts = (
-                invalidate_chronology_for_document_replacement(
+                invalidate_chronology_for_document_retirement(
                     db, document=replaces_document, user=current_user
                 )
             )
@@ -465,6 +465,19 @@ def list_quarantined_uploads(
 
 
 def soft_delete_document(db: Session, *, document: Document, current_user: User) -> None:
+    # The same per-claim lock and source retirement path as version replacement
+    # prevents the live timeline from exposing deleted-source events between
+    # deletion and a future manual chronology rebuild.
+    try:
+        event_count, conflict_count = invalidate_chronology_for_document_retirement(
+            db, document=document, user=current_user
+        )
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
     document.deleted_at = datetime.now(UTC)
     write_audit_log(
         db,
@@ -478,6 +491,10 @@ def soft_delete_document(db: Session, *, document: Document, current_user: User)
             "filename": document.original_filename,
             "file_hash": document.file_hash,
         },
-        details="Soft delete only; evidence bytes retained in storage.",
+        new_values={
+            "chronology_events_invalidated": event_count,
+            "chronology_conflicts_invalidated": conflict_count,
+        },
+        details="Soft delete only; evidence bytes and historical human decisions retained.",
     )
     db.commit()
