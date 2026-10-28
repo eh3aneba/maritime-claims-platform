@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.modules.audit.service import write_audit_log
+from app.modules.chronology.service import invalidate_chronology_for_document_replacement
 from app.modules.claims.models import Claim
 from app.modules.documents.malware import (
     MalwareScannerError,
@@ -328,6 +329,25 @@ async def create_document_from_upload(
             replacement_reason=replacement_reason,
         )
 
+    invalidated_events = invalidated_conflicts = 0
+    if replaces_document is not None:
+        # The original source may still be displayed on the live timeline.
+        # The chronology claim lock serializes this replacement with rebuild;
+        # both the invalidation and new document version are committed together.
+        try:
+            invalidated_events, invalidated_conflicts = (
+                invalidate_chronology_for_document_replacement(
+                    db, document=replaces_document, user=current_user
+                )
+            )
+        except ValueError as exc:
+            db.rollback()
+            storage.delete_physical(storage_key)
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=str(exc),
+            ) from exc
+
     document_family_id = replaces_document.document_family_id if replaces_document else upload_id
     version_number = 1
     if replaces_document is not None:
@@ -389,6 +409,8 @@ async def create_document_from_upload(
                 str(document.supersedes_document_id) if document.supersedes_document_id else None
             ),
             "replacement_reason": document.replacement_reason,
+            "chronology_events_invalidated": invalidated_events,
+            "chronology_conflicts_invalidated": invalidated_conflicts,
         },
         details=(
             "A new evidence version was admitted after validation and malware controls. "

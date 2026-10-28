@@ -9,7 +9,7 @@ import re
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.orm import Session
 
 from app.modules.audit.service import write_audit_log
@@ -806,6 +806,64 @@ def _upsert_conflicts(db: Session, *, claim: Claim, conflicts: list[ConflictCand
             conflict.is_active = False
     db.flush()
     return active
+
+
+def invalidate_chronology_for_document_replacement(
+    db: Session, *, document: Document, user: User
+) -> tuple[int, int]:
+    """Retire live source-dependent events and conflicts in the replacement transaction.
+
+    This is deliberately not a rebuild: unreviewed replacement evidence never
+    becomes authoritative, and historical event/decision rows are retained.
+    The same claim lock used by rebuild serializes these two operations on PG.
+    """
+    if document.organization_id != user.organization_id:
+        raise ValueError("Document belongs to another organization.")
+    _lock_claim_chronology_scope(
+        db, claim_id=document.claim_id, organization_id=document.organization_id
+    )
+    db.refresh(document)
+    if document.deleted_at is not None or not document.is_current:
+        raise ValueError("Only the current evidence version can be replaced.")
+
+    affected = list(db.scalars(
+        select(ChronologyEvent)
+        .join(EventEvidence, EventEvidence.event_id == ChronologyEvent.id)
+        .where(
+            ChronologyEvent.organization_id == document.organization_id,
+            ChronologyEvent.claim_id == document.claim_id,
+            ChronologyEvent.is_active.is_(True),
+            EventEvidence.document_id == document.id,
+        )
+        .distinct()
+    ))
+    affected_ids = [row.id for row in affected]
+    source_extraction_ids = select(DocumentExtraction.id).where(
+        DocumentExtraction.organization_id == document.organization_id,
+        DocumentExtraction.claim_id == document.claim_id,
+        DocumentExtraction.document_id == document.id,
+    )
+    conflicts = list(db.scalars(
+        select(EvidenceConflict).where(
+            EvidenceConflict.organization_id == document.organization_id,
+            EvidenceConflict.claim_id == document.claim_id,
+            EvidenceConflict.is_active.is_(True),
+            or_(
+                EvidenceConflict.event_a_id.in_(affected_ids),
+                EvidenceConflict.event_b_id.in_(affected_ids),
+                EvidenceConflict.evidence_a_extraction_id.in_(source_extraction_ids),
+                EvidenceConflict.evidence_b_extraction_id.in_(source_extraction_ids),
+            ),
+        )
+    ))
+    for event in affected:
+        event.is_active = False
+    for conflict in conflicts:
+        conflict.is_active = False
+    # Do not alter historical evidence links, source versions, decision status,
+    # note, fingerprint, or decision hash. No new v2 fact is inferred.
+    db.flush()
+    return len(affected), len(conflicts)
 
 
 def build_chronology(db: Session, *, claim: Claim, user: User) -> tuple[list[ChronologyEvent], list[EvidenceConflict]]:
