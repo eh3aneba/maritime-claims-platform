@@ -93,7 +93,7 @@ def test_reported_source_hold_blocks_individual_group_and_bulk_without_side_effe
         (f"/api/v1/ai-review/{ids['maker_id']}",
          {"action": "edit", "value": "ABB corrected", "reason": "Operator checked image."}),
         ("/api/v1/ai-review/groups/review",
-         {"extraction_ids": [ids["maker_id"], ids["time_id"]],
+         {"extraction_ids": [ids["maker_id"]],
           "action": "approve", "reason": "Operator checked the original pages."}),
         ("/api/v1/ai-review/bulk/approve",
          {"extraction_ids": [ids["maker_id"]], "reason": "Operator checked image."}),
@@ -101,6 +101,8 @@ def test_reported_source_hold_blocks_individual_group_and_bulk_without_side_effe
     for url, payload in attempts:
         result = client.post(url, json=payload)
         assert result.status_code == 409, result.text
+        if url.endswith(ids["maker_id"]) or url.endswith("/groups/review"):
+            assert "unresolved operator-reported OCR discrepancy" in result.json()["detail"]
 
     with TestingSessionLocal() as db:
         maker = db.get(DocumentExtraction, UUID(ids["maker_id"]))
