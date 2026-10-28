@@ -102,9 +102,13 @@ def compare_paired_ocr_studies(
         source_spans = _spans(source)
         candidate_spans = _spans(alternative)
         _require(set(source_spans) == set(candidate_spans))
-        if source["ocr_page_text"] != alternative["ocr_page_text"]:
-            # Source-text lineage hashes cannot be identical for two
-            # different observed OCR transcripts of the same page.
+        if (
+            source["ocr_page_complete"] and alternative["ocr_page_complete"]
+            and source["ocr_page_text"] != alternative["ocr_page_text"]
+        ):
+            # Two *complete* different observed OCR transcripts cannot
+            # honestly claim the same extraction digest. Incomplete pages
+            # remain unmeasured rather than pretending preview fidelity.
             # Hashes are still operator-supplied, not independently proven.
             _require(source["extraction_sha256"] != alternative["extraction_sha256"])
         covered_kinds_by_source[key[0]].update(
