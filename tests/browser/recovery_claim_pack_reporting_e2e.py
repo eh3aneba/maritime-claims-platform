@@ -172,7 +172,7 @@ def main() -> None:
 
         page.route("**/api/v1/claims/*/claim-pack-exports", simulate_unsupported_pdf)
         page.get_by_role("button", name="ایجاد PDF", exact=True).click()
-        expect(page.get_by_role("alert")).to_contain_text("فایل PDF ایجاد نشد")
+        expect(page.get_by_role("alert").filter(has_text="فایل PDF ایجاد نشد")).to_be_visible()
         fallback = page.get_by_role("button", name="ایجاد Excel بدون تغییر متن", exact=True)
         expect(fallback).to_be_visible()
         assert len(blocked_pdf_requests) == 1
