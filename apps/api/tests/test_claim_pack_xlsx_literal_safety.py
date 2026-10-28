@@ -63,8 +63,13 @@ def _assert_static_literals(data: bytes, *, extended: bool) -> None:
         assert book["Export Manifest"]["B5"].value == SOURCE_LITERAL
         assert book["Export Manifest"]["B5"].data_type == "s"
         if extended:
-            assert book["Recovery Review"]["D3"].value == SOURCE_LITERAL
-            assert book["Recovery Review"]["D3"].data_type == "s"
+            decisions = [
+                row for row in book["Recovery Review"].iter_rows()
+                if row[0].value == "human decision"
+            ]
+            assert len(decisions) == 1
+            assert decisions[0][3].value == SOURCE_LITERAL
+            assert decisions[0][3].data_type == "s"
             assert book["AI Fact Source Review"]["A6"].value == SOURCE_LITERAL
             assert book["AI Fact Source Review"]["A6"].data_type == "s"
     finally:
