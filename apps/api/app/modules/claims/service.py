@@ -403,6 +403,11 @@ def approved_ai_fact_source_revalidation_reasons(
         ):
             results[fact.id] = "source_document_unusable"
             continue
+        if document.id in reported_document_ids:
+            # Prioritize an unresolved original-source concern over later
+            # machine reprocessing. Neither is a verified material error.
+            results[fact.id] = "source_ocr_discrepancy_reported_unverified"
+            continue
         candidate = candidates.get(fact.source_extraction_id)
         if (
             candidate is None
@@ -412,11 +417,6 @@ def approved_ai_fact_source_revalidation_reasons(
             continue
         if AI_SOURCE_REPROCESSED_WARNING in (candidate.validation_warnings or []):
             results[fact.id] = "source_reprocessed"
-            continue
-        if document.id in reported_document_ids:
-            # The fact and earlier human approval stay immutable; this is
-            # only a read-side, operator-reported source-dispute warning.
-            results[fact.id] = "source_ocr_discrepancy_reported_unverified"
     return results
 
 
