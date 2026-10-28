@@ -16,6 +16,7 @@ from app.db.session import get_db
 from app.modules.audit.models import AuditLog
 from app.modules.audit.service import write_audit_log
 from app.modules.auth.dependencies import CurrentUser
+from app.modules.claims.models import Claim
 from app.modules.claims.security import get_claim_for_tenant
 from app.modules.documents.models import Document, DocumentMalwareScanStatus, DocumentProcessingStatus
 from app.modules.documents.security import get_document_for_tenant
@@ -136,6 +137,28 @@ def report_unverified_ocr_discrepancy(
     doc, extraction = _source_guard(
         db, claim_id=claim_id, document_id=document_id, user=current_user
     )
+    # Serialize a newly reported source hold with AI fact approval and
+    # document replacement on PostgreSQL. Otherwise an approval can race
+    # between the preliminary source read and the append-only receipt.
+    if db.bind is not None and db.bind.dialect.name == "postgresql":
+        locked_claim = db.scalar(
+            select(Claim.id).where(
+                Claim.id == claim_id,
+                Claim.organization_id == current_user.organization_id,
+                Claim.deleted_at.is_(None),
+            ).with_for_update()
+        )
+        if locked_claim is None:
+            raise HTTPException(status_code=404, detail="Claim not found")
+        db.refresh(doc)
+        db.refresh(extraction)
+    if (
+        doc.deleted_at is not None
+        or doc.malware_scan_status != DocumentMalwareScanStatus.CLEAN
+        or doc.processing_status != DocumentProcessingStatus.PROCESSED
+        or external_evidence_requires_processing_release(db, document=doc)
+    ):
+        raise HTTPException(status_code=409, detail="Current authorized OCR source required")
     if (
         not doc.is_current
         or doc.version_number != payload.document_version
