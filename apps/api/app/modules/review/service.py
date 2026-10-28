@@ -10,6 +10,7 @@ from uuid import UUID
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
+from app.modules.audit.models import AuditLog
 from app.modules.audit.service import write_audit_log
 from app.modules.claims.facts import ClaimFact, ClaimFactRevision
 from app.modules.claims.models import Claim
@@ -87,6 +88,35 @@ def _document_usable_for_fact_approval(document: Document | None) -> bool:
             DocumentMalwareScanStatus.LEGACY_UNSCANNED,
         }
     )
+
+
+def _has_reported_current_source_ocr_discrepancy(
+    db: Session, *, document: Document,
+) -> bool:
+    """Reported OCR mismatch is an unresolved *safety hold*, not a verdict.
+
+    A source replacement starts a new document/version; merely reprocessing
+    the same original bytes cannot erase the operator's reported concern.
+    Query by tenant, claim, document, version and *original file* SHA-256.
+    Source-text hashes may change on reprocessing and must not bypass a hold.
+    """
+    if document.deleted_at is not None or not document.is_current:
+        return False
+    report = db.scalar(
+        select(AuditLog.id)
+        .where(
+            AuditLog.organization_id == document.organization_id,
+            AuditLog.entity_type == "document",
+            AuditLog.entity_id == document.id,
+            AuditLog.action == "REPORT_OCR_SOURCE_DISCREPANCY",
+            AuditLog.new_values["claim_id"].as_string() == str(document.claim_id),
+            AuditLog.new_values["document_version"].as_integer() == document.version_number,
+            AuditLog.new_values["source_file_hash"].as_string() == document.file_hash,
+        )
+        .limit(1)
+    )
+    return report is not None
+
 
 _GROUP_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"^(policy\.[a-z_]+\[\d+\])"), "policy_term"),
@@ -347,6 +377,12 @@ def list_review_queue(
 
     rows = db.execute(query.order_by(*ordering).limit(limit).offset(offset)).all()
     document_ids = {document.id for _, _, _, document in rows}
+    discrepancy_held_documents = {
+        document.id
+        for _, _, _, document in rows
+        if document.id in document_ids
+        and _has_reported_current_source_ocr_discrepancy(db, document=document)
+    }
     native_source_ready: set[UUID] = set()
     if document_ids:
         text_sources = db.execute(
@@ -383,6 +419,7 @@ def list_review_queue(
             source_approval_blocked=(
                 not _document_usable_for_fact_approval(document)
                 or AI_SOURCE_REPROCESSED_WARNING in (extraction.validation_warnings or [])
+                or document.id in discrepancy_held_documents
             ),
             original_source_comparison_required=document.id not in native_source_ready,
             validation_warnings=(
@@ -398,6 +435,11 @@ def list_review_queue(
                         if document.id not in native_source_ready
                         else []
                     ),
+                    *(
+                        ["Unresolved operator-reported OCR source discrepancy: AI fact approval/edit is blocked until source retirement and independent reassessment."]
+                        if document.id in discrepancy_held_documents
+                        else []
+                    ),
                 ] or None
             ),
             human_status=extraction.human_status,
@@ -406,6 +448,7 @@ def list_review_queue(
             bulk_approvable=(
                 _document_usable_for_fact_approval(document)
                 and AI_SOURCE_REPROCESSED_WARNING not in (extraction.validation_warnings or [])
+                and document.id not in discrepancy_held_documents
                 and is_bulk_approvable(
                     extraction, native_source_ready=document.id in native_source_ready,
                 )
@@ -608,6 +651,12 @@ def review_extraction(
             raise ValueError(
                 "Source document is superseded, not processed or unsafe; "
                 "AI fact approval/edit is blocked. Reject or review the current source."
+            )
+        if _has_reported_current_source_ocr_discrepancy(db, document=document):
+            raise ValueError(
+                "This source has an unresolved operator-reported OCR discrepancy. "
+                "AI approval/edit cannot promote facts from the affected document; "
+                "reject the candidate and arrange independent original-source review."
             )
 
     # Group and bulk operations are intentionally pending-only. Re-check this
