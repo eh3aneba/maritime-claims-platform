@@ -348,6 +348,45 @@ Keep real files and even private JSON observations on an approved offline
 machine; synthetic test cases alone run in CI. An apparent 100% agreement
 rate never authorizes critical causation or coverage extraction.
 
+## Offline matched-source candidate comparison (no OCR promotion)
+
+After a study owner has **separately** secured lawful source use, blinded
+evaluation and bilingual review, the following strictly local command compares
+two submitted OCR runs on the **same exact original source bytes and critical
+reference spans**:
+
+```text
+python -m scripts.persian_ocr_paired_holdout_comparison --manifest /secure/local/cohort.json --inventory /secure/local/files.json --baseline /secure/local/ocr-baseline.json --candidate /secure/local/ocr-candidate.json --source-root /secure/local/source-files
+```
+
+Both JSON inputs use the page-scoped schema of the existing local validation
+metrics command. The candidate may use a different `extraction_sha256` and
+recognized text, but **must not** change any declared source file SHA-256,
+document version, page identity, reference-page transcript or critical-span
+label/literal/presence expectation. Retrieval results are evaluated separately
+for each version and may differ. All blind holdout pages and predeclared
+critical kinds must be covered. Missing, malformed, mismatched, incomplete
+study or tampered source files fail with a generic error and **no partial
+results**; an OCR page explicitly marked incomplete contributes `unmeasured`,
+never a false claim of missing words.
+
+The aggregate output counts **both-hit**, **both-miss**, candidate-only
+recovery, baseline-only hit / **candidate regression**, and unmeasured spans
+*by critical class*. Negative-control text newly inserted or removed is
+counted separately. This makes it difficult to report a recovered Persian
+negation while hiding a lost event date, changed engineering qualifier or
+invented phrase. No private transcript, case identifier, reviewer name, path
+or source hash appears in output.
+
+**No winning candidate is selected.** The comparison is still based on
+locally supplied reference labels and OCR transcripts; source bytes matching
+the local manifest do not prove independent custody, true blinding, semantic
+negation **scope**, or independent H&M expert verification. The output
+always keeps `candidate_automatically_selected=false`,
+`production_ocr_changed=false`, and `pilot_accepted=false`. A real
+independent bilingual comparison of untouched source scans remains mandatory;
+this diagnostic cannot close #810 or authorize real claims.
+
 ## Experimental local Tesseract page-segmentation ablation (no production change)
 
 The actual image-only HM-05 regression has shown that a successfully
