@@ -36,7 +36,7 @@ def current_source_discrepancy_receipts(
             AuditLog.organization_id == organization_id,
             AuditLog.entity_type == "document",
             AuditLog.action == "REPORT_OCR_SOURCE_DISCREPANCY",
-            AuditLog.entity_id.in_(current),
+            AuditLog.entity_id.in_(list(current)),
         )
     )
     matched: list[AuditLog] = []
