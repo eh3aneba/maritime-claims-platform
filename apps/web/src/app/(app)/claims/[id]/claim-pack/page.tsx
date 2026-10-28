@@ -33,6 +33,7 @@ export default function ClaimPackExportPage() {
   const [downloading, setDownloading] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [pdfUnicodeUnsupported, setPdfUnicodeUnsupported] = useState(false);
 
   async function load() {
     try {
@@ -61,6 +62,7 @@ export default function ClaimPackExportPage() {
       return;
     }
     setCreating(exportFormat);
+    setPdfUnicodeUnsupported(false);
     setError("");
     setNotice("");
     try {
@@ -80,11 +82,24 @@ export default function ClaimPackExportPage() {
       );
       setNote("");
     } catch (caught) {
-      setError(
-        caught instanceof ApiError
-          ? caught.detail
-          : c("The controlled claim pack could not be generated.", "بسته کنترل‌شده پرونده ایجاد نشد."),
-      );
+      const unsupportedPdf =
+        exportFormat === "pdf" &&
+        caught instanceof ApiError &&
+        caught.status === 422 &&
+        caught.detail.startsWith("Cannot generate a faithful Claim Pack PDF");
+      if (unsupportedPdf) {
+        setPdfUnicodeUnsupported(true);
+        setError(c(
+          "PDF was not created: its current font cannot faithfully preserve all evidence characters. Use Excel and compare with the original source.",
+          "فایل PDF ایجاد نشد؛ قلم فعلی آن نمی‌تواند همه نویسه‌های مدرک را بدون تغییر نمایش دهد. از Excel استفاده و آن را با مدرک اصلی تطبیق دهید.",
+        ));
+      } else {
+        setError(
+          caught instanceof ApiError
+            ? caught.detail
+            : c("The controlled claim pack could not be generated.", "بسته کنترل‌شده پرونده ایجاد نشد."),
+        );
+      }
     } finally {
       setCreating(null);
     }
@@ -155,8 +170,18 @@ export default function ClaimPackExportPage() {
       </section>
 
       {error ? (
-        <div className="mt-5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {error}
+        <div role="alert" className="mt-5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <p>{error}</p>
+          {pdfUnicodeUnsupported ? (
+            <button
+              type="button"
+              disabled={!acknowledged || creating !== null}
+              onClick={() => createExport("xlsx")}
+              className="mt-3 rounded-md border border-red-400 px-3 py-2 font-semibold hover:bg-red-100 disabled:opacity-50"
+            >
+              {c("Create lossless Excel review aid", "ایجاد Excel بدون تغییر متن")}
+            </button>
+          ) : null}
         </div>
       ) : null}
       {notice ? (
@@ -166,6 +191,12 @@ export default function ClaimPackExportPage() {
       ) : null}
 
       <section className="panel mt-6 p-6">
+        <p className="mb-4 text-sm text-slate-600">
+          {c(
+            "PDF cannot currently preserve all Persian/Arabic characters. Unsupported PDF requests are rejected instead of modifying the evidence; Excel retains Unicode. Review originals before relying on any transcription.",
+            "PDF فعلاً از همه نویسه‌های فارسی/عربی پشتیبانی نمی‌کند. درخواست ناسازگار به‌جای تغییر متن رد می‌شود؛ Excel متن Unicode را حفظ می‌کند. پیش از اتکا به رونویسی، اصل مدرک را بررسی کنید.",
+          )}
+        </p>
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
           <label>
             <span className="label">{c("Generation note (optional)", "یادداشت ایجاد خروجی (اختیاری)")}</span>

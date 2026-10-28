@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from io import BytesIO
+import json
 import os
 import re
 import zipfile
@@ -142,6 +143,53 @@ def main() -> None:
         page.goto(f"{BASE_URL}/claims/{claim_id}/claim-pack", wait_until="networkidle")
         expect(page.get_by_role("heading", name="Claim Pack Export", exact=True)).to_be_visible(timeout=15_000)
         expect(page.get_by_text(export["filename"], exact=True)).to_be_visible(timeout=15_000)
+
+        # Prove the localized operator handoff on a *mocked*, known unsupported-
+        # Unicode PDF API response. The backend real 422/no-persist behavior is
+        # independently covered by its database-backed regression; no invented
+        # real customer PDF or human approval is involved here.
+        page.get_by_role("button", name="FA", exact=True).click()
+        expect(page.locator("html")).to_have_attribute("lang", "fa")
+        page.get_by_role("checkbox").check()
+        export_url = f"{API_URL}/api/v1/claims/{claim_id}/claim-pack-exports"
+        prior_total = _json(request.get(export_url), "pre-fallback export list")["total"]
+        blocked_pdf_requests = []
+
+        def simulate_unsupported_pdf(route) -> None:
+            payload = json.loads(route.request.post_data or "{}") if route.request.method == "POST" else {}
+            if payload.get("export_format") == "pdf":
+                blocked_pdf_requests.append(payload)
+                route.fulfill(
+                    status=422,
+                    content_type="application/json",
+                    body=json.dumps({
+                        "detail": "Cannot generate a faithful Claim Pack PDF for these characters. "
+                        "Use XLSX and consult the original evidence; no PDF was saved."
+                    }),
+                )
+            else:
+                route.continue_()
+
+        page.route("**/api/v1/claims/*/claim-pack-exports", simulate_unsupported_pdf)
+        page.get_by_role("button", name="ایجاد PDF", exact=True).click()
+        expect(page.get_by_role("alert").filter(has_text="فایل PDF ایجاد نشد")).to_be_visible()
+        fallback = page.get_by_role("button", name="ایجاد Excel بدون تغییر متن", exact=True)
+        expect(fallback).to_be_visible()
+        assert len(blocked_pdf_requests) == 1
+        assert _json(request.get(export_url), "unchanged export list")["total"] == prior_total
+
+        with page.expect_response(
+            lambda res: res.request.method == "POST"
+            and res.url.endswith(f"/claims/{claim_id}/claim-pack-exports")
+            and res.ok,
+            timeout=30_000,
+        ) as fallback_response:
+            fallback.click()
+        created_fallback = fallback_response.value.json()
+        assert created_fallback["export_format"] == "xlsx"
+        expect(page.get_by_text(created_fallback["filename"], exact=True).first).to_be_visible()
+        assert _json(request.get(export_url), "post-fallback export list")["total"] == prior_total + 1
+        page.unroute("**/api/v1/claims/*/claim-pack-exports", simulate_unsupported_pdf)
 
         browser.close()
 
