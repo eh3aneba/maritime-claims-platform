@@ -808,14 +808,14 @@ def _upsert_conflicts(db: Session, *, claim: Claim, conflicts: list[ConflictCand
     return active
 
 
-def invalidate_chronology_for_document_replacement(
+def invalidate_chronology_for_document_retirement(
     db: Session, *, document: Document, user: User
 ) -> tuple[int, int]:
-    """Retire live source-dependent events and conflicts in the replacement transaction.
+    """Retire live source-dependent events and conflicts during document retirement.
 
     This is deliberately not a rebuild: unreviewed replacement evidence never
     becomes authoritative, and historical event/decision rows are retained.
-    The same claim lock used by rebuild serializes these two operations on PG.
+    The claim lock serializes rebuild, replacement, and soft delete on PostgreSQL.
     """
     if document.organization_id != user.organization_id:
         raise ValueError("Document belongs to another organization.")
@@ -824,7 +824,7 @@ def invalidate_chronology_for_document_replacement(
     )
     db.refresh(document)
     if document.deleted_at is not None or not document.is_current:
-        raise ValueError("Only the current evidence version can be replaced.")
+        raise ValueError("Only a current, non-deleted evidence version can be retired.")
 
     affected = list(db.scalars(
         select(ChronologyEvent)
