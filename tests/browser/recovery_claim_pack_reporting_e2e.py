@@ -187,7 +187,7 @@ def main() -> None:
             fallback.click()
         created_fallback = fallback_response.value.json()
         assert created_fallback["export_format"] == "xlsx"
-        expect(page.get_by_text(created_fallback["filename"], exact=True)).to_be_visible()
+        expect(page.get_by_text(created_fallback["filename"], exact=True).first).to_be_visible()
         assert _json(request.get(export_url), "post-fallback export list")["total"] == prior_total + 1
         page.unroute("**/api/v1/claims/*/claim-pack-exports", simulate_unsupported_pdf)
 
