@@ -377,11 +377,12 @@ def list_review_queue(
 
     rows = db.execute(query.order_by(*ordering).limit(limit).offset(offset)).all()
     document_ids = {document.id for _, _, _, document in rows}
+    unique_documents = {
+        document.id: document for _, _, _, document in rows
+    }
     discrepancy_held_documents = {
-        document.id
-        for _, _, _, document in rows
-        if document.id in document_ids
-        and _has_reported_current_source_ocr_discrepancy(db, document=document)
+        document_id for document_id, document in unique_documents.items()
+        if _has_reported_current_source_ocr_discrepancy(db, document=document)
     }
     native_source_ready: set[UUID] = set()
     if document_ids:
