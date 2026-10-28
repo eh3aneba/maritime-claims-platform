@@ -305,6 +305,9 @@ def _load_reviewed_extractions(db: Session, *, claim_id: UUID, organization_id: 
                 DocumentExtraction.claim_id == claim_id,
                 DocumentExtraction.organization_id == organization_id,
                 DocumentExtraction.human_status.in_([AIReviewStatus.APPROVED, AIReviewStatus.EDITED]),
+                # Historical approval is immutable, but a superseded document
+                # must never create an *active* chronology event or conflict.
+                Document.is_current.is_(True),
                 Document.deleted_at.is_(None),
             )
             .order_by(DocumentExtraction.created_at.asc())
