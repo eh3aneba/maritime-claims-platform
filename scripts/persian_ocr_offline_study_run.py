@@ -22,10 +22,12 @@ from scripts.persian_ocr_local_source_integrity import (
     verify_source_bytes,
 )
 from scripts.persian_ocr_local_validation_metrics import evaluate_local_study
+from scripts.persian_ocr_review_disagreement_metrics import summarize_review_observations
 
 
 def evaluate_study_packet(
-    *, manifest: Any, inventory: Any, measurements: Any, root: Path
+    *, manifest: Any, inventory: Any, measurements: Any, root: Path,
+    reviews: Any | None = None,
 ) -> dict[str, Any]:
     """Return only aggregates, and only after *all* technical checks pass.
 
@@ -40,8 +42,18 @@ def evaluate_study_packet(
     if measurement["pages_measured_or_screened"] != blind_check["literal_metric_pages_screened"]:
         raise ValueError("study_page_count_inconsistent")
 
+    # Optional self-supplied review observations are cross-checked against
+    # exactly the same manifest and measurements before any aggregate is
+    # returned. No claimed reviewer identity or human signoff is authenticated.
+    review_summary = (
+        summarize_review_observations(
+            manifest=manifest, measurements=measurements, reviews=reviews,
+        )
+        if reviews is not None else None
+    )
+
     # Report no source text, case references, hashes, paths, or identifiers.
-    return {
+    report = {
         "schema_version": 1,
         "measurement_kind": "local_composed_descriptive_study_only",
         "source_file_hash_verification": {
@@ -79,6 +91,17 @@ def evaluate_study_packet(
             "or authorization to process real claims."
         ),
     }
+    if review_summary is not None:
+        counts = review_summary["overall"]
+        # Observed completeness only means rows were supplied by the
+        # operator, NOT independently performed source-image comparisons.
+        report["self_reported_reviewer_observations"] = review_summary
+        report["submitted_review_rows_structurally_complete"] = (
+            counts["reference_spans_with_no_review_row"] == 0
+            and counts["specialist_adjudication_record_missing"] == 0
+        )
+        report["independent_human_signoff_granted"] = False
+    return report
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -89,6 +112,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--inventory", type=Path, required=True)
     parser.add_argument("--measurements", type=Path, required=True)
     parser.add_argument("--source-root", type=Path, required=True)
+    parser.add_argument(
+        "--reviews", type=Path, default=None,
+        help="Optional private, self-reported dual-review observations (NOT approval)",
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -100,6 +127,7 @@ def main(argv: list[str] | None = None) -> int:
             inventory=inventory,
             measurements=measurements,
             root=args.source_root,
+            reviews=_read_private_json(args.reviews) if args.reviews is not None else None,
         )
     except (OSError, ValueError, TypeError, KeyError, UnicodeError):
         # Never leak a private filename or page text in stderr.

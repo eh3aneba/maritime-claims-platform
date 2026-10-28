@@ -271,6 +271,30 @@ source file, declared case, page coverage or typed reference input is invalid.
 Successful stdout contains **aggregate counts only** and every
 independent-approval and `pilot_accepted` field stays false.
 
+For an **optional, explicitly self-reported** reviewer-observation sheet, use
+the same command with `--reviews /secure/local/reviewer-observations.json`.
+The runner binds every submitted review to the exact previously checked
+manifest case, page, critical span and source/extraction hashes. It refuses
+missing/mismatched fields and duplicate reviewer identity within a review
+row, emitting a generic error and **no partial aggregate**.
+
+When the review sheet is supplied, the output adds
+`self_reported_reviewer_observations` (counts by critical-span type) and
+`submitted_review_rows_structurally_complete`, which is false if any
+planned positive span lacks two supplied opinions or if required specialist
+adjudication is missing. Even when that *self-reported input completeness*
+is true, `independent_human_signoff_granted`,
+`human_bilingual_review_completed`, `pilot_accepted`, and other
+independent verification flags remain **false**. No reviewer identity,
+source text, file hash, path, or claim identifier is included in stdout.
+Neither the command nor the code can verify that the purported reviewers
+actually inspected the original scan or are independent.
+
+The optional review input belongs only on the separately authorized offline
+machine: never place real transcripts, opinion sheets or real scans in GitHub
+issues, PRs, public CI or connected storage. This still does **not** repair
+Tesseract's missing Persian negation in #810 or qualify it for pilot usage.
+
 The runner does not use external AI, make remote requests, persist source
 text or supply an expert's judgment. Hashes remain self-declared until
 independently witnessed custody is provided; comparing bytes to a manifest
