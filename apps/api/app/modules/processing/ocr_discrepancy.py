@@ -157,6 +157,8 @@ def report_unverified_ocr_discrepancy(
         or doc.malware_scan_status != DocumentMalwareScanStatus.CLEAN
         or doc.processing_status != DocumentProcessingStatus.PROCESSED
         or external_evidence_requires_processing_release(db, document=doc)
+        or "tesseract:" not in extraction.extraction_method.lower()
+        or extraction.text_hash is None
     ):
         raise HTTPException(status_code=409, detail="Current authorized OCR source required")
     if (
