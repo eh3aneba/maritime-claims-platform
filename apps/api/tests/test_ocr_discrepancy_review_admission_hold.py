@@ -12,6 +12,7 @@ from app.modules.audit.models import AuditLog
 from app.modules.claims.facts import ClaimFact
 from app.modules.documents.models import Document
 from app.modules.intelligence.models import AIFeedback, AIReviewStatus, DocumentExtraction
+from app.modules.organizations.models import Organization
 from app.modules.processing.models import DocumentTextExtraction
 from app.modules.users.models import User
 from tests.db_harness import TestingSessionLocal, client, reset_database
@@ -46,8 +47,11 @@ def _report_fake_discrepancy(
             User.organization_id == doc.organization_id,
         ))
         assert doc and source and user
+        other_org = db.scalar(
+            select(Organization).where(Organization.slug == "beta")
+        ) if tenant_id is not None else None
         db.add(AuditLog(
-            organization_id=UUID(tenant_id) if tenant_id else doc.organization_id,
+            organization_id=other_org.id if other_org is not None else doc.organization_id,
             user_id=user.id if tenant_id is None else None,
             action="REPORT_OCR_SOURCE_DISCREPANCY",
             entity_type="document",
@@ -123,7 +127,7 @@ def test_an_old_or_another_tenants_report_does_not_block_current_source() -> Non
     ids = seed_review_candidates()
     _mark_synthetic_source_as_ocr(ids)
     _report_fake_discrepancy(ids, original_hash="e" * 64)
-    _report_fake_discrepancy(ids, tenant_id=str(UUID("00000000-0000-4000-8000-000000000123")))
+    _report_fake_discrepancy(ids, tenant_id="beta")
     login("alpha", "alpha@example.com")
     queue = client.get("/api/v1/ai-review")
     assert queue.status_code == 200, queue.text
