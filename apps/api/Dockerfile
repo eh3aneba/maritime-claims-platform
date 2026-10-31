@@ -104,6 +104,8 @@ RUN set -eu; \
         -DCMAKE_PREFIX_PATH=/opt/ocr \
         -DCMAKE_BUILD_TYPE=RelWithDebInfo \
         -DENABLE_GPGME=OFF \
+        -DENABLE_GLIB=OFF \
+        -DENABLE_GOBJECT_INTROSPECTION=OFF \
         -DENABLE_LIBCURL=OFF \
         -DENABLE_QT5=OFF \
         -DENABLE_QT6=OFF \
@@ -155,7 +157,6 @@ RUN /sbin/apk upgrade --no-cache libssl3 libcrypto3 zlib \
         fontconfig \
         font-liberation \
         giflib \
-        glib \
         icu-libs \
         lcms2 \
         libgcc \
@@ -168,7 +169,6 @@ RUN /sbin/apk upgrade --no-cache libssl3 libcrypto3 zlib \
         libxml2 \
         nss \
         openjpeg \
-        pango \
     && /sbin/apk info -v libssl3 libcrypto3 zlib \
     && python -c "import hashlib,pathlib,urllib.request; files=[('eng.traineddata',23466654,'f4744c201359d02ced6914c77f0de68ee9bbdd74'),('fas.traineddata',561272,'a0b9843164d928caad5afb0bd6973c964ba5b0b9')]; base='https://raw.githubusercontent.com/tesseract-ocr/tessdata/ced78752cc61322fb554c280d13360b35b8684e4/'; out=pathlib.Path('/usr/share/tessdata'); out.mkdir(parents=True,exist_ok=True); [(lambda name,size,want: (lambda data: ((_ for _ in ()).throw(AssertionError(len(data))) if len(data)!=size else None, (_ for _ in ()).throw(AssertionError('git sha mismatch')) if hashlib.sha1(b'blob '+str(len(data)).encode()+b'\\0'+data).hexdigest()!=want else None, print(name+'.sha256='+hashlib.sha256(data).hexdigest()), (out/name).write_bytes(data)))(urllib.request.urlopen(base+name,timeout=120).read()))(name,size,want) for name,size,want in files]" \
     && rm -rf /usr/local/lib/python3.14/site-packages/pip* /usr/local/bin/pip*
@@ -186,6 +186,9 @@ RUN python --version \
     && ldd /opt/ocr/bin/tesseract \
     && ldd /opt/poppler/bin/pdftotext \
     && ldd /opt/poppler/bin/pdftoppm \
+    && ! /sbin/apk info -e glib \
+    && ! /sbin/apk info -e pango \
+    && test ! -e /opt/poppler/lib/libpoppler-glib.so \
     && ! /sbin/apk info -e tiff \
     && ! /sbin/apk info -e leptonica \
     && ! /sbin/apk info -e tesseract-ocr \
