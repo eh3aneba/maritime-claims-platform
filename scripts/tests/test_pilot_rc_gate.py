@@ -175,6 +175,15 @@ class PilotRCGateTests(unittest.TestCase):
         data["proofs"]["imaginary_gate"] = {"result": "pass"}
         self.assertTrue(validate(data, SHA))
 
+    def test_malformed_proof_entries_fail_closed_without_crashing(self):
+        for malformed in (None, [], "pass", True, 123):
+            with self.subTest(entry=malformed):
+                record = complete_record()
+                record["proofs"]["local_ai_independent_acceptance"] = malformed
+                issues = validate(record, SHA)
+                self.assertTrue(any("local_ai_independent_acceptance" in problem
+                                    for problem in issues))
+
     def test_one_pending_and_one_missing_owner_fail(self):
         data = complete_record()
         data["proofs"]["real_sftp_governed_lifecycle"]["result"] = "pending"
