@@ -15,12 +15,29 @@ import re
 import subprocess
 import sys
 
-SCHEMA = "mcri-pilot-rc-v2"
-SFTP_MODES = frozenset(("enabled", "disabled"))
+SCHEMA = "mcri-pilot-rc-v3"
+# An unselected capability is not implicitly disabled. An RC operator must
+# attest the actual deployed flags and the controlled disablement evidence.
+FEATURE_MODES = {
+    "sftp_ingestion": frozenset(("enabled", "disabled")),
+    "ai_inference": frozenset(("enabled", "disabled")),
+    "persian_critical_extraction": frozenset(("enabled", "disabled")),
+}
+# A disabled capability still needs an operator-owned evidence reference
+# showing that the runtime truly disables it; not_applicable alone is not proof.
+CONDITIONAL_PROOFS = {
+    "real_sftp_governed_lifecycle": "sftp_ingestion",
+    "local_ai_independent_acceptance": "ai_inference",
+    "persian_critical_ocr_acceptance": "persian_critical_extraction",
+}
 IMAGES = ("api", "web", "worker", "postgres", "clamav")
 PROOFS = (
     "branch_protection_fail_closed",
     "real_sftp_governed_lifecycle",
+    "local_ai_independent_acceptance",
+    "persian_critical_ocr_acceptance",
+    "actual_feature_flag_enforcement",
+    "source_discrepancy_review_and_resolution_policy",
     "fresh_host_deployment",
     "migration_and_preflight",
     "browser_operator_journey",
@@ -51,8 +68,9 @@ def draft(sha: str) -> dict:
         "environment_id": "",
         "configuration_contract_ref": "",
         "known_limitations_ref": "",
-        # Intentional NO-GO until an operator selects the actual ingestion mode.
-        "features": {"sftp_ingestion": "pending"},
+        # Intentional NO-GO: each selected runtime feature mode needs
+        # independent operator evidence. No AI/OCR activation is inferred.
+        "features": {key: "pending" for key in FEATURE_MODES},
         "images": {key: "" for key in IMAGES},
         "proofs": {
             key: {"result": "pending", "evidence_ref": "", "owner": "", "observed_at_utc": ""}
@@ -108,11 +126,15 @@ def validate(record: object, expected_sha: str) -> list[str]:
         _text(record, key, errors)
 
     features = record.get("features")
-    if (not isinstance(features, dict) or set(features) != {"sftp_ingestion"}
-        or type(features["sftp_ingestion"]) is not str
-        or features["sftp_ingestion"] not in SFTP_MODES):
-        errors.append("features.sftp_ingestion: explicitly enabled or disabled required")
-    sftp_mode = features.get("sftp_ingestion") if isinstance(features, dict) else None
+    if type(features) is not dict or set(features) != set(FEATURE_MODES):
+        errors.append("features: exact SFTP, local-AI and Persian-critical extraction flags required")
+    selected_modes = {}
+    for key, allowed in FEATURE_MODES.items():
+        mode = features.get(key) if type(features) is dict else None
+        if type(mode) is not str or mode not in allowed:
+            errors.append(f"features.{key}: explicitly enabled or disabled required")
+        else:
+            selected_modes[key] = mode
 
     images = record.get("images")
     if not isinstance(images, dict) or set(images) != set(IMAGES):
@@ -138,8 +160,12 @@ def validate(record: object, expected_sha: str) -> list[str]:
             }:
                 errors.append(f"proofs.{key}: invalid evidence entry")
                 continue
-            expected_result = ("not_applicable" if key == "real_sftp_governed_lifecycle"
-                               and sftp_mode == "disabled" else "pass")
+            conditional_feature = CONDITIONAL_PROOFS.get(key)
+            expected_result = (
+                "not_applicable" if conditional_feature is not None
+                and selected_modes.get(conditional_feature) == "disabled"
+                else "pass"
+            )
             if entry["result"] != expected_result:
                 errors.append(f"proofs.{key}: '{expected_result}' required for selected feature mode")
             for field in ("evidence_ref", "owner"):
