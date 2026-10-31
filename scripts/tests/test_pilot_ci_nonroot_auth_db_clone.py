@@ -200,6 +200,34 @@ class NonrootIsolatedAuthClonePolicy(unittest.TestCase):
         )[0]
         self.assertNotIn("font-liberation", base)
 
+    def test_worker_runtime_excludes_vulnerable_unused_glib(self):
+        """Do not ship the optional Poppler GLib bindings into the OCR runtime."""
+        dockerfile = (ROOT / "apps" / "api" / "Dockerfile").read_text(encoding="utf-8")
+        poppler = dockerfile.split("FROM python:", 2)[2].split(
+            "\nFROM python:", 1
+        )[0]
+        self.assertIn("-DENABLE_GLIB=OFF", poppler)
+        self.assertIn("-DENABLE_GOBJECT_INTROSPECTION=OFF", poppler)
+
+        worker = dockerfile.split(" AS worker\n", 1)[1].split(
+            "\nFROM base AS api", 1
+        )[0]
+        runtime_packages = worker.split("RUN /sbin/apk upgrade", 1)[1].split(
+            "    && /sbin/apk info -v", 1
+        )[0]
+        self.assertNotRegex(runtime_packages, r"(?m)^\s+(glib|pango) \\$")
+
+        # An unanticipated transitive apk dependency fails the Docker build.
+        for guard in (
+            "&& ! /sbin/apk info -e glib",
+            "&& ! /sbin/apk info -e pango",
+            "&& test ! -e /opt/poppler/lib/libpoppler-glib.so",
+            "&& ldd /opt/ocr/bin/tesseract",
+            "&& ldd /opt/poppler/bin/pdftotext",
+            "&& ldd /opt/poppler/bin/pdftoppm",
+        ):
+            self.assertIn(guard, worker)
+
     def test_scanned_image_only_pdf_requires_genuine_tesseract_eng_fas(self):
         script = SCRIPT.read_text(encoding="utf-8")
         for marker in (
