@@ -6,7 +6,7 @@ import tempfile
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from pilot_rc_gate import IMAGES, PROOFS, draft, main, validate  # noqa: E402
+from pilot_rc_gate import FEATURE_MODES, IMAGES, PROOFS, draft, main, validate  # noqa: E402
 
 SHA = "a" * 40
 STAMP = "2026-10-09T09:30:00Z"
@@ -15,7 +15,8 @@ STAMP = "2026-10-09T09:30:00Z"
 def complete_record():
     record = draft(SHA)
     record["alembic_head"] = "0224_obs_refresh_recovery_anchor"
-    record["features"]["sftp_ingestion"] = "enabled"
+    for feature in FEATURE_MODES:
+        record["features"][feature] = "enabled"
     record["environment_id"] = "synthetic-private-pilot"
     record["configuration_contract_ref"] = "secure-change-record-rc-001"
     record["known_limitations_ref"] = "reviewed-limitations-record-rc-001"
@@ -76,13 +77,86 @@ class PilotRCGateTests(unittest.TestCase):
             with self.subTest(malformed=bad):
                 record = complete_record()
                 record["features"] = bad
-                self.assertTrue(any("features.sftp_ingestion" in error
-                                    for error in validate(record, SHA)))
+                self.assertTrue(any("features:" in error for error in validate(record, SHA)))
+
+    def test_draft_requires_explicit_ai_and_persian_source_mode(self):
+        draft_record = draft(SHA)
+        self.assertEqual(
+            draft_record["features"],
+            {key: "pending" for key in FEATURE_MODES},
+        )
+        errors = validate(draft_record, SHA)
+        self.assertTrue(any("features.ai_inference" in error for error in errors))
+        self.assertTrue(any("features.persian_critical_extraction" in error
+                            for error in errors))
+        self.assertTrue(any("actual_feature_flag_enforcement" in error
+                            for error in errors))
+
+    def test_disabled_ai_and_persian_critical_extraction_require_attested_off_mode(self):
+        record = complete_record()
+        disabled = {
+            "ai_inference": "local_ai_independent_acceptance",
+            "persian_critical_extraction": "persian_critical_ocr_acceptance",
+        }
+        for feature, proof_key in disabled.items():
+            record["features"][feature] = "disabled"
+            self.assertTrue(any(proof_key in error for error in validate(record, SHA)))
+            proof = record["proofs"][proof_key]
+            proof["result"] = "not_applicable"
+            proof["evidence_ref"] = "observed-deployed-disabled-flag-" + feature
+        self.assertEqual([], validate(record, SHA))
+        for proof_key in disabled.values():
+            record["proofs"][proof_key]["evidence_ref"] = ""
+            self.assertTrue(any(proof_key + ".evidence_ref" in error
+                                for error in validate(record, SHA)))
+            record["proofs"][proof_key]["evidence_ref"] = "observed-disabled-feature"
+            record["proofs"][proof_key]["owner"] = ""
+            self.assertTrue(any(proof_key + ".owner" in error
+                                for error in validate(record, SHA)))
+            record["proofs"][proof_key]["owner"] = "pilot-operator"
+
+    def test_enabled_ai_or_persian_extraction_cannot_bypass_acceptance(self):
+        for feature, proof_key in (
+            ("ai_inference", "local_ai_independent_acceptance"),
+            ("persian_critical_extraction", "persian_critical_ocr_acceptance"),
+        ):
+            with self.subTest(feature=feature):
+                record = complete_record()
+                record["proofs"][proof_key]["result"] = "not_applicable"
+                self.assertTrue(any(proof_key in error for error in validate(record, SHA)))
+                record["features"][feature] = "disabled"
+                record["proofs"][proof_key]["result"] = "pass"
+                self.assertTrue(any(proof_key in error for error in validate(record, SHA)))
+
+    def test_feature_selection_is_strict_and_no_dispute_gate_is_exempt(self):
+        for feature in FEATURE_MODES:
+            for bad in ("pending", "unknown", "", None, True, "enabled;disabled"):
+                with self.subTest(feature=feature, bad=bad):
+                    record = complete_record()
+                    record["features"][feature] = bad
+                    self.assertTrue(any("features." + feature in e for e in validate(record, SHA)))
+        record = complete_record()
+        for feature, proof_key in (
+            ("sftp_ingestion", "real_sftp_governed_lifecycle"),
+            ("ai_inference", "local_ai_independent_acceptance"),
+            ("persian_critical_extraction", "persian_critical_ocr_acceptance"),
+        ):
+            record["features"][feature] = "disabled"
+            record["proofs"][proof_key]["result"] = "not_applicable"
+        self.assertEqual([], validate(record, SHA))
+        for required in (
+            "actual_feature_flag_enforcement",
+            "source_discrepancy_review_and_resolution_policy",
+        ):
+            record["proofs"][required]["result"] = "not_applicable"
+            self.assertTrue(any(required in e for e in validate(record, SHA)))
+            record["proofs"][required]["result"] = "pass"
 
     def test_old_schema_is_rejected_without_migration(self):
         record = complete_record()
-        record["schema"] = "mcri-pilot-rc-v1"
-        self.assertTrue(any("schema:" in error for error in validate(record, SHA)))
+        for old_schema in ("mcri-pilot-rc-v1", "mcri-pilot-rc-v2"):
+            record["schema"] = old_schema
+            self.assertTrue(any("schema:" in error for error in validate(record, SHA)))
 
     def test_wrong_or_short_commit_fails(self):
         self.assertTrue(validate(complete_record(), "c" * 40))
@@ -100,6 +174,15 @@ class PilotRCGateTests(unittest.TestCase):
         data = complete_record()
         data["proofs"]["imaginary_gate"] = {"result": "pass"}
         self.assertTrue(validate(data, SHA))
+
+    def test_malformed_proof_entries_fail_closed_without_crashing(self):
+        for malformed in (None, [], "pass", True, 123):
+            with self.subTest(entry=malformed):
+                record = complete_record()
+                record["proofs"]["local_ai_independent_acceptance"] = malformed
+                issues = validate(record, SHA)
+                self.assertTrue(any("local_ai_independent_acceptance" in problem
+                                    for problem in issues))
 
     def test_one_pending_and_one_missing_owner_fail(self):
         data = complete_record()
