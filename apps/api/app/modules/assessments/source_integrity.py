@@ -17,6 +17,7 @@ from app.modules.claims.models import Claim
 from app.modules.documents.models import Document
 from app.modules.financial.models import CostItem, FinancialFlag, ReserveHistory
 from app.modules.intelligence.models import AIReviewStatus, DocumentExtraction
+from app.modules.processing.ocr_discrepancy_receipts import current_source_discrepancy_receipts
 from app.modules.rules.models import ClaimDocumentRequirement, ClaimIssue
 from app.modules.tasks.models import ClaimTask, TaskStatus
 
@@ -109,6 +110,13 @@ def build_assessment_source_snapshot(db: Session, *, claim: Claim) -> tuple[dict
     financial_flags = _claim_rows(db, FinancialFlag, claim)
     reserves = _claim_rows(db, ReserveHistory, claim)
     open_tasks = _claim_rows(db, ClaimTask, claim, ClaimTask.status == TaskStatus.OPEN)
+    # Only current, exact-source operator reports alter the source context.
+    # Leave snapshots *without* receipts byte-for-byte compatible with
+    # historical assessment-source-v1 fingerprints.
+    pending_ocr_source_receipts = current_source_discrepancy_receipts(
+        db, organization_id=claim.organization_id, claim_id=claim.id,
+        documents=documents,
+    )
 
     snapshot: dict[str, Any] = {
         "schema": SOURCE_SNAPSHOT_SCHEMA,
@@ -129,6 +137,13 @@ def build_assessment_source_snapshot(db: Session, *, claim: Claim) -> tuple[dict
             "open_tasks": _compact(open_tasks),
         },
     }
+    if pending_ocr_source_receipts:
+        # The audit receipt itself is not a verified claim fact. Including
+        # only its stable row digests invalidates old assessment *source
+        # freshness* without overwriting historical approvals or text.
+        snapshot["sources"]["reported_ocr_source_discrepancies"] = _compact(
+            pending_ocr_source_receipts
+        )
     return snapshot, canonical_hash(snapshot)
 
 

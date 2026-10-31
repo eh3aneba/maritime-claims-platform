@@ -344,6 +344,9 @@ def approved_ai_fact_source_revalidation_reasons(
     )
     from app.modules.intelligence.models import DocumentExtraction
     from app.modules.processing.models import AI_SOURCE_REPROCESSED_WARNING
+    from app.modules.processing.ocr_discrepancy_receipts import (
+        current_source_discrepancy_receipts,
+    )
 
     relevant = [
         fact for fact in facts
@@ -377,6 +380,14 @@ def approved_ai_fact_source_revalidation_reasons(
         )
     }
 
+    reported_document_ids = {
+        receipt.entity_id
+        for receipt in current_source_discrepancy_receipts(
+            db, organization_id=organization_id, claim_id=claim_id,
+            documents=list(documents.values()),
+        )
+    }
+
     results: dict[UUID, str] = {}
     for fact in relevant:
         document = documents.get(fact.source_document_id)
@@ -391,6 +402,11 @@ def approved_ai_fact_source_revalidation_reasons(
             }
         ):
             results[fact.id] = "source_document_unusable"
+            continue
+        if document.id in reported_document_ids:
+            # Prioritize an unresolved original-source concern over later
+            # machine reprocessing. Neither is a verified material error.
+            results[fact.id] = "source_ocr_discrepancy_reported_unverified"
             continue
         candidate = candidates.get(fact.source_extraction_id)
         if (

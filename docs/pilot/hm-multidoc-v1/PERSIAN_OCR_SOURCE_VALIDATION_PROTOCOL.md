@@ -96,6 +96,36 @@ A report always has `review_state=reported_unverified` and
 not adjudication, a two-reviewer verification ledger, signed go-live
 authorization, or an OCR improvement itself.
 
+## Historical AI facts and assessments after a source discrepancy (read-side only)
+
+A reported OCR source discrepancy may arrive **after** an individual handler
+approved an AI-extracted ClaimFact or produced an Initial Assessment. Existing
+approvals and the source files are historical records and must not be silently
+deleted or changed. The Claim Facts API already supports
+`source_revalidation_required` and `source_revalidation_reason`; an
+unresolved, operator-reported discrepancy bound to the **same current**
+organization, claim, document ID, version and original file SHA-256 sets the
+reason to `source_ocr_discrepancy_reported_unverified` on AI-derived facts
+whose lineage points to that document. It does **not** accuse the earlier
+handler of making an incorrect decision. A document-specific observation
+does not propagate to unrelated documents or tenants.
+
+The same bounded receipt metadata enters the Initial Assessment source
+fingerprint **only when a matching current-source receipt exists**. Earlier
+assessment versions then report `source_state=stale` and reject new review
+writes, while their historical source fingerprint and approved content hashes
+remain unchanged. No-report fingerprints retain the existing source schema
+unchanged; this avoids staling unrelated historical assessments solely because
+new software was deployed.
+
+A repeated OCR processing run does not independently clear the receipt, and
+matching a local hash is not authentication of the scan's provenance or proof
+that the reported disagreement is true. This read-only disclosure is neither
+a resolution workflow nor authorization for automated adjustment or coverage
+decisions. Any disputed value still needs an independent, source-image-based
+human review under the separately controlled protocol. There is no claim
+that the current pilot meets that acceptance gate; **pilot remains NO-GO**.
+
 ## Handler discrepancy reporting UI (unverified observations)
 
 On the document's **machine OCR comparison** pane, the authenticated
