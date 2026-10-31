@@ -102,7 +102,14 @@ def build_claim_pack_snapshot(
             "correspondence_omitted_for_bound_count": correspondence_summary["omitted_for_bound_count"],
         }
     )
-    if stale_approved_ai_facts:
+    # A historically approved assessment can become stale independently of
+    # AI ClaimFact warnings (e.g. source dispute, changed source document, or
+    # claim-level input drift). Never let its digest-bound handoff appear
+    # fully reviewed in the Claim Pack's summary.
+    if stale_approved_ai_facts or (
+        approved_assessment
+        and approved_assessment["source_state_at_export"] != "current"
+    ):
         snapshot["summary"]["review_state"] = "attention_required"
     if recovery["human_closure_review_state"] == "attention_required":
         snapshot["summary"]["review_state"] = "attention_required"

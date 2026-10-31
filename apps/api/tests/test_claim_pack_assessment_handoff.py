@@ -96,6 +96,11 @@ def test_claim_pack_uses_only_digest_bound_approved_assessment_and_preserves_sta
         assert stale_handoff["source_state_at_export"] == "stale"
         assert stale_handoff["approved_content_hash"] == digest
         assert stale_handoff["source_fingerprint"] == approved.source_fingerprint
+        assert stale_snapshot["summary"]["approved_assessment_source_state_at_export"] == "stale"
+        # A stale approved assessment requires review even without a stale AI
+        # ClaimFact warning; the digest and historical approval remain intact.
+        assert stale_snapshot["summary"]["approved_ai_fact_source_revalidation_count"] == 0
+        assert stale_snapshot["summary"]["review_state"] == "attention_required"
 
         payload = render_xlsx(stale_snapshot)
         workbook = load_workbook(BytesIO(payload), read_only=True)
