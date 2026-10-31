@@ -185,18 +185,18 @@ class NonrootIsolatedAuthClonePolicy(unittest.TestCase):
         tags = {line.split()[1] for line in from_lines}
         self.assertEqual(len(tags), 1)
         python_image = next(iter(tags))
-        match = re.fullmatch(r"python:3\\.14\\.(\\d+)-alpine3\\.24", python_image)
+        match = re.fullmatch(r"python:3\.14\.(\d+)-alpine3\.24", python_image)
         self.assertIsNotNone(match)
         self.assertGreaterEqual(int(match.group(1)), 10)
-        worker = dockerfile.split(f"FROM {python_image} AS worker\\n", 1)[1].split(
-            "\\nFROM base AS api", 1
+        worker = dockerfile.split(f"FROM {python_image} AS worker\n", 1)[1].split(
+            "\nFROM base AS api", 1
         )[0]
         self.assertIn("        font-liberation \\", worker)
         self.assertIn("test -r /usr/share/fonts/liberation/LiberationSans-Regular.ttf", worker)
         self.assertIn("fc-match -f '%{family}' Helvetica | grep -F 'Liberation Sans'", worker)
         self.assertIn("RUN python --version", worker)
-        base = dockerfile.split(f"FROM {python_image} AS base\\n", 1)[1].split(
-            f"FROM {python_image} AS worker\\n", 1
+        base = dockerfile.split(f"FROM {python_image} AS base\n", 1)[1].split(
+            f"FROM {python_image} AS worker\n", 1
         )[0]
         self.assertNotIn("font-liberation", base)
 
