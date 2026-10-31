@@ -1,5 +1,44 @@
 # Design Partner Pilot Protocol v1.0
 
+## Current authorization boundary — 31 October 2026
+
+**Pilot v1 with real customer claim evidence: NO-GO.** This protocol permits
+*discovery and usability rehearsal with fictional/synthetic H&M machinery
+claims*, not permission to onboard real case files or claimants. Historical
+engineering CI results are not independent OCR accuracy, local-model, security
+or operator sign-off. The controlled real-data Pilot v1 must meet the
+[scope and operational Definition of Done](https://github.com/eh3aneba/maritime-claims-platform/issues/647)
+and the explicit release-candidate gates in `scripts/pilot_rc_gate.py`.
+
+- First release candidate: **one H&M machinery-claims handling team**, with
+  authenticated manual evidence upload only. SFTP, email and Drive ingestion
+  remain **OFF** unless separately authorized; a real SFTP acceptance
+  exercise is only required if SFTP is deliberately enabled.
+- **AI is disabled by default.** The self-hosted Ollama/Qwen development
+  smoke is strictly synthetic and is **not** a validated production inference
+  integration. Do not send any real documents or customer facts to local or
+  external AI based on a green synthetic test. Issue
+  [#752](https://github.com/eh3aneba/maritime-claims-platform/issues/752)
+  requires independent model, source and human-review acceptance first.
+- Persian OCR may omit a material negation. An extracted phrase, nonempty
+  transcript or successful retrieval is not semantic verification. See
+  [#810](https://github.com/eh3aneba/maritime-claims-platform/issues/810).
+  Original-source bilingual human verification remains mandatory for any
+  critical Persian narrative, date/time, causation or machinery assertion.
+- An unresolved source discrepancy is an **unverified operator report**.
+  Historical AI facts/assessments and Claim Packs can require revalidation
+  without changing the earlier human decision; see
+  [#850](https://github.com/eh3aneba/maritime-claims-platform/issues/850).
+- Discovery participants may evaluate the fictional UI journey, missing
+  evidence, chronology, manual decisions, versioned assessment and exports
+  without activating AI. Record unsupported or unmeasured capabilities as
+  **not measured**, never as accepted.
+
+A named design partner, explicit documented data authorization, operator
+readiness evidence, security/privacy assessment and formal Pilot GO decision
+are separate prerequisites for any real-data exercise. No customer evidence
+may be used merely because a participant volunteers a file.
+
 ## Purpose
 Validate whether MCRI creates measurable workflow value for marine claims teams and whether that value can become a real buying process. A successful session must produce evidence, not compliments.
 
@@ -14,7 +53,7 @@ Do not begin with the largest or most complex enterprise. A medium marine insure
 ## Before the session
 1. Confirm the participant handles or supervises H&M machinery claims.
 2. Record a manual baseline from a comparable workflow: minutes to first structured assessment.
-3. Keep the first task controlled. Use MT ORION or an anonymized/shadow claim with explicit permission.
+3. Keep the first task fictional: use the synthetic MT ORION dataset. Do not use any anonymized/shadow real claim unless the separate real-data pilot authorization gates above have been completed and documented.
 4. Do not disclose target KPI thresholds to the participant before the task.
 5. Do not lead with a list price before asking how the current process is budgeted and what a credible paid next step would be.
 
@@ -26,7 +65,7 @@ Ask how the claim would be handled today, which systems are used, who reviews it
 Participant should independently:
 - find/open the claim;
 - identify missing critical evidence;
-- review AI evidence with source context;
+- review manually governed source evidence and provenance; evaluate AI suggestions **only** if the separate local-AI acceptance gate has actually been approved;
 - inspect chronology/conflicts;
 - review technical issues;
 - compare commercial evidence;
@@ -58,7 +97,7 @@ A valid commercial next step should be concrete, for example:
 "Send me more information" is not a strong next step unless it has a named owner and date.
 
 ## Product success targets — internal pilot thresholds
-- AI acceptance rate: >= 80%.
+- AI acceptance rate: >= 80% **only after independent AI acceptance and an actually measured sample**; otherwise record Not measured.
 - Time to first assessment reduction: >= 30% against recorded baseline.
 - Missing-document precision: >= 90% when enough items were explicitly validated.
 - User rating: >= 8/10.
