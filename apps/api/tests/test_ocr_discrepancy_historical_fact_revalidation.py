@@ -4,11 +4,20 @@ Existing approved facts and assessment hashes remain historical records.
 A report is an unverified operator concern, not a corrected scan or an
 independently verified error, and may not authorize automatic adjudication.
 """
+from datetime import UTC, datetime
+from io import BytesIO
 from uuid import UUID
+
+from openpyxl import load_workbook
+from pypdf import PdfReader
 
 from sqlalchemy import select
 
 from app.modules.audit.models import AuditLog
+from app.modules.claim_packs.recovery_renderers import render_pdf, render_xlsx
+from app.modules.claim_packs.recovery_service import build_claim_pack_snapshot
+from app.modules.claims.models import Claim
+from app.modules.users.models import User
 from app.modules.assessments.models import InitialAssessment
 from app.modules.claims.facts import ClaimFact
 from app.modules.documents.models import Document, DocumentMalwareScanStatus
@@ -166,3 +175,58 @@ def test_mismatched_or_foreign_tenant_reports_do_not_mark_fact_stale() -> None:
     )
     assert baseline.status_code == 200, baseline.text
     assert baseline.json()["source_state"] == "current"
+
+
+def test_later_ocr_discrepancy_is_disclosed_in_new_pdf_xlsx_claim_pack() -> None:
+    """A historical AI fact must not appear source-clean on exported handoff."""
+    ids, payload = _setup_ocr_reviewed_fact()
+    url = (
+        f"/api/v1/claims/{ids['claim_id']}/documents/{ids['document_id']}"
+        "/processing/source-discrepancies"
+    )
+    reported = client.post(url, json=payload)
+    assert reported.status_code == 201, reported.text
+
+    with TestingSessionLocal() as db:
+        claim = db.get(Claim, UUID(ids["claim_id"]))
+        assert claim is not None
+        user = db.scalar(select(User).where(
+            User.organization_id == claim.organization_id,
+            User.email == "alpha@example.com",
+        ))
+        assert user is not None
+        snapshot = build_claim_pack_snapshot(
+            db,
+            claim=claim,
+            user=user,
+            generation_note="Fictional source dispute; not expert adjudication",
+            generated_at=datetime(2026, 10, 31, 10, 0, tzinfo=UTC),
+        )
+
+    assert snapshot["summary"]["review_state"] == "attention_required"
+    assert snapshot["summary"]["approved_ai_fact_source_revalidation_count"] == 1
+    flagged = snapshot["approved_ai_fact_source_revalidation"]
+    assert len(flagged) == 1
+    assert flagged[0] == {
+        "field_path": "equipment.maker",
+        "source_document_id": ids["document_id"],
+        "reason": "source_ocr_discrepancy_reported_unverified",
+    }
+
+    pdf = PdfReader(BytesIO(render_pdf(snapshot)))
+    content = "\n".join(page.extract_text() or "" for page in pdf.pages)
+    assert "source_ocr_discrepancy_reported_unverified" in content
+    assert "no automatic reversal or reapproval" in content
+
+    workbook = load_workbook(BytesIO(render_xlsx(snapshot)), read_only=True)
+    try:
+        rows = list(workbook["AI Fact Source Review"].values)
+        assert rows[1][1] == 1
+        assert rows[5][0] == "equipment.maker"
+        assert rows[5][1] == ids["document_id"]
+        assert rows[5][2] == "source_ocr_discrepancy_reported_unverified"
+        summary = dict(list(workbook["Pack Summary"].values)[1:])
+        assert summary["Review state"] == "attention_required"
+        assert summary["Previously approved AI facts requiring source revalidation"] == 1
+    finally:
+        workbook.close()
