@@ -49,6 +49,10 @@ jobs:
           # OCR omission classification must never fabricate the missing
           # negation or mark human/semantic/pilot quality as accepted.
           python -m unittest scripts.tests.test_hm_persian_ocr_probe -v
+          # Pilot release-candidate v3 is a standalone stdlib gate outside
+          # apps/api; run its tests on every PR even when backend shards
+          # are correctly skipped for script/ops-only changes.
+          python -m unittest scripts.tests.test_pilot_rc_gate -v
 
       - name: Classify exact-head Backend scope
         id: scope
