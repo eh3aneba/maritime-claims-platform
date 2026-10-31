@@ -155,7 +155,7 @@ def validate(record: object, expected_sha: str) -> list[str]:
     else:
         for key in PROOFS:
             entry = proofs[key]
-            if not isinstance(entry, dict) or set(entry) != {
+            if type(entry) is not dict or set(entry) != {
                 "result", "evidence_ref", "owner", "observed_at_utc"
             }:
                 errors.append(f"proofs.{key}: invalid evidence entry")
