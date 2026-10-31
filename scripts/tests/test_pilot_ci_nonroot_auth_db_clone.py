@@ -1,5 +1,6 @@
 """Fail-closed policy tests for the CI-only authenticated non-root DB clone."""
 from pathlib import Path
+import re
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -176,16 +177,28 @@ class NonrootIsolatedAuthClonePolicy(unittest.TestCase):
 
     def test_worker_has_readable_font_fallback_for_scanned_pdf_fixture(self):
         dockerfile = (ROOT / "apps" / "api" / "Dockerfile").read_text(encoding="utf-8")
-        worker = dockerfile.split("FROM python:3.14.8-alpine3.24 AS worker\n", 1)[1].split(
-            "\nFROM base AS api", 1
+        # Discover a consistent patch-pinned runtime instead of locking the test
+        # to a formerly vulnerable patch release. Require the security-fixed
+        # Python 3.14.10 baseline (or a newer 3.14 patch).
+        from_lines = [line for line in dockerfile.splitlines() if line.startswith("FROM python:")]
+        self.assertEqual(len(from_lines), 4)
+        tags = {line.split()[1] for line in from_lines}
+        self.assertEqual(len(tags), 1)
+        python_image = next(iter(tags))
+        match = re.fullmatch(r"python:3\\.14\\.(\\d+)-alpine3\\.24", python_image)
+        self.assertIsNotNone(match)
+        self.assertGreaterEqual(int(match.group(1)), 10)
+        worker = dockerfile.split(f"FROM {python_image} AS worker\\n", 1)[1].split(
+            "\\nFROM base AS api", 1
         )[0]
         self.assertIn("        font-liberation \\", worker)
         self.assertIn("test -r /usr/share/fonts/liberation/LiberationSans-Regular.ttf", worker)
         self.assertIn("fc-match -f '%{family}' Helvetica | grep -F 'Liberation Sans'", worker)
         self.assertIn("RUN python --version", worker)
-        self.assertNotIn("font-liberation", dockerfile.split(
-            "FROM python:3.14.8-alpine3.24 AS base", 1
-        )[1].split("FROM python:3.14.8-alpine3.24 AS worker\n", 1)[0])
+        base = dockerfile.split(f"FROM {python_image} AS base\\n", 1)[1].split(
+            f"FROM {python_image} AS worker\\n", 1
+        )[0]
+        self.assertNotIn("font-liberation", base)
 
     def test_scanned_image_only_pdf_requires_genuine_tesseract_eng_fas(self):
         script = SCRIPT.read_text(encoding="utf-8")
