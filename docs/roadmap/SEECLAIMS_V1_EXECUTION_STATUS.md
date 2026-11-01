@@ -21,6 +21,12 @@ not expert acceptance, selected-host readiness, or customer-pilot authorization.
   succeeded. [Full Backend run 41318063683](https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41318063683)
   was **SKIPPED** under the unchanged draft policy: this is not shared-manifest
   execution proof. Keep Draft state; do not merge or change review state.
+- Replayed #866 locally on that actual merge ref: **66** CI/scope tests passed;
+  all **1,591** collected nodes retained exactly-once assignment across **64**
+  nonempty consumer selections. Substituting the PR head SHA was rejected.
+  Local producer/consumer-selection times were 16.270s / 8.529s, excluding
+  hosted setup, transfer, queues and full test execution. This does not fill
+  the missing hosted backend validation or establish an acceleration result.
 - A normal non-production `workflow_dispatch` on #866's branch was attempted,
   but the API returned `Forbidden` before dispatch. **No run was started.** An
   operator with API access can run:
