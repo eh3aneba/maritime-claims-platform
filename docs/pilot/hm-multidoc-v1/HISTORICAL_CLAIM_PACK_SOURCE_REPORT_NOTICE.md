@@ -31,10 +31,19 @@ would be misleading.
   matching report carries the existing source revalidation warnings in its
   own immutable snapshot.
 
-The warning is an API signal, not a watermark in an older already-downloaded
-file, and cannot retract external copies or force an offline recipient to
-notice later discrepancies. Operators must separately notify downstream
-recipients when required by case-handling policy.
+The Claim Pack web page now displays this claim-wide current-source advisory
+when the API count is positive. Before every download, the browser queries the
+fresh count again: when the count is positive, it asks the operator to
+explicitly acknowledge that the archived export may predate the report. If the
+fresh read fails, the download is not initiated by the page. This is an
+on-screen human-warning control, **not** a server-side source-certification
+check, an assertion that the particular export is wrong, or a substitute for
+independent original-image review. In particular, an earlier recipient who
+already holds a file cannot be recalled or notified by the browser.
+
+The warning is carried on the API response and in the current browser view,
+not watermarked into an old PDF/XLSX. Operators must separately notify
+downstream recipients when required by claim-handling policy.
 
 ## What remains unfinished
 

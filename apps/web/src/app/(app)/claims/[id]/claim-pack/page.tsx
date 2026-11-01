@@ -27,6 +27,7 @@ export default function ClaimPackExportPage() {
   const c = (en: string, fa: string) => correspondenceT(locale, en, fa);
   const [claim, setClaim] = useState<Claim | null>(null);
   const [exports, setExports] = useState<ClaimPackExport[]>([]);
+  const [currentOcrSourceReports, setCurrentOcrSourceReports] = useState<number | null>(null);
   const [acknowledged, setAcknowledged] = useState(false);
   const [note, setNote] = useState("");
   const [creating, setCreating] = useState<ClaimPackFormat | null>(null);
@@ -43,7 +44,9 @@ export default function ClaimPackExportPage() {
       ]);
       setClaim(claimRow);
       setExports(history.items);
+      setCurrentOcrSourceReports(history.current_unverified_ocr_source_report_count);
     } catch (caught) {
+      setCurrentOcrSourceReports(null);
       setError(
         caught instanceof ApiError
           ? caught.detail
@@ -109,6 +112,20 @@ export default function ClaimPackExportPage() {
     setDownloading(item.id);
     setError("");
     try {
+      // Re-check the live claim-wide count before each download: the archived
+      // snapshot itself cannot be edited when an OCR report arrives later.
+      // If this live advisory cannot be obtained, fail closed.
+      const history = await listClaimPackExports(id);
+      setExports(history.items);
+      const liveCount = history.current_unverified_ocr_source_report_count;
+      setCurrentOcrSourceReports(liveCount);
+      if (liveCount > 0) {
+        const confirmed = window.confirm(c(
+          `There are ${liveCount} current, unverified OCR source discrepancy report(s) on this claim. This does not prove that this specific historical export is wrong. Review the original source and arrange an independent human check before relying on critical facts. Download this immutable historical file anyway?`,
+          `برای این پرونده ${liveCount} گزارش جاری و تأییدنشده مغایرت OCR ثبت شده است. این موضوع ثابت نمی‌کند که این خروجی تاریخی مشخص نادرست است. پیش از اتکا به اطلاعات حساس، اصل مدرک را بررسی و بازبینی مستقل انسانی را انجام دهید. با وجود این هشدار، فایل تاریخی تغییرناپذیر دانلود شود؟`,
+        ));
+        if (!confirmed) return;
+      }
       await downloadClaimPackExport(id, item);
     } catch (caught) {
       setError(
@@ -188,6 +205,20 @@ export default function ClaimPackExportPage() {
         <div className="mt-5 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
           {notice}
         </div>
+      ) : null}
+
+      {currentOcrSourceReports !== null && currentOcrSourceReports > 0 ? (
+        <section role="alert" aria-live="polite" className="mt-5 rounded-lg border border-amber-300 bg-amber-50 px-5 py-4 text-sm text-amber-950">
+          <h2 className="font-semibold">
+            {c("Current unverified OCR source reports", "گزارش‌های جاری و تأییدنشده مغایرت OCR")}
+          </h2>
+          <p className="mt-2 leading-6">
+            {c(
+              `${currentOcrSourceReports} current source discrepancy report(s) were recorded for this claim. Earlier Claim Pack files are immutable and may predate these reports. A report is not proof of an error in any particular file or an independent source finding. Compare the original source and obtain human review before relying on critical conclusions.`,
+              `برای این پرونده ${currentOcrSourceReports} گزارش جاری مغایرت منبع ثبت شده است. فایل‌های قبلی Claim Pack تغییرناپذیرند و ممکن است پیش از این گزارش‌ها تهیه شده باشند. گزارش مغایرت به‌تنهایی اثبات خطا در هیچ فایل مشخصی یا تأیید مستقل منبع نیست. پیش از اتکا به نتایج حساس، اصل مدرک را مقایسه و بررسی انسانی انجام دهید.`,
+            )}
+          </p>
+        </section>
       ) : null}
 
       <section className="panel mt-6 p-6">
