@@ -1,5 +1,105 @@
 # SeeClaims — Execution Roadmap v1 | Status and gates
 
+## Risk-first execution readback — 2026-11-01 (Asia/Tehran)
+
+**Customer Pilot: NO-GO.** This update records observed engineering evidence,
+not independent reviewer acceptance or deployment authorization. Existing
+human-review holds and all required GitHub checks remain unchanged.
+
+### Exact refs and hosted observations
+
+Fetched `main`: `fa2c471463f5aecb988f89e791aae359385227e4`.
+Live GitHub PR pages confirmed these heads and **DRAFT** state:
+
+| PR | Exact observed head | Validation / remaining work |
+| --- | --- | --- |
+| [#867](https://github.com/eh3aneba/maritime-claims-platform/pull/867) | `78f6b3de1ba2965de929850c383c8ed7665dcae8` | Five successful workflows; Full Backend [41325836131](https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41325836131) skipped. No new dispatch started this session. All 64 shards remain unverified. |
+| [#869](https://github.com/eh3aneba/maritime-claims-platform/pull/869) | `aa82034137b5d765451f607f049f603eeb7dd579` | Six successful workflows, including signature observation regressions [41331020788](https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41331020788); Full Backend skipped. No signature-age threshold or evidence-admission policy introduced. |
+| [#870](https://github.com/eh3aneba/maritime-claims-platform/pull/870) | `1be62517596f24b7b2cd7da1e721fe0ec264b408` (packet revision preceding this status update) | Branch workflow listing after the packet push shows five successful workflows: PostgreSQL 41333132453, deployment policy 41333132426, supply chain 41333132437, performance 41333132412, CI 41333132409; Full Backend 41333132391 skipped. Public run-page inspection did not expose the full run head SHA; exact run-to-commit binding remains to be confirmed through the API. These observations do not validate a later status-update commit. |
+| [#866](https://github.com/eh3aneba/maritime-claims-platform/pull/866) | `998858f31d8c6ff8b8a2fe4b1184d787975efdf3` | Untouched; separate hosted shared-manifest benchmark pending. |
+
+### Observed network and selected-worker blockers
+
+Runtime status reports current observations, enforced restricted policy, and
+spec/observed revision **1**. Its effective host list excludes `api.github.com`,
+`dl-cdn.alpinelinux.org`, `download.osgeo.org`, and `poppler.freedesktop.org`.
+Fresh HTTPS probes through the inherited proxy returned **CONNECT 403 Forbidden**
+for all four destinations. This is a network-policy denial before GitHub API
+authorization, not evidence of insufficient repository permissions. The pending
+configuration has not become active. No repeated failing dispatch was submitted.
+
+Once the environment owner applies the supported configuration and access is
+verified, the authorized command is:
+
+```bash
+gh workflow run backend-premerge.yml \
+  --repo eh3aneba/maritime-claims-platform \
+  --ref fix/auth-bootstrap-model-registry
+```
+
+First recheck that branch against the #867 SHA above. The existing dispatch path
+explicitly selects full coverage and allows Draft validation; do not change PR
+state, classifier, matrix, required contexts or branch protection. Bind the new
+run ID, event, full head SHA and all shard outcomes before claiming success.
+
+Only PostgreSQL and ClamAV images are cached. No worker build was started with
+mandatory source destinations denied. Selected worker image digest, engine
+version, transcript hash and persisted hold readback are **not measured**.
+Preserve TLS, proxy CA, pinned source and artifact verification when building.
+Native Tesseract observations are not selected-worker acceptance.
+
+### HM-05 evidence and tests actually executed
+
+The existing [bounded bilingual packet](../pilot/hm-multidoc-v1/reviewer-packet-hm05-2026-11-01/README.md)
+is preserved byte-for-byte: all eight `SHA256SUMS` entries passed. Its original
+PNG hash is `1eef5de99985ee76048f93b04b7184c9a5daf4b6f33441b36c99e9a850e56d4c`;
+the exact persisted transcript hash is
+`5a2304f4b11d628d7694eb38e24d8d335bf8dbf31e0e0b5cb639bc2cd0bd3cd2`.
+Locators remain HM-05, document version 1, page 1, segment 0, raw machine
+lines 3/5. The earlier native reproduction retains `معلوم نیست` but omits
+` شد.` and ` است.`. The raster's RTL date presentation differs from the
+authored logical date; OCR alone is not established as its cause. No new OCR
+execution, transcript repair, date normalization or semantic adjudication occurred
+in this readback.
+
+Re-executed against the packet revision: **17 tests passed** using
+`python -m unittest scripts.tests.test_hm_persian_ocr_probe
+scripts.tests.test_persian_ocr_tesseract_psm_ablation
+scripts.tests.test_persian_ocr_local_source_integrity -v`.
+These are probe/integrity regressions, not a Docker-engine replay. Reviewer,
+authorization and independence fields remain blank; acceptance, hold clearance
+and Assessment approval remain false. No new application defect was reproduced.
+
+### Separate #866 benchmark preparation
+
+Issue #553 / PR #864's approximately **44-minute median Full Backend wall time**
+and **505 shard runner-minutes** are historical references, not a new baseline.
+After full execution is available, record baseline and candidate run IDs, event,
+head SHA, actual checkout commit/tree (PR merge refs versus dispatch branch),
+runner labels, lockfiles, collection count/hash, and complete 64-shard membership.
+Compare equivalent test trees and unchanged required checks; otherwise label the
+comparison confounded. Never infer collection equivalence from job success alone.
+
+Use at least three comparable completed runs per arm when runner budget permits.
+Report medians plus individual measurements: end-to-end dispatch-to-completion,
+queue time, execution wall time, sum of shard job durations in runner-minutes,
+total workflow job-minutes including producer/setup, collection/install costs,
+retries and failures. Preserve failed attempts separately to avoid selecting only
+fast successes. Attribute savings only after confirming identical test coverage;
+no speedup is currently established. No #866 edits or dispatches were made here.
+
+### Next three priorities and required evidence
+
+1. Environment owner applies network configuration; engineering obtains #867's
+   exact-commit 64-shard result and investigates actual failures without weakening
+   controls. Confirm API permissions only after network access succeeds.
+2. Build/replay the pinned worker against the unchanged packet; record checkout,
+   image digest, engine/language versions, raw transcript hash, exact omissions,
+   RTL date observations, source locators and persisted human-review hold state.
+3. Authorized bilingual H&M reviewer examines original versus transcript and
+   completes a source-bound private workpaper. Independent acceptance remains
+   pending; engineering cannot self-attest or clear application holds.
+
 > **Live execution update — 2026-10-25, baseline `main@96772648814397e620accd1d5b50a8515b3ef243`.**
 > The product owner adopted the **2026-10-25 Persian strategic review and
 > corrective execution plan** as the prioritization policy alongside the
