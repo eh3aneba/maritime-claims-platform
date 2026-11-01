@@ -1154,6 +1154,8 @@ export interface ClaimPackExport {
 export interface ClaimPackExportListResponse {
   items: ClaimPackExport[];
   total: number;
+  /** Live claim-wide operator reports, not verification of any individual export. */
+  current_unverified_ocr_source_report_count: number;
 }
 
 
