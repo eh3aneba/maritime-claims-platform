@@ -240,5 +240,11 @@ from app.modules.processing.ocr_discrepancy_independent_review import router as 
 
 router.include_router(ocr_independent_review_router)
 
+# The workpaper linkage is a separate immutable audit event; it never
+# resolves the OCR report or grants claim-decision authority.
+from app.modules.processing.ocr_review_workpaper_binding import router as ocr_review_workpaper_router  # noqa: E402
+
+router.include_router(ocr_review_workpaper_router)
+
 # Phase 17.5-Z mounts the explicit processing-release endpoints on this router.
 from app.modules.external_document_sources import processing_release_router as _processing_release_router  # noqa: E402,F401
