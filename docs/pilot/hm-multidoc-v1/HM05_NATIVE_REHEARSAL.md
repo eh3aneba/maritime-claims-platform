@@ -88,7 +88,8 @@ label describes its allowed synthetic context; this observed run was local nativ
   The combined read-only scanner/OCR literal-policy stdlib run passed 23 checks;
   those are separate from real OCR quality or professional approval.
 
-No source text, rendered scan or complete transcript is copied into this report.
+No source-document body, rendered scan or complete transcript is copied into this
+report; only fixed public literal-probe labels, hashes and bounded metadata appear.
 Hashes demonstrate this rehearsal's byte linkage, not authentic expert interpretation.
 The public, already-used designated holdout cannot establish independent blinding.
 Independent bilingual review of original scans, negation scope and unseen sources,
