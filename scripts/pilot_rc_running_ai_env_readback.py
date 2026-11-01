@@ -20,13 +20,11 @@ import sys
 # Support direct-file operator CLI and package/module CI tests alike.
 if __package__:
     from .pilot_compose_readiness import EXPECTED, ReadinessError, evaluate, observe
-    from .pilot_running_image_identity import CONTAINER_ID, _service_ids
     from .pilot_rc_compose_feature_observation import (
         AI_SERVICES, REQUIRED_AI, OPTIONAL_DISABLED_FLAGS, ALLOWED_DISABLED,
     )
 else:
     from pilot_compose_readiness import EXPECTED, ReadinessError, evaluate, observe
-    from pilot_running_image_identity import CONTAINER_ID, _service_ids
     from pilot_rc_compose_feature_observation import (
         AI_SERVICES, REQUIRED_AI, OPTIONAL_DISABLED_FLAGS, ALLOWED_DISABLED,
     )
@@ -41,10 +39,22 @@ class RuntimeScopeError(ValueError):
 
 def _observed_ids(items: list[dict]) -> dict[str, str]:
     """Reuse strict 11-service identity validation; include optional demo."""
-    try:
-        identities = _service_ids(items)
-    except (ValueError, TypeError, KeyError):
-        raise RuntimeScopeError("container_service_identity_invalid") from None
+    if type(items) is not list:
+        raise RuntimeScopeError("container_service_identity_invalid")
+    identities: dict[str, str] = {}
+    for item in items:
+        if type(item) is not dict:
+            raise RuntimeScopeError("container_service_identity_invalid")
+        service = item.get("Service")
+        if service == "demo-seed":
+            continue
+        cid = item.get("ID")
+        if (service not in EXPECTED or service in identities
+                or type(cid) is not str or CONTAINER_ID.fullmatch(cid) is None):
+            raise RuntimeScopeError("container_service_identity_invalid")
+        identities[service] = cid
+    if set(identities) != set(EXPECTED) or len(set(identities.values())) != len(EXPECTED):
+        raise RuntimeScopeError("container_service_identity_invalid")
     demos = [item for item in items if item.get("Service") == "demo-seed"]
     if len(demos) > 1:
         raise RuntimeScopeError("duplicate_demo_container")
