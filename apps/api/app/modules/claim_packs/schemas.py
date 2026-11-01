@@ -41,6 +41,9 @@ class ClaimPackExportResponse(BaseModel):
 class ClaimPackExportListResponse(BaseModel):
     items: list[ClaimPackExportResponse]
     total: int
+    # Live, claim-wide count of current-source operator allegations; *not*
+    # proof an individual historical export or source document is incorrect.
+    current_unverified_ocr_source_report_count: int = Field(default=0, ge=0)
 
 
 class ClaimPackSnapshotSummary(BaseModel):
