@@ -288,6 +288,42 @@ def main() -> None:
         if not download_info.value.suggested_filename.endswith(".pdf"):
             raise AssertionError("Claim-pack download did not return a PDF filename")
 
+        # A later current-source OCR report is a claim-wide UNVERIFIED
+        # advisory, not an amendment of the previously saved PDF. Simulate
+        # only the API count in this synthetic browser scenario; do not create
+        # a fictitious source verification or mutate real Claim Pack records.
+        def current_ocr_concern_response(route):
+            if route.request.method != "GET":
+                route.continue_()
+                return
+            response = route.fetch()
+            data = response.json()
+            data["current_unverified_ocr_source_report_count"] = 1
+            route.fulfill(response=response, json=data)
+
+        page.route("**/api/v1/claims/**/claim-pack-exports", current_ocr_concern_response)
+        page.reload(wait_until="networkidle")
+        expect(page.get_by_role("heading", name="Current unverified OCR source reports")).to_be_visible()
+        expect(page.get_by_text(re.compile(r"Earlier Claim Pack files are immutable"))).to_be_visible()
+        dialogs = []
+
+        def cancel_warning(dialog):
+            dialogs.append(dialog.message)
+            dialog.dismiss()
+
+        page.once("dialog", cancel_warning)
+        page.get_by_role("button", name="Download").first.click()
+        expect(page.get_by_role("button", name="Download").first).to_be_enabled()
+        if len(dialogs) != 1 or "unverified OCR source discrepancy" not in dialogs[0]:
+            raise AssertionError("Unverified OCR concern must require explicit download confirmation")
+
+        page.once("dialog", lambda dialog: dialog.accept())
+        with page.expect_download() as reviewed_download:
+            page.get_by_role("button", name="Download").first.click()
+        if reviewed_download.value.suggested_filename != download_info.value.suggested_filename:
+            raise AssertionError("Acknowledged historical download must preserve original file identity")
+        page.unroute("**/api/v1/claims/**/claim-pack-exports", current_ocr_concern_response)
+
         page.goto(f"{BASE_URL}{claim_href}", wait_until="networkidle")
         with page.expect_response(
             lambda response: "/api/v1/ai-review/groups?" in response.url
