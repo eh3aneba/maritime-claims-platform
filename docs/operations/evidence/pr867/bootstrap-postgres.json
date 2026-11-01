@@ -1,0 +1,17 @@
+{
+  "head_sha": "78f6b3de1ba2965de929850c383c8ed7665dcae8",
+  "postgresql": "18.4",
+  "fresh_database": true,
+  "customer_data_used": false,
+  "external_ai_enabled": false,
+  "checks": {
+    "first_admin_fresh_process": true,
+    "case_insensitive_idempotency_and_password_preservation": true,
+    "disabled_account_not_reactivated_or_promoted": true,
+    "same_email_tenant_isolation": true,
+    "disabled_organization_preserved": true,
+    "deferred_commit_failure_rolls_back_org_and_user": true,
+    "preexisting_tenants_unchanged_after_failure": true
+  },
+  "fresh_database_removed": true
+}
