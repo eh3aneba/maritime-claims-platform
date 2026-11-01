@@ -179,6 +179,41 @@ def report_unverified_ocr_discrepancy(
     if segment is None:
         raise HTTPException(status_code=409, detail="Selected OCR source segment is unavailable")
 
+    # A retried identical report by the same authenticated operator should
+    # return its original append-only receipt, not inflate the issue count.
+    # The claim row is already locked on PostgreSQL, so parallel retries
+    # serialize with one another and with approval/replacement paths.
+    prior_reports = db.scalars(
+        select(AuditLog).where(
+            AuditLog.organization_id == current_user.organization_id,
+            AuditLog.user_id == current_user.id,
+            AuditLog.entity_type == "document",
+            AuditLog.entity_id == doc.id,
+            AuditLog.action == _ACTION,
+        )
+        .order_by(AuditLog.created_at.desc(), AuditLog.id.desc())
+    )
+    for prior in prior_reports:
+        recorded = prior.new_values
+        if (
+            type(recorded) is dict
+            and recorded.get("claim_id") == str(claim_id)
+            and type(recorded.get("document_version")) is int
+            and recorded["document_version"] == doc.version_number
+            and recorded.get("source_file_hash") == doc.file_hash
+            and recorded.get("extraction_text_hash") == extraction.text_hash
+            and type(recorded.get("segment_index")) is int
+            and recorded["segment_index"] == segment.segment_index
+            and recorded.get("locator_type") == segment.locator_type
+            and recorded.get("locator_value") == segment.locator_value
+            and recorded.get("issue_kind") == payload.issue_kind
+            and recorded.get("review_state") == "reported_unverified"
+            and recorded.get("source_compared_by_operator") is True
+            and recorded.get("claim_fact_approved") is False
+        ):
+            response.status_code = status.HTTP_200_OK
+            return _as_receipt(prior)
+
     entry = write_audit_log(
         db,
         organization_id=current_user.organization_id,
