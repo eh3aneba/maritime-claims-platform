@@ -30,6 +30,7 @@ else:
     )
 
 SHA = re.compile(r"[0-9a-f]{40}\Z")
+CONTAINER_ID = re.compile(r"[0-9a-f]{12,64}\Z")
 _SCHEMA = "mcri-pilot-running-ai-config-v1"
 
 
@@ -38,7 +39,7 @@ class RuntimeScopeError(ValueError):
 
 
 def _observed_ids(items: list[dict]) -> dict[str, str]:
-    """Reuse strict 11-service identity validation; include optional demo."""
+    """Strict 11-service identity validation; include optional demo."""
     if type(items) is not list:
         raise RuntimeScopeError("container_service_identity_invalid")
     identities: dict[str, str] = {}
