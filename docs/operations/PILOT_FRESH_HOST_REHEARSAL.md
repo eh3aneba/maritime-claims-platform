@@ -24,6 +24,12 @@ python scripts/pilot_demo_docker_target.py
 docker compose --env-file .env config >/dev/null
 python scripts/pilot_compose_port_policy.py --env-file .env
 python scripts/pilot_demo_empty_stack.py --env-file .env
+# Read-only, sanitized AI/connector configuration readback; the rendered
+# Compose JSON is kept private and never echoed to logs.
+python scripts/pilot_rc_compose_feature_observation.py \\
+  --env-file .env \\
+  --release-sha "<frozen-40-char-main-SHA>" \\
+  --output /secure/pilot-releases/rc-001-compose-flags.json
 ```
 
 The read-only `pilot_demo_empty_stack.py` guard aborts if the **selected Compose project** already has any container (even stopped) or any of its three named persistent volumes (PostgreSQL, ClamAV, Evidence). The Operational Performance Smoke workflow now includes a **real GitHub-runner negative admission test**: after the synthetic stack is started, it must show an exact refusal (`NO-GO: Compose project already contains containers`) without invoking the side-effecting demo seed again. A successful workflow proves only this bounded behavior on its ephemeral runner, not a real external operator-host check. It deliberately **does not clean up** state and does not certify that the entire host, external storage or a differently named Compose project is empty. An authorized operator must still independently verify that the entire controlled host is fresh and synthetic-only.
