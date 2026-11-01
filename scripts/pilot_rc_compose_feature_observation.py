@@ -16,7 +16,12 @@ import re
 import subprocess
 import sys
 
-from scripts.pilot_compose_readiness import EXPECTED
+# Support the documented direct-file operator CLI as well as package imports.
+# Do not depend on PYTHONPATH or installed package state on a fresh host.
+if __package__:
+    from .pilot_compose_readiness import EXPECTED
+else:
+    from pilot_compose_readiness import EXPECTED
 
 ROOT = Path(__file__).resolve().parents[1]
 COMPOSE = ROOT / "docker-compose.yml"
