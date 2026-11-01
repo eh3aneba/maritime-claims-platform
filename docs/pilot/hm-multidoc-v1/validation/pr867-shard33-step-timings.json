@@ -1,0 +1,69 @@
+{
+  "job_id": 124962437637,
+  "name": "Backend tests shard 33",
+  "conclusion": "success",
+  "started_at": "2026-11-01T20:18:50Z",
+  "completed_at": "2026-11-01T20:37:09Z",
+  "step_timings": [
+    {
+      "name": "Set up job",
+      "conclusion": "success",
+      "started_at": "2026-11-01T20:18:50Z",
+      "completed_at": "2026-11-01T20:18:51Z"
+    },
+    {
+      "name": "Check out repository",
+      "conclusion": "success",
+      "started_at": "2026-11-01T20:18:51Z",
+      "completed_at": "2026-11-01T20:18:52Z"
+    },
+    {
+      "name": "Set up Python",
+      "conclusion": "success",
+      "started_at": "2026-11-01T20:18:52Z",
+      "completed_at": "2026-11-01T20:18:53Z"
+    },
+    {
+      "name": "Install backend dependencies",
+      "conclusion": "success",
+      "started_at": "2026-11-01T20:18:53Z",
+      "completed_at": "2026-11-01T20:19:07Z"
+    },
+    {
+      "name": "Compile backend",
+      "conclusion": "success",
+      "started_at": "2026-11-01T20:19:07Z",
+      "completed_at": "2026-11-01T20:19:09Z"
+    },
+    {
+      "name": "Run backend test shard",
+      "conclusion": "success",
+      "started_at": "2026-11-01T20:19:09Z",
+      "completed_at": "2026-11-01T20:37:07Z"
+    },
+    {
+      "name": "Post Set up Python",
+      "conclusion": "success",
+      "started_at": "2026-11-01T20:37:07Z",
+      "completed_at": "2026-11-01T20:37:07Z"
+    },
+    {
+      "name": "Post Check out repository",
+      "conclusion": "success",
+      "started_at": "2026-11-01T20:37:07Z",
+      "completed_at": "2026-11-01T20:37:07Z"
+    },
+    {
+      "name": "Complete job",
+      "conclusion": "success",
+      "started_at": "2026-11-01T20:37:07Z",
+      "completed_at": "2026-11-01T20:37:07Z"
+    }
+  ],
+  "log_download": {
+    "blocked_destination": "productionresultssa7.blob.core.windows.net",
+    "result": "proxy Forbidden",
+    "signed_download_urls_excluded_from_repository": true
+  },
+  "limit": "Run backend test shard includes both collection and execution; step metadata cannot separate these costs."
+}

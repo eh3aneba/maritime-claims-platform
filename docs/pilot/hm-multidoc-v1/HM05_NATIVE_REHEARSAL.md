@@ -1,3 +1,5 @@
+> Update: the [selected pinned worker rehearsal](HM05_SELECTED_WORKER_REHEARSAL.md) now reproduces the same omissions through real scanner admission and PostgreSQL-backed processing. The native observations and frozen reviewer packet below remain historical evidence; independent acceptance is still pending.
+
 # HM-05 authoritative-source native rehearsal — 2026-11-01
 
 This records an automated synthetic engineering observation, not a Persian OCR

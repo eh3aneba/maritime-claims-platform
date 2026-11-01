@@ -1,94 +1,105 @@
 # SeeClaims — Execution Roadmap v1 | Status and gates
 
-## Active engineering handoff — 2026-11-01 (Asia/Tehran)
+## Active engineering handoff — published-network execution
 
-**Customer Pilot remains NO-GO.** Resume from this record and live GitHub, not
-conversation history. One principal implementation is now published on
-`feat/ocr-independent-review-readback` at exact SHA
-`99a12529e35ec506ac49463336f16a08c1592a04`, based on
-`main@fa2c471463f5aecb988f89e791aae359385227e4`. No Draft PR exists yet for
-that feature branch. This handoff is maintained in the existing independent
-documentation/reviewer packet PR **#870**, branch
-`docs/hm05-native-source-rehearsal`; its preceding documentation head was
-`5e8f8e5b3d4ac025420b91a3e2ca0e39289f5dad`. The immutable GitHub commit
-containing this handoff identifies its documentation revision. Keep code and
-documentation review separate; do not copy the feature into #870 or create a
-second reviewer packet.
+**Customer Pilot remains NO-GO.** Resume from this record plus live GitHub.
+Current implementation branch: `feat/ocr-independent-review-readback`, exact
+SHA `99a12529e35ec506ac49463336f16a08c1592a04`, now Draft
+[#871](https://github.com/eh3aneba/maritime-claims-platform/pull/871).
+The existing documentation/reviewer branch is
+`docs/hm05-native-source-rehearsal` / Draft #870; this containing Git commit
+anchors its evidence revision. Its preceding head was
+`ce752d8f36ed183088503da4dc018adeaf35290a`.
+Fetched main remains `fa2c471463f5aecb988f89e791aae359385227e4`.
 
-### Implemented and actually verified
+### Actual outcomes
 
-The source-comparison workspace previously displayed operator discrepancy
-reports but offered no browser readback of existing independent observations
-or managed workpaper links. The feature adds English/Persian, on-demand,
-**GET-only** history under each matching report, limited to the most recent 25.
-It validates report/document/source/extraction hashes, rejects malformed,
-duplicate, self-review or approval/clearance-bearing rows, distinguishes an
-unavailable history from an empty page, and does not request current-source
-history for a historical report. Existing workpaper links display matched
-historical document/version/hash metadata only; current bytes, availability
-and content are not certified. There are no new recording/approval controls.
+- The owner's published replacement environment has an enforced restricted
+  policy including the four requested domains. GitHub API and pinned build
+  downloads now work. Engineering did not modify or republish configuration.
+- #871 was created only after checking for duplicates. At its exact head, five
+  non-Backend workflows completed successfully; Full Backend was skipped under
+  Draft policy. Hosted frontend contract tests, typecheck, build and the browser
+  regression actually executed. Local evidence remains four contract tests,
+  five existing backend authorization/workpaper tests, typecheck/build and a
+  synthetic bilingual browser test asserting zero API writes. No holds or
+  reviewer acceptance records were changed.
+- #869 remains Draft at `aa82034137b5d765451f607f049f603eeb7dd579`;
+  exact-head hosted readback shows its signature regressions and applicable
+  workflows successful, Full Backend skipped. No freshness threshold or
+  evidence-admission change was made.
+- #867 remains Draft at `78f6b3de1ba2965de929850c383c8ed7665dcae8`.
+  Authorized manual Full Backend run
+  [41344854507](https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41344854507)
+  selected all 64 unique shards on that exact SHA. **Completed successfully: all 64 shards and the Backend tests gate passed.**
+  Measured dispatch-to-last-job wall time **42.53 minutes**,
+  **486.18 shard runner-minutes** (sum of job elapsed durations,
+  not a billing statement), **486.33 total job runner-minutes**,
+  and **19.08 minutes** between first/last shard starts.
+  No failures or reruns. [Exact run/job receipt](../pilot/hm-multidoc-v1/validation/pr867-full-backend-2026-11-01.json).
+- The [selected pinned worker rehearsal](../pilot/hm-multidoc-v1/HM05_SELECTED_WORKER_REHEARSAL.md)
+  completed through real ClamAV admission, fresh PostgreSQL 18.4 migrations and
+  actual worker processing at UID 1000 with read-only/capability restrictions.
+  Image configuration digest:
+  `sha256:63b5d8850d5ac76cc0bb2b2f8f95a837c8748b05574683dc492566f06318b5da`.
+  Tesseract 5.5.3 reproduced the same incomplete transcript as native 5.5.0:
+  `5a2304f4b11d628d7694eb38e24d8d335bf8dbf31e0e0b5cb639bc2cd0bd3cd2`.
+  The negative token remains, while ` شد.` and ` است.` are omitted. The date
+  mismatch includes raster/RTL presentation; it was not normalized or assigned
+  solely to OCR. Full source locators, versions, raw output, build identities
+  and excluded setup failures are in the linked observation.
+- PostgreSQL independently confirmed persistence after worker exit. Readback
+  remains `machine_unverified` / `ocr_human_source_comparison_required`;
+  zero ClaimFacts and Assessments were created. The final replay passed fresh
+  synthetic execution plus nonzero refusals for non-test mode and an existing
+  dataset. The original packet's eight checksums and pending review fields
+  remain unchanged. Disposable services and temporary private environment
+  files were removed. No customer Evidence, external AI, deployment or merge.
+- All 11 required check contexts were read from the live main ruleset and
+  preserved. #866 remains Draft and untouched at
+  `998858f31d8c6ff8b8a2fe4b1184d787975efdf3`.
 
-Local evidence for the exact implementation SHA:
+### Risks and measurement limits
 
-- Four Node contract tests passed (including adversarial source, binding,
-  duplication, pagination and forbidden-clearance cases).
-- `npm run typecheck` and the final `npm run build` passed on Node 22.23.4.
-- Synthetic bilingual Playwright regression passed against both development
-  and final compiled production frontend, including stale sources, mismatched
-  bindings, forbidden reads, empty history and **zero API writes**. All API
-  responses were intercepted; this is not live reviewer or OCR acceptance.
-- Existing backend `test_ocr_discrepancy_independent_review.py` and
-  `test_ocr_review_workpaper_binding.py`: **5 passed**, one existing
-  FastAPI/Starlette TestClient deprecation warning. SQLite synthetic fixtures;
-  not PostgreSQL concurrency or full regression coverage.
-- New tests are added to existing frontend/browser CI jobs. Existing job
-  identities, dependencies, conditions, permissions and timeouts were compared
-  with main and preserved. No backend workflow, required check context,
-  lockfile, admission threshold, application API or migration was changed.
-- First browser attempt failed on a test-only Persian label typo. Corrected
-  to the actual existing label; subsequent runs passed without timeout changes.
-  Generated Next.js instruction/config files were excluded. Diff check passed.
+The first worker build inherited restored workspace `0600` source permissions;
+non-root migration/import attempts failed and were excluded. Rebuilding from
+Git archive's readable source modes resolved setup without root fallback,
+changing the repository Dockerfile, or weakening TLS/checksum/source checks.
+The session CA adaptation is reproduced in the worker report.
 
-No production behavior or actual reviewer record was changed. Loopback test
-servers were stopped. HM-05 packet bytes/hashes and independent-review pending
-fields in #870 remain unchanged. #866, #867, #868 and #869 were not modified.
+The #867 test tree includes `tests/test_auth_bootstrap_cli.py`, absent from
+frozen #866. #866's tests/locks match main, not #867. Concurrent #871 validation
+also overlapped #867. Do not call #867's timing an identical-tree CI v2 speedup.
+Issue #553 / PR #864's approximately 44-minute median and 505 shard runner-minutes
+remain historical references. No candidate benchmark was dispatched here.
 
-### Publication and external blockers
+Detailed Actions logs redirect to `productionresultssa7.blob.core.windows.net`,
+which is denied by the proxy. This newly observed profiling blocker was recorded
+once; no retry, configuration change or signed download URL is included in
+repository evidence. API job/step timing metadata remains available, but its
+combined collection/test step cannot separate those costs precisely.
 
-Git push of the feature branch succeeded. Runtime readiness still reports
-enforced network revision **1**, without `api.github.com`; no repeated API
-request or dispatch was attempted. There is no callable GitHub connector.
-Draft creation and hosted validation therefore remain pending, not successful.
-The owner can use the GitHub UI's **Create draft pull request** option at
-https://github.com/eh3aneba/maritime-claims-platform/pull/new/feat/ocr-independent-review-readback
-or engineering can publish after API access is applied. Check for an existing
-PR on that head before creating one. Do not mark it ready for review or merge.
+ClamAV's observed database 28164 dates from 2026-10-25. CLEAN on synthetic input
+is not approved freshness policy. Security-owner policy, independent bilingual
+H&M adjudication, workpaper content verification/source-resolution authority,
+selected-host operational acceptance and customer permission remain outstanding.
 
-Suggested title: `feat(ocr): expose source-bound independent review history read-only`.
-The implementation commit includes scope, tests and operator usage in
-`docs/pilot/hm-multidoc-v1/OCR_INDEPENDENT_REVIEW_OBSERVATION.md`.
-Hosted results on this exact feature SHA are **not obtained**. The five local
-backend tests are not a substitute for required hosted checks or all 64 shards.
+### Next three priorities / human dependencies
 
-### Next three priorities and accountable human dependencies
+1. Review completed exact-SHA #867 full regression and #871 scoped hosted
+   evidence as Drafts; reconcile new #870 documentation checks on its latest head. No merge or review-state change is authorized.
+2. Prepare a matched-main (`fa2c471…`) versus frozen #866 hosted benchmark with
+   equal test trees/node hashes, no competing runs and recorded queue/cache
+   conditions. Preserve all shards, classifier and checks. Optional per-test
+   profiling requires the environment owner to permit the exact Actions log
+   destination; do not bypass the policy.
+3. An authorized bilingual H&M reviewer must compare the unchanged source and
+   transcript and record a source-bound workpaper; the security owner must
+   explicitly decide signature-freshness policy before admission changes.
+   Engineering cannot self-attest acceptance or clear holds.
 
-1. **Environment owner:** apply the saved network configuration. **Engineering:**
-   re-read runtime readiness only when a policy change is evidenced; publish or
-   locate the feature Draft PR, then obtain exact-SHA hosted results. Resume
-   #867's authorized full 64-shard dispatch with Draft status preserved and fix
-   actual failures. No repeated known-denied API calls or gate changes.
-2. **Engineering after build-source access:** perform HM-05 pinned-worker replay
-   using the unchanged #870 packet and record image digest, raw transcript hash,
-   omissions, RTL date presentation, locators and persisted hold state. Keep
-   #866 isolated; its comparable hosted baseline/manifest benchmark is pending.
-3. **Authorized bilingual H&M reviewer:** independently compare the original
-   and transcript and provide a source-bound workpaper through governed review.
-   Engineering must not fill independent acceptance fields or clear holds.
-
-Further implementation should stay on this one principal branch until hosted
-review is possible. Missing security-policy approval, operational acceptance,
-original-source adjudication and customer permission remain external NO-GO
-gates; a read-only UI and passing synthetic tests do not close them.
+Continue this single principal implementation and the existing #870 review
+track; do not open duplicate PRs or invent another unrelated workstream.
 
 ## Risk-first execution readback — 2026-11-01 (Asia/Tehran)
 
