@@ -81,6 +81,7 @@ class RunningAIReadbackTests(unittest.TestCase):
             ("external-evidence-review-projector-worker", "EXTERNAL_EVIDENCE_LIVE_PROVIDER_ADAPTERS_ENABLED=true"),
             ("migrate", "OPENAI_API_KEY=other-private-token"),
             ("web", "AI_MODEL=another-private-model"),
+            ("external-evidence-scheduler-worker", "ALLOW_EXTERNAL_AI_RESTRICTED=true"),
         )
         for service, field in cases:
             with self.subTest(service=service, field=field.split("=")[0]):
