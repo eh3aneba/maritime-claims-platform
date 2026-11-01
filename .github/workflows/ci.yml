@@ -266,6 +266,38 @@ jobs:
       - name: Validate Compose configuration
         run: docker compose config --quiet
 
+      - name: Verify pilot synthetic Compose AI flags through real Docker rendering
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Use the public, deliberately fictional pilot example. Never read
+          # operator secrets or emit expanded docker compose config output.
+          scratch="$(mktemp -d)"
+          chmod 700 "$scratch"
+          trap 'rm -rf "$scratch"' EXIT
+          python scripts/pilot_rc_compose_feature_observation.py --env-file .env.pilot.example --release-sha "$GITHUB_SHA" --output "$scratch/feature-observation.json"
+          # Real Compose output passed the guarded tool; also validate that
+          # its report never claims verified runtime/OCR/customer permission.
+          python - "$scratch/feature-observation.json" <<'PY'
+          import json
+          from pathlib import Path
+          import sys
+
+          report = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          assert report["compose_ai_and_adapter_config_safe"] is True
+          assert report["check_failures"] == []
+          for key in (
+              "runtime_environment_attested",
+              "effective_database_connector_state_attested",
+              "network_egress_isolation_attested",
+              "persian_critical_ocr_semantics_attested",
+              "persian_critical_extraction_disabled_attested",
+              "real_customer_data_authorized",
+              "pilot_accepted",
+          ):
+              assert report[key] is False, key
+          PY
+
   design-partner-e2e:
     name: Design partner browser E2E
     needs: changes
