@@ -14,6 +14,7 @@ from app.modules.claim_packs.schemas import (
     ClaimPackGenerateRequest,
 )
 from app.modules.claim_packs.renderers import UnsupportedClaimPackPDFTextError
+from app.modules.claim_packs.source_report_notice import current_ocr_source_report_count
 from app.modules.claim_packs.recovery_service import (
     generate_claim_pack,
     get_claim_pack_export,
@@ -49,6 +50,9 @@ def list_exports(
     return ClaimPackExportListResponse(
         items=[ClaimPackExportResponse.model_validate(item) for item in items],
         total=len(items),
+        current_unverified_ocr_source_report_count=current_ocr_source_report_count(
+            db, claim_id=claim_id, organization_id=current_user.organization_id,
+        ),
     )
 
 
@@ -120,6 +124,11 @@ def download_export(
             detail="Export metadata exists but the immutable file is unavailable.",
         ) from exc
 
+    # Read-time claim-wide advisory only. Never mutate archived snapshot
+    # bytes or imply that an unverified report proves an error in this pack.
+    current_ocr_reports = current_ocr_source_report_count(
+        db, claim_id=claim_id, organization_id=current_user.organization_id,
+    )
     write_audit_log(
         db,
         organization_id=current_user.organization_id,
@@ -139,5 +148,6 @@ def download_export(
             "Cache-Control": "private, no-store",
             "X-Claim-Pack-Snapshot-SHA256": item.snapshot_hash,
             "X-Claim-Pack-File-SHA256": item.file_hash,
+            "X-Claim-Current-Unverified-OCR-Source-Report-Count": str(current_ocr_reports),
         },
     )
