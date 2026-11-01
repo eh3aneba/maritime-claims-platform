@@ -1,5 +1,95 @@
 # SeeClaims — Execution Roadmap v1 | Status and gates
 
+## Active engineering handoff — 2026-11-01 (Asia/Tehran)
+
+**Customer Pilot remains NO-GO.** Resume from this record and live GitHub, not
+conversation history. One principal implementation is now published on
+`feat/ocr-independent-review-readback` at exact SHA
+`99a12529e35ec506ac49463336f16a08c1592a04`, based on
+`main@fa2c471463f5aecb988f89e791aae359385227e4`. No Draft PR exists yet for
+that feature branch. This handoff is maintained in the existing independent
+documentation/reviewer packet PR **#870**, branch
+`docs/hm05-native-source-rehearsal`; its preceding documentation head was
+`5e8f8e5b3d4ac025420b91a3e2ca0e39289f5dad`. The immutable GitHub commit
+containing this handoff identifies its documentation revision. Keep code and
+documentation review separate; do not copy the feature into #870 or create a
+second reviewer packet.
+
+### Implemented and actually verified
+
+The source-comparison workspace previously displayed operator discrepancy
+reports but offered no browser readback of existing independent observations
+or managed workpaper links. The feature adds English/Persian, on-demand,
+**GET-only** history under each matching report, limited to the most recent 25.
+It validates report/document/source/extraction hashes, rejects malformed,
+duplicate, self-review or approval/clearance-bearing rows, distinguishes an
+unavailable history from an empty page, and does not request current-source
+history for a historical report. Existing workpaper links display matched
+historical document/version/hash metadata only; current bytes, availability
+and content are not certified. There are no new recording/approval controls.
+
+Local evidence for the exact implementation SHA:
+
+- Four Node contract tests passed (including adversarial source, binding,
+  duplication, pagination and forbidden-clearance cases).
+- `npm run typecheck` and the final `npm run build` passed on Node 22.23.4.
+- Synthetic bilingual Playwright regression passed against both development
+  and final compiled production frontend, including stale sources, mismatched
+  bindings, forbidden reads, empty history and **zero API writes**. All API
+  responses were intercepted; this is not live reviewer or OCR acceptance.
+- Existing backend `test_ocr_discrepancy_independent_review.py` and
+  `test_ocr_review_workpaper_binding.py`: **5 passed**, one existing
+  FastAPI/Starlette TestClient deprecation warning. SQLite synthetic fixtures;
+  not PostgreSQL concurrency or full regression coverage.
+- New tests are added to existing frontend/browser CI jobs. Existing job
+  identities, dependencies, conditions, permissions and timeouts were compared
+  with main and preserved. No backend workflow, required check context,
+  lockfile, admission threshold, application API or migration was changed.
+- First browser attempt failed on a test-only Persian label typo. Corrected
+  to the actual existing label; subsequent runs passed without timeout changes.
+  Generated Next.js instruction/config files were excluded. Diff check passed.
+
+No production behavior or actual reviewer record was changed. Loopback test
+servers were stopped. HM-05 packet bytes/hashes and independent-review pending
+fields in #870 remain unchanged. #866, #867, #868 and #869 were not modified.
+
+### Publication and external blockers
+
+Git push of the feature branch succeeded. Runtime readiness still reports
+enforced network revision **1**, without `api.github.com`; no repeated API
+request or dispatch was attempted. There is no callable GitHub connector.
+Draft creation and hosted validation therefore remain pending, not successful.
+The owner can use the GitHub UI's **Create draft pull request** option at
+https://github.com/eh3aneba/maritime-claims-platform/pull/new/feat/ocr-independent-review-readback
+or engineering can publish after API access is applied. Check for an existing
+PR on that head before creating one. Do not mark it ready for review or merge.
+
+Suggested title: `feat(ocr): expose source-bound independent review history read-only`.
+The implementation commit includes scope, tests and operator usage in
+`docs/pilot/hm-multidoc-v1/OCR_INDEPENDENT_REVIEW_OBSERVATION.md`.
+Hosted results on this exact feature SHA are **not obtained**. The five local
+backend tests are not a substitute for required hosted checks or all 64 shards.
+
+### Next three priorities and accountable human dependencies
+
+1. **Environment owner:** apply the saved network configuration. **Engineering:**
+   re-read runtime readiness only when a policy change is evidenced; publish or
+   locate the feature Draft PR, then obtain exact-SHA hosted results. Resume
+   #867's authorized full 64-shard dispatch with Draft status preserved and fix
+   actual failures. No repeated known-denied API calls or gate changes.
+2. **Engineering after build-source access:** perform HM-05 pinned-worker replay
+   using the unchanged #870 packet and record image digest, raw transcript hash,
+   omissions, RTL date presentation, locators and persisted hold state. Keep
+   #866 isolated; its comparable hosted baseline/manifest benchmark is pending.
+3. **Authorized bilingual H&M reviewer:** independently compare the original
+   and transcript and provide a source-bound workpaper through governed review.
+   Engineering must not fill independent acceptance fields or clear holds.
+
+Further implementation should stay on this one principal branch until hosted
+review is possible. Missing security-policy approval, operational acceptance,
+original-source adjudication and customer permission remain external NO-GO
+gates; a read-only UI and passing synthetic tests do not close them.
+
 ## Risk-first execution readback — 2026-11-01 (Asia/Tehran)
 
 **Customer Pilot: NO-GO.** This update records observed engineering evidence,
