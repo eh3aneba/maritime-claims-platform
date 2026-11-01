@@ -104,6 +104,47 @@ def test_reports_append_audit_only_without_approving_claim_facts(tmp_path, monke
         )) == 0
 
 
+def test_duplicate_ocr_report_replays_same_receipt_without_inflating_current_claim_notice(
+    tmp_path, monkeypatch,
+) -> None:
+    """Same operator, exact source/version/extraction/segment/kind: 200 replay."""
+    ids, doc_id, payload, url = _setup(tmp_path, monkeypatch)
+    first = client.post(url, json=payload)
+    assert first.status_code == 201, first.text
+    original = first.json()
+
+    replay = client.post(url, json=payload)
+    assert replay.status_code == 200, replay.text
+    assert replay.json() == original
+    assert replay.headers["cache-control"] == "no-store"
+
+    list_result = client.get(url)
+    assert list_result.status_code == 200, list_result.text
+    assert list_result.json()["items"] == [original]
+    claim_packs = client.get(f"/api/v1/claims/{ids['claim_id']}/claim-pack-exports")
+    assert claim_packs.status_code == 200, claim_packs.text
+    assert claim_packs.json()["current_unverified_ocr_source_report_count"] == 1
+
+    distinct = client.post(
+        url, json={**payload, "issue_kind": "negation_scope_changed"},
+    )
+    assert distinct.status_code == 201, distinct.text
+    assert distinct.json()["id"] != original["id"]
+    claim_packs_after = client.get(
+        f"/api/v1/claims/{ids['claim_id']}/claim-pack-exports"
+    )
+    assert claim_packs_after.status_code == 200
+    assert claim_packs_after.json()["current_unverified_ocr_source_report_count"] == 2
+
+    with TestingSessionLocal() as db:
+        audits = list(db.scalars(select(AuditLog).where(
+            AuditLog.organization_id == UUID(ids["alpha_org"]),
+            AuditLog.entity_id == UUID(doc_id),
+            AuditLog.action == "REPORT_OCR_SOURCE_DISCREPANCY",
+        )))
+        assert len(audits) == 2
+
+
 def test_report_requires_exact_current_hashes_and_checked_source(tmp_path, monkeypatch) -> None:
     ids, doc_id, payload, url = _setup(tmp_path, monkeypatch)
     for tamper in (
