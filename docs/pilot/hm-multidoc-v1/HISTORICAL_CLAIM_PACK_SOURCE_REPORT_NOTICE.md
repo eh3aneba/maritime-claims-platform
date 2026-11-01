@@ -36,6 +36,17 @@ file, and cannot retract external copies or force an offline recipient to
 notice later discrepancies. Operators must separately notify downstream
 recipients when required by case-handling policy.
 
+## Retry-safe, append-only source reports
+
+An identical retry from the **same authenticated reporter** for the same
+organization, claim, original document/version/file hash, extracted text hash,
+source segment and discrepancy kind now returns its original receipt with
+HTTP 200 instead of inserting a second audit entry. A fresh report still
+returns HTTP 201. Another genuinely distinct issue, source segment, source
+version, or reporter can create its own independent report. This is audit
+deduplication **within the exact identity scope**, not a substantive source
+resolution, a deletion of evidence or a claim decision.
+
 ## What remains unfinished
 
 Independent verification and explicit source-discrepancy resolution, including
