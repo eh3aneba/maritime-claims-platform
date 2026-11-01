@@ -80,3 +80,8 @@ age/authenticity or a release-bound production observation. Fifteen local observ
 and existing scan-probe regressions passed; the new workflow was syntax/expression
 linted. Hosted execution of this new workflow is not yet verified. No definition
 was updated, document scanned by this observer, or admission policy changed.
+
+The transport also enforces a five-second total monotonic read budget, so a slow
+fragment stream cannot repeatedly reset the socket timeout. Its regression uses
+an injected fixed monotonic clock. Sixteen local observer/scan-probe regressions
+passed with that additional bound; no production scanner timeout was changed.

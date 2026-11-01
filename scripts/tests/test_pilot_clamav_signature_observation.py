@@ -95,6 +95,17 @@ class SignatureObservationTests(unittest.TestCase):
                     self.assertEqual(probe.main(["--release-sha", SHA, "--output", "/unused"]), 2)
                 observe.assert_not_called()
 
+    def test_slow_fragment_stream_cannot_extend_the_total_read_deadline(self):
+        connection = MagicMock()
+        connection.recv.return_value = b"ClamAV"
+        manager = MagicMock()
+        manager.__enter__.return_value = connection
+        with patch.object(probe.socket, "create_connection", return_value=manager):
+            with patch.object(probe.time, "monotonic", side_effect=[0, 0, 0, 6]):
+                with self.assertRaises(TimeoutError):
+                    probe.observe_version(port=13310, timeout=5)
+        connection.recv.assert_called_once()
+
     def test_cli_records_failure_without_error_contents_and_does_not_overwrite(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "report.json"

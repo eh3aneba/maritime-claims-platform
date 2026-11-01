@@ -9,6 +9,7 @@ from pathlib import Path
 import re
 import socket
 import sys
+import time
 
 SHA = re.compile(r"[a-f0-9]{40}\Z")
 VERSION = re.compile(r"ClamAV ([0-9]+\.[0-9]+\.[0-9]+)/([0-9]{1,10})/(.{1,40})\Z")
@@ -71,11 +72,19 @@ def evaluate(raw: str, *, observed_at: datetime, release_sha: str,
 def observe_version(*, port: int, timeout: float = 5) -> str:
     if port not in (3310, 13310):
         raise ValueError("unsupported_synthetic_scanner_port")
+    deadline = time.monotonic() + timeout
     with socket.create_connection(("127.0.0.1", port), timeout=timeout) as connection:
-        connection.settimeout(timeout)
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError("scanner_metadata_deadline_exceeded")
+        connection.settimeout(remaining)
         connection.sendall(b"zVERSION\0")
         data = bytearray()
         while len(data) < 257:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError("scanner_metadata_deadline_exceeded")
+            connection.settimeout(remaining)
             chunk = connection.recv(257 - len(data))
             if not chunk:
                 raise ValueError("unterminated_scanner_metadata")
