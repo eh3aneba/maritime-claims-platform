@@ -67,3 +67,16 @@ approve a maximum-age/unknown-clock/update-failure policy before a separate
 admission/readiness change is designed. Preserve signed-CVD checks, TLS trust,
 network policy, clean/EICAR tests and operator alert receipt; never obtain a green
 result by disabling verification or inferring freshness from PING alone.
+
+## Recorded synthetic observation
+
+[Native metadata evidence](evidence/clamav/signature-native-2026-11-01.json)
+records observer source commit `71f9257ad11ac104f4e472efe5d295bf60904e83`,
+its tree/file hashes and the scanner image digest. The daemon reported engine
+1.5.4, database serial 28164, and 2026-10-25 06:24:12 under explicitly declared UTC.
+At 2026-11-01T17:01:57.947494Z the signed integer age was 643,065 seconds.
+The report is **not** a freshness verdict, nor independently verified signature
+age/authenticity or a release-bound production observation. Fifteen local observer
+and existing scan-probe regressions passed; the new workflow was syntax/expression
+linted. Hosted execution of this new workflow is not yet verified. No definition
+was updated, document scanned by this observer, or admission policy changed.
