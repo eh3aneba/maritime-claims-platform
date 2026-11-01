@@ -197,6 +197,9 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci --no-audit --no-fund
 
+      - name: Validate read-only OCR review contracts
+        run: node tests/ocr-review-readback.test.cjs
+
       - name: Run TypeScript checks
         run: npm run typecheck
 
@@ -369,6 +372,7 @@ jobs:
           python tests/browser/governance_webhooks_e2e.py
           python tests/browser/claim_workbench_e2e.py
           python tests/browser/processing_actionability_e2e.py
+          python tests/browser/ocr_independent_review_readback_e2e.py
           python tests/browser/domain_classification_ui_e2e.py
           python tests/browser/localization_e2e.py
           python tests/browser/chronology_localization_e2e.py

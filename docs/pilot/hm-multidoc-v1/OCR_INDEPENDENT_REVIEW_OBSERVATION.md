@@ -28,6 +28,41 @@ Related: [#850](https://github.com/eh3aneba/maritime-claims-platform/issues/850)
 
 ## Hard safety boundaries
 
+### Read-only browser history
+
+In the claim's Evidence panel, open **Inspect machine OCR text**. Each current,
+source-matched discrepancy report offers **Independent review history**. This
+loads at most the most recent 25 recorded observations on demand. A history
+access failure is not an empty history; stale source reports do not request
+current-source review history. Mismatched hashes, duplicate/malformed rows or
+any response claiming approval/clearance reject the entire page.
+
+For an observation, **Managed workpaper record** reads its existing audit link
+and displays the document ID, version and exact hash only when the response
+matches that report/review/workpaper digest. This is historical metadata linkage,
+not a download, a current byte-integrity check or verification of workpaper
+content. An inaccessible or absent link is reported as unverifiable, not as
+proof no workpaper exists. No write/approval controls are supplied by this view;
+`not_reproduced` still cannot clear a hold. English/Persian labels share these
+limits. Existing reviewer recording/authorization endpoints remain unchanged.
+
+Validation commands:
+
+```bash
+cd apps/web
+node tests/ocr-review-readback.test.cjs
+npm run typecheck
+npm run build
+```
+
+With a loopback frontend running and the locked browser dependencies installed:
+`MCRI_WEB_URL=http://127.0.0.1:3000 python tests/browser/ocr_independent_review_readback_e2e.py`.
+The browser regression intercepts all API responses with synthetic fixtures and
+asserts zero API writes; it does not establish actual human review or OCR quality.
+Both contract and browser regressions run inside the existing CI jobs.
+
+### Unchanged authority and source limits
+
 - The reviewer-provided workpaper digest is a **claim of association**,
   not evidence that the review workpaper has been ingested, signed,
   independently authenticated, or retained in a managed evidence store.
