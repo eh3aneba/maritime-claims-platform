@@ -1,0 +1,54 @@
+{
+  "packet_kind": "public_invented_HM05_bilingual_review_aid",
+  "packet_source_head_before_update": "603b604ca513a1c7d293ee16df6a7b76d5098200",
+  "application_baseline": "fa2c471463f5aecb988f89e791aae359385227e4",
+  "native_execution_source": "71f9257ad11ac104f4e472efe5d295bf60904e83",
+  "case": "HM-05",
+  "document_version": 1,
+  "source_page": "1",
+  "segment_index": 0,
+  "original_raster_sha256": "1eef5de99985ee76048f93b04b7184c9a5daf4b6f33441b36c99e9a850e56d4c",
+  "persisted_raw_transcript_sha256": "5a2304f4b11d628d7694eb38e24d8d335bf8dbf31e0e0b5cb639bc2cd0bd3cd2",
+  "persisted_raw_characters": 142,
+  "reference_is_authored_synthetic_fixture_not_expert_gold": true,
+  "native_engine": "Tesseract 5.5.0",
+  "selected_docker_worker_reproduced": false,
+  "docker_blocker": "no cached worker; required Alpine and Poppler build destinations denied by proxy",
+  "human_review_state": "machine_unverified / ocr_human_source_comparison_required",
+  "independent_acceptance": "pending",
+  "real_customer_data": false,
+  "external_ai": false,
+  "assessment_approved": false,
+  "files": {
+    "README.md": {
+      "bytes": 9791,
+      "sha256": "7f3978e0363eb666e40bf3c8215f1aef848db0fa1e613ea3ba60b906e1e1e469"
+    },
+    "authoritative-source.txt": {
+      "bytes": 269,
+      "sha256": "72a4b97af3f6feba2a65cf6bf9b4c0aaeb838689e1004770a12b7352795cd30e"
+    },
+    "docker-replay.pending.json": {
+      "bytes": 909,
+      "sha256": "c92100374a0ae6e5cbefe8fa16f9a785649480dddc2332f62525e787a022db8d"
+    },
+    "exact-discrepancies.json": {
+      "bytes": 2275,
+      "sha256": "fed324177b838ffe864f349813c1d8a6d934344b6df388b30f0c7b7f33f6e78e"
+    },
+    "machine-transcript.txt": {
+      "bytes": 257,
+      "sha256": "5a2304f4b11d628d7694eb38e24d8d335bf8dbf31e0e0b5cb639bc2cd0bd3cd2"
+    },
+    "original.png": {
+      "bytes": 57374,
+      "sha256": "1eef5de99985ee76048f93b04b7184c9a5daf4b6f33441b36c99e9a850e56d4c"
+    },
+    "review-record.pending.json": {
+      "bytes": 600,
+      "sha256": "6c8a9d847c1aec205e8d4a26df65c640d9fde829057f5ee3e61b249381234672"
+    }
+  },
+  "source_fixture_id": "persian-scan",
+  "original_fixture_filename": "persian-scan.png"
+}

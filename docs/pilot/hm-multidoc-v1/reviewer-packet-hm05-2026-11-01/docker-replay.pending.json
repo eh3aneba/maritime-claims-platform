@@ -1,0 +1,23 @@
+{
+  "selected_source_commit": "fa2c471463f5aecb988f89e791aae359385227e4",
+  "dockerfile_sha256": "7f629fcd0e61e0a0b15ca5ed533954e8dd732b180b1b65130a8c27c09ba6472b",
+  "target": "worker",
+  "pinned_tesseract_commit": "8ae68101439b3f7df123499a784e8896c805179d",
+  "selected_image_cached": false,
+  "build_started": false,
+  "selected_runtime_reproduced": false,
+  "build_prerequisite_observations": {
+    "dl-cdn.alpinelinux.org": "proxy tunnel 403 Forbidden",
+    "poppler.freedesktop.org": "proxy tunnel 403 Forbidden",
+    "download.osgeo.org": "required by fixed LibTIFF fetch; not separately probed"
+  },
+  "pending_network_draft_additions": [
+    "dl-cdn.alpinelinux.org",
+    "download.osgeo.org",
+    "poppler.freedesktop.org"
+  ],
+  "prior_api_domain_preserved": "api.github.com",
+  "running_network_change_confirmed": false,
+  "verification_bypassed": false,
+  "native_substitution_accepted": false
+}

@@ -96,3 +96,41 @@ Independent bilingual review of original scans, negation scope and unseen source
 plus selected-host/OCR runtime acceptance, remains required. Keep #810 and related
 source/PDF gates open; no external AI, customer data, production policy change,
 coverage/causation decision or Pilot GO follows from this observation.
+
+## Follow-up: complete clause boundaries and bounded reviewer packet
+
+The [bilingual reviewer packet](reviewer-packet-hm05-2026-11-01/README.md) now
+contains the unchanged invented original PNG, the exact persisted UTF-8 machine
+transcript, authored fixture text, character-level discrepancies, source locators,
+checksums, explicit review questions and a blank **pending** review record.
+Unlike the earlier content-free measurement report, this specifically authorized
+packet intentionally includes the public synthetic source and machine text.
+No customer data or actual reviewer identity is included.
+
+The machine does retain `معلوم نیست`. The complete clause fails because its
+terminal ` است.` is absent (paragraph 3, UTF-16 [50,55)); the preceding paragraph
+also loses ` شد.` ([60,64)). Both short continuation endings are visible in the
+unchanged raster in the engineering inspection, not in the machine text. This
+is a more precise native observation than calling the entire failure a missing
+negative token. The logical source date and raster/machine order differ; the
+packet explicitly asks for bilingual interpretation rather than attributing the
+date difference to OCR alone.
+
+[Native diagnostic aggregates](validation/hm05-clause-native-diagnostics-2026-11-01.json)
+record 24 recognized word boxes in three line groups, exactly matching the
+persisted whitespace-delimited tokens; neither short ending was recognized.
+The four existing fixed-raster PSM probes failed exact full/core clause retrieval.
+No best mode, correction, semantic interpretation or production setting was
+selected. The setup-only optional TSV-config attempt is excluded; the completed
+word-box observation used the validated renderer flag. Seventeen existing
+literal, PSM and source-integrity regressions passed in this follow-up.
+
+Selected Docker worker reproduction is still **blocked**, not completed: no
+selected worker image is cached, and required package/source endpoints are denied
+by the enforced proxy policy. Required development destinations were added only
+to the pending environment configuration, preserving the earlier API domain.
+The packet records the selected Dockerfile hash/Tesseract source pin and a
+network-disabled replay command for a verified worker image after access is
+applied. Do not substitute native observations for the pinned worker or weaken
+artifact, package or TLS verification. Independent bilingual H&M acceptance,
+source-hold clearance and Assessment approval remain pending.
