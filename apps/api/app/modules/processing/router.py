@@ -234,5 +234,11 @@ from app.modules.processing.ocr_discrepancy import router as ocr_discrepancy_rou
 
 router.include_router(ocr_discrepancy_router)
 
+# Independent second-person source-review assertions remain append-only and
+# never close the original report or promote any AI-derived ClaimFact.
+from app.modules.processing.ocr_discrepancy_independent_review import router as ocr_independent_review_router  # noqa: E402
+
+router.include_router(ocr_independent_review_router)
+
 # Phase 17.5-Z mounts the explicit processing-release endpoints on this router.
 from app.modules.external_document_sources import processing_release_router as _processing_release_router  # noqa: E402,F401
