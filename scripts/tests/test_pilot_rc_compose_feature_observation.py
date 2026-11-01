@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -38,6 +39,26 @@ def safe_compose() -> dict:
 
 
 class PilotRCComposeFeatureObservationTests(unittest.TestCase):
+    def test_documented_direct_file_and_package_cli_load_without_pythonpath(self):
+        root = Path(__file__).resolve().parents[2]
+        entry = root / "scripts" / "pilot_rc_compose_feature_observation.py"
+        # Direct-file execution resolves sys.path[0] to scripts/, NOT the
+        # repository root. Both documented operator and module forms must work.
+        environment = os.environ.copy()
+        environment.pop("PYTHONPATH", None)
+        for command in (
+            [sys.executable, str(entry), "--help"],
+            [sys.executable, "-m", "scripts.pilot_rc_compose_feature_observation", "--help"],
+        ):
+            with self.subTest(command=command[1:]):
+                result = subprocess.run(
+                    command, cwd=root, env=environment,
+                    capture_output=True, text=True, timeout=15, check=False,
+                )
+                self.assertEqual(0, result.returncode, msg=result.stderr[:500])
+                self.assertIn("--release-sha", result.stdout)
+                self.assertNotIn("Traceback", result.stderr)
+
     def test_safe_synthetic_config_does_not_claim_running_acceptance(self):
         result = inspect_config(safe_compose(), release_sha=SHA)
         self.assertTrue(result["compose_ai_and_adapter_config_safe"])
