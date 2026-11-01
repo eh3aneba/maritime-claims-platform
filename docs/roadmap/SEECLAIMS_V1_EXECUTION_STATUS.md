@@ -1,5 +1,95 @@
 # SeeClaims — Execution Roadmap v1 | Status and gates
 
+## Engineering execution audit — 2026-11-01 (Asia/Tehran)
+
+This entry supplements the historical status below. It records code/CI evidence,
+not expert acceptance, selected-host readiness, or customer-pilot authorization.
+**Real-customer Pilot v1 remains NO-GO.**
+
+- Fetched `main`: `fa2c471463f5aecb988f89e791aae359385227e4` (merged #864).
+- Read current README, this roadmap, #865's proposed agent/setup instructions,
+  the open-PR inventory, and live issue/PR/check/Actions pages. REST/GraphQL API
+  calls remain `Forbidden`; ordinary GitHub HTML pages and Git refs are readable.
+  HTML observations are point-in-time evidence, not API authorization or log access.
+- [#865](https://github.com/eh3aneba/maritime-claims-platform/pull/865) is **OPEN**,
+  head `8eb5b74cd0e7108d0df309d1645680088f11ca15`. Its two documentation files
+  preserve synthetic-only inputs, tenant/evidence integrity, the eleven checks,
+  and human authority. Six observed workflows succeeded; no merge is authorized.
+- [#866](https://github.com/eh3aneba/maritime-claims-platform/pull/866) is **DRAFT**,
+  head `998858f31d8c6ff8b8a2fe4b1184d787975efdf3`; observed PR merge ref
+  `c7f0efac48d7842ca1dc2327a244b2cd30602e6c`. Its five non-backend workflows
+  succeeded. [Full Backend run 41318063683](https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41318063683)
+  was **SKIPPED** under the unchanged draft policy: this is not shared-manifest
+  execution proof. Keep Draft state; do not merge or change review state.
+- A normal non-production `workflow_dispatch` on #866's branch was attempted,
+  but the API returned `Forbidden` before dispatch. **No run was started.** An
+  operator with API access can run:
+  `gh workflow run backend-premerge.yml --repo eh3aneba/maritime-claims-platform --ref ci/acceleration-v2-shared-manifest`.
+- The open inventory contains #865/#866, the intentional **NEVER MERGE** proof
+  PR #707, and dependency proposals. No competing PostgreSQL exact-diff fix was
+  found. Do not opportunistically merge or upgrade those dependency proposals.
+
+### Next bounded correction: PostgreSQL required-gate integrity
+
+The real classifier shell reproduced a false-green route on current main:
+unavailable exact Git revisions caused `git diff` to fail, while process
+substitution hid the exit status. The classifier still exited zero and emitted
+`postgres_required=false`, permitting the mandatory PostgreSQL work to be skipped.
+
+Branch `fix/ci-postgres-diff-fail-closed` captures and checks the complete diff
+before classification, uses NUL-delimited paths and no rename inference, and
+requires all 17 groups for failed, partial, or empty observations. Known test
+group unions, audited synthetic exceptions, all eleven check names, production
+source coverage, and matrix assertions are retained. No application or insurance
+decision behavior is changed; #866's files/branch are untouched. Rollback is a
+revert of this workflow/test correction, with the original false-green risk
+explicitly acknowledged; no deployment or data migration is needed.
+
+Validation: the new unavailable-diff regression failed on the original workflow,
+then all **39** focused/scope regressions passed after correction. Actual workflow
+shell tests cover partial failures, empty observations, newline-bearing paths,
+production/shared changes, existing targeted groups, ordinary docs diffs, and
+aggregate failure/cancellation. Actionlint syntax/expression and whitespace checks
+passed. Hosted PostgreSQL execution on this correction is **not yet verified**.
+This higher-priority safety correction does not establish a #766 lock/stall fix.
+
+### Live blockers and critical path
+
+All named issues were observed **OPEN**: #553, #647, #653, #752, #810, #835, #850,
+#764 and #766. Their open state does not imply absence of implemented controls.
+Main already contains the synthetic multi-document upload-to-assessment/export
+journey, fail-closed unsupported-script PDF handling with Unicode XLSX fallback,
+OCR discrepancy warnings and stale-source protections, idempotent reports,
+independent review observations, and managed-workpaper hash linkage (#864).
+Those controls do not prove Persian negation recovery, visual RTL PDF fidelity,
+independent adjudication/workpaper content review, or authorized dispute clearance.
+
+The critical path remains: trustworthy exact-commit CI; one measured synthetic
+H&M handler journey; critical source-fidelity acceptance or explicitly authorized
+de-scope; private security-owner triage under #764; and selected-host non-root,
+ClamAV/OCR, matched DB+Evidence recovery, rollback and alert receipt under #653.
+Never resolve missing human evidence by fabricating acceptance or enabling AI.
+
+Metrics: #553's live comment records successful backend runs #41287270460,
+#41292577926 and #41303492882 at 44m35s, 43m58s and 44m13s: median **44m13s**.
+#864 records approximately **505.5 shard runner-minutes**, **482.7 shard-step
+minutes**, **12.1 dependency-install minutes**, a **27.9-minute shard start span**,
+and approximately **22.5-minute slowest shards**. The public baseline run page
+independently confirms 44m13s and 64 completed matrix jobs. #866 has no hosted
+backend improvement measurement. Local collection savings are not whole-CI gains.
+PR lead time, first-pass success rate, accepted H&M workflow count, traceability
+completeness, critical unsupported model assertions, and human review/rework time
+are **not yet measured by this audit**; do not infer percentages from workflow counts.
+
+**Next three priorities:** (1) publish/verify the exact-diff safety correction and
+obtain authorized #866 dispatch evidence without changing Draft state; (2) compare
+complete backend queue/producer/artifact/test costs with #553's hosted baseline;
+(3) execute the existing synthetic turbocharger journey and record source-linked
+outcomes, while keeping #810/#835/#850 human-fidelity gates and #653/#764 signoffs open.
+Human action needed now is API-capable hosted dispatch/PR publication. Merge,
+production/customer activation, original-scan adjudication, security classification,
+and host/operator acceptance still require their separate authorized humans.
+
 > **Live execution update — 2026-10-25, baseline `main@96772648814397e620accd1d5b50a8515b3ef243`.**
 > The product owner adopted the **2026-10-25 Persian strategic review and
 > corrective execution plan** as the prioritization policy alongside the

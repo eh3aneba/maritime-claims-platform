@@ -30,6 +30,9 @@ jobs:
       - name: Test PostgreSQL scope AST guard
         run: python -m unittest scripts.tests.test_ci_postgres_synthetic_test_scope -v
 
+      - name: Test PostgreSQL exact-diff failure handling
+        run: python -m unittest scripts.tests.test_ci_postgres_diff_fail_closed -v
+
       - name: Classify exact-head PostgreSQL concurrency scope
         id: scope
         shell: bash
@@ -57,6 +60,17 @@ jobs:
             exit 0
           fi
 
+          # Process substitution masks git's exit status. Capture the entire
+          # exact diff before classifying so failed/partial reads cannot skip DB tests.
+          changed_paths_file="$(mktemp)"
+          trap 'rm -f "$changed_paths_file"' EXIT
+          if ! git diff --name-only --no-renames -z "$BASE_SHA" "$HEAD_SHA" > "$changed_paths_file" || [ ! -s "$changed_paths_file" ]; then
+            echo "postgres_required=true" >> "$GITHUB_OUTPUT"
+            echo "groups=$all_groups" >> "$GITHUB_OUTPUT"
+            echo "::warning::Unavailable or empty exact diff; all PostgreSQL concurrency groups required."
+            exit 0
+          fi
+
           groups=""
           postgres_required=false
           fail_closed=false
@@ -69,7 +83,7 @@ jobs:
             esac
           }
 
-          while IFS= read -r path; do
+          while IFS= read -r -d '' path; do
             case "$path" in
               apps/api/tests/test_external_document_source_recurring_observation_schedule_concurrency_postgres.py|apps/api/tests/test_external_document_source_sftp_recurring_observation_schedule.py|apps/api/tests/test_external_document_source_due_tick_dispatch_concurrency_postgres.py)
                 postgres_required=true
@@ -139,7 +153,7 @@ jobs:
                 break
                 ;;
             esac
-          done < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+          done < "$changed_paths_file"
 
           if [ "$postgres_required" != "true" ]; then
             echo "postgres_required=false" >> "$GITHUB_OUTPUT"
