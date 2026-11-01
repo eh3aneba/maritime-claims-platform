@@ -31,36 +31,16 @@ would be misleading.
   matching report carries the existing source revalidation warnings in its
   own immutable snapshot.
 
-The Claim Pack web page now displays this claim-wide current-source advisory
-when the API count is positive. Before every download, the browser queries the
-fresh count again: when the count is positive, it asks the operator to
-explicitly acknowledge that the archived export may predate the report. If the
-fresh read fails, the download is not initiated by the page. This is an
-on-screen human-warning control, **not** a server-side source-certification
-check, an assertion that the particular export is wrong, or a substitute for
-independent original-image review. In particular, an earlier recipient who
-already holds a file cannot be recalled or notified by the browser.
-
-The warning is carried on the API response and in the current browser view,
-not watermarked into an old PDF/XLSX. Operators must separately notify
-downstream recipients when required by claim-handling policy.
-
-## Retry-safe, append-only source reports
-
-An identical retry from the **same authenticated reporter** for the same
-organization, claim, original document/version/file hash, extracted text hash,
-source segment and discrepancy kind now returns its original receipt with
-HTTP 200 instead of inserting a second audit entry. A fresh report still
-returns HTTP 201. Another genuinely distinct issue, source segment, source
-version, or reporter can create its own independent report. This is audit
-deduplication **within the exact identity scope**, not a substantive source
-resolution, a deletion of evidence or a claim decision.
+The warning is an API signal, not a watermark in an older already-downloaded
+file, and cannot retract external copies or force an offline recipient to
+notice later discrepancies. Operators must separately notify downstream
+recipients when required by case-handling policy.
 
 ## What remains unfinished
 
 Independent verification and explicit source-discrepancy resolution, including
 traceable operator authority and original-scan review, are still required
-under #850. The Persian critical-OCR quality and independent review acceptance remain unproven even where historical issue tracking status changes. No automatic
+under #850. OCR omission validation under #810 remains open. No automatic
 clearance on OCR reprocessing or retrospective reapproval is allowed.
 
 **Real-customer-data Pilot v1 remains NO-GO.**
