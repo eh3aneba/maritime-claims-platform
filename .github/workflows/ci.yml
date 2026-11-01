@@ -275,10 +275,7 @@ jobs:
           scratch="$(mktemp -d)"
           chmod 700 "$scratch"
           trap 'rm -rf "$scratch"' EXIT
-          python scripts/pilot_rc_compose_feature_observation.py \\
-            --env-file .env.pilot.example \\
-            --release-sha "$GITHUB_SHA" \\
-            --output "$scratch/feature-observation.json"
+          python scripts/pilot_rc_compose_feature_observation.py --env-file .env.pilot.example --release-sha "$GITHUB_SHA" --output "$scratch/feature-observation.json"
           # Real Compose output passed the guarded tool; also validate that
           # its report never claims verified runtime/OCR/customer permission.
           python - "$scratch/feature-observation.json" <<'PY'
