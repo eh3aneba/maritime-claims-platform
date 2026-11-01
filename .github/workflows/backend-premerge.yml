@@ -52,7 +52,7 @@ jobs:
           # Pilot release-candidate v3 is a standalone stdlib gate outside
           # apps/api; run its tests on every PR even when backend shards
           # are correctly skipped for script/ops-only changes.
-          python -m unittest scripts.tests.test_pilot_rc_gate scripts.tests.test_pilot_rc_compose_feature_observation -v
+          python -m unittest scripts.tests.test_pilot_rc_gate scripts.tests.test_pilot_rc_compose_feature_observation scripts.tests.test_pilot_rc_running_ai_env_readback -v
 
       - name: Classify exact-head Backend scope
         id: scope
