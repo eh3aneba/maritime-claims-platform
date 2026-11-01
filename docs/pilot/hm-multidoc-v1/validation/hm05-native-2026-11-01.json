@@ -1,0 +1,121 @@
+{
+  "blind_holdout_acceptance_claimed": false,
+  "browser_harness_observations": {
+    "case_code": "HM-05",
+    "corpus_version": "1.0.0",
+    "external_ai_used": false,
+    "full_transcript_accuracy_verified": false,
+    "human_bilingual_review_completed": false,
+    "human_work_time_measured": false,
+    "independent_expert_reference_approved": false,
+    "literal_probe_observations": {
+      "both_literal_probes_retrieved": true,
+      "critical_fact_authorization_granted": false,
+      "critical_negation_omission_observed": false,
+      "full_transcription_verified": false,
+      "human_bilingual_review_required": true,
+      "machinery_term_retrieved": true,
+      "negation_retrieved": true,
+      "negation_scope_verified": false,
+      "pilot_accepted": false,
+      "quality_disposition": "scoped_negation_phrase_unretrieved_review_required",
+      "scoped_negation_phrase_measured": true,
+      "scoped_negation_phrase_retrieved": false
+    },
+    "machine_stage_elapsed_ms_observed": {
+      "four_uploads_ms": 404,
+      "initial_assessment_review_aid_ms": 1941,
+      "login_claim_triage_ms": 4927,
+      "persian_search_locator_ms": 70,
+      "raster_generation_ms": 171,
+      "real_worker_and_ocr_ms": 2067
+    },
+    "machine_total_elapsed_ms_observed": 10257,
+    "malware_clean_and_worker_processed_documents": 4,
+    "ocr_char_count_observed": 142,
+    "ocr_segment_count_observed": 1,
+    "ocr_source_locator_is_page_one_for_observed_matches": true,
+    "operator_ocr_human_source_comparison_warning_visible": true,
+    "operator_unverified_ocr_read_only_preview_exercised": true,
+    "persisted_machine_ocr_token_presence": {
+      "توربوشارژر": true,
+      "نیست": true
+    },
+    "persisted_machine_ocr_whole_clause_present": false,
+    "persisted_machine_transcript_hash_matched": true,
+    "pilot_accepted": false,
+    "real_customer_data_used": false,
+    "real_image_only_raster_used": true,
+    "real_tesseract_eng_fas_executed": true,
+    "scope": "isolated_synthetic_hm05_ci_only",
+    "source_extraction_preview_complete": true,
+    "uncertainty_semantics_verified": false,
+    "whole_clause_missing_stage": "ocr_extraction_or_persistence"
+  },
+  "customer_evidence_used": false,
+  "execution_kind": "local_native_synthetic_browser_and_read_only_fidelity_check",
+  "harness_scope_label_note": "The unchanged harness labels its synthetic context ci_only; this was local native, not a GitHub Actions run.",
+  "human_approval_claimed": false,
+  "observed_date": "2026-11-01",
+  "persisted_fidelity": {
+    "authoritative_original_png_sha256": "1eef5de99985ee76048f93b04b7184c9a5daf4b6f33441b36c99e9a850e56d4c",
+    "direct_ocr_matches_persisted_text": true,
+    "direct_tesseract_text_sha256": "5a2304f4b11d628d7694eb38e24d8d335bf8dbf31e0e0b5cb639bc2cd0bd3cd2",
+    "document_version": 1,
+    "full_scoped_clause_in_direct_ocr": false,
+    "human_hold_cleared": false,
+    "independent_expert_approval": false,
+    "negation_token_in_direct_ocr": true,
+    "ocr_language_data": {
+      "files": [
+        {
+          "bytes": 23466654,
+          "git_blob_sha1": "f4744c201359d02ced6914c77f0de68ee9bbdd74",
+          "name": "eng.traineddata",
+          "sha256": "daa0c97d651c19fba3b25e81317cd697e9908c8208090c94c3905381c23fc047"
+        },
+        {
+          "bytes": 561272,
+          "git_blob_sha1": "a0b9843164d928caad5afb0bd6973c964ba5b0b9",
+          "name": "fas.traineddata",
+          "sha256": "0b3b15e9ccbe435825187fa7a2bb227f555dd37cf85126c6cf459ca4a69b929f"
+        }
+      ],
+      "source_commit": "ced78752cc61322fb554c280d13360b35b8684e4"
+    },
+    "page_locator": "1",
+    "persisted_text_sha256": "5a2304f4b11d628d7694eb38e24d8d335bf8dbf31e0e0b5cb639bc2cd0bd3cd2",
+    "raster_bytes_match_upload_and_storage": true,
+    "review_disposition": "machine_unverified",
+    "scoped_clause_without_terminal_punctuation_in_direct_ocr": false,
+    "semantic_accuracy_accepted": false,
+    "source_text_quality_state": "ocr_human_source_comparison_required",
+    "tesseract_version": "tesseract 5.5.0"
+  },
+  "pilot_authorized": false,
+  "production_settings_changed": false,
+  "regressions": {
+    "existing_original_source_review_guard_tests_passed": 10,
+    "source_guard_seconds": 23.62,
+    "stdlib_scanner_and_ocr_policy_checks_passed": 23
+  },
+  "source_identity": {
+    "application_baseline_sha": "fa2c471463f5aecb988f89e791aae359385227e4",
+    "authoritative_corpus_sha256": "36bdc1039b730bf5e95fd21508297e8885d0adf0ed54e3b5cea7ac25284a2f92",
+    "case_source_packet_sha256": "08b39a8c37f68e10d224694777c0ddd7a56ff8f5a222db91cfcaa8203fb046c1",
+    "checkout_sha": "71f9257ad11ac104f4e472efe5d295bf60904e83",
+    "harness_passed": true,
+    "human_reference_approved": false,
+    "original_harness_assertions_changed": false,
+    "rendered_original_png_bytes": 57374,
+    "rendered_original_png_sha256": "1eef5de99985ee76048f93b04b7184c9a5daf4b6f33441b36c99e9a850e56d4c"
+  },
+  "timezone": "Asia/Tehran",
+  "toolchain": {
+    "chromium": "Chromium 154.0.8037.57 built on Debian GNU/Linux 13 (trixie)",
+    "matched_font_sha256": "504d7407d86875acf7d04dfaa0fd7524d0b8797723bc4aa18022f29db25b0b6e",
+    "native_runtime_is_not_pinned_docker_worker_acceptance": true,
+    "system_font_match": "Noto Sans Arabic Regular",
+    "tesseract_executable_sha256": "74b76a5b994adcc18be362bf64ed5118082b2401d5d9a35242e92fc4c62e2b4b"
+  }
+}
