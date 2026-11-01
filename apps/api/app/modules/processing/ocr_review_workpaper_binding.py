@@ -19,7 +19,7 @@ from app.modules.audit.models import AuditLog
 from app.modules.audit.service import write_audit_log
 from app.modules.auth.dependencies import CurrentUser, require_roles
 from app.modules.claims.models import Claim
-from app.modules.documents.models import Document, DocumentMalwareScanStatus
+from app.modules.documents.models import Document, DocumentMalwareScanStatus, DocumentProcessingStatus
 from app.modules.documents.security import get_document_for_tenant
 from app.modules.processing.ocr_discrepancy import _source_guard
 from app.modules.processing.ocr_discrepancy_independent_review import _original_report
@@ -72,6 +72,8 @@ def _review_for_current_source(
     db: Session, *, organization_id: UUID, claim_id: UUID, document: Document,
     extraction_text_hash: str, report_id: UUID, review_id: UUID,
 ) -> AuditLog:
+    if not document.is_current or document.deleted_at is not None:
+        raise HTTPException(status_code=409, detail="Original OCR document is no longer current")
     _original_report(
         db, organization_id=organization_id, claim_id=claim_id,
         document_id=document.id, report_id=report_id,
@@ -155,6 +157,7 @@ def link_review_workpaper(
     if (
         not document.is_current or document.deleted_at is not None
         or document.malware_scan_status != DocumentMalwareScanStatus.CLEAN
+        or document.processing_status != DocumentProcessingStatus.PROCESSED
         or external_evidence_requires_processing_release(db, document=document)
         or extraction.text_hash is None
         or "tesseract:" not in extraction.extraction_method.lower()
