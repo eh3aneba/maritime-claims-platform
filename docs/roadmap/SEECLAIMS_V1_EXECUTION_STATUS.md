@@ -195,3 +195,85 @@ must use R3's actual candidate.
    forecast change and **next three tasks**, with links to exact evidence.
 6. Suggested R2 pilot targets **RPO <=24 hours and RTO <=8 hours** are
    planning proposals, **not SLAs** or measured results.
+
+## Native synthetic H&M journey and standalone bootstrap — 2026-11-01
+
+This is a bounded engineering rehearsal, not expert acceptance, selected-host
+release acceptance, or permission for customer Evidence. GitHub main remained
+`fa2c471463f5aecb988f89e791aae359385227e4`; #866 remained Draft at
+`998858f31d8c6ff8b8a2fe4b1184d787975efdf3`, with its backend run skipped.
+The API publication/dispatch restriction was unchanged. No workflow was bypassed
+or marked green, and no PR was merged or changed to ready-for-review.
+
+**Actual native browser result:** the existing HM-01 multi-document browser
+harness passed against isolated PostgreSQL 18.4, native API and document worker,
+real ClamAV 1.5.4, the built Next.js frontend and system Chromium. Four invented
+DOCX files were uploaded (the first through UI), scanned clean, processed, and
+retained as current version 1. The NEW-stage readiness/approval guards held;
+TRIAGE activated missing-policy requirements and made the earlier assessment
+stale. A new source-bound Preliminary Assessment included all four document
+sources without automatic approval. The Unicode XLSX review aid downloaded with
+matching immutable snapshot/file-hash headers. Total machine time was **13.799s**;
+this is not claims-handler time or a speed/ROI comparison.
+
+The content-free observed record is
+[HM-01 native rehearsal](../pilot/hm-multidoc-v1/validation/hm01-native-2026-11-01.json).
+It records checkout `cd459b4b0ed97f034669c3e29583ebba60a1479f`, whose application
+source tree equals the main application baseline above. The harness assertions
+were unchanged; a local launcher supplied system Chromium via Playwright's
+supported `executable_path` setting. This was **local native**, not hosted CI or
+Docker application-image acceptance. ClamAV clean-file/PING and harmless EICAR
+detection controls passed. Freshclam update access was unavailable, so signature
+freshness is unverified and no current-malware-coverage acceptance is claimed.
+OCR was disabled for these DOCX fixtures; #810's raster Persian negation defect
+was not exercised or repaired. External AI and external Evidence adapters stayed
+OFF; no customer data or local model was used. Human review/quality, unsupported
+model-assertion counts, rework and independent H&M reference acceptance were not
+measured. The Assessment remains explicitly preliminary.
+
+**Blocker found and corrected:** the README's standalone
+`python -m app.modules.auth.seed` command failed because it imported only a
+partial SQLAlchemy model graph; relationship `Vessel` could not resolve before
+the first organization query. Application startup had masked this path by
+registering the full graph first. Branch `fix/auth-bootstrap-model-registry`
+loads the existing metadata registry after configuration validation and configures
+it before database work. It adds no role, endpoint, dependency, migration,
+insurance-decision behavior or permission. Existing users are not reactivated,
+promoted or given replacement passwords. A fresh-process regression failed before
+the six-line correction, then passed with real in-memory SQLite persistence,
+idempotency, cross-organization email reuse, and early invalid-configuration guards.
+The repaired documented command also created one administrator in the isolated
+PostgreSQL test database; replay with a different supplied password preserved the
+existing identity/hash. Only generated disposable local credentials were used.
+
+Additional local regression evidence includes the existing full MT ORION
+nine-document workflow with deterministic fixture-provider responses (not model
+quality), simulated role-based review, chronology conflicts, missing documents,
+technical/financial review, correspondence and Assessment assertions. Unsupported
+Persian PDF export still fails closed without an export record, and Unicode XLSX
+remains available; real RTL visual layout and independent bilingual acceptance
+under #835 are unproven. The CI safety correction remains separately published at
+`cd459b4b0ed97f034669c3e29583ebba60a1479f`; this application fix does not modify
+its workflow or #866's files. These roadmap entries are in separate regions to
+avoid a conflicting implementation package.
+
+**Verification/publication boundary:** the final combined local suite passed
+**16 tests in 41.96s**, including bootstrap/auth/tenant, MT ORION and PDF
+source-fidelity controls (two existing deprecation warnings). An earlier combined
+invocation stalled and was terminated; it is not counted as passing. The completed
+rerun used the supported execution context and bounded stack diagnostics; the
+earlier stall's root cause is not established. The application
+change must retain the existing full backend, PostgreSQL and other applicable
+hosted validation; it is not eligible for an audited test-only shortcut. Hosted
+results for this branch have not been obtained. Rollback is reverting the
+bootstrap import/configuration and its regression/documentation slice; no data
+migration or production operation is involved.
+
+**Next three priorities:** (1) obtain API-capable Draft publication and exact-commit
+hosted validation for the CI safety fix and bootstrap correction while preserving
+#866's Draft state; (2) dispatch and measure #866 against #553's 44m13s/505.5-minute
+hosted baseline, including queues/producer/artifacts; (3) extend measured synthetic
+H&M review with independent source-fidelity/human feedback and keep #810/#835/#850,
+#653 host/recovery/alerts and #764 private security signoff explicitly unresolved.
+Only one automated HM-01 rehearsal was measured here; no arbitrary project
+completion percentage, commercial acceptance, or production readiness follows.
