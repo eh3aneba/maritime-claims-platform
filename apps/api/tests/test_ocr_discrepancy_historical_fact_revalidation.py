@@ -230,3 +230,86 @@ def test_later_ocr_discrepancy_is_disclosed_in_new_pdf_xlsx_claim_pack() -> None
         assert summary["Previously approved AI facts requiring source revalidation"] == 1
     finally:
         workbook.close()
+
+
+def test_historical_claim_pack_list_and_download_disclose_later_source_report_without_mutating_file() -> None:
+    """Late operator allegation must be visible on access, not written into archived bytes."""
+    ids, receipt = _setup_ocr_reviewed_fact()
+    original_fact = _get_facts(ids)
+    base_url = f"/api/v1/claims/{ids['claim_id']}/claim-pack-exports"
+    generated = client.post(base_url, json={
+        "export_format": "xlsx",
+        "acknowledge_review_aid": True,
+        "generation_note": "Synthetic immutable handoff, before original-source report.",
+    })
+    assert generated.status_code == 201, generated.text
+    export_id = generated.json()["id"]
+    download_url = f"{base_url}/{export_id}/download"
+
+    baseline_list = client.get(base_url)
+    assert baseline_list.status_code == 200, baseline_list.text
+    assert baseline_list.json()["total"] == 1
+    assert baseline_list.json()["current_unverified_ocr_source_report_count"] == 0
+    original_download = client.get(download_url)
+    assert original_download.status_code == 200, original_download.text
+    header = "X-Claim-Current-Unverified-OCR-Source-Report-Count"
+    assert original_download.headers[header] == "0"
+    saved_snapshot_hash = original_download.headers["X-Claim-Pack-Snapshot-SHA256"]
+    saved_file_hash = original_download.headers["X-Claim-Pack-File-SHA256"]
+    saved_bytes = original_download.content
+
+    report = client.post(
+        f"/api/v1/claims/{ids['claim_id']}/documents/{ids['document_id']}"
+        "/processing/source-discrepancies",
+        json=receipt,
+    )
+    assert report.status_code == 201, report.text
+    assert report.json()["review_state"] == "reported_unverified"
+
+    updated_list = client.get(base_url)
+    assert updated_list.status_code == 200, updated_list.text
+    assert updated_list.json()["total"] == 1
+    assert updated_list.json()["items"] == baseline_list.json()["items"]
+    assert updated_list.json()["current_unverified_ocr_source_report_count"] == 1
+    original_again = client.get(download_url)
+    assert original_again.status_code == 200, original_again.text
+    assert original_again.headers[header] == "1"
+    assert original_again.headers["X-Claim-Pack-Snapshot-SHA256"] == saved_snapshot_hash
+    assert original_again.headers["X-Claim-Pack-File-SHA256"] == saved_file_hash
+    assert original_again.content == saved_bytes
+    assert _get_facts(ids)["id"] == original_fact["id"]
+    assert _get_facts(ids)["approved_at"] == original_fact["approved_at"]
+
+
+def test_historical_claim_pack_notice_ignores_wrong_hash_and_foreign_tenant_receipts() -> None:
+    """Only source-matched current documents in this claim influence advisory count."""
+    ids, _ = _setup_ocr_reviewed_fact()
+    with TestingSessionLocal() as db:
+        document = db.get(Document, UUID(ids["document_id"]))
+        from app.modules.organizations.models import Organization
+        beta = db.scalar(select(Organization).where(Organization.slug == "beta"))
+        assert beta is not None
+        report = {
+            "claim_id": ids["claim_id"],
+            "document_version": document.version_number,
+            "source_file_hash": document.file_hash,
+            "review_state": "reported_unverified",
+        }
+        db.add(AuditLog(
+            organization_id=document.organization_id,
+            action="REPORT_OCR_SOURCE_DISCREPANCY",
+            entity_type="document",
+            entity_id=document.id,
+            new_values={**report, "source_file_hash": "f" * 64},
+        ))
+        db.add(AuditLog(
+            organization_id=beta.id,
+            action="REPORT_OCR_SOURCE_DISCREPANCY",
+            entity_type="document",
+            entity_id=document.id,
+            new_values=report,
+        ))
+        db.commit()
+    listed = client.get(f"/api/v1/claims/{ids['claim_id']}/claim-pack-exports")
+    assert listed.status_code == 200, listed.text
+    assert listed.json()["current_unverified_ocr_source_report_count"] == 0
