@@ -20,7 +20,9 @@ from app.modules.audit.models import AuditLog
 from app.modules.audit.service import write_audit_log
 from app.modules.auth.dependencies import CurrentUser, require_roles
 from app.modules.claims.models import Claim
+from app.modules.documents.models import DocumentMalwareScanStatus, DocumentProcessingStatus
 from app.modules.processing.ocr_discrepancy import _source_guard
+from app.modules.processing.service import external_evidence_requires_processing_release
 from app.modules.users.models import User, UserRole
 
 router = APIRouter()
@@ -142,6 +144,11 @@ def record_independent_observation(
     if (
         document.deleted_at is not None
         or not document.is_current
+        or document.malware_scan_status != DocumentMalwareScanStatus.CLEAN
+        or document.processing_status != DocumentProcessingStatus.PROCESSED
+        or external_evidence_requires_processing_release(db, document=document)
+        or "tesseract:" not in extraction.extraction_method.lower()
+        or extraction.text_hash is None
         or document.file_hash != payload.source_file_hash
         or extraction.text_hash != payload.extraction_text_hash
     ):
