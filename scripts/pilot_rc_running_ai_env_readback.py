@@ -123,6 +123,11 @@ def _check_service(service: str, entries: object) -> set[str]:
     for key in OPTIONAL_DISABLED_FLAGS:
         if key in env and env[key].strip().lower() not in ALLOWED_DISABLED:
             failures.add("runtime_external_or_ai_adapter_enabled")
+    if service not in AI_SERVICES and (
+        "ALLOW_EXTERNAL_AI_RESTRICTED" in env
+        and env["ALLOW_EXTERNAL_AI_RESTRICTED"] != "false"
+    ):
+        failures.add("runtime_other_external_ai_restriction_enabled")
     if service == "worker":
         if env.get("OCR_ENABLED") not in ("true", "false"):
             failures.add("runtime_worker_ocr_mode_unclassified")
