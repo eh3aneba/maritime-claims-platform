@@ -23,7 +23,7 @@ The operator should first follow the [fresh-host synthetic deployment rehearsal]
 python scripts/pilot_rc_gate.py init --output /secure/pilot-releases/rc-001.json --release-sha "$(git rev-parse HEAD)"
 ```
 
-The file is created exclusively, without overwriting a previous release record. Every proof begins as `pending`, and all image digests, reviewer identities, timestamps and evidence references remain empty until **observed**. The record now uses schema `mcri-pilot-rc-v2`, with `features.sftp_ingestion=pending` until an authorized operator explicitly selects `enabled` or `disabled`; v1 records cannot be silently reused. Keep the actual record in an access-controlled location, not automatically in the repository.
+The file is created exclusively, without overwriting a previous release record. Every proof begins as `pending`, and all image digests, reviewer identities, timestamps and evidence references remain empty until **observed**. The record uses schema `mcri-pilot-rc-v3`. `features.sftp_ingestion`, `features.ai_inference` and `features.persian_critical_extraction` all begin `pending` until an authorized operator explicitly selects `enabled` or `disabled`. Old v1/v2 records must not be silently reused. See the [v3 feature-admission guide](../pilot/PILOT_RC_V3_FEATURE_ADMISSION.md). Keep the actual record in an access-controlled location, not automatically in the repository.
 
 ## Evidence required before record completion
 
@@ -31,12 +31,15 @@ The file is created exclusively, without overwriting a previous release record. 
 |---|---|
 | Repository protection | Active main ruleset readback **and** disposable failing-required-check proof (#461), not merely merged documentation |
 | Controlled real SFTP (conditional) | **If SFTP enabled:** real OpenSSH + PostgreSQL acceptance, changed-file observation and replay (#652/#656) must have `result=pass`. **If SFTP disabled:** use `result=not_applicable` for `real_sftp_governed_lifecycle` with a reviewed **disablement/configuration evidence reference**, owner and UTC observation; never claim live SFTP acceptance. An unset mode remains NO-GO. |
+| Local AI (conditional) | `features.ai_inference=enabled` requires `local_ai_independent_acceptance=pass` with actually attested model, network and independent H&M review. `disabled` requires `not_applicable` plus independently observed no-inference evidence. Synthetic-only Ollama smoke is not acceptable as a production signoff (#752). |
+| Critical Persian OCR extraction (conditional) | `features.persian_critical_extraction=enabled` requires independent original-scan/bilingual accuracy, negation scope and unseen H&M holdout verification (`persian_critical_ocr_acceptance=pass`). `disabled` requires `not_applicable` **plus a real enforcement/de-scope record**, not merely `OCR_ENABLED=true` in a worker (#810). |
+| Feature enforcement and discrepancy path (always required) | `actual_feature_flag_enforcement=pass` must refer to observed deployed settings and runtime checks; `source_discrepancy_review_and_resolution_policy=pass` requires documented human/source resolution policy (#850). These cannot be waived merely because AI/OCR/SFTP are disabled. |
 | Fresh host | Clean deployment, migrations/preflight, browser/operator H&M machinery-claim journey |
 | Recovery | Validated database backup, **matching evidence/storage recovery point**, full restore drill, rollback drill |
 | Operations | Named owner and escalation for worker/queue/scanner/storage/backup-age monitoring; independently exercised [tenant onboarding/offboarding](PILOT_TENANT_LIFECYCLE.md) including MFA/role isolation, legal holds, external integrations and revocation |
 | Exact-head build gates | Full Backend, CI, PostgreSQL concurrency, Supply Chain, Operational Performance and Production Deployment Policy on exact candidate SHA |
 
-Every required proof must include `result: pass`, an immutable/accessible `evidence_ref`, a responsible `owner`, and UTC `observed_at_utc` in `YYYY-MM-DDTHH:MM:SSZ`. **The only exception** is the `real_sftp_governed_lifecycle` proof when `features.sftp_ingestion=disabled`: it must instead be `result: not_applicable` with an independently reviewed **SFTP-disablement** reference and the same owner/timestamp fields. These are human attestations; the command does not attest to their truth.
+Every required proof must include an independently grounded `evidence_ref`, `owner` and canonical UTC `observed_at_utc`. Unconditional proofs must have `result: pass`. **The three conditional proofs** (`real_sftp_governed_lifecycle`, `local_ai_independent_acceptance`, `persian_critical_ocr_acceptance`) require `pass` only when the corresponding feature is explicitly enabled; if disabled, they require `not_applicable` **with an observed disablement/de-scope reference, owner and timestamp**. A structural PASS never verifies those assertions. See the [v3 operator guide](../pilot/PILOT_RC_V3_FEATURE_ADMISSION.md).
 
 ## Choose the pilot ingestion contract (SFTP disabled or enabled)
 
@@ -54,6 +57,37 @@ For an **enabled** pilot, the live SFTP acceptance proof must be
 selection, or a mismatched evidence result, is NO-GO. The rest of the
 fresh-host, backup, restore, monitoring, tenant, and governance gates are
 **always required**.
+
+## Read-only effective Compose AI/connector scope observation
+
+On the **authorized private synthetic rehearsal host**, the rendered Compose configuration
+may contain credentials. The operator may run a *sanitized* observation without
+starting/stopping containers or writing raw Compose output:
+
+```bash
+python scripts/pilot_rc_compose_feature_observation.py \\
+  --env-file /secure/private/pilot.env \\
+  --release-sha "<independently-verified-full-release-SHA>" \\
+  --output /secure/pilot-releases/rc-001-compose-flags.json
+```
+
+This independently recomputes the Compose *configuration* for the local
+repository checkout and fails on explicitly enabled AI providers/models,
+nonempty OpenAI keys, restricted external AI flags, external adapter flags,
+unexpected services or absent worker OCR mode. The private JSON record
+contains **no env values, credentials, raw paths, model text or customer
+identifiers**. Files are created exclusively with mode 0600 where supported.
+
+**Limits:** a rendered Compose file is not the running container environment,
+effective database-enabled connector state, network egress proof, or confirmation
+that a person has checked Persian negative-control scope. A Compose worker with
+`OCR_ENABLED=true` and `OCR_LANGUAGES=eng+fas` can transcribe text, but this
+**does not** imply permission to use critical Persian extraction. There is
+currently no independently proven production feature flag that enforces this
+specific semantic restriction; the operator needs a documented, observed
+manual-review/de-scope mechanism and a separate runtime verification. A
+successful config observation alone **must not** populate
+`actual_feature_flag_enforcement=pass` or authorize Pilot GO.
 
 ## Fail-closed completeness check
 
