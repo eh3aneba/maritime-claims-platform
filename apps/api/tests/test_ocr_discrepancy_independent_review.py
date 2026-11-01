@@ -180,3 +180,48 @@ def test_independent_observation_refuses_self_review_mismatches_and_foreign_tena
         assert db.scalar(select(func.count()).select_from(AuditLog).where(
             AuditLog.action == "REVIEW_OCR_SOURCE_DISCREPANCY_INDEPENDENT",
         )) == 0
+
+
+
+def test_independent_review_never_reapproves_older_human_approved_ai_claim_fact() -> None:
+    """Approval chronology and disputed source state survive a later second opinion."""
+    from tests.test_ocr_discrepancy_historical_fact_revalidation import (
+        _get_facts, _setup_ocr_reviewed_fact,
+    )
+
+    ids, source = _setup_ocr_reviewed_fact()
+    before = _get_facts(ids)
+    assert before["approved_at"] is not None
+    url = (
+        f"/api/v1/claims/{ids['claim_id']}/documents/{ids['document_id']}"
+        "/processing/source-discrepancies"
+    )
+    reported = client.post(url, json=source)
+    assert reported.status_code == 201, reported.text
+    review_url = _review_path(url, reported.json()["id"])
+    first_stale = _get_facts(ids)
+    assert first_stale["source_revalidation_required"] is True
+
+    # A second authorized human documents a contrary observation.
+    _add_manager("alpha", "independent2@example.com")
+    client.cookies.clear()
+    login("alpha", "independent2@example.com")
+    contrary = client.post(review_url, json={
+        **_payload(source),
+        "outcome": "not_reproduced",
+        "review_workpaper_sha256": "d" * 64,
+    })
+    assert contrary.status_code == 201, contrary.text
+    assert contrary.json()["source_hold_cleared"] is False
+
+    after = _get_facts(ids)
+    assert after["source_revalidation_required"] is True
+    assert after["source_revalidation_reason"] == "source_ocr_discrepancy_reported_unverified"
+    for immutable in (
+        "id", "value", "version", "approved_by_id",
+        "approved_at", "source_extraction_id",
+    ):
+        assert after[immutable] == before[immutable]
+    packs = client.get(f"/api/v1/claims/{ids['claim_id']}/claim-pack-exports")
+    assert packs.status_code == 200
+    assert packs.json()["current_unverified_ocr_source_report_count"] == 1
