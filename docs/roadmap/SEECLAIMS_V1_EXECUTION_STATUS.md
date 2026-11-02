@@ -1,6 +1,96 @@
 # SeeClaims — Execution Roadmap v1 | Status and gates
 
-## Active engineering handoff — published-network execution
+## Active engineering handoff — 2026-11-02 (Asia/Tehran)
+
+**Customer Pilot remains NO-GO.** Resume from this record and live GitHub.
+Review/evidence branch: `docs/hm05-native-source-rehearsal`, existing Draft
+[#870](https://github.com/eh3aneba/maritime-claims-platform/pull/870); preceding
+head `4df0f8a7948f0e58988ef7b48705c33f997d5a28`. The containing Git commit
+anchors this updated handoff. No duplicate PR was created.
+
+Frozen CI candidate [#866](https://github.com/eh3aneba/maritime-claims-platform/pull/866)
+remains **Draft**, unchanged at `998858f31d8c6ff8b8a2fe4b1184d787975efdf3`.
+Matched baseline main: `fa2c471463f5aecb988f89e791aae359385227e4`.
+Both `apps/api` trees are `f239abea5a30d08e3b5d7a3c4508ff91fa55057a`;
+application code, tests, lockfiles and the narrow classifier match. #867's
+additional bootstrap tests were not silently dropped to make that older run
+look comparable; a fresh matched baseline was used instead.
+
+### Completed and actually executed
+
+- One sequential, first-attempt feasibility pair, not the five-pair acceptance
+  study. Baseline [41386381744](https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41386381744)
+  passed **64/64 shards and Backend gate**. Candidate
+  [41389632800](https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41389632800)
+  passed its **collection producer, 64/64 shards and Backend gate** on the
+  exact frozen head. No failures, cancellations, retries, source edits or
+  Draft-state changes. All 11 required check names were re-read and preserved.
+- Observed wall time: **34.42 → 36.65 minutes (+6.49%)**.
+  Observed backend runner cost, including candidate producer:
+  **511.80 → 470.72 minutes (-8.03%)**.
+  These are one-pair elapsed-job observations, not a billing statement or
+  established causal/median/p95 improvements. Shard 62 started 3.87 minutes
+  after baseline dispatch versus 17.25 after candidate dispatch and became
+  the candidate tail. Scheduling, hardware and cache variation remain relevant.
+- An offline, read-only timing analyzer and **11 passing fixed-clock synthetic
+  regression tests** reject incomplete/failed/skipped/duplicate or wrong-head
+  runs, missing producer/gates/steps, malformed timestamps, unmatched source and
+  overlapping pairs. Actual incomplete hosted input was rejected; completed
+  real receipts reproduce the mixed result. The analyzer cannot grant acceptance.
+- Exact-source local collection: **1,591 unique IDs**, nonempty 64-way assignment
+  (13–39 IDs per shard). Local digests are reference expectations, not a hosted
+  manifest or a claim of 1,591 hosted passes. API artifact metadata is preserved;
+  the manifest body and exact hosted node outcomes were not independently read.
+- No competing repository execution was observed in polling or the end-of-pair
+  recent-activity audit. Four September queued runs still had zero jobs; none
+  was cancelled. Global runner contention, image/patch versions and cache parity
+  were not independently established. No benchmark-related commit was pushed
+  during either run.
+
+The [complete feasibility report](../operations/CI_ACCELERATION_V2_FEASIBILITY_2026_11_02.md)
+links source preflight, both job/step receipts, computed metrics, artifact
+metadata, interference audit, local reference and exact reproduction commands.
+
+### Current risks and open PRs
+
+**Keep #866 Draft; do not adopt this sample.** The observed wall increase is
+above the proposal's 5% median-wall guard number, but one pair does not establish
+that median. Five pairs, exact node/assignment/outcome equivalence, cold/warm
+classification, 90% collection/selection-component reduction and hosted negative
+artifact/producer/rerun evidence remain unverified. Do not lower those criteria.
+
+Detailed Actions storage access is still blocked at the known redirect; no
+blocked download was retried, policy bypass attempted or signed URL published.
+The candidate archive metadata records expiry **2026-11-03 08:09 Asia/Tehran**;
+missing/expired artifacts must fail closed. Local node hashes and combined
+selection/pytest step timing do not substitute for missing hosted evidence.
+
+#871 remains the separate read-only OCR reviewer implementation Draft at
+`99a12529e35ec506ac49463336f16a08c1592a04`, previously hosted scoped validation
+passed. #867 remains Draft at `78f6b3de1ba2965de929850c383c8ed7665dcae8`, with
+its earlier full Backend pass preserved below. #869 remains Draft at
+`aa82034137b5d765451f607f049f603eeb7dd579`, with no signature-age threshold.
+No application/workflow/dependency/production configuration changed in this
+execution. HM-05 original packet hashes, source provenance, review holds and
+independent-review pending fields remain unchanged. No customer data, external
+AI, insurance decision, merge, deployment or branch-protection change occurred.
+
+### Next three priorities / human dependencies
+
+1. Environment owner permits the necessary read-only Actions log/artifact
+   destinations through the supported policy workflow; engineering verifies
+   exact hosted nodes/outcomes and collection/selection timing. Never bypass
+   denied storage access or relabel database-only skips as executed passes.
+2. Investigate latency/scheduling and complete the documented repeated paired
+   study plus hosted failure/rerun/expiry proof before adoption. Preserve the
+   frozen #866, all 64 shards, classifier and all required contexts. No merge or
+   review-state change is authorized.
+3. Authorized bilingual H&M reviewer performs source-bound adjudication; security
+   owner explicitly approves signature-freshness policy before admission changes.
+   Original-source holds and Customer Pilot NO-GO continue. Do not self-attest
+   expert, operational or customer acceptance.
+
+## Prior execution — published-network validation
 
 **Customer Pilot remains NO-GO.** Resume from this record plus live GitHub.
 Current implementation branch: `feat/ocr-independent-review-readback`, exact

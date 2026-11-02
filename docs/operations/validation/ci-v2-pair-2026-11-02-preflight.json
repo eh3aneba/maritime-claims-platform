@@ -1,0 +1,40 @@
+{
+  "study": "one sequential feasibility pair; not five-pair acceptance",
+  "created_at_utc": "2026-11-02T04:04:04.115394+00:00",
+  "baseline_sha": "fa2c471463f5aecb988f89e791aae359385227e4",
+  "candidate_sha": "998858f31d8c6ff8b8a2fe4b1184d787975efdf3",
+  "candidate_pr": 866,
+  "candidate_draft": true,
+  "app_tree": "f239abea5a30d08e3b5d7a3c4508ff91fa55057a",
+  "candidate_app_tree": "f239abea5a30d08e3b5d7a3c4508ff91fa55057a",
+  "matched_application_tests_locks": true,
+  "classifier_unchanged": true,
+  "required_checks": [
+    "Backend tests",
+    "PostgreSQL migration chain",
+    "Frontend typecheck and build",
+    "Docker Compose validation",
+    "Scoped CI gate",
+    "PostgreSQL concurrency gate",
+    "Production dependency audit and SBOM",
+    "Secret history scan",
+    "Container image vulnerability scan",
+    "Production environment policy",
+    "Operational performance gate"
+  ],
+  "historical_reference": {
+    "issue": 553,
+    "pr": 864,
+    "median_wall_minutes_approximately": 44,
+    "shard_runner_minutes_approximately": 505
+  },
+  "known_old_queued_runs_without_jobs": [
+    34749523710,
+    34749518887,
+    34749518909,
+    34749518980
+  ],
+  "active_competing_runs": [],
+  "detailed_log_download_blocked_destination": "productionresultssa7.blob.core.windows.net",
+  "acceptance_established": false
+}
