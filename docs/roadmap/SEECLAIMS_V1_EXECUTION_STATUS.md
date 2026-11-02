@@ -30,10 +30,12 @@ build settings were unchanged. Generated tracked files were restored and the
 loopback frontend stopped. One existing Starlette/httpx deprecation warning
 occurred in the passing backend suite.
 
-Exact-head hosted #871 runs: Backend **41399705085**, CI **41399654936**,
-operational **41399654974**, security **41399654881** remain pending. Concurrency
+Exact-head hosted #871 Backend **41399705085** passed classifier and gate;
+its shard placeholder and changed-test job correctly skipped under the unchanged
+source classifier. CI **41399654936** (browser E2E), operational **41399654974**,
+and security **41399654881** (container scan) remain pending. Concurrency
 41399654846 and policy 41399654942 passed. The earlier Draft-event Backend skip
-41399654901 is not execution evidence; the normal ready event is running. Do not
+41399654901 is not execution evidence; the normal ready event completed successfully. Do not
 merge based on local tests or old-head results. Preserve all required contexts.
 
 #866 remains unchanged Draft at `998858f31d8c6ff8b8a2fe4b1184d787975efdf3`;
