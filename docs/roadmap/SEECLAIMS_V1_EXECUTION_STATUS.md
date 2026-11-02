@@ -1,5 +1,64 @@
 # SeeClaims — Execution Roadmap v1 | Status and gates
 
+## Current handoff — observer merged; OCR revalidation active (2026-11-02)
+
+**Main:** `cab2f32e517565341d4e5171ea3e7642814a372d`.
+[#869](https://github.com/eh3aneba/maritime-claims-platform/pull/869) merged normally
+at 09:53 Asia/Tehran after exact candidate
+`fd4296f38b909a8770dea3d28d93fda37aeb87a9` passed all 11 latest required checks.
+Operational run **41398380637** passed live-stack smoke, synthetic backup/restore,
+post-recovery claim read, fresh-runner recovery and final gate. The merge used
+squash and expected-head matching, with no administrator bypass. The observer
+introduces no freshness threshold, evidence admission change or production claim
+behavior. Main policy run 41399598276 passed; security run 41399598339 is pending.
+Earlier bootstrap-main security run 41397874183 also finished successfully.
+
+**Principal branch:** `feat/ocr-independent-review-readback`, existing
+[#871](https://github.com/eh3aneba/maritime-claims-platform/pull/871), exact head
+`1f5bae15b91bae8a6d6497c309c18fd0bbdc5866`, now ready for normal hosted validation.
+Both merged main changes were integrated without conflict. Git trees for
+`apps/web`, `apps/api` and `tests/browser` match the integrated source used in
+local verification. Actually passed: four Node DTO tests, five synthetic SQLite
+backend review/workpaper tests, TypeScript, standard production build, workflow
+lint and bilingual compiled-frontend browser regression with all API responses
+mocked and **zero API writes**. No real reviewer assertion was entered.
+
+Local build setup problems were resolved rather than counted as passes:
+cross-worktree dependency symlink rejected by Turbopack; restricted worker port;
+then a clean generated cache with supported permissions passed. Lockfiles and
+build settings were unchanged. Generated tracked files were restored and the
+loopback frontend stopped. One existing Starlette/httpx deprecation warning
+occurred in the passing backend suite.
+
+Exact-head hosted #871 runs: Backend **41399705085**, CI **41399654936**,
+operational **41399654974**, security **41399654881** remain pending. Concurrency
+41399654846 and policy 41399654942 passed. The earlier Draft-event Backend skip
+41399654901 is not execution evidence; the normal ready event is running. Do not
+merge based on local tests or old-head results. Preserve all required contexts.
+
+#866 remains unchanged Draft at `998858f31d8c6ff8b8a2fe4b1184d787975efdf3`;
+its benchmark acceptance remains incomplete. HM-05 packet's eight checksums
+passed again and reviewer fields/holds remain pending, not self-approved.
+Evidence branch #870 remains `docs/hm05-native-source-rehearsal`, preceding head
+`e1a395afd210cba2c1664ebb9d7ad01705ef5539`; the containing commit anchors this
+handoff. No duplicate PR, deployment, production configuration or network-policy
+change occurred. No local server/test process is intentionally left running.
+GitHub Actions above are the actual supported validation executions.
+
+Next three priorities:
+1. Evaluate #871 exact-head hosted outcomes and actual failures; merge normally
+   only when all applicable validation and required protections permit.
+2. Evaluate observer-main post-merge security result; support authorized bilingual
+   H&M review without clearing holds or inventing expert/source acceptance.
+3. Retain #866 isolation until repeated benchmarks, hosted node/outcome equivalence
+   and artifact failure/rerun criteria are satisfied; known Actions storage access
+   still needs an environment-owner policy decision before independent downloads.
+
+Human dependencies: security-owner signature freshness/admission policy,
+independent H&M source adjudication, operator-host acceptance and customer-pilot
+permission. **Customer Pilot remains NO-GO.** Valid normal merges are authorized.
+Historical entries below are retained as dated evidence, not current PR states.
+
 ## Active observer validation — 2026-11-02 (Asia/Tehran)
 
 Principal implementation branch: `feat/clamav-signature-observation`, existing
