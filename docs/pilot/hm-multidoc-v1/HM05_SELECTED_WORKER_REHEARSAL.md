@@ -174,7 +174,34 @@ subprocesses** (34 invocations), including seven unsafe settings, wrong UID,
 modified/missing raster bytes, wrong DB names and existing data at each guarded
 model position. Application imports are forbidden in these synthetic preflight
 tests. Valid preflight is not scanner, OCR, operator or human acceptance.
-The revised helper has **not** been re-executed against Docker/PostgreSQL in this
-review. Historical runtime/source receipts and the frozen eight-file packet
+At the initial guard-only review stage the revised helper had not yet been
+re-executed against Docker/PostgreSQL; the subsequent run below supersedes that
+execution-status limitation. Historical runtime/source receipts and the frozen eight-file packet
 remain unchanged and retain their original provenance; do not substitute the new
 helper hash into old run evidence. Independent reviewer acceptance remains pending.
+
+
+## Subsequent optimized full replay — 2026-11-02, 10:35 Asia/Tehran
+
+[New runtime receipt](validation/hm05-optimized-guarded-worker-2026-11-02.json)
+binds helper commit `f201644fc448bdc7d7287aaf2982808ed950ec9b` and its SHA-256
+to the same unchanged raster and cached pinned worker image. A fresh internal-only
+PostgreSQL 18.4 database migrated to `0224_obs_refresh_recovery_anchor`; real
+ClamAV scanned the upload and `python -O /review/replay.py` completed processing.
+Worker UID1000, read-only root, ALL capability drop, no-new-privileges and bounded
+scratch mounts were retained, with no published ports or external AI.
+
+The persisted transcript hash remained
+`5a2304f4b11d628d7694eb38e24d8d335bf8dbf31e0e0b5cb639bc2cd0bd3cd2`,
+verified again from PostgreSQL after worker exit. Review state remained
+`machine_unverified` / `ocr_human_source_comparison_required`, with zero ClaimFacts
+and Assessments. Subsequent populated-dataset and production-mode invocations
+both returned 1 under optimization; organization/claim/document fixture counts
+remained `1|1|1`. Disposable containers, internal network and private environment
+files were removed. No historical packet or receipt was rewritten.
+
+The application image is still explicitly source `fa2c471463f5aecb988f89e791aae359385227e4`,
+not a rebuilt latest-main image. This verifies the corrected helper with that
+selected runtime; it does not repair the omitted clause endings, adjudicate date
+ordering, attest signature freshness, verify an independent workpaper or confer
+expert/host/customer acceptance. The incomplete transcript and review holds remain.

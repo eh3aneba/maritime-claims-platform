@@ -12,14 +12,21 @@ recovery and all required checks. Its post-merge security 41401527734 passed.
 No administrator bypass, production deployment or insurance approval occurred.
 
 Active review branch: `docs/hm05-native-source-rehearsal`, existing #870. Previous
-published head `9c71b53902dcbb1a012248d495bc057bff3d6a72`; this containing commit
+published head `f201644fc448bdc7d7287aaf2982808ed950ec9b`; this containing commit
 anchors the updated head. Main was integrated without conflicts. The guard fix,
 analyzer and immutable packet are unchanged by integrating #865. Prior-head
 hosted safety run **41402385072 passed**: eight packet checksums, six guard tests
 (34 normal/-O subprocess scenarios), eleven analyzer tests. Fresh exact-head
 required results are pending after this update; do not reuse old-head green
-checks as current merge acceptance. All local tests described above actually ran;
-the revised full Docker replay did not run and is not claimed as verified.
+checks as current merge acceptance. All local tests described above actually ran.
+A subsequent full `python -O` replay on fresh isolated PostgreSQL and actual
+ClamAV passed with the pinned historical worker image; its new receipt is
+`docs/pilot/hm-multidoc-v1/validation/hm05-optimized-guarded-worker-2026-11-02.json`.
+It binds helper commit f201644fc448bdc7d7287aaf2982808ed950ec9b and the unchanged
+helper hash. The transcript/hold remained identical, no facts/assessments were
+created, non-test/populated-dataset refusals returned 1 without count changes,
+and all disposable services/private files were removed. This is not a rebuilt
+latest-main image or independent acceptance; original receipts remain immutable.
 
 The helper's original optimization bypass was isolated without app/DB access;
 explicit failures replace assertions, import is inert, and runtime, DB/source,
