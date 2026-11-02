@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from io import BytesIO
-import textwrap
 from typing import Any
 
 from openpyxl import load_workbook
@@ -9,7 +8,7 @@ from openpyxl.styles import Alignment, Font
 from pypdf import PdfReader, PdfWriter
 
 from app.modules.claim_packs.renderers import _preserve_xlsx_text_literals
-from app.modules.claim_packs.renderers import _pdf_safe
+from app.modules.claim_packs.renderers import _pdf_safe, _wrap_pdf_line
 from app.modules.claim_packs.renderers import render_pdf as _render_base_pdf
 from app.modules.claim_packs.renderers import render_xlsx as _render_base_xlsx
 
@@ -181,11 +180,12 @@ def _appendix_lines(snapshot: dict[str, Any]) -> list[str]:
         if not line:
             wrapped.append("")
         else:
-            wrapped.extend(textwrap.wrap(str(line), width=94, replace_whitespace=False) or [""])
+            wrapped.extend(_wrap_pdf_line(str(line)))
     return wrapped
 
 
 def _text_pdf(lines: list[str]) -> bytes:
+    lines = [part for line in lines for part in _wrap_pdf_line(str(line))]
     pages = [lines[index : index + 54] for index in range(0, len(lines), 54)] or [[]]
     objects: list[bytes] = []
     page_numbers = [4 + index * 2 for index in range(len(pages))]
