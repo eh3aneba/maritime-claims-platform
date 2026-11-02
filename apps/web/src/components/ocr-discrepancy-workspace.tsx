@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 
 import { useLocale } from "@/components/locale-provider";
+import { OcrIndependentReviewHistory } from "@/components/ocr-independent-review-history";
 import {
   listOcrSourceDiscrepancies,
   reportOcrSourceDiscrepancy,
@@ -239,6 +240,15 @@ export function OcrDiscrepancyWorkspace({ claimId, document, source }: Props) {
                 <span className="ms-2 font-semibold text-amber-900">
                   {t("ocrIssue.unverified")}
                 </span>
+                <OcrIndependentReviewHistory
+                  key={`${receipt.id}:${source.extraction_text_hash}`}
+                  claimId={claimId}
+                  report={receipt}
+                  currentSource={sourceMatched &&
+                    receipt.document_version === source.document_version &&
+                    receipt.source_file_hash === source.source_file_hash &&
+                    receipt.extraction_text_hash === source.extraction_text_hash}
+                />
               </li>
             ))}
           </ul>
