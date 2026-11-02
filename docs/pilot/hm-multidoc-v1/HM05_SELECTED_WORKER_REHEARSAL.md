@@ -147,3 +147,34 @@ Next acceptance requires an authorized bilingual H&M reviewer to examine the
 original and exact transcript, answer the existing packet's source-linked
 questions and record a governed workpaper. This reproduction neither supplies
 that person nor closes #810/#850, clears a hold or authorizes customer Evidence.
+
+## Replay-helper optimization guard correction — 2026-11-02
+
+The historical successful replay above used ordinary Python, not optimization.
+A later review found its standalone helper used `assert` for safety preconditions
+and postconditions. A content-free isolated reproduction of the original UID
+preflight with injected UID 0 rejected normally but continued with `optimize=2`.
+No application import, database or real evidence was involved in that reproduction.
+
+The reusable helper now raises explicit nonzero failures instead of relying on
+assertions. Its runtime settings, expected database name, exact immutable raster
+hash, empty organization/claim/document dataset, scan/worker/source/hold checks
+survive optimization. Importing it is inert; an invalid UID fails before application
+imports. The change affects the synthetic replay tool, not production evidence
+admission, OCR output, source holds or historical receipt fields.
+
+```bash
+python -m unittest discover \
+  -s docs/pilot/hm-multidoc-v1/validation \
+  -p test_hm05_replay_guards.py -v
+```
+
+Six tests passed, exercising 17 preflight scenarios in **both ordinary and `-O`
+subprocesses** (34 invocations), including seven unsafe settings, wrong UID,
+modified/missing raster bytes, wrong DB names and existing data at each guarded
+model position. Application imports are forbidden in these synthetic preflight
+tests. Valid preflight is not scanner, OCR, operator or human acceptance.
+The revised helper has **not** been re-executed against Docker/PostgreSQL in this
+review. Historical runtime/source receipts and the frozen eight-file packet
+remain unchanged and retain their original provenance; do not substitute the new
+helper hash into old run evidence. Independent reviewer acceptance remains pending.
