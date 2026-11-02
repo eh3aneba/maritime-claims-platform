@@ -78,10 +78,26 @@ At 2026-11-01T17:01:57.947494Z the signed integer age was 643,065 seconds.
 The report is **not** a freshness verdict, nor independently verified signature
 age/authenticity or a release-bound production observation. Fifteen local observer
 and existing scan-probe regressions passed; the new workflow was syntax/expression
-linted. Hosted execution of this new workflow is not yet verified. No definition
+linted. The initial exact-head hosted observer workflow passed at
+`aa82034137b5d765451f607f049f603eeb7dd579`; this does not attest a live scanner. No definition
 was updated, document scanned by this observer, or admission policy changed.
 
 The transport also enforces a five-second total monotonic read budget, so a slow
 fragment stream cannot repeatedly reset the socket timeout. Its regression uses
 an injected fixed monotonic clock. Sixteen local observer/scan-probe regressions
 passed with that additional bound; no production scanner timeout was changed.
+
+## Updated-main review — 2026-11-02
+
+The branch now incorporates main `a2b5b87466355891d4e4d33320aabdee076a22d4`
+(including the independently validated bootstrap correction). The observer and
+existing synthetic scan-probe suite passed **16 tests** on Python 3.13 after
+that integration. An initial invocation from the separate evidence worktree
+could not import the observer test module; it was corrected by running from this
+branch. No product defect was inferred from that invocation error.
+
+The change remains five observer/workflow/documentation files relative to main;
+no application, database migration, existing required check or customer admission
+configuration changes. Normal ready-state checks on the updated head must finish
+before any merge. Neither tests nor this observation establish an approved
+signature-age threshold, authentic/up-to-date definitions or operational acceptance.
