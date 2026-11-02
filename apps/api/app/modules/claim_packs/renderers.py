@@ -200,7 +200,7 @@ def render_pdf(snapshot: dict[str, Any]) -> bytes:
     objects.append(
         f"<< /Type /Pages /Kids [{kids}] /Count {len(pages)} >>".encode("ascii")
     )
-    objects.append(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    objects.append(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>")
 
     for page_number, (page_lines, content_number) in enumerate(
         zip(pages, content_object_numbers, strict=True)

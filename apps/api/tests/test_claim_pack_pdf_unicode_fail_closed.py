@@ -109,3 +109,43 @@ def test_authenticated_pdf_rejection_has_no_export_record_and_xlsx_is_available(
         assert summary["Vessel"] == original
     finally:
         workbook.close()
+
+
+@pytest.mark.parametrize("section", ["main", "governed_appendix"])
+def test_cp1252_pdf_preserves_currency_punctuation_and_escaped_source(section: str) -> None:
+    from copy import deepcopy
+    from app.modules.claim_packs import renderers as base_renderers
+
+    snapshot = _export_snapshot()
+    original = 'Invented € 1,234 — “not approved”; £ 50 • (ref\\test)'
+    if section == "main":
+        snapshot["claim"]["vessel_name"] = original
+        renderer = base_renderers.render_pdf
+    else:
+        snapshot["recovery_review"]["decisions"][0]["rationale"] = original
+        renderer = render_pdf
+    before = deepcopy(snapshot)
+    pdf = PdfReader(BytesIO(renderer(snapshot)))
+    extracted = "\n".join(page.extract_text() or "" for page in pdf.pages)
+    assert original in extracted
+    assert snapshot == before
+    assert not any(key in pdf.trailer["/Root"] for key in ("/OpenAction", "/AA"))
+
+
+def test_authenticated_pdf_preserves_supported_currency_and_quote_text() -> None:
+    result = create_orion_claim()
+    claim_id = result["claim"]["id"]
+    original = 'SYNTHETIC € — “not approved” £ (ref\\test)'
+    with TestingSessionLocal() as db:
+        vessel = db.get(Vessel, result["seed"]["orion"].id)
+        assert vessel is not None
+        vessel.name = original
+        db.commit()
+    url = f"/api/v1/claims/{claim_id}/claim-pack-exports"
+    response = client.post(url, json={"export_format": "pdf", "acknowledge_review_aid": True})
+    assert response.status_code == 201, response.text
+    downloaded = client.get(url + "/" + response.json()["id"] + "/download")
+    assert downloaded.status_code == 200
+    text = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(downloaded.content)).pages)
+    assert original in text
+    assert "REVIEW AID ONLY" in text
