@@ -1,5 +1,48 @@
 # SeeClaims — Execution Roadmap v1 | Status and gates
 
+## Merge-readiness handoff — 2026-11-02
+
+The owner now authorizes normal merges when engineering validation establishes
+readiness. This supersedes historical no-merge authorization notes below; it
+does not authorize bypassing protections, deploying, or accepting a customer pilot.
+Customer Pilot remains **NO-GO**.
+
+- Existing evidence branch: `docs/hm05-native-source-rehearsal`, PR #870;
+  preceding exact head `2ef070e796b13fc12b10b317c86510035fc86b5e`.
+  The containing commit anchors this handoff. No duplicate PR was created.
+- Reviewed #867 at `78f6b3de1ba2965de929850c383c8ed7665dcae8`:
+  six-line model-registration correction, fresh-process regression tests,
+  synthetic rehearsal receipt and execution record. No new production behavior
+  beyond restoring standalone bootstrap model resolution was found.
+- Re-read live branch rules: squash only, strict required status checks,
+  resolved review threads, no force push/deletion, all 11 existing required
+  contexts. No required approving review count; no bypass was used.
+- Marked #867 ready for review under the new authorization. Normal PR event
+  triggered [Full Backend run 41394572312](https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41394572312)
+  on that exact head. Classification passed and all 64 shard jobs were allocated;
+  execution is **pending**, not a pass. The earlier manual run 41344854507
+  passed all 64 shards and gate. No new local tests were executed in this review.
+- No merge or automatic merge was requested while the new required validation
+  is pending. #866 remains unchanged Draft; its single paired study is not
+  acceptance evidence. No production configuration or security control changed.
+
+Next three executable priorities:
+
+1. Evaluate run 41394572312 on the exact #867 head, investigate actual failures,
+   then re-read all required checks and merge normally only if every gate permits.
+2. Review #869 and #871 separately against live main, preserving signature-policy
+   boundaries and independent source-review holds; obtain applicable ready-state
+   hosted validation before considering either merge.
+3. Resume #866 acceptance measurements only with exact hosted node/outcome and
+   component timing evidence; environment owner must permit the known blocked
+   Actions storage destination before independently downloading those artifacts.
+
+Human decisions still required: signature freshness/admission policy from the
+security owner, actual independent bilingual H&M source adjudication, operational
+acceptance and customer-pilot authorization. Routine valid merges need no further
+conversational approval. No background local monitor is running; the GitHub Actions
+run above is the actual supported execution currently active.
+
 ## Active engineering handoff — 2026-11-02 (Asia/Tehran)
 
 **Customer Pilot remains NO-GO.** Resume from this record and live GitHub.
