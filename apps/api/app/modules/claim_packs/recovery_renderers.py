@@ -193,7 +193,7 @@ def _text_pdf(lines: list[str]) -> bytes:
     objects.append(b"<< /Type /Catalog /Pages 2 0 R >>")
     kids = " ".join(f"{number} 0 R" for number in page_numbers)
     objects.append(f"<< /Type /Pages /Kids [{kids}] /Count {len(pages)} >>".encode("ascii"))
-    objects.append(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    objects.append(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>")
     for page_index, (page_lines, content_number) in enumerate(zip(pages, content_numbers, strict=True), start=1):
         page_obj = (
             f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 842] "

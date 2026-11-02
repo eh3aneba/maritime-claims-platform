@@ -1,5 +1,39 @@
 # SeeClaims — Execution Roadmap v1 | Status and gates
 
+## Active PDF fidelity correction — 2026-11-02 (Asia/Tehran)
+
+Main baseline `cc461db7cd2adb9e66974ce3ece371916badd11f` passed post-merge policy
+and security. #865/#867/#869/#870/#871 are merged; live completion receipt:
+issue #647 comment 6571866515. Older pending-state notes below are historical.
+
+Principal branch `fix/claim-pack-pdf-winansi-encoding`; production patch commit
+`60041efd909e7f90db6a76fa470b930a43911888`, with this containing commit anchoring
+the updated head. Both PDF writers encoded CP1252 but omitted WinAnsi font
+encoding. Euro/em-dash/curly quotes extracted as control characters. Declaring
+the matching font encoding fixes that independently reproduced export defect.
+
+Two new renderer regressions failed before the fix. All **18 targeted tests**
+passed afterward, including authenticated export, immutable snapshot, unsupported
+Persian PDF rejection/XLSX fallback, recovery/correspondence and stale-source
+warning appendices. Existing Starlette/httpx/HTTP-422 deprecation warnings remain.
+Independent Poppler extraction preserved exact synthetic currency/quote/escape
+text in both writers; a main-page raster was inspected as an engineering check,
+not bilingual or expert acceptance. Hosted exact-head checks and full 64-shard
+Backend remain pending. No dependency, font, migration, insurance rule, freshness
+policy, CI classifier or existing required check was changed.
+
+Rollback: revert this PR normally; never rewrite historical snapshots/exports.
+#835 stays open for broader Unicode/RTL fidelity and human acceptance. No Persian
+rendering support or OCR-quality repair is claimed. The artifact-access draft is
+saved but not published/applied; no denied download was retried. #866 remains
+unchanged Draft at `998858f31d8c6ff8b8a2fe4b1184d787975efdf3`.
+
+Next three priorities: (1) obtain complete exact-head required results including
+all 64 Backend shards, fix actual failures, then consider protected merge;
+(2) obtain authorized source review and security-owner freshness policy without
+clearing holds; (3) environment owner reviews/publishes artifact access, then
+engineering verifies access and resumes #866 acceptance. Customer Pilot **NO-GO**.
+
 ## Current protected-review handoff — 2026-11-02 (Asia/Tehran)
 
 Current main baseline: `d9ee0941337b54d685de22358ea0de4b9b2f39fc`.
