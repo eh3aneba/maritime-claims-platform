@@ -1,5 +1,45 @@
 # SeeClaims — Execution Roadmap v1 | Status and gates
 
+## Latest verified execution — 2026-11-02 (Asia/Tehran)
+
+Main `fdad762df6bb0374011e40ab5ccf956bb105fa9c` contains normally merged #871.
+Its candidate `1f5bae15b91bae8a6d6497c309c18fd0bbdc5866` passed all 11 latest
+required contexts, real hosted browser journeys, operational smoke and fresh-runner
+recovery. The exact-head monitor merged without bypass and exited normally.
+#869 post-merge security 41399598339 passed. #871-main policy 41401527630 passed;
+post-merge security 41401527734 is still pending, not claimed as passed.
+
+Existing #865 agent instructions were reviewed and integrated with main at head
+`db899c0ef0569f8646bff74154ec87c99d9aa0d2`. Its only changes from main remain
+AGENTS.md and the setup guide; relative links, lockfile references, safety/merge
+instructions and whitespace checked. No hosted failures observed; operational
+smoke remains pending. No application test was unnecessarily re-run for that doc diff.
+
+#870's own unmerged replay helper had an optimization bypass: its original UID
+preflight rejected injected UID 0 normally but continued with optimize=2, safely
+reproduced without app/DB access. Explicit failures now protect all settings,
+DB name, source hash, empty-data and scan/worker/hold readbacks. Import is inert.
+Six regression tests passed across **34 ordinary/optimized subprocess scenarios**;
+eleven offline CI analyzer tests passed. A narrowly scoped read-only workflow now
+runs those tests plus frozen-packet checksums; it changes no existing required
+context, runtime configuration or production admission policy. The corrected
+Docker helper has **not** been rerun; historical receipts/hashes are unchanged.
+No reviewer acceptance or application hold was filled or cleared.
+
+Current evidence branch: `docs/hm05-native-source-rehearsal`, existing #870,
+preceding published head `11a80df68a741a6d94bed8f5e7047e72a9618af4`; the containing
+commit anchors this update. Latest main is integrated without conflict. #866
+remains unchanged Draft at `998858f31d8c6ff8b8a2fe4b1184d787975efdf3` and is not
+benchmark-accepted. No duplicate PR or deployment was created.
+
+Next three priorities: (1) evaluate #865's final exact-head gate and merge normally
+only if all checks permit; (2) obtain hosted safety regression results for #870,
+then review its protected readiness before bringing the persistent record to main;
+(3) support authorized bilingual source review and preserve #866 isolation until
+benchmark and artifact-equivalence acceptance. Security-owner freshness/admission
+policy, independent H&M adjudication, selected-host operations and customer-pilot
+permission remain human dependencies. Customer Pilot remains **NO-GO**.
+
 ## Current handoff — observer merged; OCR revalidation active (2026-11-02)
 
 **Main:** `cab2f32e517565341d4e5171ea3e7642814a372d`.
