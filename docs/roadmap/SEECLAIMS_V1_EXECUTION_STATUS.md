@@ -1,5 +1,50 @@
 # SeeClaims — Execution Roadmap v1 | Status and gates
 
+## Active observer validation — 2026-11-02 (Asia/Tehran)
+
+Principal implementation branch: `feat/clamav-signature-observation`, existing
+[#869](https://github.com/eh3aneba/maritime-claims-platform/pull/869), exact head
+`fd4296f38b909a8770dea3d28d93fda37aeb87a9`. Main
+`a2b5b87466355891d4e4d33320aabdee076a22d4` was merged into this feature branch
+without conflict; its five-file observer diff remains separate from application
+behavior. #869 is now ready for review under the owner's merge authorization.
+
+Actually executed: **16** fixed-clock observer/scan-probe tests, **11** scope/shard
+guard tests, workflow actionlint, and whitespace verification all passed. The
+first test invocation mistakenly ran from the evidence worktree and could not
+import the observer test; the corrected feature-worktree invocation passed.
+No customer data, live production scanner or external AI was used.
+
+Exact-head hosted results: observer regressions 41398380653, Continuous
+Integration 41398380634, concurrency 41398380540, supply chain 41398380500,
+and production policy 41398380639 passed. The initial push/ready event raced
+and used Draft metadata; normal ready validation was reissued on the confirmed
+head. Backend run **41398458925 passed its classifier and final gate**, with
+shards/changed-test verification correctly skipped for script-only source scope.
+Operational run **41398380637 remains pending**; no merge is claimed.
+
+GitHub rejected gated auto-merge because repository auto-merge is disabled.
+No repository setting was changed, no check overridden and no admin bypass used.
+A normal merge still requires re-reading all 11 latest required contexts and the
+exact head once operational validation finishes. Existing main's post-merge
+supply-chain run 41397874183 was still pending at the last observation; production
+policy 41397874222 passed.
+
+Evidence branch remains `docs/hm05-native-source-rehearsal`, #870, preceding
+head `8059f5487f12903c717e6077d5bba2678404ab20`; this containing commit anchors
+this handoff. #866 remains unchanged Draft at
+`998858f31d8c6ff8b8a2fe4b1184d787975efdf3`. #871 remains unchanged Draft at
+`99a12529e35ec506ac49463336f16a08c1592a04`; its read-only source-binding parser
+and history UI were inspected, but no new frontend validation is claimed.
+
+Next three priorities: (1) evaluate #869 operational and post-merge main security
+results, then normal exact-head merge only when every required check permits;
+(2) integrate updated main and revalidate #871 without clearing source holds;
+(3) retain #866 isolation until benchmark and hosted artifact-equivalence criteria
+are satisfied. Security-owner freshness policy, independent bilingual H&M source
+adjudication, operational acceptance and customer-pilot authorization remain human
+dependencies. No freshness threshold/admission change was made. Pilot is **NO-GO**.
+
 ## Verified bootstrap merge — 2026-11-02, 09:36 Asia/Tehran
 
 - Owner-authorized normal squash merge completed for [#867](https://github.com/eh3aneba/maritime-claims-platform/pull/867).
