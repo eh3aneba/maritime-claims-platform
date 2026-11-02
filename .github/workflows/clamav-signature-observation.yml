@@ -1,0 +1,33 @@
+name: ClamAV Signature Observation Regressions
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/clamav-signature-observation.yml
+      - scripts/pilot_clamav_signature_observation.py
+      - scripts/tests/test_pilot_clamav_signature_observation.py
+      - docs/operations/CLAMAV_SIGNATURE_OBSERVATION.md
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: clamav-observation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  regressions:
+    name: ClamAV signature observation regressions
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - name: Run fixed-clock and read-only protocol regressions
+        run: python -m unittest scripts.tests.test_pilot_clamav_signature_observation -v
