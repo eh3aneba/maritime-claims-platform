@@ -3,6 +3,7 @@
 from io import BytesIO
 
 from openpyxl import load_workbook
+import pytest
 
 from app.modules.claim_packs.renderers import render_xlsx as render_base_xlsx
 from app.modules.claim_packs.recovery_renderers import render_xlsx
@@ -82,3 +83,26 @@ def test_base_claim_pack_xlsx_preserves_text_and_never_creates_formulas() -> Non
 
 def test_governed_claim_pack_xlsx_preserves_text_and_never_creates_formulas() -> None:
     _assert_static_literals(render_xlsx(_snapshot()), extended=True)
+
+
+@pytest.mark.parametrize("source", ["#NULL!", "#DIV/0!", "#VALUE!", "#REF!", "#NAME?", "#NUM!", "#N/A"])
+@pytest.mark.parametrize("renderer", [render_base_xlsx, render_xlsx], ids=["base", "governed"])
+def test_source_error_tokens_remain_literal_text(source, renderer) -> None:
+    from copy import deepcopy
+
+    snapshot = _snapshot()
+    snapshot["claim"]["vessel_name"] = source
+    snapshot["evidence_matrix"]["rows"][0]["supporting_evidence"][0]["source_quote"] = source
+    snapshot["recovery_review"]["decisions"][0]["rationale"] = source
+    before = deepcopy(snapshot)
+    book = load_workbook(BytesIO(renderer(snapshot)), data_only=False)
+    try:
+        cells = [book["Pack Summary"]["B4"], book["Evidence Matrix"]["H2"]]
+        if renderer is render_xlsx:
+            cells.extend(row[3] for row in book["Recovery Review"].iter_rows() if row[0].value == "human decision")
+        for cell in cells:
+            assert cell.value == source
+            assert cell.data_type == "s"
+    finally:
+        book.close()
+    assert snapshot == before

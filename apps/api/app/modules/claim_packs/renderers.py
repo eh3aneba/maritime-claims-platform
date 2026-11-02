@@ -307,7 +307,8 @@ def _preserve_xlsx_text_literals(workbook) -> None:
     """Keep source-derived strings literal in this formula-free reporting workbook.
 
     openpyxl treats any user-supplied string beginning with '=' as an Excel
-    formula on assignment. Reclassify those cells as text without adding an
+    formula on assignment, and strings such as '#N/A' as Excel errors.
+    Reclassify those cells as text without adding an
     apostrophe or changing the exact original source quote/narrative. Every
     Claim Pack sheet is a static review aid; executable formulas are not an
     allowed output.
@@ -315,9 +316,9 @@ def _preserve_xlsx_text_literals(workbook) -> None:
     for sheet in workbook.worksheets:
         for row in sheet.iter_rows():
             for cell in row:
-                if cell.data_type == "f":
+                if cell.data_type in {"f", "e"}:
                     if not isinstance(cell.value, str):
-                        raise ValueError("Claim Pack XLSX contains a non-text formula.")
+                        raise ValueError("Claim Pack XLSX contains a non-text formula or error.")
                     cell.data_type = "s"
 
 
