@@ -93,3 +93,34 @@ claim lock. Never treat this observation as permission to promote critical
 Persian machine extraction or start a real-data pilot.
 
 **Pilot v1 for customer claims remains NO-GO.**
+
+## Updated-main revalidation — 2026-11-02
+
+Integrated main `a2b5b87466355891d4e4d33320aabdee076a22d4` without conflict.
+Actually executed with unchanged lockfiles: four Node DTO contract tests,
+TypeScript check, standard Next.js production build, workflow actionlint, and
+five existing independent-review/workpaper backend tests (SQLite synthetic
+harness). All passed. The backend run reported one existing Starlette/httpx
+deprecation warning; it was not a test failure.
+
+The bilingual browser regression passed against the compiled frontend on
+loopback with every API response intercepted: source/hash and clearance-bearing
+response rejection, inaccessible history, historical-source suppression and
+**zero API writes**. The server was stopped afterward. No real reviewer record
+or application hold was modified; metadata readback is not workpaper-content
+verification or independent H&M acceptance.
+
+Local build setup failures were resolved, not counted as passes: Turbopack
+rejected a cross-worktree node_modules symlink, then a restricted local-worker
+port operation. Dependencies were copied from the existing matching-lockfile
+installation; clearing only generated build cache and rerunning with supported
+process/socket permissions passed the standard build. No build flags, TLS,
+production settings or test assertions were relaxed. Generated Next.js tracked
+file changes were restored after testing.
+
+Then integrated observer merge/main `cab2f32e517565341d4e5171ea3e7642814a372d`.
+Git tree checks confirm `apps/web`, `apps/api` and `tests/browser` are identical
+to the integration used for the tests above; the observer introduced only its
+separate scripts/workflow/documentation. Four DTO tests and workflow lint were
+re-run successfully after this integration. Exact-head hosted validation remains
+required before merge.
