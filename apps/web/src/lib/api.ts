@@ -220,6 +220,23 @@ export function listOcrSourceDiscrepancies(claimId: string, documentId: string) 
   );
 }
 
+/** Read-only audit observations. Runtime validation is performed by the view. */
+export function listIndependentOcrReviews(claimId: string, documentId: string, reportId: string) {
+  return apiFetch<unknown>(
+    `/claims/${claimId}/documents/${documentId}/processing/source-discrepancies/${reportId}/independent-reviews?offset=0&limit=25`,
+    { cache: "no-store" },
+  );
+}
+
+export function getOcrReviewWorkpaperBinding(
+  claimId: string, documentId: string, reportId: string, reviewId: string,
+) {
+  return apiFetch<unknown>(
+    `/claims/${claimId}/documents/${documentId}/processing/source-discrepancies/${reportId}/independent-reviews/${reviewId}/workpaper-binding`,
+    { cache: "no-store" },
+  );
+}
+
 export function retryDocumentProcessing(claimId: string, documentId: string) {
   return apiFetch<ProcessingJobSummary>(
     `/claims/${claimId}/documents/${documentId}/processing/retry`,
