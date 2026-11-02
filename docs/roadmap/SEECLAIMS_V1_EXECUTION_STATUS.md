@@ -1,5 +1,51 @@
 # SeeClaims — Execution Roadmap v1 | Status and gates
 
+## Current protected-review handoff — 2026-11-02 (Asia/Tehran)
+
+Current main baseline: `d9ee0941337b54d685de22358ea0de4b9b2f39fc`.
+#865 merged normally at 10:30 Asia/Tehran from exact candidate
+`db899c0ef0569f8646bff74154ec87c99d9aa0d2` after all 11 latest required contexts
+and fresh-runner operational recovery passed. Its AGENTS.md/setup guide are now
+present; local documentation links/references and whitespace passed. #871 merged
+as `fdad762df6bb0374011e40ab5ccf956bb105fa9c` after exact-head browser, operational
+recovery and all required checks. Its post-merge security 41401527734 passed.
+No administrator bypass, production deployment or insurance approval occurred.
+
+Active review branch: `docs/hm05-native-source-rehearsal`, existing #870. Previous
+published head `9c71b53902dcbb1a012248d495bc057bff3d6a72`; this containing commit
+anchors the updated head. Main was integrated without conflicts. The guard fix,
+analyzer and immutable packet are unchanged by integrating #865. Prior-head
+hosted safety run **41402385072 passed**: eight packet checksums, six guard tests
+(34 normal/-O subprocess scenarios), eleven analyzer tests. Fresh exact-head
+required results are pending after this update; do not reuse old-head green
+checks as current merge acceptance. All local tests described above actually ran;
+the revised full Docker replay did not run and is not claimed as verified.
+
+The helper's original optimization bypass was isolated without app/DB access;
+explicit failures replace assertions, import is inert, and runtime, DB/source,
+empty-dataset and scanner/worker/hold checks remain fail-closed. No historical
+receipt, original source, transcript, reviewer field or source hold was rewritten.
+A read-only path-scoped regression workflow covers the safety fix and changes no
+existing required context. A bounded secret-pattern review found no token/private
+key/signed-URL patterns; this is not a full security certification.
+
+GitHub issues #850, #810 and #653 now record actual merged outcomes and pending
+source adjudication, OCR semantic quality, security policy and selected-host
+acceptance; none was closed. #866 remains unchanged Draft at
+`998858f31d8c6ff8b8a2fe4b1184d787975efdf3`, benchmark acceptance incomplete.
+The #865 monitor exited after its protected merge. No local frontend/DB/scanner
+or previous monitor is intentionally running. GitHub workflows provide actual
+hosted validation; any new bounded watcher must be recorded explicitly.
+
+Next three priorities: (1) evaluate new #870 exact-head safety and required gates,
+fix actual failures and merge normally only if all protections permit;
+(2) evaluate #865-main post-merge policy/security results and support authorized
+bilingual review without clearing holds; (3) keep #866 isolated pending repeated
+benchmarks, hosted node/outcome equivalence and negative artifact/rerun evidence.
+Human decisions remain security-owner freshness/admission policy, independent
+H&M adjudication, selected-host operation and customer permission. Customer Pilot
+remains **NO-GO**. Valid normal protected merges are authorized.
+
 ## Latest verified execution — 2026-11-02 (Asia/Tehran)
 
 Main `fdad762df6bb0374011e40ab5ccf956bb105fa9c` contains normally merged #871.
