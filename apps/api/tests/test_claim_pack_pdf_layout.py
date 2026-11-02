@@ -32,7 +32,7 @@ def assert_body_fits_and_collect(reader: PdfReader) -> str:
 
 
 @pytest.mark.parametrize('section', ['main', 'governed_appendix'])
-@pytest.mark.parametrize('source', [SOURCE, 'i' * 200 + ' is not established.', '€—' * 60 + ' is not established.'])
+@pytest.mark.parametrize('source', [SOURCE, 'i' * 200 + ' is not established.', '€—' * 60 + ' is not established.'], ids=['wide', 'narrow', 'currency'])
 def test_wide_source_and_negation_stay_inside_page_without_snapshot_rewrite(section, source):
     snapshot = _export_snapshot()
     if section == 'main':
@@ -74,7 +74,7 @@ def test_unknown_font_metrics_fail_closed_without_leaking_source():
         workbook.close()
 
 
-@pytest.mark.parametrize('source', [SOURCE, '  ' + SOURCE])
+@pytest.mark.parametrize('source', [SOURCE, '  ' + SOURCE], ids=['plain', 'indented'])
 def test_direct_appendix_writer_also_bounds_wide_source(source):
     from app.modules.claim_packs.recovery_renderers import _text_pdf
     body = assert_body_fits_and_collect(PdfReader(BytesIO(_text_pdf([source]))))
