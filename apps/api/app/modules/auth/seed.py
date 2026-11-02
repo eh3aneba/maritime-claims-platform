@@ -28,6 +28,12 @@ def main() -> None:
     if len(admin_password) < 12:
         raise SystemExit("Bootstrap admin password must contain at least 12 characters")
 
+    # Unlike API startup, this standalone CLI has not imported the complete
+    # model graph. Register it before SQLAlchemy resolves relationship targets.
+    from app.db.metadata import Base
+
+    Base.registry.configure()
+
     with create_session() as db:
         org = db.scalar(select(Organization).where(func.lower(Organization.slug) == org_slug.lower()))
         if org is None:
