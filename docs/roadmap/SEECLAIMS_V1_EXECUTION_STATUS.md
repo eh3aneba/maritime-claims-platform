@@ -1,5 +1,44 @@
 # SeeClaims — Execution Roadmap v1 | Status and gates
 
+## Active source/export reliability — XLSX error-like literals (2026-11-02 UTC)
+
+Current baseline main `26d5e9d0feaa299392dd15505be3d00588bb60b8` normally merged
+#873 after all 64 Backend shards and eleven required checks passed. Its post-merge
+policy passed; security run 41433546759 is pending its container-image build/scan
+(secret history and dependency audit passed). Do not infer the final result.
+
+Principal branch `fix/claim-pack-xlsx-error-literals`; this containing commit
+anchors the exact candidate. Reproduced a bounded export defect: openpyxl infers
+Excel error cells for source strings such as `#N/A`. All 14 new base/governed
+renderer cases failed before the fix. Extend the existing text-literal guard to
+error-like strings as well as formula-like strings, preserving exact text without
+adding apostrophes or changing snapshots. No dependency, API, policy, migration,
+insurance behavior, source provenance or CI-control change. Rollback is a normal
+PR revert; never rewrite stored evidence or human decisions.
+
+Actual final local validation: **46 passed**, two existing deprecation warnings,
+including all seven recognized error tokens in both renderers, snapshot
+immutability, formula protection, authenticated vessel creation/claim export/
+download, PDF layout/Unicode fail-closed behavior and governed reporting. An
+initial new authenticated-test setup incorrectly passed a string to a UUID ORM
+lookup; corrected the test to create/link the synthetic vessel through normal
+APIs, then reran the entire targeted suite. Hosted candidate validation remains
+pending. No semantic, independent human or operational acceptance is claimed.
+
+Security/operations owner and independent bilingual H&M reviewer remain
+**UNASSIGNED — HUMAN APPOINTMENT REQUIRED**; freshness policy **NOT APPROVED**.
+No threshold, exception, admission change, OCR hold clearance or real-customer
+authorization. Customer Pilot **NO-GO**. These decisions do not block unrelated
+synthetic engineering. #866 remains isolated unchanged Draft at
+`998858f31d8c6ff8b8a2fe4b1184d787975efdf3`; current enforced runtime still excludes
+the Actions artifact host, so no known-denied download was retried.
+
+Next three priorities: (1) finish exact-main security evaluation and investigate
+real failures; (2) complete exact-candidate full Backend/required hosted gates for
+the XLSX fix, preserving Draft policy and all regression coverage; (3) after the
+environment owner applies artifact access, verify artifacts and resume #866's
+controlled benchmark acceptance without modifying its isolated branch.
+
 ## Active independent engineering — PDF page bounds (2026-11-02)
 
 Owner clarification, authoritative until an explicit appointment/approval:

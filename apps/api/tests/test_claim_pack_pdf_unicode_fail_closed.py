@@ -19,6 +19,35 @@ def setup_function() -> None:
     reset_database()
 
 
+def test_authenticated_xlsx_preserves_error_like_vessel_name_as_text() -> None:
+    result = create_orion_claim()
+    original = "#N/A"
+    created = client.post("/api/v1/vessels", json={"name": original})
+    assert created.status_code == 201, created.text
+    claim = client.post("/api/v1/claims", json={
+        "vessel_id": created.json()["id"],
+        "incident_date": "2026-07-10",
+        "notification_date": "2026-07-11",
+        "incident_description": "Synthetic machinery source export validation only.",
+        "estimated_loss": "100.00",
+        "currency": "usd",
+        "handler_id": str(result["seed"]["handler"].id),
+    })
+    assert claim.status_code == 201, claim.text
+    url = f"/api/v1/claims/{claim.json()['id']}/claim-pack-exports"
+    response = client.post(url, json={"export_format": "xlsx", "acknowledge_review_aid": True})
+    assert response.status_code == 201, response.text
+    downloaded = client.get(url + "/" + response.json()["id"] + "/download")
+    assert downloaded.status_code == 200
+    book = load_workbook(BytesIO(downloaded.content), data_only=False)
+    try:
+        cell = book["Pack Summary"]["B4"]
+        assert cell.value == original
+        assert cell.data_type == "s"
+    finally:
+        book.close()
+
+
 def test_main_pdf_rejects_unrepresentable_persian_evidence_without_text_loss() -> None:
     snapshot = _export_snapshot()
     source = "توربوشارژر خراب نیست؛ ثبت ۱۱:۳۰ UTC"
