@@ -1,0 +1,34 @@
+name: Synthetic Evidence Tool Regressions
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/synthetic-evidence-tool-regressions.yml
+      - docs/operations/validation/**
+      - docs/pilot/hm-multidoc-v1/validation/**
+      - docs/pilot/hm-multidoc-v1/reviewer-packet-hm05-2026-11-01/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  regressions:
+    name: Synthetic evidence tool safety regressions
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - name: Verify immutable synthetic reviewer packet
+        working-directory: docs/pilot/hm-multidoc-v1/reviewer-packet-hm05-2026-11-01
+        run: sha256sum -c SHA256SUMS
+      - name: Verify ordinary and optimized replay guards without application imports
+        run: python -m unittest discover -s docs/pilot/hm-multidoc-v1/validation -p test_hm05_replay_guards.py -v
+      - name: Verify offline CI evidence analyzer
+        run: python -m unittest discover -s docs/operations/validation -p test_ci_v2_pair_observation.py -v

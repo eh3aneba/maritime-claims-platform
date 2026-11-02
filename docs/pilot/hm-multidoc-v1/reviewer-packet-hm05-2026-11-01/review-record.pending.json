@@ -1,0 +1,17 @@
+{
+  "status": "pending",
+  "reviewer_private_reference": null,
+  "reviewer_role": null,
+  "authorization_reference": null,
+  "independence_confirmed": null,
+  "source_png_examined": null,
+  "line_endings_adjudicated": null,
+  "negation_scope_adjudicated": null,
+  "date_order_adjudicated": null,
+  "required_corrections": null,
+  "reviewed_at": null,
+  "independent_acceptance_granted": false,
+  "application_hold_cleared": false,
+  "assessment_approved": false,
+  "warning": "Working template only. Completion is not itself an application approval; use authorized source-bound review governance."
+}
