@@ -1,5 +1,53 @@
 # SeeClaims — Execution Roadmap v1 | Status and gates
 
+## Active independent engineering — PDF page bounds (2026-11-02)
+
+Owner clarification, authoritative until an explicit appointment/approval:
+
+- Accountable security/operations owner: **UNASSIGNED — HUMAN APPOINTMENT REQUIRED**.
+- Independent Persian/English H&M reviewer: **UNASSIGNED — HUMAN APPOINTMENT REQUIRED**.
+- ClamAV freshness policy: **NOT APPROVED**. No maximum age, exception or production
+  admission decision is authorized. The Product Owner will appoint accountable
+  humans before production/real-customer pilot approval; private references may
+  identify the independent reviewer. Do not self-sign or clear OCR holds.
+- Continue independent engineering/synthetic/read-only work. Escalate only a task
+  that actually needs those human decisions. Customer Pilot remains **NO-GO**.
+
+Main baseline `6fbe446f0ad9a1dd15b901555ece4fd50d3b74a8` includes normally merged
+#872 with all 64 Backend shards, all eleven contexts and post-merge policy/security
+passed. Branch `fix/claim-pack-pdf-page-width` is the single active implementation;
+this containing commit anchors its exact head. #866 stays unchanged Draft at
+`998858f31d8c6ff8b8a2fe4b1184d787975efdf3`. Artifact access is still not enforced;
+its saved draft does not block this unrelated development. Owner clarification
+is also recorded on #653 comment 6573943690 and #810 comment 6573944013.
+
+Reproduced #835 layout defect: character-count wrapping can place wide source
+text beyond the 612pt page and hide following negation. Original Poppler output
+clipped a 75-W synthetic identifier and omitted following words; two actual
+renderer geometry regressions failed before correction. Wrap against bundled
+Helvetica advance metrics for the existing 9pt font/54pt margins, paginate after
+wrapping, and fail closed with the existing XLSX alternative when a glyph cannot
+be measured. Keep source snapshots and previous exports immutable. The metrics
+come from the already locked pypdf dependency; no new font, dependency, model,
+source correction, insurance rule, signature threshold or production config.
+
+Actually passed: **29 targeted tests**, including base/appendix geometry, wide,
+narrow and currency glyphs, long multi-page content, snapshot immutability,
+authenticated export/download, unsupported-Persian/XLSX and stale-source warnings.
+Independent Poppler checks found all words within existing horizontal margins,
+including the previously invisible negation in the direct writer. Existing
+Starlette/httpx and HTTP-422 deprecation warnings remain. This is engineering
+validation, not bilingual/expert or customer acceptance. Exact-head hosted checks
+and full 64-shard Backend are pending; no success is inferred from local tests.
+
+Next three executable priorities: (1) complete protected exact-head validation,
+fix actual failures and merge normally only if all checks permit; (2) continue
+bounded source/export reliability work while #810/#835/#850 acceptance stays
+open; (3) resume #866 artifact-dependent acceptance only after access is actually
+applied. Freshness/admission implementation and independent signoff alone wait
+for human appointments/policy. Rollback is a normal PR revert, never a rewrite
+of stored source, human decisions or historical evidence. No deployment.
+
 ## Active PDF fidelity correction — 2026-11-02 (Asia/Tehran)
 
 Main baseline `cc461db7cd2adb9e66974ce3ece371916badd11f` passed post-merge policy

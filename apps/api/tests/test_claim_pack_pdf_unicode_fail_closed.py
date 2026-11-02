@@ -149,3 +149,22 @@ def test_authenticated_pdf_preserves_supported_currency_and_quote_text() -> None
     text = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(downloaded.content)).pages)
     assert original in text
     assert "REVIEW AID ONLY" in text
+
+
+def test_authenticated_wide_pdf_keeps_source_text_on_page() -> None:
+    from tests.test_claim_pack_pdf_layout import SOURCE, assert_body_fits_and_collect
+
+    result = create_orion_claim()
+    claim_id = result["claim"]["id"]
+    with TestingSessionLocal() as db:
+        vessel = db.get(Vessel, result["seed"]["orion"].id)
+        assert vessel is not None
+        vessel.name = SOURCE
+        db.commit()
+    url = f"/api/v1/claims/{claim_id}/claim-pack-exports"
+    response = client.post(url, json={"export_format": "pdf", "acknowledge_review_aid": True})
+    assert response.status_code == 201, response.text
+    downloaded = client.get(url + "/" + response.json()["id"] + "/download")
+    assert downloaded.status_code == 200
+    body = assert_body_fits_and_collect(PdfReader(BytesIO(downloaded.content)))
+    assert "".join(SOURCE.split()) in "".join(body.split())
