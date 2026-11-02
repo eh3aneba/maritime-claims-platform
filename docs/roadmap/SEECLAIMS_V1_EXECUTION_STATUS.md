@@ -1,5 +1,35 @@
 # SeeClaims — Execution Roadmap v1 | Status and gates
 
+## Verified bootstrap merge — 2026-11-02, 09:36 Asia/Tehran
+
+- Owner-authorized normal squash merge completed for [#867](https://github.com/eh3aneba/maritime-claims-platform/pull/867).
+  Verified candidate head: `78f6b3de1ba2965de929850c383c8ed7665dcae8`.
+  Actual merge/main SHA: `a2b5b87466355891d4e4d33320aabdee076a22d4`.
+- [PR Backend run 41394572312](https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41394572312)
+  completed successfully: all 64 unique shards (0–63), classifier and final
+  Backend gate passed; changed-test job was appropriately skipped for full scope.
+  Programmatic pre-merge verification required latest SUCCESS for each of all
+  11 existing required contexts. GitHub reported CLEAN and MERGEABLE. Merge
+  used an exact expected head, squash, and no administrator bypass.
+- No new local test execution or production deployment occurred. The source
+  correction and fresh-process tests were reviewed in the preceding handoff.
+  Post-merge main workflows 41397874183 (Supply Chain Security) and 41397874222
+  (Production Deployment Policy) are pending; they are not claimed as passed.
+- #866 remains unchanged Draft at `998858f31d8c6ff8b8a2fe4b1184d787975efdf3`.
+  #869 and #871 remain Draft at their recorded heads; their earlier checks
+  against the former main are not automatically validation against updated main.
+- Persistent evidence branch remains `docs/hm05-native-source-rehearsal`, #870;
+  preceding head `8d0012b189af020f89c5abe7e87c71e0453150e0`. This containing
+  commit anchors the updated record. Historical pending/no-merge notes below
+  describe prior observations and are superseded by this verified outcome.
+
+Next three priorities: (1) evaluate post-merge main security/policy results;
+(2) review and revalidate #869 and #871 separately against updated main before
+normal merge; (3) retain #866 isolation until its documented benchmark and
+artifact-equivalence criteria are satisfied. Security-owner freshness policy,
+authorized independent H&M source review and operational/customer acceptance
+remain outstanding. Customer Pilot remains **NO-GO**. No local monitor is running.
+
 ## Merge-readiness handoff — 2026-11-02
 
 The owner now authorizes normal merges when engineering validation establishes
