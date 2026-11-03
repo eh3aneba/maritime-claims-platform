@@ -21,6 +21,22 @@ def main() -> int:
     temporary = Path(os.environ['RUNNER_TEMP'])
     manifest = temporary / 'proof-manifest/backend-nodes.json'
     if args.operation == 'produce':
+        if args.case == 'post-expiry-recovery' and os.environ['GITHUB_RUN_ATTEMPT'] == '1':
+            # Seed the retry with the real, still-valid candidate artifact. On
+            # rerun-all a fresh synthetic collection is produced instead.
+            import datetime
+            expiry = datetime.datetime.fromisoformat('2026-11-03T14:45:43+00:00')
+            if datetime.datetime.now(datetime.timezone.utc) >= expiry:
+                raise RuntimeError('cannot seed a pre-expiry observation after expiry')
+            run = json.loads(subprocess.check_output(['gh', 'api',
+                'repos/eh3aneba/maritime-claims-platform/actions/runs/41389632800']))
+            if run['run_attempt'] != 2 or run['head_sha'] != TARGET:
+                raise RuntimeError('originating artifact attempt changed')
+            with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+                output.write('origin_run=41389632800\nartifact=backend-collection-2\n'
+                    'digest=550ae6218cc97f2f880479f83ef585ecebe1d4802099a7006cb5de78788f31c2\n')
+            print('Seeded reference to real pre-expiry artifact; no replacement uploaded.')
+            return 0
         # An explicit synthetic collector shim exercises the unchanged producer
         # CLI. It is not a substitute for full backend collection or coverage.
         shim = temporary / 'synthetic-collector'
@@ -48,6 +64,7 @@ def main() -> int:
             raise RuntimeError('producer output checksum mismatch')
         with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
             output.write(f'digest={digest}\nartifact=ci-v2-proof-{os.environ["GITHUB_RUN_ID"]}-{os.environ["GITHUB_RUN_ATTEMPT"]}\n')
+            output.write(f'origin_run={os.environ["GITHUB_RUN_ID"]}\n')
         print('Unchanged producer CLI generated checksum-bound synthetic fixture.')
         return 0
     if args.operation == 'consume':
@@ -85,9 +102,13 @@ def main() -> int:
     gate = workflow.split('      - name: Enforce complete Backend CI selection\n', 1)[1]
     gate = gate.split('        run: |\n', 1)[1]
     shell = '\n'.join(line[10:] for line in gate.splitlines() if line.startswith('          '))
-    expected_failure = os.environ['PROOF_MODE'] == 'producer-failure'
-    if expected_failure and (os.environ['COLLECTION_RESULT'] != 'failure' or os.environ['SHARD_RESULT'] != 'skipped'):
+    producer_failure = os.environ['PROOF_MODE'] == 'producer-failure'
+    retry_failure = os.environ['PROOF_MODE'] in {'rerun-recovery', 'post-expiry-recovery'} and os.environ['SHARD_RESULT'] == 'failure'
+    expected_failure = producer_failure or retry_failure
+    if producer_failure and (os.environ['COLLECTION_RESULT'] != 'failure' or os.environ['SHARD_RESULT'] != 'skipped'):
         raise RuntimeError('unexpected real dependency results')
+    if retry_failure and os.environ['COLLECTION_RESULT'] != 'success':
+        raise RuntimeError('retry did not preserve successful producer')
     if not expected_failure and (os.environ['COLLECTION_RESULT'] != 'success' or os.environ['SHARD_RESULT'] != 'success'):
         raise RuntimeError('proof consumers did not validate')
     result = subprocess.run(['bash', '-c', shell], capture_output=True)

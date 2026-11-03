@@ -8,7 +8,7 @@ on:
         type: choice
         required: true
         default: artifact-cases
-        options: [artifact-cases, producer-failure, rerun-recovery, expired-artifact]
+        options: [artifact-cases, producer-failure, rerun-recovery, expired-artifact, post-expiry-recovery]
 permissions:
   contents: read
   actions: read
@@ -24,6 +24,7 @@ jobs:
     outputs:
       digest: ${{ steps.produce.outputs.digest }}
       artifact: ${{ steps.produce.outputs.artifact }}
+      origin_run: ${{ steps.produce.outputs.origin_run }}
     steps:
       - uses: actions/checkout@v6
       - uses: actions/checkout@v6
@@ -37,8 +38,10 @@ jobs:
         id: produce
         env:
           PROOF_CASE: ${{ inputs.mode }}
+          GH_TOKEN: ${{ github.token }}
         run: python scripts/ci_v2_isolated_proof.py produce --case "$PROOF_CASE"
       - uses: actions/upload-artifact@v4
+        if: inputs.mode != 'post-expiry-recovery' || github.run_attempt != 1
         with:
           name: ${{ steps.produce.outputs.artifact }}
           path: ${{ runner.temp }}/proof-manifest/backend-nodes.json
@@ -69,6 +72,8 @@ jobs:
         with:
           name: ${{ matrix.case == 'missing-artifact' && 'deliberately-absent-proof-artifact' || needs.producer.outputs.artifact }}
           path: ${{ runner.temp }}/proof-manifest
+          run-id: ${{ needs.producer.outputs.origin_run }}
+          github-token: ${{ github.token }}
       - name: Verify expected download behavior
         env:
           PROOF_CASE: ${{ matrix.case }}
@@ -85,7 +90,7 @@ jobs:
           PROOF_CASE: ${{ matrix.case }}
         run: python scripts/ci_v2_isolated_proof.py consume --case "$PROOF_CASE"
       - name: Inject one recoverable synthetic failure on first attempt only
-        if: ${{ inputs.mode == 'rerun-recovery' && matrix.case == 'valid' && github.run_attempt == 1 }}
+        if: ${{ (inputs.mode == 'rerun-recovery' || inputs.mode == 'post-expiry-recovery') && matrix.case == 'valid' && github.run_attempt == 1 }}
         run: exit 19
   proof:
     name: Synthetic dependency and gate proof
