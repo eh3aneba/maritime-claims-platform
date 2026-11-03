@@ -1,5 +1,47 @@
 # SeeClaims — Execution Roadmap v1 | Status and gates
 
+## Current safety gate — final credential lineage (2026-11-03, Asia/Tehran)
+
+Main baseline `811461563fa2076f751ac828c9821b4a27353f25` remains unchanged in
+production behavior. The shared-manifest and matrix-order experiments were not
+adopted; #866 stays unchanged Draft at
+`998858f31d8c6ff8b8a2fe4b1184d787975efdf3`. See #553 comments 6607851504 and
+6611365677 for completed reliability/performance decisions.
+
+One unchanged synthetic replay test passed under local content-free profiling:
+557.18s, with prerequisite construction 344.00s and two asserted product actions
+205.35s. 1,851,209 SQL executions led to a proposal to reuse a validated profile.
+Cursor timing excludes fetching/ORM; no speedup was established by that profile.
+Reproducible baseline: #553 comment 6613418698 (proposal subsequently withdrawn).
+
+**The initial optimization is rejected on a concrete safety counterexample.**
+A new synthetic regression changes an upstream bootstrap receipt while binding
+receipts are being checked. Original code rejects the drift; the proposed
+single-validation shortcut returns successfully and fails the regression.
+The prototype was discarded and production source restored byte-for-byte.
+This is a regression in the proposed optimization, not a demonstrated defect
+or exploit in the current production implementation. Final upstream checking
+must remain effective; no cross-call validation cache or weakened check.
+
+Principal branch `test/credential-lineage-final-freshness` retains only the new
+protective test and this status update; this containing commit anchors its head.
+Local existing-plus-new credential suite: **4 passed**, 3 existing deprecation
+warnings, 15.01s pytest time. The exact final regression also rejected the
+prototype (expected failing experiment). Synthetic SQLite/session-local drift
+is not proof of real concurrent PostgreSQL behavior. Hosted exact-head checks
+remain pending; no optimized candidate, full-regression pass, speedup, merge,
+deployment or human signoff is claimed. Test rollback confirms valid reads
+recover and the injected drift does not persist.
+
+Next three: review hosted validation of the protective test; investigate an
+optimization that preserves final freshness semantics; profile a new candidate
+only after security regressions pass. Keep all64 shards,11 required contexts
+and the existing classifier. No production configuration or customer evidence.
+Security/operations and independent bilingual reviewer remain UNASSIGNED —
+HUMAN APPOINTMENT REQUIRED; freshness policy NOT APPROVED; OCR holds intact.
+Customer Pilot remains **NO-GO**. The old pending-state entries below are dated
+history, reconciled by this entry and the live #647 execution handoff.
+
 ## Active source/export reliability — XLSX error-like literals (2026-11-02 UTC)
 
 Current baseline main `26d5e9d0feaa299392dd15505be3d00588bb60b8` normally merged
