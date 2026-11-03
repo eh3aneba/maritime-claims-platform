@@ -1,238 +1,149 @@
-name: Full Backend Pre-Merge
-
+# DISPOSABLE SYNTHETIC PROOF BRANCH. NEVER MERGE THIS WORKFLOW INTO MAIN.
+# No required GitHub check name is emitted. This does not validate backend coverage.
+name: CI v2 isolated hosted failure proof
 on:
-  pull_request:
-    branches:
-      - main
-    types:
-      - opened
-      - reopened
-      - synchronize
-      - ready_for_review
   workflow_dispatch:
-
+    inputs:
+      mode:
+        type: choice
+        required: true
+        default: artifact-cases
+        options: [artifact-cases, producer-failure, rerun-recovery, expired-artifact]
 permissions:
   contents: read
-
+  actions: read
 concurrency:
-  group: full-backend-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
+  group: ci-v2-isolated-proof-${{ github.ref }}-${{ inputs.mode }}
+  cancel-in-progress: false
 jobs:
-  classify:
-    name: Classify backend changes
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.pull_request.draft == false }}
+  producer:
+    name: Synthetic proof producer
+    if: inputs.mode != 'expired-artifact'
     runs-on: ubuntu-latest
-    timeout-minutes: 2
+    timeout-minutes: 5
     outputs:
-      backend_required: ${{ steps.scope.outputs.backend_required }}
-      narrow_required: ${{ steps.scope.outputs.narrow_required }}
-      narrow_tests: ${{ steps.scope.outputs.narrow_tests }}
+      digest: ${{ steps.produce.outputs.digest }}
+      artifact: ${{ steps.produce.outputs.artifact }}
     steps:
-      - name: Check out repository history
-        uses: actions/checkout@v6
+      - uses: actions/checkout@v6
+      - uses: actions/checkout@v6
         with:
-          fetch-depth: 0
-
-      - name: Verify stable shards and fail-closed narrow scope
-        run: |
-          python -m unittest scripts.tests.test_backend_shard_selector scripts.tests.test_ci_backend_narrow_scope -v
-          # Pure offline, source-only synthetic packet; fail before expensive shards
-          # if a neutral-blindness contract or approval-leak regression fails.
-          python -m unittest scripts.tests.test_pilot_local_ai_hm_neutral_blind_packet -v
-          # Phase-two may reveal only fixed synthetic source-backed excerpts;
-          # require an always-on, no-network policy regression before shards.
-          python -m unittest scripts.tests.test_pilot_local_ai_hm_postblind_quote_policy -v
-          # Validate every invented source pack, version edge and uploadable DOCX
-          # before spending runner time on full Backend matrix shards.
-          python -m unittest scripts.tests.test_hm_multidoc_packs -v
-          # OCR omission classification must never fabricate the missing
-          # negation or mark human/semantic/pilot quality as accepted.
-          python -m unittest scripts.tests.test_hm_persian_ocr_probe -v
-          # Pilot release-candidate v3 is a standalone stdlib gate outside
-          # apps/api; run its tests on every PR even when backend shards
-          # are correctly skipped for script/ops-only changes.
-          python -m unittest scripts.tests.test_pilot_rc_gate scripts.tests.test_pilot_rc_compose_feature_observation scripts.tests.test_pilot_rc_running_ai_env_readback -v
-
-      - name: Classify exact-head Backend scope
-        id: scope
-        shell: bash
+          ref: 998858f31d8c6ff8b8a2fe4b1184d787975efdf3
+          path: frozen
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - name: Produce using unchanged selector CLI and synthetic collector
+        id: produce
         env:
-          EVENT_NAME: ${{ github.event_name }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: |
-          set -euo pipefail
-          if [ "$EVENT_NAME" = "workflow_dispatch" ] || [ -z "$BASE_SHA" ] || [ -z "$HEAD_SHA" ]; then
-            printf "backend_required=true\nnarrow_required=false\nnarrow_tests=\n" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          if ! classification="$(python -m scripts.ci_backend_narrow_scope "$BASE_SHA" "$HEAD_SHA")"; then
-            printf "backend_required=true\nnarrow_required=false\nnarrow_tests=\n" >> "$GITHUB_OUTPUT"
-            echo "::warning::Backend scope could not be classified; all shards required."
-            exit 0
-          fi
-          printf "%s\n" "$classification" >> "$GITHUB_OUTPUT"
-          printf "%s\n" "$classification"
-
-  backend-shard:
-    name: Backend tests shard ${{ matrix.shard }}
-    needs: classify
-    if: ${{ (github.event_name == 'workflow_dispatch' || github.event.pull_request.draft == false) && needs.classify.outputs.backend_required == 'true' }}
+          PROOF_CASE: ${{ inputs.mode }}
+        run: python scripts/ci_v2_isolated_proof.py produce --case "$PROOF_CASE"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.produce.outputs.artifact }}
+          path: ${{ runner.temp }}/proof-manifest/backend-nodes.json
+          if-no-files-found: error
+          retention-days: 1
+  consumer:
+    name: Synthetic proof consumer ${{ matrix.case }}
+    needs: producer
     runs-on: ubuntu-latest
-    # Individual end-to-end Evidence lineage tests can legitimately approach 25 minutes;
-    # retain bounded headroom for pytest reporting and Actions cleanup without masking hangs.
-    timeout-minutes: 40
+    timeout-minutes: 5
     strategy:
       fail-fast: false
       matrix:
-        # Full backend validation is deferred until a PR is Ready for review.
-        # Workflow-only ready PRs receive the required Backend tests status without
-        # allocating the 64-shard product matrix. Mixed changes fail closed to full.
-        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63]
-    defaults:
-      run:
-        working-directory: apps/api
-    env:
-      APP_ENV: test
-      DATABASE_URL: postgresql+psycopg://ci:ci@127.0.0.1:5432/mcri_ci
-      SECRET_KEY: ci-only-not-a-deployment-secret-change-on-every-run-2026
-      AI_PROVIDER: disabled
-      OPENAI_API_KEY: ""
-      LOCAL_STORAGE_PATH: /tmp/mcri-ci-documents
+        case: [valid, corrupt, wrong-digest, stale, wrong-tree, duplicate, missing-node, missing-artifact]
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v6
-
-      - name: Set up Python
-        uses: actions/setup-python@v7
+      - uses: actions/checkout@v6
+      - uses: actions/checkout@v6
         with:
-          python-version: "3.13"
-          cache: pip
-          cache-dependency-path: apps/api/requirements-dev.lock
-
-      - name: Install backend dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install --require-hashes -r requirements-dev.lock
-          python -m pip check
-
-      - name: Compile backend
-        run: python -m compileall app alembic
-
-      - name: Run backend test shard
-        shell: bash
-        run: |
-          set -euo pipefail
-          selected_nodes_file="$(mktemp)"
-          trap 'rm -f "$selected_nodes_file"' EXIT
-          # Capture selector exit status directly (no process-substitution
-          # masking of failed collection); NUL delimiters preserve node IDs.
-          python ../../scripts/backend_shard_selector.py --shard "${{ matrix.shard }}" --shards 64 > "$selected_nodes_file"
-          mapfile -d '' -t shard_nodes < "$selected_nodes_file"
-          if (( ${#shard_nodes[@]} == 0 )); then
-            echo "No backend test nodes selected for shard ${{ matrix.shard }}" >&2
-            exit 1
-          fi
-          printf 'Running %s backend test nodes in shard %s\n' "${#shard_nodes[@]}" "${{ matrix.shard }}"
-          printf '%s\n' "${shard_nodes[@]}"
-          pytest -vv --durations=20 --durations-min=1.0 "${shard_nodes[@]}"
-
-  backend-narrow:
-    name: Backend changed-test verification
-    needs: classify
-    if: ${{ needs.classify.outputs.narrow_required == 'true' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    defaults:
-      run:
-        working-directory: apps/api
-    env:
-      APP_ENV: test
-      DATABASE_URL: postgresql+psycopg://ci:ci@127.0.0.1:5432/mcri_ci
-      SECRET_KEY: ci-only-not-a-deployment-secret-change-on-every-run-2026
-      AI_PROVIDER: disabled
-      OPENAI_API_KEY: ""
-      LOCAL_STORAGE_PATH: /tmp/mcri-ci-documents
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v6
-
-      - name: Set up Python
-        uses: actions/setup-python@v7
+          ref: 998858f31d8c6ff8b8a2fe4b1184d787975efdf3
+          path: frozen
+      - uses: actions/setup-python@v7
         with:
-          python-version: "3.13"
-          cache: pip
-          cache-dependency-path: apps/api/requirements-dev.lock
-
-      - name: Install backend dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install --require-hashes -r requirements-dev.lock
-          python -m pip check
-
-      - name: Compile backend and collect entire test suite
-        shell: bash
-        run: |
-          set -euo pipefail
-          python -m compileall app alembic
-          output="$(mktemp)"
-          trap 'rm -f "$output"' EXIT
-          pytest --collect-only -q tests > "$output"
-          grep -q -E '^tests/.*::' "$output" || { echo "Empty test collection" >&2; exit 1; }
-          echo 'All backend test nodes collected successfully.'
-
-      - name: Execute audited changed H&M test modules
-        shell: bash
+          python-version: '3.13'
+      - name: Download real hosted fixture artifact
+        id: download
+        continue-on-error: ${{ matrix.case == 'missing-artifact' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.case == 'missing-artifact' && 'deliberately-absent-proof-artifact' || needs.producer.outputs.artifact }}
+          path: ${{ runner.temp }}/proof-manifest
+      - name: Verify expected download behavior
         env:
-          NARROW_TESTS: ${{ needs.classify.outputs.narrow_tests }}
+          PROOF_CASE: ${{ matrix.case }}
+          DOWNLOAD_OUTCOME: ${{ steps.download.outcome }}
         run: |
-          set -euo pipefail
-          read -r -a selected_tests <<< "$NARROW_TESTS"
-          if (( ${#selected_tests[@]} < 1 || ${#selected_tests[@]} > 3 )); then
-            echo "Invalid synthetic test selection" >&2; exit 1
+          if [ "$PROOF_CASE" = missing-artifact ]; then
+            test "$DOWNLOAD_OUTCOME" = failure
+          else
+            test "$DOWNLOAD_OUTCOME" = success
           fi
-          for test_module in "${selected_tests[@]}"; do
-            case "$test_module" in
-              tests/test_local_ai_hm_loopback_smoke.py|tests/test_local_ai_hm_fixture_matrix.py|tests/test_local_ai_hm_repeat_smoke.py) ;;
-              *) echo "Unknown test module" >&2; exit 1 ;;
-            esac
-          done
-          pytest -q "${selected_tests[@]}"
-  backend:
-    name: Backend tests
-    needs:
-      - classify
-      - backend-shard
-      - backend-narrow
-    if: ${{ always() && (github.event_name == 'workflow_dispatch' || github.event.pull_request.draft == false) }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 2
-    steps:
-      - name: Enforce complete Backend CI selection
-        shell: bash
+      - name: Prove unchanged consumer rejection or acceptance
         env:
-          CLASSIFIER_RESULT: ${{ needs.classify.result }}
-          FULL_REQUIRED: ${{ needs.classify.outputs.backend_required }}
-          NARROW_REQUIRED: ${{ needs.classify.outputs.narrow_required }}
-          SHARD_RESULT: ${{ needs.backend-shard.result }}
-          NARROW_RESULT: ${{ needs.backend-narrow.result }}
+          MANIFEST_SHA256: ${{ needs.producer.outputs.digest }}
+          PROOF_CASE: ${{ matrix.case }}
+        run: python scripts/ci_v2_isolated_proof.py consume --case "$PROOF_CASE"
+      - name: Inject one recoverable synthetic failure on first attempt only
+        if: ${{ inputs.mode == 'rerun-recovery' && matrix.case == 'valid' && github.run_attempt == 1 }}
+        run: exit 19
+  proof:
+    name: Synthetic dependency and gate proof
+    needs: [producer, consumer]
+    if: always() && inputs.mode != 'expired-artifact'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/checkout@v6
+        with:
+          ref: 998858f31d8c6ff8b8a2fe4b1184d787975efdf3
+          path: frozen
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - name: Prove original aggregate shell rejects actual failed dependencies
+        env:
+          PROOF_MODE: ${{ inputs.mode }}
+          CLASSIFIER_RESULT: success
+          FULL_REQUIRED: 'true'
+          NARROW_REQUIRED: 'false'
+          COLLECTION_RESULT: ${{ needs.producer.result }}
+          SHARD_RESULT: ${{ needs.consumer.result }}
+          NARROW_RESULT: skipped
+        run: python scripts/ci_v2_isolated_proof.py gate
+      - name: Run immutable source-only safety regressions
+        working-directory: frozen
+        run: python -m unittest scripts.tests.test_backend_shard_selector -v
+  expired:
+    name: Natural-expiry artifact availability proof
+    if: inputs.mode == 'expired-artifact'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require the recorded expiry time and unchanged originating attempt
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          set -euo pipefail
-          [ "$CLASSIFIER_RESULT" = "success" ] || { echo "Backend classifier failed" >&2; exit 1; }
-          case "$FULL_REQUIRED/$NARROW_REQUIRED" in
-            true/false)
-              [ "$SHARD_RESULT" = "success" ] || { echo "Full backend matrix failed" >&2; exit 1; }
-              echo 'All 64 Backend shards passed.'
-              ;;
-            false/true)
-              [ "$NARROW_RESULT" = "success" ] || { echo "Changed-test or collection gate failed" >&2; exit 1; }
-              echo 'Changed tests and full collection passed.'
-              ;;
-            false/false)
-              echo 'No Backend-relevant files in exact diff.'
-              ;;
-            *)
-              echo "Ambiguous Backend scope" >&2; exit 1
-              ;;
-          esac
+          python - <<'PYEXPIRY'
+          from datetime import datetime, timezone
+          expiry = datetime.fromisoformat('2026-11-03T14:45:43+00:00')
+          if datetime.now(timezone.utc) < expiry:
+              raise SystemExit('Not naturally expired yet; no expiry proof is claimed.')
+          PYEXPIRY
+          attempt="$(gh api repos/eh3aneba/maritime-claims-platform/actions/runs/41389632800 --jq .run_attempt)"
+          test "$attempt" = 2
+      - name: Attempt real download after recorded natural expiry
+        id: expired_download
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: backend-collection-2
+          run-id: 41389632800
+          github-token: ${{ github.token }}
+          repository: eh3aneba/maritime-claims-platform
+          path: ${{ runner.temp }}/expired-proof
+      - name: Require unavailable artifact after natural expiry
+        env:
+          DOWNLOAD_OUTCOME: ${{ steps.expired_download.outcome }}
+        run: test "$DOWNLOAD_OUTCOME" = failure
