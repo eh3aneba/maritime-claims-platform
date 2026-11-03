@@ -104,7 +104,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v7
         with:
-          python-version: "3.13"
+          python-version: "3.13.17"
           cache: pip
           cache-dependency-path: apps/api/requirements-dev.lock
 
@@ -167,7 +167,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v7
         with:
-          python-version: "3.13"
+          python-version: "3.13.17"
           cache: pip
           cache-dependency-path: apps/api/requirements-dev.lock
 
@@ -232,7 +232,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v7
         with:
-          python-version: "3.13"
+          python-version: "3.13.17"
           cache: pip
           cache-dependency-path: apps/api/requirements-dev.lock
 
