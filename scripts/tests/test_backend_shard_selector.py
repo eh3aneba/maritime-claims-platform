@@ -5,6 +5,7 @@ from contextlib import redirect_stderr
 from io import StringIO
 from pathlib import Path
 import subprocess
+import re
 import unittest
 from unittest.mock import patch
 
@@ -64,8 +65,33 @@ class BackendShardSelectorTests(unittest.TestCase):
         self.assertNotIn('index % 64', workflow)
         self.assertIn('[ "$SHARD_RESULT" = "success" ] ||', workflow)
         self.assertIn('name: Backend tests', workflow)
-        self.assertIn('shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10', workflow)
+        self.assert_complete_shard_inventory(workflow)
         self.assertIn('python -m unittest scripts.tests.test_backend_shard_selector scripts.tests.test_ci_backend_narrow_scope -v', workflow)
+
+
+    def assert_complete_shard_inventory(self, workflow):
+        inventories = re.findall(r"^\s+shard: \[([^\]]+)\]\s*$", workflow, re.MULTILINE)
+        self.assertEqual(len(inventories), 1, "ambiguous or missing shard inventory")
+        self.assertRegex(inventories[0], r"^\s*\d+(?:\s*,\s*\d+)*\s*$")
+        shards = [int(value.strip()) for value in inventories[0].split(",")]
+        self.assertEqual(len(shards), 64)
+        self.assertEqual(sorted(shards), list(range(64)))
+
+    def test_shard_inventory_accepts_reordering_without_changing_membership(self):
+        self.assert_complete_shard_inventory("shard: [" + ", ".join(map(str, reversed(range(64)))) + "]")
+
+    def test_shard_inventory_rejects_missing_duplicate_and_unknown_shards(self):
+        for inventory in (list(range(63)), list(range(63)) + [0], list(range(63)) + [64]):
+            with self.subTest(inventory=inventory):
+                with self.assertRaises(AssertionError):
+                    self.assert_complete_shard_inventory("shard: [" + ", ".join(map(str, inventory)) + "]")
+
+    def test_shard_inventory_rejects_ambiguous_and_malformed_input(self):
+        valid = "shard: [" + ", ".join(map(str, range(64))) + "]"
+        for workflow in ("", valid + "\n" + valid, "shard: [0, bad]", "shard: [-1]"):
+            with self.subTest(workflow=workflow):
+                with self.assertRaises(AssertionError):
+                    self.assert_complete_shard_inventory(workflow)
 
 
 if __name__ == "__main__":
