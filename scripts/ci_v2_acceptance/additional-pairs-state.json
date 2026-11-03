@@ -1,0 +1,22 @@
+{
+  "pairs": [
+    {
+      "pair": 1,
+      "baseline_dispatch_requested": true,
+      "baseline": 41585947286,
+      "candidate_dispatch_requested": true,
+      "candidate": 41589516117,
+      "posted": true
+    },
+    {
+      "pair": 2,
+      "baseline_dispatch_requested": true,
+      "baseline": 41593476503,
+      "candidate_dispatch_requested": true,
+      "candidate": 41597986556
+    }
+  ],
+  "component_run": 41576740605,
+  "component_posted": true,
+  "floating_pair3_audited": true
+}
