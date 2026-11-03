@@ -70,7 +70,7 @@ class BackendShardSelectorTests(unittest.TestCase):
 
 
     def assert_complete_shard_inventory(self, workflow):
-        inventories = re.findall(r"^\s+shard: \[([^\]]+)\]\s*$", workflow, re.MULTILINE)
+        inventories = re.findall(r"^[ \t]*shard: \[([^\]]+)\][ \t]*$", workflow, re.MULTILINE)
         self.assertEqual(len(inventories), 1, "ambiguous or missing shard inventory")
         self.assertRegex(inventories[0], r"^\s*\d+(?:\s*,\s*\d+)*\s*$")
         shards = [int(value.strip()) for value in inventories[0].split(",")]
