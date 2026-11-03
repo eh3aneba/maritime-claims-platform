@@ -2,6 +2,7 @@
 from __future__ import annotations
 from pathlib import Path
 import subprocess
+import re
 import unittest
 from unittest.mock import patch
 from contextlib import redirect_stdout
@@ -81,10 +82,15 @@ class NarrowBackendCIRegressionTests(unittest.TestCase):
             "needs.backend-narrow.result", "CLASSIFIER_RESULT",
             "pytest --collect-only -q tests", "backend_required=true",
             "narrow_required=false", "python -m scripts.ci_backend_narrow_scope",
-            "All 64 Backend shards passed.", "shard: [0, 1, 2, 3, 4, 5",
+            "All 64 Backend shards passed.",
             "tests/test_local_ai_hm_repeat_smoke.py",
         ):
             self.assertIn(marker, wf)
+        inventories = re.findall(r"^[ \t]*shard: \[([^\]]+)\][ \t]*$", wf, re.MULTILINE)
+        self.assertEqual(len(inventories), 1)
+        shards = [int(value.strip()) for value in inventories[0].split(",")]
+        self.assertEqual(len(shards), 64)
+        self.assertEqual(sorted(shards), list(range(64)))
 
 
 if __name__ == "__main__":
