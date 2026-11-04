@@ -1,0 +1,57 @@
+{
+  "head_sha": "78f6b3de1ba2965de929850c383c8ed7665dcae8",
+  "runs": [
+    {
+      "run_id": 41325835629,
+      "url": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41325835629",
+      "Status": "Success",
+      "Total duration": "14s",
+      "head_mentioned": true,
+      "workflow": "Production Deployment Policy"
+    },
+    {
+      "run_id": 41325835632,
+      "url": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41325835632",
+      "Status": "Success",
+      "Total duration": "15m 41s",
+      "head_mentioned": true,
+      "workflow": "Continuous Integration"
+    },
+    {
+      "run_id": 41325835638,
+      "url": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41325835638",
+      "Status": "Success",
+      "Total duration": "13m 49s",
+      "head_mentioned": true,
+      "workflow": "Supply Chain Security"
+    },
+    {
+      "run_id": 41325835654,
+      "url": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41325835654",
+      "Status": "Success",
+      "Total duration": "15m 30s",
+      "head_mentioned": true,
+      "workflow": "Operational Performance Smoke"
+    },
+    {
+      "run_id": 41325835715,
+      "url": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41325835715",
+      "Status": "Success",
+      "Total duration": "16m 14s",
+      "head_mentioned": true,
+      "workflow": "PostgreSQL Concurrency Regression Suite"
+    },
+    {
+      "run_id": 41325836131,
+      "url": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41325836131",
+      "Status": "Skipped",
+      "Total duration": "1s",
+      "head_mentioned": true,
+      "workflow": "Full Backend Pre-Merge"
+    }
+  ],
+  "full_backend_dispatch_started": false,
+  "observed_at": "2026-11-01T20:08:17.958356+03:30",
+  "source": "Public PR/check-linked run pages, refreshed against the branch-filtered GitHub Actions run list; API unavailable",
+  "all_required_checks_passed": false
+}
