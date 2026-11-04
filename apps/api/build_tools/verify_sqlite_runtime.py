@@ -9,6 +9,10 @@ EXPECTED_VERSION = "3.54.1"
 def verify() -> dict:
     if sqlite3.sqlite_version != EXPECTED_VERSION:
         raise RuntimeError("sqlite_runtime_version_mismatch")
+    # This is a containment precondition, not a scanner exception or an
+    # exhaustive filesystem/reachability proof. Recheck in the final layer.
+    if shutil.which("sqlite3") is not None:
+        raise RuntimeError("sqlite_runtime_unexpected_sqlite_cli")
     with sqlite3.connect(":memory:") as db:
         options = {row[0] for row in db.execute("PRAGMA compile_options")}
         if not {"ENABLE_FTS5", "ENABLE_SESSION"}.issubset(options):

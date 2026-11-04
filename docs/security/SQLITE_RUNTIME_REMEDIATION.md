@@ -34,9 +34,10 @@ review**, not an assertion that edge is an approved production baseline.
 
 A build-only helper rejects the old runtime with nonzero exit, then exercises
 synthetic in-memory Unicode roundtrip and FTS5 query, requires the retained
-SESSION/FTS5 features and reports CLI presence. Both runtime stages repeat it
+SESSION/FTS5 features and rejects a sqlite3 CLI on PATH. Both runtime stages repeat it
 after the venv/application/tool copies, so hosted build logs can establish actual
-final-runtime inventory rather than only the package-layer observation. It reports compatibility only;
+final-runtime inventory rather than only the package-layer observation. PATH
+absence is not an exhaustive filesystem or dynamic reachability proof. It reports compatibility only;
 it never awards vulnerability admission, OCR resolution or human acceptance.
 
 An isolated diagnostic image made exactly one package upgrade3.53.4→3.54.1;
@@ -70,7 +71,18 @@ record exact versions, source pins, actual exits and unapproved fields.
    full64 production-backend regression, classifier and High cutoff retained.
    Docker compatibility success or Draft Backend skip is not a security pass.
 
-Accountable security/operations owner **UNASSIGNED — HUMAN APPOINTMENT REQUIRED**;
+Accountable owner for this security decision: **Ehsan (Product Owner, interim)**,
+explicitly appointed in the task conversation. The selected route is to keep
+admission blocked pending a supported stable fix, without activating an edge
+source choice or scanner exception. The edge pin in this Draft remains an
+unapproved diagnostic proposal, not a production baseline.
+
+Seven stdlib regression tests exercise version rejection, unexpected CLI
+rejection before DB access, each missing required feature, altered Unicode,
+incorrect FTS5 results, propagated DB errors and compatibility-only output.
+They do not establish security acceptance or replace final-image/full regression.
+Run: `python -m unittest scripts.tests.test_sqlite_runtime_build_probe -v`.
+
 source decision **NOT APPROVED**; exception/expiry **NOT APPROVED**. No approval
 is inferred from generic merge authorization. Original #875 stays unmerged until
 its blocker is resolved. Related manual main scan41813290992 also failed in the

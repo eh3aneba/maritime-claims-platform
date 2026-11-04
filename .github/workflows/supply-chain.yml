@@ -155,6 +155,9 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Verify SQLite runtime build probe regressions
+        run: python3 -m unittest scripts.tests.test_sqlite_runtime_build_probe -v
+
       - name: Classify production-image scan scope
         id: image-scope
         shell: bash
