@@ -1,5 +1,56 @@
 # #867 risk-first verification and bounded remediation plan
 
+## Current-state reconciliation — 2026-11-04 (Asia/Tehran)
+
+The observations and JSON below are a **historical 2026-11-01 record**, not live
+admission status. Original evidence is preserved unchanged. Reconcile decisions
+against the existing [execution roadmap](../roadmap/SEECLAIMS_V1_EXECUTION_STATUS.md)
+and [live #647 handoff](https://github.com/eh3aneba/maritime-claims-platform/issues/647).
+
+- Current inspected main is `811461563fa2076f751ac828c9821b4a27353f25`.
+  #867 has since merged normally at
+  `a2b5b87466355891d4e4d33320aabdee076a22d4`; its implementation head remains
+  `78f6b3de1ba2965de929850c383c8ed7665dcae8`. Later exact-head Full Backend
+  [run41394572312](https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41394572312)
+  completed successfully. The original skipped run in the historical inventory
+  remains skipped; later evidence does not rewrite that observation.
+- API network access is now working: current runtime policy is enforced and
+  unrestricted, and authenticated GitHub read/manual-dispatch calls succeed.
+  A separate branch-protection metadata API returned integration-permission403;
+  this is not a network failure or authority to bypass protected merge controls.
+- #869's signature **observation** code merged at
+  `cab2f32e517565341d4e5171ea3e7642814a372d`. Read-only observations are not an
+  approved freshness/admission policy. Security/operations owner remains
+  **UNASSIGNED — HUMAN APPOINTMENT REQUIRED**; freshness policy **NOT APPROVED**.
+- #870's source/reviewer packet merged at
+  `cc461db7cd2adb9e66974ce3ece371916badd11f`. Selected-worker reproduction and
+  source/export follow-up evidence now exist in the roadmap. Issue #835 is
+  closed for its software fix; its historical font/fallback recommendation below
+  is superseded by the current merged export implementation and tests. This
+  does not award independent semantic/visual H&M acceptance or repair missing
+  OCR text. #810, #850, #653, #764, #752 and #647 remain open at this observation.
+  Independent Persian/English H&M reviewer remains
+  **UNASSIGNED — HUMAN APPOINTMENT REQUIRED**. OCR/source-review holds remain.
+- #866 remains unchanged Draft at
+  `998858f31d8c6ff8b8a2fe4b1184d787975efdf3`. Its later reliability/performance
+  audit rejected adoption; the original pending benchmark wording below is
+  historical. See [final disposition](https://github.com/eh3aneba/maritime-claims-platform/issues/553#issuecomment-6605654545)
+  and [completed lifecycle audit](https://github.com/eh3aneba/maritime-claims-platform/issues/553#issuecomment-6607851504).
+  Do not merge that experiment or infer acceptance from component savings.
+- Active implementation #875, exact head
+  `c7ad7ed8c13c8f786145ec9d7a245d4b9d649c73`, is a separate SQL-template
+  canary with retained integrity checks. Read its own exact-head gates and
+  [measurement limitations](https://github.com/eh3aneba/maritime-claims-platform/issues/553#issuecomment-6622567023);
+  no old bootstrap result admits a changed performance candidate.
+
+This reconciliation adds no new bootstrap test execution, owner policy, expert
+signature, customer approval, production readiness or deployment. Synthetic-only,
+external AI/adapters OFF, independent human authority preserved. Customer Pilot
+remains **NO-GO**. Merge authorization for this documentation must come from the
+product owner and current required gates; it is not granted by the annex itself.
+
+## Historical observation — 2026-11-01
+
 Observed 2026-11-01, Asia/Tehran. This is a documentation/security review,
 not a second implementation package or pilot authorization. Production code,
 workflows, branch rules, credentials and external integrations are unchanged.
