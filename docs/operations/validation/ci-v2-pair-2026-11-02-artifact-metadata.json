@@ -1,0 +1,17 @@
+{
+  "run_id": 41389632800,
+  "metadata_only": true,
+  "manifest_body_downloaded": false,
+  "artifacts": [
+    {
+      "id": 13116658847,
+      "name": "backend-collection-1",
+      "size_in_bytes": 32020,
+      "digest": "sha256:411c4c8efdbd51d56979063c9e263293cf2bdd5c7dc5ff9bc5ce536dc817ea7a",
+      "expired": false,
+      "created_at": "2026-11-02T04:39:56Z",
+      "expires_at": "2026-11-03T04:39:54Z",
+      "workflow_head_sha": "998858f31d8c6ff8b8a2fe4b1184d787975efdf3"
+    }
+  ]
+}

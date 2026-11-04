@@ -1,0 +1,69 @@
+{
+  "comparison": "exact Unicode code points; no normalization or inferred correction",
+  "blank_lines_preserved_in_machine_file": true,
+  "paragraph_mapping": "three ordered nonempty machine lines to three fixture paragraphs; raw line numbers retained",
+  "changes": [
+    {
+      "source_paragraph": 2,
+      "machine_raw_line": 3,
+      "source_page": "1",
+      "segment_index": 0,
+      "operation": "insert",
+      "reference_span": "",
+      "observed_span": "۱۱-۰۹-",
+      "reference_utf16_start": 9,
+      "reference_utf16_end_exclusive": 9,
+      "observed_utf16_start": 9,
+      "observed_utf16_end_exclusive": 15,
+      "paragraph_tail_missing": false,
+      "semantic_interpretation": "pending independent bilingual review"
+    },
+    {
+      "source_paragraph": 2,
+      "machine_raw_line": 3,
+      "source_page": "1",
+      "segment_index": 0,
+      "operation": "delete",
+      "reference_span": "-۰۹-۱۱",
+      "observed_span": "",
+      "reference_utf16_start": 13,
+      "reference_utf16_end_exclusive": 19,
+      "observed_utf16_start": 19,
+      "observed_utf16_end_exclusive": 19,
+      "paragraph_tail_missing": false,
+      "semantic_interpretation": "pending independent bilingual review"
+    },
+    {
+      "source_paragraph": 2,
+      "machine_raw_line": 3,
+      "source_page": "1",
+      "segment_index": 0,
+      "operation": "delete",
+      "reference_span": " شد.",
+      "observed_span": "",
+      "reference_utf16_start": 60,
+      "reference_utf16_end_exclusive": 64,
+      "observed_utf16_start": 60,
+      "observed_utf16_end_exclusive": 60,
+      "paragraph_tail_missing": true,
+      "semantic_interpretation": "pending independent bilingual review"
+    },
+    {
+      "source_paragraph": 3,
+      "machine_raw_line": 5,
+      "source_page": "1",
+      "segment_index": 0,
+      "operation": "delete",
+      "reference_span": " است.",
+      "observed_span": "",
+      "reference_utf16_start": 50,
+      "reference_utf16_end_exclusive": 55,
+      "observed_utf16_start": 50,
+      "observed_utf16_end_exclusive": 50,
+      "paragraph_tail_missing": true,
+      "semantic_interpretation": "pending independent bilingual review"
+    }
+  ],
+  "bidi_control_codepoints_in_machine": [],
+  "independent_acceptance": "pending"
+}

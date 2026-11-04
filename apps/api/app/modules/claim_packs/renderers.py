@@ -4,6 +4,8 @@ from io import BytesIO
 import textwrap
 from typing import Any
 
+from pypdf._codecs.core_font_metrics import CORE_FONT_METRICS
+
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
@@ -47,6 +49,55 @@ def _pdf_safe(value: str) -> str:
             "Claim Pack PDF cannot preserve all source characters; use XLSX or original evidence."
         ) from None
     return value.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+
+
+
+# Existing body geometry: Helvetica 9pt, 612pt page, 54pt left/right margins.
+# pypdf is already locked; use its bundled Adobe Core14 metrics, not host fonts.
+_PDF_BODY_WIDTH_UNITS = 56_000  # 504pt * 1000 / 9pt
+_PDF_HELVETICA_WIDTHS = CORE_FONT_METRICS["Helvetica"].character_widths
+
+
+def _wrap_pdf_line(value: str) -> list[str]:
+    _pdf_safe(value)  # Validate before whitespace/layout handling; never drop Unicode.
+    if any(c not in _PDF_HELVETICA_WIDTHS for c in value if c not in "\r\n\t"):
+        raise UnsupportedClaimPackPDFTextError(
+            "Claim Pack PDF cannot preserve all source characters; use XLSX or original evidence."
+        )
+    wrapped: list[str] = []
+    for hard_line in value.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
+        for part in textwrap.wrap(hard_line, width=94, replace_whitespace=False) or [""]:
+            remaining = part
+            while remaining:
+                width = 0.0
+                cut = 0
+                for character in remaining:
+                    advance = _PDF_HELVETICA_WIDTHS.get(character)
+                    if advance is None:
+                        raise UnsupportedClaimPackPDFTextError(
+                            "Claim Pack PDF cannot preserve all source characters; use XLSX or original evidence."
+                        )
+                    if width + advance > _PDF_BODY_WIDTH_UNITS:
+                        break
+                    width += advance
+                    cut += 1
+                if cut == len(remaining):
+                    wrapped.append(remaining)
+                    break
+                if cut == 0:
+                    raise UnsupportedClaimPackPDFTextError(
+                        "Claim Pack PDF cannot fit source text; use XLSX or original evidence."
+                    )
+                boundary = max((i for i, c in enumerate(remaining[:cut + 1]) if c.isspace()), default=0)
+                if boundary and remaining[:boundary].strip():
+                    wrapped.append(remaining[:boundary].rstrip())
+                    remaining = remaining[boundary:].lstrip()
+                else:
+                    wrapped.append(remaining[:cut])
+                    remaining = remaining[cut:]
+            if not part:
+                wrapped.append("")
+    return wrapped
 
 
 def _pdf_lines(snapshot: dict[str, Any]) -> list[str]:
@@ -178,7 +229,7 @@ def _pdf_lines(snapshot: dict[str, Any]) -> list[str]:
         if not line:
             wrapped.append("")
             continue
-        wrapped.extend(textwrap.wrap(str(line), width=94, replace_whitespace=False) or [""])
+        wrapped.extend(_wrap_pdf_line(str(line)))
     return wrapped
 
 
@@ -200,7 +251,7 @@ def render_pdf(snapshot: dict[str, Any]) -> bytes:
     objects.append(
         f"<< /Type /Pages /Kids [{kids}] /Count {len(pages)} >>".encode("ascii")
     )
-    objects.append(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    objects.append(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>")
 
     for page_number, (page_lines, content_number) in enumerate(
         zip(pages, content_object_numbers, strict=True)
@@ -256,7 +307,8 @@ def _preserve_xlsx_text_literals(workbook) -> None:
     """Keep source-derived strings literal in this formula-free reporting workbook.
 
     openpyxl treats any user-supplied string beginning with '=' as an Excel
-    formula on assignment. Reclassify those cells as text without adding an
+    formula on assignment, and strings such as '#N/A' as Excel errors.
+    Reclassify those cells as text without adding an
     apostrophe or changing the exact original source quote/narrative. Every
     Claim Pack sheet is a static review aid; executable formulas are not an
     allowed output.
@@ -264,9 +316,9 @@ def _preserve_xlsx_text_literals(workbook) -> None:
     for sheet in workbook.worksheets:
         for row in sheet.iter_rows():
             for cell in row:
-                if cell.data_type == "f":
+                if cell.data_type in {"f", "e"}:
                     if not isinstance(cell.value, str):
-                        raise ValueError("Claim Pack XLSX contains a non-text formula.")
+                        raise ValueError("Claim Pack XLSX contains a non-text formula or error.")
                     cell.data_type = "s"
 
 

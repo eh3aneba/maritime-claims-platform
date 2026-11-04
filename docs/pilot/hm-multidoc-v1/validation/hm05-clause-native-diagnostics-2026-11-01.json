@@ -1,0 +1,82 @@
+{
+  "source_raster_sha256": "1eef5de99985ee76048f93b04b7184c9a5daf4b6f33441b36c99e9a850e56d4c",
+  "native_runtime_only": true,
+  "psm_ablation": {
+    "schema_version": 1,
+    "measurement_kind": "fixed_source_tesseract_psm_exact_literal_ablation",
+    "source_bytes_compared_to_self_supplied_digest": true,
+    "languages": "eng+fas",
+    "baseline_default_psm": 3,
+    "mode_count": 4,
+    "observations": [
+      {
+        "psm": 3,
+        "machinery_term_exact_present": true,
+        "negation_token_exact_present": true,
+        "full_negation_clause_exact_present": false,
+        "negation_clause_core_without_terminal_punctuation_present": false,
+        "incident_date_exact_present": false,
+        "number_of_exact_probes_present": 2,
+        "probes_tested": 4,
+        "ocr_text_human_verified": false
+      },
+      {
+        "psm": 4,
+        "machinery_term_exact_present": true,
+        "negation_token_exact_present": true,
+        "full_negation_clause_exact_present": false,
+        "negation_clause_core_without_terminal_punctuation_present": false,
+        "incident_date_exact_present": false,
+        "number_of_exact_probes_present": 2,
+        "probes_tested": 4,
+        "ocr_text_human_verified": false
+      },
+      {
+        "psm": 6,
+        "machinery_term_exact_present": true,
+        "negation_token_exact_present": true,
+        "full_negation_clause_exact_present": false,
+        "negation_clause_core_without_terminal_punctuation_present": false,
+        "incident_date_exact_present": false,
+        "number_of_exact_probes_present": 2,
+        "probes_tested": 4,
+        "ocr_text_human_verified": false
+      },
+      {
+        "psm": 11,
+        "machinery_term_exact_present": true,
+        "negation_token_exact_present": true,
+        "full_negation_clause_exact_present": false,
+        "negation_clause_core_without_terminal_punctuation_present": false,
+        "incident_date_exact_present": false,
+        "number_of_exact_probes_present": 2,
+        "probes_tested": 4,
+        "ocr_text_human_verified": false
+      }
+    ],
+    "production_settings_changed": false,
+    "best_mode_selected": false,
+    "reference_transcript_independently_adjudicated": false,
+    "negation_scope_semantics_verified": false,
+    "human_bilingual_review_completed": false,
+    "pilot_accepted": false,
+    "warning": "Literal hits on an unchanged image do not prove semantic accuracy, safety, generalization, source authenticity, model improvement or reviewer approval. The production OCR configuration is unchanged."
+  },
+  "word_box_observation": {
+    "source_png_sha256": "1eef5de99985ee76048f93b04b7184c9a5daf4b6f33441b36c99e9a850e56d4c",
+    "runtime": "native Tesseract 5.5.0; not the selected Docker worker",
+    "tsv_option": "tessedit_create_tsv=1; renderer only, no PSM change",
+    "recognized_word_boxes": 24,
+    "recognized_line_groups": 3,
+    "word_sequence_matches_persisted_tokens": true,
+    "terminal_shod_exact_word_present": false,
+    "terminal_ast_exact_word_present": false,
+    "independent_acceptance": false,
+    "production_settings_changed": false
+  },
+  "setup_limit": "The first optional TSV-config attempt had no level header because the isolated pinned-language directory lacks optional configs; excluded as a setup failure. A subsequent renderer-flag invocation returned a validated TSV header.",
+  "source_or_transcript_changed": false,
+  "production_mode_selected": false,
+  "independent_expert_review": "pending",
+  "semantic_or_causal_conclusion": null
+}

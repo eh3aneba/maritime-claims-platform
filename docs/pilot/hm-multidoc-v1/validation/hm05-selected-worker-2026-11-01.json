@@ -1,0 +1,114 @@
+{
+  "synthetic_only": true,
+  "scan_verdict": "clean",
+  "actual_scanner_used": true,
+  "scanner_freshness_accepted": false,
+  "source_file_hash": "1eef5de99985ee76048f93b04b7184c9a5daf4b6f33441b36c99e9a850e56d4c",
+  "document_version": 1,
+  "extraction_method": "tesseract:eng+fas",
+  "requires_ocr": false,
+  "persisted_text_hash": "5a2304f4b11d628d7694eb38e24d8d335bf8dbf31e0e0b5cb639bc2cd0bd3cd2",
+  "source_locators": [
+    {
+      "segment_index": 0,
+      "locator_type": "page",
+      "locator_value": "1"
+    }
+  ],
+  "review_disposition": "machine_unverified",
+  "source_text_quality_state": "ocr_human_source_comparison_required",
+  "claim_fact_count": 0,
+  "assessment_count": 0,
+  "independent_review_performed": false,
+  "pilot_accepted": false,
+  "application_source_sha": "fa2c471463f5aecb988f89e791aae359385227e4",
+  "application_source_tree": "f239abea5a30d08e3b5d7a3c4508ff91fa55057a",
+  "image": {
+    "Id": "sha256:63b5d8850d5ac76cc0bb2b2f8f95a837c8748b05574683dc492566f06318b5da",
+    "RepoDigests": [],
+    "Architecture": "amd64",
+    "Os": "linux",
+    "Created": "2026-11-01T20:22:21.076506276Z"
+  },
+  "build": {
+    "source_commit": "fa2c471463f5aecb988f89e791aae359385227e4",
+    "original_dockerfile_sha256": "7f629fcd0e61e0a0b15ca5ed533954e8dd732b180b1b65130a8c27c09ba6472b",
+    "session_ca_dockerfile_sha256": "2eca59c0a5aba73844b9010e46a9e979de66cf93a6699a4e2861b33df0c300a3",
+    "adaptation": "ephemeral combined CA secret and per-RUN trust exports only; original commands unchanged",
+    "source_pins_or_verification_changed": false,
+    "initial_source_packaging_failure": "Workspace restored tracked files as 0600; COPY root ownership made them unreadable to runtime UID1000. Migration and service replay failed; excluded as setup failures.",
+    "corrected_context": "git archive fa2c471463f5aecb988f89e791aae359385227e4:apps/api extracted with recorded modes; no runtime privilege relaxation"
+  },
+  "source_context": "git archive of pinned apps/api tree, with readable Git archive file modes",
+  "runtime_uid": 1000,
+  "runtime_root_filesystem_read_only": true,
+  "capabilities_dropped": "ALL",
+  "no_new_privileges": true,
+  "runtime_network": "internal-only Docker network; no published ports; direct engine replay network none",
+  "alembic_upgrade_head": "passed on fresh disposable PostgreSQL 18.4; 0224_obs_refresh_recovery_anchor",
+  "tesseract_version": "5.5.3",
+  "leptonica_version": "1.87.0",
+  "libtiff_version": "4.7.2",
+  "poppler_version": "25.12.0",
+  "language_data_commit": "ced78752cc61322fb554c280d13360b35b8684e4",
+  "language_sha256": {
+    "eng": "daa0c97d651c19fba3b25e81317cd697e9908c8208090c94c3905381c23fc047",
+    "fas": "0b3b15e9ccbe435825187fa7a2bb227f555dd37cf85126c6cf459ca4a69b929f"
+  },
+  "raw_engine_sha256": "b9ede8b00dba60daa0885d6900f67b340248f9856259209cf9499eed39052ac3",
+  "raw_engine_bytes": 258,
+  "documented_application_trim_matches_persisted": true,
+  "native_and_selected_persisted_transcripts_byte_identical": true,
+  "packet_bytes_changed": false,
+  "independent_acceptance": "pending",
+  "semantic_negation_scope_accepted": false,
+  "date_semantics_adjudicated": false,
+  "scanner": {
+    "version": "1.5.4",
+    "signature_version": "28164",
+    "signature_timestamp": "2026-10-25T06:24:12Z",
+    "freshness_threshold": null,
+    "security_owner_acceptance": false
+  },
+  "exact_omissions_reference": "../reviewer-packet-hm05-2026-11-01/exact-discrepancies.json",
+  "missing_tails": [
+    {
+      "authored_paragraph": 2,
+      "machine_raw_line": 3,
+      "text": " شد.",
+      "source_utf16_end_exclusive": [
+        60,
+        64
+      ]
+    },
+    {
+      "authored_paragraph": 3,
+      "machine_raw_line": 5,
+      "text": " است.",
+      "source_utf16_end_exclusive": [
+        50,
+        55
+      ]
+    }
+  ],
+  "negation_token_retained": true,
+  "full_authored_clause_retrieved": false,
+  "date_observation": "Authored logical sequence ۲۰۲۶-۰۹-۱۱ differs from raster visual presentation / machine sequence ۱۱-۰۹-۲۰۲۶. Do not attribute solely to OCR or normalize; independent bilingual adjudication pending.",
+  "limits": "Service-level synthetic fixture calls actual upload/scanner, PostgreSQL processing and source-preview functions; not HTTP/browser/operator-host acceptance or a human review. No disputed-source resolution or Assessment approval.",
+  "durable_hash_verified_after_worker_exit": true,
+  "disposable_services_and_private_env_cleaned_up": true,
+  "final_guarded_harness_reexecuted": true,
+  "negative_guards_verified": [
+    "non-test environment refused before writes",
+    "existing synthetic dataset refused before writes"
+  ],
+  "negative_runner_setup_failure": "Initial populated-database negative invocation omitted the read-only /review fixture mount and failed before reaching that guard; excluded. Both guard checks then passed with the complete mount contract.",
+  "replay_harness_sha256": "0ecf7171e02323ba5d54ea9372c06d40fa404a678ff640458829c193d975e479",
+  "base_image_resolved_digest": "sha256:eb2c62658b8d51bff0acc408504b76521d02030de56a8a3c1e830083e89b89d2",
+  "scanner_image_repo_digests": [
+    "clamav/clamav@sha256:bda39705e291105049c3936e2803ac90b955172af8030f94f05dce1252df6c6d"
+  ],
+  "postgres_image_repo_digests": [
+    "postgres@sha256:a02db8cac496f15b094798a38254f14d6e00741f709360e5e00bb6668ea31636"
+  ]
+}

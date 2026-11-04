@@ -1,0 +1,30 @@
+{
+  "observed_at_utc": "2026-11-02T05:16:56.380580+00:00",
+  "window_start_utc": "2026-11-02T04:04:05Z",
+  "window_end_utc": "2026-11-02T05:15:34Z",
+  "known_old_queued_job_counts_at_end": [
+    {
+      "id": 34749523710,
+      "jobs": 0
+    },
+    {
+      "id": 34749518887,
+      "jobs": 0
+    },
+    {
+      "id": 34749518909,
+      "jobs": 0
+    },
+    {
+      "id": 34749518980,
+      "jobs": 0
+    }
+  ],
+  "other_recent_workflow_activity_in_window": [],
+  "limit": "Repository workflow activity audit and in-progress polling; global runner contention, exact machine image and cache hits remain unverified.",
+  "post_run_candidate_head": "998858f31d8c6ff8b8a2fe4b1184d787975efdf3",
+  "post_run_candidate_draft": true,
+  "post_run_main_head": "fa2c471463f5aecb988f89e791aae359385227e4",
+  "post_run_candidate_failed_checks": [],
+  "post_run_verified_at_utc": "2026-11-02T05:22:31.018933+00:00"
+}

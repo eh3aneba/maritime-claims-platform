@@ -1,0 +1,696 @@
+{
+  "observed_at_utc": "2026-11-01T20:29:02.927950+00:00",
+  "required_checks": [
+    "Backend tests",
+    "PostgreSQL migration chain",
+    "Frontend typecheck and build",
+    "Docker Compose validation",
+    "Scoped CI gate",
+    "PostgreSQL concurrency gate",
+    "Production dependency audit and SBOM",
+    "Secret history scan",
+    "Container image vulnerability scan",
+    "Production environment policy",
+    "Operational performance gate"
+  ],
+  "prs": [
+    {
+      "headRefOid": "998858f31d8c6ff8b8a2fe4b1184d787975efdf3",
+      "isDraft": true,
+      "number": 866,
+      "url": "https://github.com/eh3aneba/maritime-claims-platform/pull/866",
+      "checks": [
+        {
+          "name": "Classify backend changes",
+          "status": "COMPLETED",
+          "conclusion": "SKIPPED",
+          "workflowName": "Full Backend Pre-Merge",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41318063683/job/124882234224"
+        },
+        {
+          "name": "Classify general CI changes",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflowName": "Continuous Integration",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41318063702/job/124882232406"
+        },
+        {
+          "name": "Classify operational performance scope",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflowName": "Operational Performance Smoke",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41318063694/job/124882232314"
+        },
+        {
+          "name": "Classify PostgreSQL concurrency scope",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflowName": "PostgreSQL Concurrency Regression Suite",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41318063689/job/124882232409"
+        },
+        {
+          "name": "Production environment policy",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflowName": "Production Deployment Policy",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41318063672/job/124882232257"
+        },
+        {
+          "name": "Production dependency audit and SBOM",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflowName": "Supply Chain Security",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41318063662/job/124882232413"
+        },
+        {
+          "name": "Backend collection manifest",
+          "status": "COMPLETED",
+          "conclusion": "SKIPPED",
+          "workflowName": "Full Backend Pre-Merge",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41318063683/job/124882256952"
+        },
+        {
+          "name": "PostgreSQL concurrency (${{ matrix.group }})",
+          "status": "COMPLETED",
+          "conclusion": "SKIPPED",
+          "workflowName": "PostgreSQL Concurrency Regression Suite",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41318063689/job/124882270921"
+        },
+        {
+          "name": "PostgreSQL migration chain",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflowName": "Continuous Integration",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41318063702/job/124882232238"
+        },
+        {
+          "name": "Live-stack performance smoke",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflowName": "Operational Performance Smoke",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41318063694/job/124882260418"
+        },
+        {
+          "name": "Secret history scan",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflowName": "Supply Chain Security",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41318063662/job/124882232609"
+        },
+        {
+          "name": "Backend changed-test verification",
+          "status": "COMPLETED",
+          "conclusion": "SKIPPED",
+          "workflowName": "Full Backend Pre-Merge",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41318063683/job/124882233748"
+        },
+        {
+          "name": "Frontend typecheck and build",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflowName": "Continuous Integration",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41318063702/job/124882232277"
+        },
+        {
+          "name": "Fresh CI runner synthetic recovery gate",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflowName": "Operational Performance Smoke",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41318063694/job/124886304126"
+        },
+        {
+          "name": "PostgreSQL concurrency gate",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflowName": "PostgreSQL Concurrency Regression Suite",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41318063689/job/124882270061"
+        },
+        {
+          "name": "Container image vulnerability scan",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflowName": "Supply Chain Security",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41318063662/job/124882232610"
+        },
+        {
+          "name": "Backend tests shard ${{ matrix.shard }}",
+          "status": "COMPLETED",
+          "conclusion": "SKIPPED",
+          "workflowName": "Full Backend Pre-Merge",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41318063683/job/124882268005"
+        },
+        {
+          "name": "Docker Compose validation",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflowName": "Continuous Integration",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41318063702/job/124882232327"
+        },
+        {
+          "name": "Operational performance gate",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflowName": "Operational Performance Smoke",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41318063694/job/124886416759"
+        },
+        {
+          "name": "Dependency lock consistency",
+          "status": "COMPLETED",
+          "conclusion": "SKIPPED",
+          "workflowName": "Continuous Integration",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41318063702/job/124882277174"
+        },
+        {
+          "name": "Backend tests",
+          "status": "COMPLETED",
+          "conclusion": "SKIPPED",
+          "workflowName": "Full Backend Pre-Merge",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41318063683/job/124882235086"
+        },
+        {
+          "name": "Design partner browser E2E",
+          "status": "COMPLETED",
+          "conclusion": "SKIPPED",
+          "workflowName": "Continuous Integration",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41318063702/job/124882276837"
+        },
+        {
+          "name": "Scoped CI gate",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflowName": "Continuous Integration",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41318063702/job/124882276273"
+        }
+      ]
+    },
+    {
+      "headRefOid": "aa82034137b5d765451f607f049f603eeb7dd579",
+      "isDraft": true,
+      "number": 869,
+      "url": "https://github.com/eh3aneba/maritime-claims-platform/pull/869",
+      "checks": [
+        {
+          "name": "Classify backend changes",
+          "status": "COMPLETED",
+          "conclusion": "SKIPPED",
+          "workflowName": "Full Backend Pre-Merge",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41331020717/job/124920945072"
+        },
+        {
+          "name": "ClamAV signature observation regressions",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflowName": "ClamAV Signature Observation Regressions",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41331020788/job/124920944432"
+        },
+        {
+          "name": "Classify general CI changes",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflowName": "Continuous Integration",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41331020871/job/124920945276"
+        },
+        {
+          "name": "Classify operational performance scope",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflowName": "Operational Performance Smoke",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41331020588/job/124920943987"
+        },
+        {
+          "name": "Classify PostgreSQL concurrency scope",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflowName": "PostgreSQL Concurrency Regression Suite",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41331020728/job/124920944308"
+        },
+        {
+          "name": "Production environment policy",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflowName": "Production Deployment Policy",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41331020625/job/124920943972"
+        },
+        {
+          "name": "Production dependency audit and SBOM",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflowName": "Supply Chain Security",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41331020690/job/124920944659"
+        },
+        {
+          "name": "Backend tests shard ${{ matrix.shard }}",
+          "status": "COMPLETED",
+          "conclusion": "SKIPPED",
+          "workflowName": "Full Backend Pre-Merge",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41331020717/job/124920945263"
+        },
+        {
+          "name": "PostgreSQL concurrency (${{ matrix.group }})",
+          "status": "COMPLETED",
+          "conclusion": "SKIPPED",
+          "workflowName": "PostgreSQL Concurrency Regression Suite",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41331020728/job/124920978816"
+        },
+        {
+          "name": "PostgreSQL migration chain",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflowName": "Continuous Integration",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41331020871/job/124920945126"
+        },
+        {
+          "name": "Live-stack performance smoke",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflowName": "Operational Performance Smoke",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41331020588/job/124920973318"
+        },
+        {
+          "name": "Secret history scan",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflowName": "Supply Chain Security",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41331020690/job/124920944956"
+        },
+        {
+          "name": "Backend changed-test verification",
+          "status": "COMPLETED",
+          "conclusion": "SKIPPED",
+          "workflowName": "Full Backend Pre-Merge",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41331020717/job/124920982041"
+        },
+        {
+          "name": "Frontend typecheck and build",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflowName": "Continuous Integration",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41331020871/job/124920945320"
+        },
+        {
+          "name": "Fresh CI runner synthetic recovery gate",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflowName": "Operational Performance Smoke",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41331020588/job/124925077930"
+        },
+        {
+          "name": "PostgreSQL concurrency gate",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflowName": "PostgreSQL Concurrency Regression Suite",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41331020728/job/124920977689"
+        },
+        {
+          "name": "Container image vulnerability scan",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflowName": "Supply Chain Security",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41331020690/job/124920944888"
+        },
+        {
+          "name": "Backend tests",
+          "status": "COMPLETED",
+          "conclusion": "SKIPPED",
+          "workflowName": "Full Backend Pre-Merge",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41331020717/job/124920972626"
+        },
+        {
+          "name": "Docker Compose validation",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflowName": "Continuous Integration",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41331020871/job/124920945307"
+        },
+        {
+          "name": "Operational performance gate",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflowName": "Operational Performance Smoke",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41331020588/job/124925180157"
+        },
+        {
+          "name": "Dependency lock consistency",
+          "status": "COMPLETED",
+          "conclusion": "SKIPPED",
+          "workflowName": "Continuous Integration",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41331020871/job/124920973009"
+        },
+        {
+          "name": "Design partner browser E2E",
+          "status": "COMPLETED",
+          "conclusion": "SKIPPED",
+          "workflowName": "Continuous Integration",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41331020871/job/124920973224"
+        },
+        {
+          "name": "Scoped CI gate",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflowName": "Continuous Integration",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41331020871/job/124920971776"
+        }
+      ]
+    },
+    {
+      "headRefOid": "ce752d8f36ed183088503da4dc018adeaf35290a",
+      "isDraft": true,
+      "number": 870,
+      "url": "https://github.com/eh3aneba/maritime-claims-platform/pull/870",
+      "checks": [
+        {
+          "name": "Classify backend changes",
+          "status": "COMPLETED",
+          "conclusion": "SKIPPED",
+          "workflowName": "Full Backend Pre-Merge",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41343554886/job/124958504912"
+        },
+        {
+          "name": "Classify general CI changes",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflowName": "Continuous Integration",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41343554929/job/124958467246"
+        },
+        {
+          "name": "Classify operational performance scope",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflowName": "Operational Performance Smoke",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41343554930/job/124958467354"
+        },
+        {
+          "name": "Classify PostgreSQL concurrency scope",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflowName": "PostgreSQL Concurrency Regression Suite",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41343555243/job/124958468434"
+        },
+        {
+          "name": "Production environment policy",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflowName": "Production Deployment Policy",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41343554914/job/124958466926"
+        },
+        {
+          "name": "Production dependency audit and SBOM",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflowName": "Supply Chain Security",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41343554927/job/124958467091"
+        },
+        {
+          "name": "Backend tests shard ${{ matrix.shard }}",
+          "status": "COMPLETED",
+          "conclusion": "SKIPPED",
+          "workflowName": "Full Backend Pre-Merge",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41343554886/job/124958469847"
+        },
+        {
+          "name": "Live-stack performance smoke",
+          "status": "COMPLETED",
+          "conclusion": "SKIPPED",
+          "workflowName": "Operational Performance Smoke",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41343554930/job/124958504994"
+        },
+        {
+          "name": "PostgreSQL concurrency (${{ matrix.group }})",
+          "status": "COMPLETED",
+          "conclusion": "SKIPPED",
+          "workflowName": "PostgreSQL Concurrency Regression Suite",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41343555243/job/124958500946"
+        },
+        {
+          "name": "PostgreSQL migration chain",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflowName": "Continuous Integration",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41343554929/job/124958467349"
+        },
+        {
+          "name": "Secret history scan",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflowName": "Supply Chain Security",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41343554927/job/124958466863"
+        },
+        {
+          "name": "Backend changed-test verification",
+          "status": "COMPLETED",
+          "conclusion": "SKIPPED",
+          "workflowName": "Full Backend Pre-Merge",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41343554886/job/124958469205"
+        },
+        {
+          "name": "Fresh CI runner synthetic recovery gate",
+          "status": "COMPLETED",
+          "conclusion": "SKIPPED",
+          "workflowName": "Operational Performance Smoke",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41343554930/job/124958505483"
+        },
+        {
+          "name": "Frontend typecheck and build",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflowName": "Continuous Integration",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41343554929/job/124958467267"
+        },
+        {
+          "name": "PostgreSQL concurrency gate",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflowName": "PostgreSQL Concurrency Regression Suite",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41343555243/job/124958499518"
+        },
+        {
+          "name": "Container image vulnerability scan",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflowName": "Supply Chain Security",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41343554927/job/124958467152"
+        },
+        {
+          "name": "Backend tests",
+          "status": "COMPLETED",
+          "conclusion": "SKIPPED",
+          "workflowName": "Full Backend Pre-Merge",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41343554886/job/124958469777"
+        },
+        {
+          "name": "Docker Compose validation",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflowName": "Continuous Integration",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41343554929/job/124958467026"
+        },
+        {
+          "name": "Operational performance gate",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflowName": "Operational Performance Smoke",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41343554930/job/124958503958"
+        },
+        {
+          "name": "Dependency lock consistency",
+          "status": "COMPLETED",
+          "conclusion": "SKIPPED",
+          "workflowName": "Continuous Integration",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41343554929/job/124958506946"
+        },
+        {
+          "name": "Design partner browser E2E",
+          "status": "COMPLETED",
+          "conclusion": "SKIPPED",
+          "workflowName": "Continuous Integration",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41343554929/job/124958507382"
+        },
+        {
+          "name": "Scoped CI gate",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflowName": "Continuous Integration",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41343554929/job/124958506143"
+        }
+      ]
+    },
+    {
+      "headRefOid": "99a12529e35ec506ac49463336f16a08c1592a04",
+      "isDraft": true,
+      "number": 871,
+      "url": "https://github.com/eh3aneba/maritime-claims-platform/pull/871",
+      "checks": [
+        {
+          "name": "Classify backend changes",
+          "status": "COMPLETED",
+          "conclusion": "SKIPPED",
+          "workflowName": "Full Backend Pre-Merge",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41344867044/job/124962429370"
+        },
+        {
+          "name": "Classify general CI changes",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflowName": "Continuous Integration",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41344867009/job/124962428077"
+        },
+        {
+          "name": "Classify operational performance scope",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflowName": "Operational Performance Smoke",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41344867021/job/124962427841"
+        },
+        {
+          "name": "Classify PostgreSQL concurrency scope",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflowName": "PostgreSQL Concurrency Regression Suite",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41344867034/job/124962427878"
+        },
+        {
+          "name": "Production environment policy",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflowName": "Production Deployment Policy",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41344867077/job/124962427885"
+        },
+        {
+          "name": "Production dependency audit and SBOM",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflowName": "Supply Chain Security",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41344867024/job/124962428108"
+        },
+        {
+          "name": "Backend tests shard ${{ matrix.shard }}",
+          "status": "COMPLETED",
+          "conclusion": "SKIPPED",
+          "workflowName": "Full Backend Pre-Merge",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41344867044/job/124962471304"
+        },
+        {
+          "name": "PostgreSQL concurrency (${{ matrix.group }})",
+          "status": "COMPLETED",
+          "conclusion": "SKIPPED",
+          "workflowName": "PostgreSQL Concurrency Regression Suite",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41344867034/job/124962471825"
+        },
+        {
+          "name": "PostgreSQL migration chain",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflowName": "Continuous Integration",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41344867009/job/124962428042"
+        },
+        {
+          "name": "Live-stack performance smoke",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflowName": "Operational Performance Smoke",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41344867021/job/124962459754"
+        },
+        {
+          "name": "Secret history scan",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflowName": "Supply Chain Security",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41344867024/job/124962427867"
+        },
+        {
+          "name": "Backend changed-test verification",
+          "status": "COMPLETED",
+          "conclusion": "SKIPPED",
+          "workflowName": "Full Backend Pre-Merge",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41344867044/job/124962430273"
+        },
+        {
+          "name": "Frontend typecheck and build",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflowName": "Continuous Integration",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41344867009/job/124962427857"
+        },
+        {
+          "name": "Fresh CI runner synthetic recovery gate",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflowName": "Operational Performance Smoke",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41344867021/job/124966632226"
+        },
+        {
+          "name": "PostgreSQL concurrency gate",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflowName": "PostgreSQL Concurrency Regression Suite",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41344867034/job/124962470657"
+        },
+        {
+          "name": "Container image vulnerability scan",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflowName": "Supply Chain Security",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41344867024/job/124962428079"
+        },
+        {
+          "name": "Backend tests",
+          "status": "COMPLETED",
+          "conclusion": "SKIPPED",
+          "workflowName": "Full Backend Pre-Merge",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41344867044/job/124962430871"
+        },
+        {
+          "name": "Docker Compose validation",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflowName": "Continuous Integration",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41344867009/job/124962428029"
+        },
+        {
+          "name": "Operational performance gate",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflowName": "Operational Performance Smoke",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41344867021/job/124967067371"
+        },
+        {
+          "name": "Dependency lock consistency",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflowName": "Continuous Integration",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41344867009/job/124962458927"
+        },
+        {
+          "name": "Design partner browser E2E",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflowName": "Continuous Integration",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41344867009/job/124962458914"
+        },
+        {
+          "name": "Scoped CI gate",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflowName": "Continuous Integration",
+          "detailsUrl": "https://github.com/eh3aneba/maritime-claims-platform/actions/runs/41344867009/job/124967272647"
+        }
+      ]
+    }
+  ],
+  "benchmark_constraints": {
+    "historical_reference_issue": 553,
+    "historical_reference_pr": 864,
+    "historical_median_full_backend_minutes_approximately": 44,
+    "historical_shard_runner_minutes_approximately": 505,
+    "candidate_sha": "998858f31d8c6ff8b8a2fe4b1184d787975efdf3",
+    "matched_main_sha": "fa2c471463f5aecb988f89e791aae359385227e4",
+    "candidate_tests_and_lockfiles_match_main": true,
+    "pr867_test_tree_matches_candidate": false,
+    "pr867_extra_test_file": "apps/api/tests/test_auth_bootstrap_cli.py",
+    "pr867_app_difference": "apps/api/app/modules/auth/seed.py",
+    "concurrent_pr871_validation_overlapped_pr867": true,
+    "candidate_benchmark_dispatched": false,
+    "speedup_established": false,
+    "next_comparison": "Use matched main/candidate test trees and collected-node hashes; isolate competing runs and record checkout/queue/cache conditions. Do not alter frozen #866 or omit bootstrap regressions from #867."
+  }
+}

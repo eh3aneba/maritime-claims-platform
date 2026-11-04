@@ -19,6 +19,35 @@ def setup_function() -> None:
     reset_database()
 
 
+def test_authenticated_xlsx_preserves_error_like_vessel_name_as_text() -> None:
+    result = create_orion_claim()
+    original = "#N/A"
+    created = client.post("/api/v1/vessels", json={"name": original})
+    assert created.status_code == 201, created.text
+    claim = client.post("/api/v1/claims", json={
+        "vessel_id": created.json()["id"],
+        "incident_date": "2026-07-10",
+        "notification_date": "2026-07-11",
+        "incident_description": "Synthetic machinery source export validation only.",
+        "estimated_loss": "100.00",
+        "currency": "usd",
+        "handler_id": str(result["seed"]["handler"].id),
+    })
+    assert claim.status_code == 201, claim.text
+    url = f"/api/v1/claims/{claim.json()['id']}/claim-pack-exports"
+    response = client.post(url, json={"export_format": "xlsx", "acknowledge_review_aid": True})
+    assert response.status_code == 201, response.text
+    downloaded = client.get(url + "/" + response.json()["id"] + "/download")
+    assert downloaded.status_code == 200
+    book = load_workbook(BytesIO(downloaded.content), data_only=False)
+    try:
+        cell = book["Pack Summary"]["B4"]
+        assert cell.value == original
+        assert cell.data_type == "s"
+    finally:
+        book.close()
+
+
 def test_main_pdf_rejects_unrepresentable_persian_evidence_without_text_loss() -> None:
     snapshot = _export_snapshot()
     source = "توربوشارژر خراب نیست؛ ثبت ۱۱:۳۰ UTC"
@@ -109,3 +138,62 @@ def test_authenticated_pdf_rejection_has_no_export_record_and_xlsx_is_available(
         assert summary["Vessel"] == original
     finally:
         workbook.close()
+
+
+@pytest.mark.parametrize("section", ["main", "governed_appendix"])
+def test_cp1252_pdf_preserves_currency_punctuation_and_escaped_source(section: str) -> None:
+    from copy import deepcopy
+    from app.modules.claim_packs import renderers as base_renderers
+
+    snapshot = _export_snapshot()
+    original = 'Invented € 1,234 — “not approved”; £ 50 • (ref\\test)'
+    if section == "main":
+        snapshot["claim"]["vessel_name"] = original
+        renderer = base_renderers.render_pdf
+    else:
+        snapshot["recovery_review"]["decisions"][0]["rationale"] = original
+        renderer = render_pdf
+    before = deepcopy(snapshot)
+    pdf = PdfReader(BytesIO(renderer(snapshot)))
+    extracted = "\n".join(page.extract_text() or "" for page in pdf.pages)
+    assert original in extracted
+    assert snapshot == before
+    assert not any(key in pdf.trailer["/Root"] for key in ("/OpenAction", "/AA"))
+
+
+def test_authenticated_pdf_preserves_supported_currency_and_quote_text() -> None:
+    result = create_orion_claim()
+    claim_id = result["claim"]["id"]
+    original = 'SYNTHETIC € — “not approved” £ (ref\\test)'
+    with TestingSessionLocal() as db:
+        vessel = db.get(Vessel, result["seed"]["orion"].id)
+        assert vessel is not None
+        vessel.name = original
+        db.commit()
+    url = f"/api/v1/claims/{claim_id}/claim-pack-exports"
+    response = client.post(url, json={"export_format": "pdf", "acknowledge_review_aid": True})
+    assert response.status_code == 201, response.text
+    downloaded = client.get(url + "/" + response.json()["id"] + "/download")
+    assert downloaded.status_code == 200
+    text = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(downloaded.content)).pages)
+    assert original in text
+    assert "REVIEW AID ONLY" in text
+
+
+def test_authenticated_wide_pdf_keeps_source_text_on_page() -> None:
+    from tests.test_claim_pack_pdf_layout import SOURCE, assert_body_fits_and_collect
+
+    result = create_orion_claim()
+    claim_id = result["claim"]["id"]
+    with TestingSessionLocal() as db:
+        vessel = db.get(Vessel, result["seed"]["orion"].id)
+        assert vessel is not None
+        vessel.name = SOURCE
+        db.commit()
+    url = f"/api/v1/claims/{claim_id}/claim-pack-exports"
+    response = client.post(url, json={"export_format": "pdf", "acknowledge_review_aid": True})
+    assert response.status_code == 201, response.text
+    downloaded = client.get(url + "/" + response.json()["id"] + "/download")
+    assert downloaded.status_code == 200
+    body = assert_body_fits_and_collect(PdfReader(BytesIO(downloaded.content)))
+    assert "".join(SOURCE.split()) in "".join(body.split())
