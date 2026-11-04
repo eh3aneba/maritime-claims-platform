@@ -1,0 +1,30 @@
+{
+  "candidate_head_sha": "78f6b3de1ba2965de929850c383c8ed7665dcae8",
+  "python": "3.13.16",
+  "anyio": "4.14.2",
+  "restricted_execution": {
+    "login_test_exit": 124,
+    "external_diagnostic_budget_seconds": 25,
+    "faulthandler_seconds": 8,
+    "stack_wait": "Starlette TestClient -> AnyIO portal future; asyncio selector wait",
+    "local_socketpair_send": "EPERM",
+    "no_application_or_database_portal_reproducer_exit": 124,
+    "portal_diagnostic_budget_seconds": 12
+  },
+  "supported_execution": {
+    "same_login_test": "passed",
+    "same_login_test_seconds": 9.21,
+    "local_socketpair_send": "passed",
+    "anyio_portal_callback": "passed",
+    "application_or_database_needed_for_portal_reproducer": false
+  },
+  "resource_observation": {
+    "available_memory_mebibytes": 32912,
+    "cgroup_oom": 0,
+    "cgroup_oom_kill": 0,
+    "historical_contention_not_proven_or_ruled_out": true
+  },
+  "conclusion": "Restricted-executor IPC denial reproduces the blocked wakeup without application or PostgreSQL; supported-context controls pass. No demonstrated application/database deadlock. Original interrupted run lacks its own stack capture and is not counted as passing.",
+  "production_timeouts_changed": false,
+  "interrupted_execution_passed": false
+}
