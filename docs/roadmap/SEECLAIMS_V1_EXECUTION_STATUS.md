@@ -1,5 +1,68 @@
 # SeeClaims — Execution Roadmap v1 | Status and gates
 
+## Active SQL-template canary — security first (2026-11-04, Asia/Tehran)
+
+Principal branch `test/credential-lineage-final-freshness`, Draft PR #875;
+this containing commit anchors the candidate. Main remains
+`811461563fa2076f751ac828c9821b4a27353f25`. The unsafe single-validation
+shortcut below remains rejected. This separate approach reuses only two
+immutable SQL statement structures for profile reads, binding typed tenant
+and profile UUIDs per call. No rows, Sessions or validation outcomes are cached.
+All receipt, approval, final credential-lineage checks and requested row locks
+remain. All 25 other profile-service functions are AST-identical to baseline;
+Session visibility/isolation semantics are unchanged, not strengthened.
+
+Actual isolated local validation: **29 passed**, four existing deprecation
+warnings, 58.99s, across profile governance/integrity, credential references,
+connection authorization/bootstrap and five new query regressions. Four new
+regressions passed against baseline together; the fifth fresh-process case also
+passed baseline separately. The first SQL-template prototype failed that fifth
+case: early imports captured an unresolved foreign-key bind type. Explicit
+`Uuid(as_uuid=True)` bindings fix the confirmed proposal-only defect; the exact
+new regression failed before and passed after that fix. Current main was not
+shown vulnerable. The original mid-read credential drift guard also passes.
+
+Final-source warm-cache SQLite component: five alternating-order pairs, 1,000
+fully validated reads per arm. Median 0.431506s baseline / 0.364106s candidate
+(**15.62% lower**); all ten arms executed exactly 2,000 SELECTs. Unchanged slow
+synthetic lifecycle test: baseline **511.58s pytest / 518.981s outer**, final
+candidate **485.88s pytest / 493.760s outer**, both passed; approximately 5% lower
+in this single local comparison. Source SHA256 stayed
+`5bd9b4cec06ccf8703300b96d21cacbb362429c0bbf77ea2c7153a2b95d2a247`.
+Final service SHA256:
+`d16274335d9d8ddb1d4359c1283cb2c9edea83d5f92b592a6896cba3927340c5`.
+An earlier warm-import prototype replay was 473.85s; do not substitute it for
+the final candidate or pool these stages as identical paired cohorts.
+
+**Review canary only, not accepted or merge-ready.** Local SQLite/Python3.13.16
+is not hosted PostgreSQL/Python3.13.17 evidence. One slow baseline/final replay
+cannot establish a CI median, tail latency, runner-minute saving or causality;
+new subprocess-regression startup cost must be included in whole-CI comparisons.
+PostgreSQL row-lock SQL compilation is tested, not independent concurrency proof.
+Early restricted-executor TestClient attempts stalled and were terminated without
+results; an independent tiny FastAPI reproduction also stalled there and passed
+with approved executor permissions. Accepted runs used those permissions.
+
+Previous #875 head `12b76f57d880bf58de7b54d683e5bde7a5cb40bb` passed its
+previously executed hosted workflows; Draft-triggered Backend was skipped, not
+passed. Authorized full64 manual run **41769488626** is pinned to that old head;
+latest observation before preparing this commit: **62/64 shards passed, no
+failures, two running**. It cannot validate this new production-source candidate.
+Do not cancel it to hide a result. Read live #647/#553 and PR #875 for subsequent
+exact-head outcomes. New candidate requires its own all64 and 11 required gates;
+Draft policy, workflow names and classifier remain unchanged. No merge/deployment.
+
+Next three: finish/evaluate old full64 then obtain final-head full64 and all
+required gates; perform a bounded comparable confirmation including PostgreSQL,
+cache/runtime differences and the added test cost; review acceptance or rejection
+before adoption. Rollback is an ordinary revert of SQL construction, without a
+schema/data migration. #866 remains isolated unchanged Draft at
+`998858f31d8c6ff8b8a2fe4b1184d787975efdf3` and is not adopted.
+Security/operations owner and independent bilingual H&M reviewer remain
+UNASSIGNED — HUMAN APPOINTMENT REQUIRED; freshness policy NOT APPROVED;
+OCR/source-review holds intact, synthetic data only, AI/external adapters OFF.
+Customer Pilot remains **NO-GO**. Older entries below are dated history.
+
 ## Current safety gate — final credential lineage (2026-11-03, Asia/Tehran)
 
 Main baseline `811461563fa2076f751ac828c9821b4a27353f25` remains unchanged in
