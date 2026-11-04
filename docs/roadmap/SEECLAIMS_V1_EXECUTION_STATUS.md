@@ -1,5 +1,74 @@
 # SeeClaims — Execution Roadmap v1 | Status and gates
 
+## SQL-template final integration — 2026-11-04 (Asia/Tehran)
+
+Current main inspected at `3bf2861b53a10382bc0d1ac43fb3d172fc2914c7`, protected
+merge of #868 after all11 required checks. Its post-merge security run41781197019
+and production policy41781196978 both passed. Historical risk JSON was preserved;
+no application or workflow change in that merge.
+
+Principal #875 branch `test/credential-lineage-final-freshness`; this containing
+commit anchors final integration with latest main. Reuses typed immutable SQL
+structures only; no result/row/Session/validation cache. Final upstream lineage,
+tenant filters, approval/receipt checks and requested locks retained. Service
+SHA256 `d16274335d9d8ddb1d4359c1283cb2c9edea83d5f92b592a6896cba3927340c5`
+and new profile regression SHA256
+`a5d74f747f35c8de25374182715d0b7cf10c257e18c0ac484eef7b15a8c7a936`
+remain the exact previously tested bytes. No migration, dependency, policy,
+classifier, selector or production-workflow change. Unsafe single-validation
+shortcut remains withdrawn.
+
+Completed safety: local related29 passed; a fresh PostgreSQL18.4 related suite
+also29 passed (28 PostgreSQL, one deliberately SQLite fresh-process import), plus
+real two-connection lock/block/release proof. Original candidate c7ad7ed full64
+run41776449563 passed with all1628 nodes accounted for (1575 passed,53 expected
+PostgreSQL-only skips); separate PostgreSQL/other hosted gates passed. Source
+and script checkpoints preserve the poller's read failures; no pass was inferred
+from its nonzero exits. Independent completed-run metadata/log audit subsequently
+verified source pins, first attempts, real install/compile/pytest steps, zip CRC,
+all64 jobs and exact node/shard/outcome parity without any rerun/redispatch.
+
+One corrected same-inventory canary, both Python3.13.18 / ubuntu-24.04:
+
+| Arm | Exact head / run | Wall minutes | Shard runner-minutes | Cache restores |
+| --- | --- | ---: | ---: | ---: |
+| Original query control | de5640be55cce130422e7d9bfaa6b6158d2a158e /41784646993 |35.45|500.50|44/64|
+| Reused query candidate |0f88915d76311b9405a4294d1831d88bce32579a /41781043584|33.65|471.45|44/64|
+
+Observed wall **5.08% lower**, shard cost **5.80% lower**; all64 executed, identical
+1628 test IDs/shards/outcomes and locks. The candidate app tree equals c7ad7ed;
+only experiment workflow runtime/runner labels were pinned equally. Production
+workflow stays unchanged. Runner build distributions differ; candidate ran first,
+with other-workload/queue/cache/CPU noise. This is one bounded canary, not a CI
+median/p95, causal isolation, guaranteed future speedup or customer latency result.
+Local component signals (SQLite15.62%, PostgreSQL7.15%, slow case about5% lower)
+are corroborating component evidence, not independent global-CI cohorts.
+
+Engineering review accepts the narrow SQL-construction optimization for final
+protected validation on consistent directional component/canary benefit, unchanged
+validation semantics, regression coverage and low rollback/state risk. No general
+CI-acceleration claim or #866 acceptance is awarded. No material code/security
+finding remains from review; real hosted final integration gates are still
+mandatory. This final head must receive normal Ready/full64 and all11 required
+contexts; old-head/pinned experiment results alone do not admit a changed head.
+Only after those pass and latest main/head/thread checks may ordinary protected
+squash merge proceed under Product Owner's current authorization. No bypass.
+
+The uncontrolled earlier comparison was stopped: run41776449563 mixed50 shards
+Python3.13.17 and14 Python3.13.18, so control41780276877 was explicitly CANCELLED,
+not passed; no speed acceptance from it. All control/pinned branches NEVER MERGE.
+#866 remains unchanged Draft998858f31d8c6ff8b8a2fe4b1184d787975efdf3, not adopted.
+No extra cohorts planned. Live #553/#647 carry raw reports and subsequent outcomes.
+
+Next three: complete all final-head normal hosted gates; verify latest main,
+head and threads then protected merge if green; inspect post-merge security and
+resume bounded synthetic source/export reliability. Rollback is normal revert,
+no data/schema migration. Security/operations and independent bilingual H&M
+reviewer UNASSIGNED — HUMAN APPOINTMENT REQUIRED; signature freshness policy
+NOT APPROVED; original OCR holds and human decision authority retained. AI and
+external adapters OFF; synthetic only; Customer Pilot **NO-GO**. Dated history below
+is superseded by this integration entry and live execution evidence.
+
 ## Active SQL-template canary — security first (2026-11-04, Asia/Tehran)
 
 Principal branch `test/credential-lineage-final-freshness`, Draft PR #875;
