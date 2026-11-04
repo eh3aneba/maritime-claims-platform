@@ -22,7 +22,7 @@ jobs:
   classify:
     name: Classify backend changes
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.pull_request.draft == false }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 2
     outputs:
       backend_required: ${{ steps.scope.outputs.backend_required }}
@@ -79,7 +79,7 @@ jobs:
     name: Backend tests shard ${{ matrix.shard }}
     needs: classify
     if: ${{ (github.event_name == 'workflow_dispatch' || github.event.pull_request.draft == false) && needs.classify.outputs.backend_required == 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Individual end-to-end Evidence lineage tests can legitimately approach 25 minutes;
     # retain bounded headroom for pytest reporting and Actions cleanup without masking hangs.
     timeout-minutes: 40
@@ -107,7 +107,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v7
         with:
-          python-version: "3.13"
+          python-version: "3.13.18"
           cache: pip
           cache-dependency-path: apps/api/requirements-dev.lock
 
@@ -142,7 +142,7 @@ jobs:
     name: Backend changed-test verification
     needs: classify
     if: ${{ needs.classify.outputs.narrow_required == 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     defaults:
       run:
@@ -161,7 +161,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v7
         with:
-          python-version: "3.13"
+          python-version: "3.13.18"
           cache: pip
           cache-dependency-path: apps/api/requirements-dev.lock
 
@@ -206,7 +206,7 @@ jobs:
       - backend-shard
       - backend-narrow
     if: ${{ always() && (github.event_name == 'workflow_dispatch' || github.event.pull_request.draft == false) }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
       - name: Enforce complete Backend CI selection
