@@ -34,7 +34,9 @@ review**, not an assertion that edge is an approved production baseline.
 
 A build-only helper rejects the old runtime with nonzero exit, then exercises
 synthetic in-memory Unicode roundtrip and FTS5 query, requires the retained
-SESSION/FTS5 features and reports CLI presence. It reports compatibility only;
+SESSION/FTS5 features and reports CLI presence. Both runtime stages repeat it
+after the venv/application/tool copies, so hosted build logs can establish actual
+final-runtime inventory rather than only the package-layer observation. It reports compatibility only;
 it never awards vulnerability admission, OCR resolution or human acceptance.
 
 An isolated diagnostic image made exactly one package upgrade3.53.4→3.54.1;

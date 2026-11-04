@@ -143,6 +143,9 @@ COPY pyproject.toml alembic.ini ./
 COPY alembic ./alembic
 COPY app ./app
 
+# Observe the final runtime after venv/application copies as well as the package layer.
+RUN python /tmp/verify_sqlite_runtime.py
+
 EXPOSE 8000
 
 FROM python:3.14.10-alpine3.24 AS worker
@@ -213,6 +216,9 @@ RUN python --version \
 COPY pyproject.toml alembic.ini ./
 COPY alembic ./alembic
 COPY app ./app
+
+# Final-image observation includes the worker tools, venv and complete runtime PATH.
+RUN python /tmp/verify_sqlite_runtime.py
 
 CMD ["python", "-m", "app.workers.document_worker"]
 
