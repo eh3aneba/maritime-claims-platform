@@ -2,11 +2,13 @@
 import copy
 import hashlib
 import json
+import os
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from pathlib import Path
+from unittest.mock import patch
 
 from scripts.persian_ocr_local_source_integrity import main, verify_source_bytes
 from scripts.tests.test_persian_ocr_blind_cohort_preflight import example_manifest
@@ -120,6 +122,61 @@ class LocalSourceByteIntegrityTests(unittest.TestCase):
                 modified["files"][0]["relative_path"] = "alias_dir/scan-0.bin"
                 with self.assertRaises(ValueError):
                     verify_source_bytes(manifest, modified, root=root)
+
+    def test_same_bytes_swapped_file_is_not_accepted_as_inspected_source(self):
+        # A malicious replacement can have the EXPECTED hash; the verifier
+        # must also bind its open descriptor to the inspected source inode.
+        with tempfile.TemporaryDirectory() as dirname:
+            root = Path(dirname) / "sources"
+            root.mkdir()
+            manifest, inventory = small_study(root)
+            inspected = root / inventory["files"][0]["relative_path"]
+            replacement = Path(dirname) / "other-file.bin"
+            replacement.write_bytes(inspected.read_bytes())
+            real_open = os.open
+            swapped = False
+
+            def swap_before_open(path, flags, *args, **kwargs):
+                nonlocal swapped
+                if not swapped and os.fspath(path) == os.fspath(inspected):
+                    swapped = True
+                    replacement.replace(inspected)
+                return real_open(path, flags, *args, **kwargs)
+
+            with patch("scripts.persian_ocr_local_source_integrity.os.open",
+                       side_effect=swap_before_open):
+                with self.assertRaises(ValueError):
+                    verify_source_bytes(manifest, inventory, root=root)
+            self.assertTrue(swapped)
+
+    @unittest.skipIf(os.name == "nt", "Windows symlink creation requires special privileges")
+    def test_swapped_parent_directory_cannot_redirect_verified_source(self):
+        # O_NOFOLLOW only applies to the final file. An attacker can swap an
+        # intermediate directory for a link between lstat and os.open.
+        with tempfile.TemporaryDirectory() as dirname:
+            root = Path(dirname) / "sources"
+            root.mkdir()
+            manifest, inventory = small_study(root)
+            inspected = root / inventory["files"][0]["relative_path"]
+            alternate = Path(dirname) / "outside"
+            alternate.mkdir()
+            (alternate / "scan-0.bin").write_bytes(inspected.read_bytes())
+            real_open = os.open
+            swapped = False
+
+            def swap_parent_before_open(path, flags, *args, **kwargs):
+                nonlocal swapped
+                if not swapped and os.fspath(path) == os.fspath(inspected):
+                    swapped = True
+                    (root / "fiction").rename(root / "original_fiction")
+                    (root / "fiction").symlink_to(alternate, target_is_directory=True)
+                return real_open(path, flags, *args, **kwargs)
+
+            with patch("scripts.persian_ocr_local_source_integrity.os.open",
+                       side_effect=swap_parent_before_open):
+                with self.assertRaises(ValueError):
+                    verify_source_bytes(manifest, inventory, root=root)
+            self.assertTrue(swapped)
 
     def test_malformed_inventory_and_changed_manifest_rejected(self):
         with tempfile.TemporaryDirectory() as dirname:
