@@ -54,6 +54,13 @@ class PairedOcrHoldoutComparisonTests(unittest.TestCase):
                 report["comparison"]["by_kind"]["time"]["candidate_lost_baseline_present"], 1
             )
             self.assertTrue(report["same_declared_sources_and_reference_spans"])
+            risk = report["critical_literal_risk_observations"]
+            self.assertEqual(risk["by_kind"]["negation"]["candidate_lost_baseline_literal"], 0)
+            self.assertEqual(risk["by_kind"]["time"]["candidate_lost_baseline_literal"], 1)
+            self.assertTrue(risk["any_loss_or_new_false_insertion_observed"])
+            self.assertTrue(risk["any_unmeasured_critical_observation"])
+            self.assertTrue(risk["lexical_flags_are_not_semantic_verification"])
+            self.assertFalse(risk["critical_fact_authorization_granted"])
             for key in (
                 "file_origin_independently_attested",
                 "blinding_independently_attested",
@@ -69,6 +76,110 @@ class PairedOcrHoldoutComparisonTests(unittest.TestCase):
             safe = json.dumps(report, ensure_ascii=False)
             for marker in ("FICTION-HM1", "توربوشارژر", "نیست", "scan-0.bin", str(root)):
                 self.assertNotIn(marker, safe)
+
+    def test_technical_term_loss_and_spurious_cause_remain_visible_with_recovered_negation(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            manifest, inventory, baseline = bundled_study(root)
+            # Fictional baseline did not hallucinate an explosion, but had a
+            # recoverable missing negation. Candidate recovers negation while
+            # losing the machinery term and inserting a non-source cause.
+            baseline["records"][0]["ocr_page_text"] = "توربوشارژر"
+            candidate = candidate_study(baseline)
+            candidate["records"][0]["ocr_page_text"] = (
+                "علت قطعی خرابی هنوز معلوم نیست؛ انفجار"
+            )
+            report = compare_paired_ocr_studies(
+                manifest=manifest, inventory=inventory,
+                baseline=baseline, candidate=candidate, root=root,
+            )
+            flags = report["critical_literal_risk_observations"]
+            self.assertEqual(
+                flags["by_kind"]["negation"]["candidate_lost_baseline_literal"], 0
+            )
+            self.assertEqual(
+                report["comparison"]["by_kind"]["negation"][
+                    "candidate_recovered_baseline_missing"
+                ], 1
+            )
+            self.assertEqual(
+                flags["by_kind"]["technical_term"]["candidate_lost_baseline_literal"], 1
+            )
+            self.assertEqual(
+                flags["by_kind"]["causation"]["candidate_new_false_insertion"], 1
+            )
+            self.assertTrue(flags["any_loss_or_new_false_insertion_observed"])
+            self.assertFalse(report["candidate_automatically_selected"])
+            self.assertFalse(report["pilot_accepted"])
+
+    def test_wrong_clock_literal_is_a_time_regression_not_a_semantic_pass(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            manifest, inventory, baseline = bundled_study(root)
+            candidate = candidate_study(baseline)
+            candidate["records"][1]["ocr_page_text"] = "شاید در ساعت ۱۱:۰۰ نشت رخ داده است."
+            report = compare_paired_ocr_studies(
+                manifest=manifest, inventory=inventory,
+                baseline=baseline, candidate=candidate, root=root,
+            )
+            flags = report["critical_literal_risk_observations"]
+            self.assertEqual(
+                flags["by_kind"]["time"]["candidate_lost_baseline_literal"], 1
+            )
+            self.assertTrue(flags["any_loss_or_new_false_insertion_observed"])
+            self.assertFalse(report["negation_scope_semantics_verified"])
+            self.assertFalse(report["pilot_accepted"])
+
+    def test_unchanged_candidate_is_not_semantically_certified_by_zero_new_losses(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            manifest, inventory, baseline = bundled_study(root)
+            report = compare_paired_ocr_studies(
+                manifest=manifest, inventory=inventory,
+                baseline=baseline, candidate=copy.deepcopy(baseline), root=root,
+            )
+            flags = report["critical_literal_risk_observations"]
+            self.assertFalse(flags["any_loss_or_new_false_insertion_observed"])
+            self.assertTrue(flags["any_unmeasured_critical_observation"])
+            self.assertTrue(flags["any_persistent_literal_issue_observed"])
+            self.assertEqual(
+                flags["by_kind"]["negation"]["candidate_persistent_missing_reference_literal"], 1
+            )
+            self.assertEqual(
+                flags["by_kind"]["causation"]["candidate_persistent_false_insertion"], 1
+            )
+            self.assertTrue(flags["lexical_flags_are_not_semantic_verification"])
+            self.assertFalse(report["human_bilingual_review_completed"])
+            self.assertFalse(report["pilot_accepted"])
+
+    def test_no_new_regression_or_unknown_still_exposes_persistent_critical_defects(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            manifest, inventory, baseline = bundled_study(root)
+            # The complete (but empty) invented third page now demonstrates
+            # a known uncertainty omission, not an unknown truncation.
+            baseline["records"][2]["ocr_page_complete"] = True
+            baseline["records"][2]["ocr_page_text"] = ""
+            report = compare_paired_ocr_studies(
+                manifest=manifest, inventory=inventory,
+                baseline=baseline, candidate=copy.deepcopy(baseline), root=root,
+            )
+            risk = report["critical_literal_risk_observations"]
+            self.assertFalse(risk["any_loss_or_new_false_insertion_observed"])
+            self.assertFalse(risk["any_unmeasured_critical_observation"])
+            self.assertTrue(risk["any_persistent_literal_issue_observed"])
+            self.assertEqual(
+                risk["by_kind"]["uncertainty"]["candidate_persistent_missing_reference_literal"], 1
+            )
+            self.assertEqual(
+                risk["by_kind"]["negation"]["candidate_persistent_missing_reference_literal"], 1
+            )
+            self.assertEqual(
+                risk["by_kind"]["causation"]["candidate_persistent_false_insertion"], 1
+            )
+            self.assertFalse(report["candidate_automatically_selected"])
+            self.assertFalse(report["critical_fact_authorization_granted"])
+            self.assertFalse(report["pilot_accepted"])
 
     def test_any_different_source_reference_span_or_page_fails_closed(self):
         with tempfile.TemporaryDirectory() as folder:

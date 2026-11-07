@@ -434,6 +434,25 @@ negation while hiding a lost event date, changed engineering qualifier or
 invented phrase. No private transcript, case identifier, reviewer name, path
 or source hash appears in output.
 
+The additional `critical_literal_risk_observations` field makes those
+failures easy to see in one privacy-safe, paired report. It separates
+**lost baseline-positive literals**, **newly inserted reference-negative
+literals** and **unmeasured** positive/negative controls across five
+H&M-sensitive categories: negation, uncertainty, event time, causation and
+technical terms. For example, recovering an exact negation clause does not
+erase a concurrently lost incident timestamp or a newly hallucinated
+causation term. The aggregate booleans indicate observed lexical risk or
+unknown evidence only, **not an automated rejection, OCR quality score,
+semantic correctness, a causal conclusion or acceptance of any candidate**.
+The report additionally counts **persistent baseline-and-candidate
+reference-positive omissions** and **persistently inserted
+reference-negative controls**. These are distinguished from newly introduced
+regressions and unknown/truncated pages. A candidate with zero *new* losses
+and zero unknown spans can still have `any_persistent_literal_issue_observed`
+set, e.g. the exact negation remains missing and a spurious cause persists.
+This cannot certify the semantics of even fully matched phrases; all critical
+decisions still need independent original-scan review.
+
 **No winning candidate is selected.** The comparison is still based on
 locally supplied reference labels and OCR transcripts; source bytes matching
 the local manifest do not prove independent custody, true blinding, semantic
