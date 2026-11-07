@@ -8,6 +8,7 @@ Never echo paths, pseudonyms, source text or hash values in results/errors.
 from __future__ import annotations
 
 import argparse
+from contextlib import ExitStack
 import hashlib
 import json
 import os
@@ -77,7 +78,9 @@ def _validate_manifest(manifest: Any) -> dict[str, tuple[str, str]]:
     return expected
 
 
-def _safe_relative_file(root: Path, relative: Any) -> tuple[Path, tuple[int, int]]:
+def _safe_relative_file(
+    root: Path, relative: Any,
+) -> tuple[Path, tuple[int, int], tuple[tuple[int, int], ...]]:
     _require(type(relative) is str and 1 <= len(relative) <= 512)
     # Restrict to relative slash-separated paths with no implicit or parent
     # components; this also disallows backslash traversal on Windows.
@@ -86,6 +89,9 @@ def _safe_relative_file(root: Path, relative: Any) -> tuple[Path, tuple[int, int
     pieces = relative.split("/")
     _require(all(piece not in ("", ".", "..") for piece in pieces))
     current = root
+    root_info = root.lstat()
+    _require(stat.S_ISDIR(root_info.st_mode))
+    directories = [(root_info.st_dev, root_info.st_ino)]
     final_info: os.stat_result | None = None
     for index, piece in enumerate(pieces):
         current = current / piece
@@ -93,6 +99,7 @@ def _safe_relative_file(root: Path, relative: Any) -> tuple[Path, tuple[int, int
         _require(not stat.S_ISLNK(info.st_mode))
         if index < len(pieces) - 1:
             _require(stat.S_ISDIR(info.st_mode))
+            directories.append((info.st_dev, info.st_ino))
         else:
             _require(stat.S_ISREG(info.st_mode))
             _require(0 < info.st_size <= _MAX_FILE_BYTES)
@@ -102,15 +109,51 @@ def _safe_relative_file(root: Path, relative: Any) -> tuple[Path, tuple[int, int
     # Carry the verified file identity across the gap between path inspection
     # and descriptor acquisition. O_NOFOLLOW alone only guards the last
     # component, not a swapped intermediate directory.
-    return current, (final_info.st_dev, final_info.st_ino)
+    return current, (final_info.st_dev, final_info.st_ino), tuple(directories)
 
 
-def _verified_hash(file_path: Path, *, expected_identity: tuple[int, int]) -> tuple[str, int]:
-    # Open with O_NOFOLLOW where available to reduce final-component
-    # symlink swap races. Check descriptor identity before and after reads.
+def _verified_hash(
+    file_path: Path, *, source_root: Path,
+    expected_identity: tuple[int, int],
+    expected_directories: tuple[tuple[int, int], ...],
+) -> tuple[str, int]:
+    # On supported POSIX hosts, descend from a checked source-root directory
+    # descriptor and refuse symlinks at EVERY path component. Checking only
+    # the last file inode cannot detect an intermediate directory swap to a
+    # different tree containing a hard link to that same file.
     flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
-    fd = os.open(file_path, flags)
-    try:
+    secure_walk = (
+        os.name == "posix"
+        and bool(getattr(os, "O_NOFOLLOW", 0))
+        and bool(getattr(os, "O_DIRECTORY", 0))
+    )
+    with ExitStack() as opened:
+        if secure_walk:
+            directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+            parts = file_path.relative_to(source_root).parts
+            _require(len(parts) == len(expected_directories))
+            parent_fd = os.open(source_root, directory_flags)
+            opened.callback(os.close, parent_fd)
+            root_stat = os.fstat(parent_fd)
+            _require(
+                (root_stat.st_dev, root_stat.st_ino) == expected_directories[0]
+            )
+            for piece, expected_dir in zip(
+                parts[:-1], expected_directories[1:], strict=True
+            ):
+                parent_fd = os.open(piece, directory_flags, dir_fd=parent_fd)
+                opened.callback(os.close, parent_fd)
+                directory_info = os.fstat(parent_fd)
+                _require(
+                    (directory_info.st_dev, directory_info.st_ino) == expected_dir
+                )
+            fd = os.open(parts[-1], flags, dir_fd=parent_fd)
+        else:
+            # Windows does not support POSIX openat dir_fds. Preserve the
+            # pre-existing no-symlink lstat + descriptor-identity checks;
+            # do not claim race-free path custody on this platform.
+            fd = os.open(file_path, flags)
+        opened.callback(os.close, fd)
         before = os.fstat(fd)
         _require(stat.S_ISREG(before.st_mode) and 0 < before.st_size <= _MAX_FILE_BYTES)
         _require((before.st_dev, before.st_ino) == expected_identity)
@@ -129,9 +172,6 @@ def _verified_hash(file_path: Path, *, expected_identity: tuple[int, int]) -> tu
             and before.st_mtime_ns == after.st_mtime_ns
         )
         return digest.hexdigest(), total
-    finally:
-        os.close(fd)
-
 
 def verify_source_bytes(
     manifest: Any, inventory: Any, *, root: Path,
@@ -152,10 +192,15 @@ def verify_source_bytes(
         case = _opaque_id(entry["case_ref"])
         _require(case in expected and case not in observed_cases)
         observed_cases.add(case)
-        path, inspected_identity = _safe_relative_file(root, entry["relative_path"])
+        path, inspected_identity, inspected_dirs = _safe_relative_file(
+            root, entry["relative_path"]
+        )
         _require(path not in observed_paths)
         observed_paths.add(path)
-        actual_hash, size = _verified_hash(path, expected_identity=inspected_identity)
+        actual_hash, size = _verified_hash(
+            path, source_root=root, expected_identity=inspected_identity,
+            expected_directories=inspected_dirs,
+        )
         _require(actual_hash == expected[case][0])
         total_bytes += size
     _require(observed_cases == set(expected))
