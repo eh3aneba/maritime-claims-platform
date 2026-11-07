@@ -141,8 +141,44 @@ class PairedOcrHoldoutComparisonTests(unittest.TestCase):
             flags = report["critical_literal_risk_observations"]
             self.assertFalse(flags["any_loss_or_new_false_insertion_observed"])
             self.assertTrue(flags["any_unmeasured_critical_observation"])
+            self.assertTrue(flags["any_persistent_literal_issue_observed"])
+            self.assertEqual(
+                flags["by_kind"]["negation"]["candidate_persistent_missing_reference_literal"], 1
+            )
+            self.assertEqual(
+                flags["by_kind"]["causation"]["candidate_persistent_false_insertion"], 1
+            )
             self.assertTrue(flags["lexical_flags_are_not_semantic_verification"])
             self.assertFalse(report["human_bilingual_review_completed"])
+            self.assertFalse(report["pilot_accepted"])
+
+    def test_no_new_regression_or_unknown_still_exposes_persistent_critical_defects(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            manifest, inventory, baseline = bundled_study(root)
+            # The complete (but empty) invented third page now demonstrates
+            # a known uncertainty omission, not an unknown truncation.
+            baseline["records"][2]["ocr_page_complete"] = True
+            baseline["records"][2]["ocr_page_text"] = ""
+            report = compare_paired_ocr_studies(
+                manifest=manifest, inventory=inventory,
+                baseline=baseline, candidate=copy.deepcopy(baseline), root=root,
+            )
+            risk = report["critical_literal_risk_observations"]
+            self.assertFalse(risk["any_loss_or_new_false_insertion_observed"])
+            self.assertFalse(risk["any_unmeasured_critical_observation"])
+            self.assertTrue(risk["any_persistent_literal_issue_observed"])
+            self.assertEqual(
+                risk["by_kind"]["uncertainty"]["candidate_persistent_missing_reference_literal"], 1
+            )
+            self.assertEqual(
+                risk["by_kind"]["negation"]["candidate_persistent_missing_reference_literal"], 1
+            )
+            self.assertEqual(
+                risk["by_kind"]["causation"]["candidate_persistent_false_insertion"], 1
+            )
+            self.assertFalse(report["candidate_automatically_selected"])
+            self.assertFalse(report["critical_fact_authorization_granted"])
             self.assertFalse(report["pilot_accepted"])
 
     def test_any_different_source_reference_span_or_page_fails_closed(self):
