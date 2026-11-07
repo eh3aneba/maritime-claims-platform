@@ -127,8 +127,13 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+# Proposed partial library remediation; CLI-only CVE-2026-119586 still blocks security admission.
+# The official signed edge package/source choice needs review; no exception is configured.
+COPY build_tools/verify_sqlite_runtime.py /tmp/verify_sqlite_runtime.py
 RUN /sbin/apk upgrade --no-cache libssl3 libcrypto3 zlib \
     && /sbin/apk add --no-cache 'zlib>=1.3.2-r1' libuuid \
+    && /sbin/apk add --no-cache --repository https://dl-cdn.alpinelinux.org/alpine/edge/main 'sqlite-libs=3.54.1-r0' \
+    && python /tmp/verify_sqlite_runtime.py \
     && /sbin/apk info -v libssl3 libcrypto3 zlib \
     && python -c "import _uuid, uuid, zlib; value = uuid.uuid4(); assert value.version == 4; print(value, zlib.ZLIB_VERSION)" \
     && rm -rf /usr/local/lib/python3.14/site-packages/pip* /usr/local/bin/pip*
@@ -137,6 +142,9 @@ COPY --from=python-builder /opt/venv /opt/venv
 COPY pyproject.toml alembic.ini ./
 COPY alembic ./alembic
 COPY app ./app
+
+# Observe the final runtime after venv/application copies as well as the package layer.
+RUN python /tmp/verify_sqlite_runtime.py
 
 EXPOSE 8000
 
@@ -150,6 +158,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+# Proposed partial library remediation; CLI-only CVE-2026-119586 still blocks security admission.
+# The official signed edge package/source choice needs review; no exception is configured.
+COPY build_tools/verify_sqlite_runtime.py /tmp/verify_sqlite_runtime.py
 RUN /sbin/apk upgrade --no-cache libssl3 libcrypto3 zlib \
     && /sbin/apk add --no-cache 'zlib>=1.3.2-r1' \
         cairo \
@@ -169,6 +180,8 @@ RUN /sbin/apk upgrade --no-cache libssl3 libcrypto3 zlib \
         libxml2 \
         nss \
         openjpeg \
+    && /sbin/apk add --no-cache --repository https://dl-cdn.alpinelinux.org/alpine/edge/main 'sqlite-libs=3.54.1-r0' \
+    && python /tmp/verify_sqlite_runtime.py \
     && /sbin/apk info -v libssl3 libcrypto3 zlib \
     && python -c "import hashlib,pathlib,urllib.request; files=[('eng.traineddata',23466654,'f4744c201359d02ced6914c77f0de68ee9bbdd74'),('fas.traineddata',561272,'a0b9843164d928caad5afb0bd6973c964ba5b0b9')]; base='https://raw.githubusercontent.com/tesseract-ocr/tessdata/ced78752cc61322fb554c280d13360b35b8684e4/'; out=pathlib.Path('/usr/share/tessdata'); out.mkdir(parents=True,exist_ok=True); [(lambda name,size,want: (lambda data: ((_ for _ in ()).throw(AssertionError(len(data))) if len(data)!=size else None, (_ for _ in ()).throw(AssertionError('git sha mismatch')) if hashlib.sha1(b'blob '+str(len(data)).encode()+b'\\0'+data).hexdigest()!=want else None, print(name+'.sha256='+hashlib.sha256(data).hexdigest()), (out/name).write_bytes(data)))(urllib.request.urlopen(base+name,timeout=120).read()))(name,size,want) for name,size,want in files]" \
     && rm -rf /usr/local/lib/python3.14/site-packages/pip* /usr/local/bin/pip*
@@ -203,6 +216,9 @@ RUN python --version \
 COPY pyproject.toml alembic.ini ./
 COPY alembic ./alembic
 COPY app ./app
+
+# Final-image observation includes the worker tools, venv and complete runtime PATH.
+RUN python /tmp/verify_sqlite_runtime.py
 
 CMD ["python", "-m", "app.workers.document_worker"]
 
