@@ -429,9 +429,14 @@ erase a concurrently lost incident timestamp or a newly hallucinated
 causation term. The aggregate booleans indicate observed lexical risk or
 unknown evidence only, **not an automated rejection, OCR quality score,
 semantic correctness, a causal conclusion or acceptance of any candidate**.
-A candidate with no *new* literal losses may still contain persistent
-old omissions or unsafe negation scope; all critical decisions still need
-independent original-scan review.
+The report additionally counts **persistent baseline-and-candidate
+reference-positive omissions** and **persistently inserted
+reference-negative controls**. These are distinguished from newly introduced
+regressions and unknown/truncated pages. A candidate with zero *new* losses
+and zero unknown spans can still have `any_persistent_literal_issue_observed`
+set, e.g. the exact negation remains missing and a spurious cause persists.
+This cannot certify the semantics of even fully matched phrases; all critical
+decisions still need independent original-scan review.
 
 **No winning candidate is selected.** The comparison is still based on
 locally supplied reference labels and OCR transcripts; source bytes matching
