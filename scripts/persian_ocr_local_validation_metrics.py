@@ -88,6 +88,9 @@ def evaluate_local_study(payload: Any) -> dict[str, Any]:
     overall = _blank()
     by_kind = {kind: _blank() for kind in KINDS}
     seen_pages: set[tuple[str, str]] = set()
+    # A renamed case or a new extraction cannot make identical original
+    # source bytes at the same page locator an independent observation.
+    seen_source_pages: set[tuple[str, str]] = set()
     for page in records:
         _keys(page, {
             "case_ref", "page_locator", "document_version", "source_file_sha256",
@@ -99,8 +102,11 @@ def evaluate_local_study(payload: Any) -> dict[str, Any]:
         _require((case_ref, locator) not in seen_pages)
         seen_pages.add((case_ref, locator))
         _require(type(page["document_version"]) is int and page["document_version"] >= 1)
-        _hash(page["source_file_sha256"])
+        source_sha = _hash(page["source_file_sha256"])
         _hash(page["extraction_sha256"])
+        source_page = (source_sha, locator)
+        _require(source_page not in seen_source_pages)
+        seen_source_pages.add(source_page)
         ref = page["reference_page_text"]
         ocr = page["ocr_page_text"]
         _require(type(ref) is str and type(ocr) is str)
