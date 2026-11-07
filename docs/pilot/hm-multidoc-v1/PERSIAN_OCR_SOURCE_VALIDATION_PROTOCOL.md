@@ -183,6 +183,14 @@ Input `schema_version: 1`, `records: [...]` contains one page per record:
   false-insertion/retrieval counts. The tool rejects contradictory reports,
   out-of-scope fields and inconsistent literal labels. These intervals do
   not correct biased/non-random sampling.
+- A given **exact literal may be counted at most once per page**, regardless
+  of how many `span_ref` names or critical-kind labels it receives. Repeating
+  the same boolean presence observation would artificially enlarge the OCR
+  recall denominator and distort its descriptive Wilson interval. Independent
+  pages can test the literal again; a new `case_ref` or hash value is only
+  self-supplied metadata, **not proof of independent source samples**.
+  Different literals that overlap remain separately reported and still need
+  an expert-defined sampling and annotation protocol.
 
 **This instrument checks the syntactic shape of hash metadata, not the
 image bytes, reviewer qualifications, independent source/adjudication,
