@@ -109,6 +109,10 @@ def evaluate_local_study(payload: Any) -> dict[str, Any]:
         spans = page["critical_spans"]
         _require(type(spans) is list and 1 <= len(spans) <= _MAX_SPANS_PER_PAGE)
         seen_spans: set[str] = set()
+        # Each page/literal is one measurable presence observation. A second
+        # label (even under a different critical kind) must not inflate
+        # recall denominators or descriptive confidence intervals.
+        seen_literals: set[str] = set()
         for span in spans:
             _keys(span, {"span_ref", "kind", "literal", "expected_present", "search_exact_hit"})
             name = _text(span["span_ref"])
@@ -117,6 +121,8 @@ def evaluate_local_study(payload: Any) -> dict[str, Any]:
             kind = _text(span["kind"])
             _require(kind in KINDS)
             literal = _text(span["literal"], length=2000)
+            _require(literal not in seen_literals)
+            seen_literals.add(literal)
             expected = span["expected_present"]
             search = span["search_exact_hit"]
             _require(type(expected) is bool and (search is None or type(search) is bool))
