@@ -88,7 +88,13 @@ def _observed_blocker_graph(sessions: list[dict], *, truncated: bool) -> dict:
 def safe_summary(rows: list[tuple]) -> dict:
     """Whitelisted PostgreSQL metadata only: never accept/serialize query text."""
     sessions = []
+    truncated_blocker_lists = False
     for pid, state, wait_type, wait_event, age, blocking in rows[:_MAX_ROWS]:
+        # The output stays bounded at 16 blocker PIDs per session, but a
+        # clipped list cannot support a claim of complete graph coverage.
+        blocker_ids = list(blocking or [])
+        if len(blocker_ids) > 16:
+            truncated_blocker_lists = True
         sessions.append({
             "pid": int(pid),
             "state": state if state in ("active", "idle", "idle in transaction",
@@ -97,7 +103,7 @@ def safe_summary(rows: list[tuple]) -> dict:
                                                    "Timeout", "Activity", "IPC") else None,
             "wait_event": str(wait_event)[:64] if wait_event else None,
             "transaction_age_seconds": max(0, int(age)),
-            "blocking_pids": [int(value) for value in (blocking or [])][:16],
+            "blocking_pids": [int(value) for value in blocker_ids[:16]],
         })
     truncated = len(rows) > _MAX_ROWS
     return {
@@ -105,7 +111,10 @@ def safe_summary(rows: list[tuple]) -> dict:
         "blocked_count": sum(bool(s["blocking_pids"]) for s in sessions),
         "sessions": sessions,
         "truncated": truncated,
-        **_observed_blocker_graph(sessions, truncated=truncated),
+        "blocker_pid_lists_truncated": truncated_blocker_lists,
+        **_observed_blocker_graph(
+            sessions, truncated=truncated or truncated_blocker_lists
+        ),
     }
 
 

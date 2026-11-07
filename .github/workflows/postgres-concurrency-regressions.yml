@@ -254,7 +254,9 @@ jobs:
           python -m unittest discover -s ../../scripts/tests -p 'test_pilot_pg_wait_probe.py'
           # Observe only whitelisted pg_stat_activity metadata from the
           # ephemeral synthetic CI DB. Kill observer on success/failure/cancel.
-          python -u ../../scripts/pilot_pg_wait_probe.py --interval-seconds 60 --max-samples 20 &
+          # Thirty-second samples cover short waits missed by the prior
+          # 60s interval while remaining bounded to 25 read-only samples.
+          python -u ../../scripts/pilot_pg_wait_probe.py --interval-seconds 30 --max-samples 25 &
           probe_pid=$!
           cleanup_probe() {
             kill "$probe_pid" 2>/dev/null || true
