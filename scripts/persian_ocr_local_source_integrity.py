@@ -77,7 +77,7 @@ def _validate_manifest(manifest: Any) -> dict[str, tuple[str, str]]:
     return expected
 
 
-def _safe_relative_file(root: Path, relative: Any) -> Path:
+def _safe_relative_file(root: Path, relative: Any) -> tuple[Path, tuple[int, int]]:
     _require(type(relative) is str and 1 <= len(relative) <= 512)
     # Restrict to relative slash-separated paths with no implicit or parent
     # components; this also disallows backslash traversal on Windows.
@@ -86,6 +86,7 @@ def _safe_relative_file(root: Path, relative: Any) -> Path:
     pieces = relative.split("/")
     _require(all(piece not in ("", ".", "..") for piece in pieces))
     current = root
+    final_info: os.stat_result | None = None
     for index, piece in enumerate(pieces):
         current = current / piece
         info = current.lstat()
@@ -95,11 +96,16 @@ def _safe_relative_file(root: Path, relative: Any) -> Path:
         else:
             _require(stat.S_ISREG(info.st_mode))
             _require(0 < info.st_size <= _MAX_FILE_BYTES)
+            final_info = info
     _require(current.resolve().is_relative_to(root.resolve()))
-    return current
+    _require(final_info is not None)
+    # Carry the verified file identity across the gap between path inspection
+    # and descriptor acquisition. O_NOFOLLOW alone only guards the last
+    # component, not a swapped intermediate directory.
+    return current, (final_info.st_dev, final_info.st_ino)
 
 
-def _verified_hash(file_path: Path) -> tuple[str, int]:
+def _verified_hash(file_path: Path, *, expected_identity: tuple[int, int]) -> tuple[str, int]:
     # Open with O_NOFOLLOW where available to reduce final-component
     # symlink swap races. Check descriptor identity before and after reads.
     flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
@@ -107,6 +113,7 @@ def _verified_hash(file_path: Path) -> tuple[str, int]:
     try:
         before = os.fstat(fd)
         _require(stat.S_ISREG(before.st_mode) and 0 < before.st_size <= _MAX_FILE_BYTES)
+        _require((before.st_dev, before.st_ino) == expected_identity)
         digest = hashlib.sha256()
         total = 0
         with os.fdopen(os.dup(fd), "rb") as reader:
@@ -145,10 +152,10 @@ def verify_source_bytes(
         case = _opaque_id(entry["case_ref"])
         _require(case in expected and case not in observed_cases)
         observed_cases.add(case)
-        path = _safe_relative_file(root, entry["relative_path"])
+        path, inspected_identity = _safe_relative_file(root, entry["relative_path"])
         _require(path not in observed_paths)
         observed_paths.add(path)
-        actual_hash, size = _verified_hash(path)
+        actual_hash, size = _verified_hash(path, expected_identity=inspected_identity)
         _require(actual_hash == expected[case][0])
         total_bytes += size
     _require(observed_cases == set(expected))
