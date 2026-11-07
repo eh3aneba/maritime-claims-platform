@@ -156,7 +156,10 @@ jobs:
           fetch-depth: 0
 
       - name: Verify SQLite runtime build probe regressions
-        run: python3 -m unittest scripts.tests.test_sqlite_runtime_build_probe -v
+        run: python3 -m unittest scripts.tests.test_sqlite_runtime_build_probe scripts.tests.test_production_package_sources -v
+
+      - name: Enforce approved production package sources
+        run: python3 scripts/check_production_package_sources.py apps/api/Dockerfile
 
       - name: Classify production-image scan scope
         id: image-scope

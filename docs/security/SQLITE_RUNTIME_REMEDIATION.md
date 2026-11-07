@@ -1,6 +1,10 @@
 # SQLite runtime library remediation proposal — 2026-11-04
 
-**Partial proposal, not merge-ready.** Tracks [#876](https://github.com/eh3aneba/maritime-claims-platform/issues/876)
+**Partial diagnostic proposal, not merge-ready.** The owner selected Option A on
+2026-11-07: production Edge source, the CVE-2026-119586 exception and November 11
+expiry are **REJECTED**. Wait for a supported officially signed stable fix or an
+authoritative applicability correction. Do not reopen this decision without new
+material evidence. Tracks [#876](https://github.com/eh3aneba/maritime-claims-platform/issues/876)
 and blocks #875 security admission. No scanner exception or production source
 choice has been approved. No customer evidence or external AI is used.
 
@@ -83,11 +87,27 @@ incorrect FTS5 results, propagated DB errors and compatibility-only output.
 They do not establish security acceptance or replace final-image/full regression.
 Run: `python -m unittest scripts.tests.test_sqlite_runtime_build_probe -v`.
 
-source decision **NOT APPROVED**; exception/expiry **NOT APPROVED**. No approval
+Source decision **REJECTED for Edge**; exception/expiry **REJECTED**. No approval
 is inferred from generic merge authorization. Original #875 stays unmerged until
 its blocker is resolved. Related manual main scan41813290992 also failed in the
 secret-detection step; #764 requires private owner triage. No raw secret values
 were fetched/copied or new secret/rotation diagnosis claimed here.
+
+The existing required image-security job now runs the stdlib source-policy
+regressions and `scripts/check_production_package_sources.py` before image
+classification/build. It rejects a literal Alpine Edge repository in the
+production Dockerfile, including basic continuation/percent-encoding variants,
+and rejects unreadable/empty/unsupported input. Thus this diagnostic Edge pin
+intentionally fails that precondition without spending runner time rebuilding a
+known unapproved production candidate. This is a bounded source-literal check,
+not a complete shell/Dockerfile dataflow parser, signature verifier or proof
+against dynamically constructed repositories. Existing image scans, severity
+cutoff, classifier, check names and full regression requirements remain intact.
+Failure at this precondition means **image scan not executed**, not a clean scan
+or CVE clearance. The main stable-source Dockerfile must pass the same control.
+When an actual supported remedy is available, replace the rejected source and
+run the full applicable exact-head validations. Rollback of this guard requires
+review; it must not be used to reactivate the rejected source.
 
 Rollback is reverting this package/helper change and rebuilding images; doing so
 restores the known vulnerable library, not security acceptance. Keep production
