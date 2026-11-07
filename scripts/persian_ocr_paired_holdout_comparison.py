@@ -154,9 +154,45 @@ def compare_paired_ocr_studies(
         for case_ref, expected_kinds in expected_kinds_by_source.items()
     ))
 
+    # Make material H&M literal regressions visible without rewarding raw
+    # aggregate OCR gains. These are *lexical* indicators; neither presence
+    # nor proximity establishes negation scope, date truth or causation.
+    critical_kinds = ("negation", "uncertainty", "time", "causation", "technical_term")
+    risk_by_kind = {
+        kind: {
+            "candidate_lost_baseline_literal": by_kind[kind]["candidate_lost_baseline_present"],
+            "candidate_new_false_insertion": by_kind[kind]["candidate_new_false_insertion"],
+            "paired_positive_unmeasured": by_kind[kind]["baseline_or_candidate_unmeasured"],
+            "paired_negative_control_unmeasured": by_kind[kind]["negative_control_unmeasured"],
+        }
+        for kind in critical_kinds
+    }
+    risk_counts = {
+        key: sum(values[key] for values in risk_by_kind.values())
+        for key in (
+            "candidate_lost_baseline_literal", "candidate_new_false_insertion",
+            "paired_positive_unmeasured", "paired_negative_control_unmeasured",
+        )
+    }
+    critical_literal_risk = {
+        "by_kind": risk_by_kind,
+        "totals": risk_counts,
+        "any_loss_or_new_false_insertion_observed": bool(
+            risk_counts["candidate_lost_baseline_literal"]
+            or risk_counts["candidate_new_false_insertion"]
+        ),
+        "any_unmeasured_critical_observation": bool(
+            risk_counts["paired_positive_unmeasured"]
+            or risk_counts["paired_negative_control_unmeasured"]
+        ),
+        "lexical_flags_are_not_semantic_verification": True,
+        "critical_fact_authorization_granted": False,
+    }
+
     return {
         "schema_version": 1,
         "measurement_kind": "self_supplied_paired_holdout_literal_comparison_only",
+        "critical_literal_risk_observations": critical_literal_risk,
         "all_declared_source_kind_classes_present_in_submitted_spans": True,
         "source_files_locally_hash_matched": files["locally_hash_matched_source_files"],
         "pages_matched": len(left_pages),
