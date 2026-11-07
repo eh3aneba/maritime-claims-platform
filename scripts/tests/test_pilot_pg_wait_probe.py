@@ -95,6 +95,34 @@ class PilotPgWaitProbeTests(unittest.TestCase):
         self.assertFalse(capped["sample_blocker_graph_complete"])
         self.assertFalse(capped["observed_blocker_cycle_in_sample"])
 
+    def test_more_than_sixteen_blockers_never_claims_complete_graph(self):
+        # All blocker sessions fit within the 32-row sample, but the
+        # per-session output clips PID lists to 16. Before this fix, the
+        # sampled graph incorrectly reported complete coverage.
+        blocker_ids = list(range(301, 318))
+        rows = [
+            (201, "active", "Lock", "transactionid", 5, blocker_ids),
+            *((pid, "idle in transaction", "Client", "ClientRead", 10, [])
+              for pid in blocker_ids),
+        ]
+        report = probe.safe_summary(rows)
+        self.assertFalse(report["truncated"])
+        self.assertTrue(report["blocker_pid_lists_truncated"])
+        self.assertEqual(report["client_count"], 18)
+        self.assertEqual(len(report["sessions"][0]["blocking_pids"]), 16)
+        self.assertEqual(report["blocked_count"], 1)
+        self.assertFalse(report["sample_blocker_graph_complete"])
+        self.assertFalse(report["observed_blocker_cycle_in_sample"])
+
+    def test_complete_bounded_blocker_list_remains_accurate(self):
+        rows = [
+            (201, "active", "Lock", "transactionid", 5, [202]),
+            (202, "idle in transaction", "Client", "ClientRead", 10, []),
+        ]
+        report = probe.safe_summary(rows)
+        self.assertFalse(report["blocker_pid_lists_truncated"])
+        self.assertTrue(report["sample_blocker_graph_complete"])
+
     def test_observer_graph_cannot_echo_any_query_text(self):
         rows = [
             (201, "active", "Lock", "transactionid", 3, [202]),
