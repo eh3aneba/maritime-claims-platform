@@ -162,6 +162,10 @@ def compare_paired_ocr_studies(
         kind: {
             "candidate_lost_baseline_literal": by_kind[kind]["candidate_lost_baseline_present"],
             "candidate_new_false_insertion": by_kind[kind]["candidate_new_false_insertion"],
+            # A candidate may retain the baseline's material omissions or
+            # unsupported phrases even when no *new* regression occurred.
+            "candidate_persistent_missing_reference_literal": by_kind[kind]["both_literal_missing"],
+            "candidate_persistent_false_insertion": by_kind[kind]["negative_control_inserted_both"],
             "paired_positive_unmeasured": by_kind[kind]["baseline_or_candidate_unmeasured"],
             "paired_negative_control_unmeasured": by_kind[kind]["negative_control_unmeasured"],
         }
@@ -171,6 +175,8 @@ def compare_paired_ocr_studies(
         key: sum(values[key] for values in risk_by_kind.values())
         for key in (
             "candidate_lost_baseline_literal", "candidate_new_false_insertion",
+            "candidate_persistent_missing_reference_literal",
+            "candidate_persistent_false_insertion",
             "paired_positive_unmeasured", "paired_negative_control_unmeasured",
         )
     }
@@ -184,6 +190,10 @@ def compare_paired_ocr_studies(
         "any_unmeasured_critical_observation": bool(
             risk_counts["paired_positive_unmeasured"]
             or risk_counts["paired_negative_control_unmeasured"]
+        ),
+        "any_persistent_literal_issue_observed": bool(
+            risk_counts["candidate_persistent_missing_reference_literal"]
+            or risk_counts["candidate_persistent_false_insertion"]
         ),
         "lexical_flags_are_not_semantic_verification": True,
         "critical_fact_authorization_granted": False,
