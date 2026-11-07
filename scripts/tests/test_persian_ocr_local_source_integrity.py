@@ -138,7 +138,11 @@ class LocalSourceByteIntegrityTests(unittest.TestCase):
 
             def swap_before_open(path, flags, *args, **kwargs):
                 nonlocal swapped
-                if not swapped and os.fspath(path) == os.fspath(inspected):
+                if not swapped and (
+                    os.fspath(path) == os.fspath(inspected)
+                    or (os.fspath(path) == inspected.name
+                        and kwargs.get("dir_fd") is not None)
+                ):
                     swapped = True
                     replacement.replace(inspected)
                 return real_open(path, flags, *args, **kwargs)
@@ -166,7 +170,11 @@ class LocalSourceByteIntegrityTests(unittest.TestCase):
 
             def swap_parent_before_open(path, flags, *args, **kwargs):
                 nonlocal swapped
-                if not swapped and os.fspath(path) == os.fspath(inspected):
+                if not swapped and (
+                    os.fspath(path) == os.fspath(inspected)
+                    or (os.fspath(path) == "fiction"
+                        and kwargs.get("dir_fd") is not None)
+                ):
                     swapped = True
                     (root / "fiction").rename(root / "original_fiction")
                     (root / "fiction").symlink_to(alternate, target_is_directory=True)
@@ -174,7 +182,73 @@ class LocalSourceByteIntegrityTests(unittest.TestCase):
 
             with patch("scripts.persian_ocr_local_source_integrity.os.open",
                        side_effect=swap_parent_before_open):
+                with self.assertRaises((ValueError, OSError)):
+                    verify_source_bytes(manifest, inventory, root=root)
+            self.assertTrue(swapped)
+
+    @unittest.skipUnless(
+        os.name == "posix" and bool(getattr(os, "O_NOFOLLOW", 0))
+        and bool(getattr(os, "O_DIRECTORY", 0)),
+        "Requires secure POSIX directory-descriptor traversal",
+    )
+    def test_same_inode_hardlink_in_swapped_parent_is_not_admitted(self):
+        # Same file bytes AND same (dev, ino) defeat a final-file-only
+        # descriptor check. The originally inspected parent directory must
+        # also match the opened directory, with no path escape.
+        with tempfile.TemporaryDirectory() as dirname:
+            root = Path(dirname) / "sources"
+            root.mkdir()
+            manifest, inventory = small_study(root)
+            inspected = root / inventory["files"][0]["relative_path"]
+            alternate = Path(dirname) / "other-directory"
+            alternate.mkdir()
+            os.link(inspected, alternate / "scan-0.bin")
+            self.assertEqual(inspected.stat().st_ino, (alternate / "scan-0.bin").stat().st_ino)
+            real_open = os.open
+            swapped = False
+
+            def swap_parent_with_hardlink(path, flags, *args, **kwargs):
+                nonlocal swapped
+                if not swapped and os.fspath(path) == "fiction" and kwargs.get("dir_fd") is not None:
+                    swapped = True
+                    (root / "fiction").rename(root / "original_fiction")
+                    alternate.rename(root / "fiction")
+                return real_open(path, flags, *args, **kwargs)
+
+            with patch("scripts.persian_ocr_local_source_integrity.os.open",
+                       side_effect=swap_parent_with_hardlink):
                 with self.assertRaises(ValueError):
+                    verify_source_bytes(manifest, inventory, root=root)
+            self.assertTrue(swapped)
+
+    @unittest.skipUnless(
+        os.name == "posix" and bool(getattr(os, "O_NOFOLLOW", 0))
+        and bool(getattr(os, "O_DIRECTORY", 0)),
+        "Requires secure POSIX directory-descriptor traversal",
+    )
+    def test_parent_symlink_to_same_inode_hardlink_is_not_followed(self):
+        with tempfile.TemporaryDirectory() as dirname:
+            root = Path(dirname) / "sources"
+            root.mkdir()
+            manifest, inventory = small_study(root)
+            inspected = root / inventory["files"][0]["relative_path"]
+            alternate = Path(dirname) / "hardlink-outside-source-root"
+            alternate.mkdir()
+            os.link(inspected, alternate / "scan-0.bin")
+            real_open = os.open
+            swapped = False
+
+            def swap_parent_to_symlink(path, flags, *args, **kwargs):
+                nonlocal swapped
+                if not swapped and os.fspath(path) == "fiction" and kwargs.get("dir_fd") is not None:
+                    swapped = True
+                    (root / "fiction").rename(root / "original_fiction")
+                    (root / "fiction").symlink_to(alternate, target_is_directory=True)
+                return real_open(path, flags, *args, **kwargs)
+
+            with patch("scripts.persian_ocr_local_source_integrity.os.open",
+                       side_effect=swap_parent_to_symlink):
+                with self.assertRaises((OSError, ValueError)):
                     verify_source_bytes(manifest, inventory, root=root)
             self.assertTrue(swapped)
 
