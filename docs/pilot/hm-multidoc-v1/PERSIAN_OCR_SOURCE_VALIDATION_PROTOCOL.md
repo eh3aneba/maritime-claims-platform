@@ -183,6 +183,21 @@ Input `schema_version: 1`, `records: [...]` contains one page per record:
   false-insertion/retrieval counts. The tool rejects contradictory reports,
   out-of-scope fields and inconsistent literal labels. These intervals do
   not correct biased/non-random sampling.
+- A given **exact literal may be counted at most once per page**, regardless
+  of how many `span_ref` names or critical-kind labels it receives. Repeating
+  the same boolean presence observation would artificially enlarge the OCR
+  recall denominator and distort its descriptive Wilson interval. Independent
+  pages can test the literal again; a new `case_ref` or hash value is only
+  self-supplied metadata, **not proof of independent source samples**.
+  Different literals that overlap remain separately reported and still need
+  an expert-defined sampling and annotation protocol.
+- Two page records with the **same supplied original source SHA-256 and exact
+  page locator** are rejected, even when renamed to different case IDs,
+  extraction hashes or document versions. A version change or a second OCR
+  run does not turn the same source page into a new independent observation.
+  Other locators for the same source are permitted as *claimed* distinct
+  pages; a matching source checksum and a different locator do not verify
+  actual page identity, authorized provenance or cohort independence.
 
 **This instrument checks the syntactic shape of hash metadata, not the
 image bytes, reviewer qualifications, independent source/adjudication,

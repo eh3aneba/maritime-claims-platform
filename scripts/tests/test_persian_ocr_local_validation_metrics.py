@@ -119,6 +119,98 @@ class LocalPersianOcrValidationTests(unittest.TestCase):
         self.assertFalse(actual["reference_transcript_independently_adjudicated"])
         self.assertFalse(actual["negation_scope_semantics_verified"])
 
+    def test_same_page_literal_cannot_be_counted_twice_under_new_label_or_kind(self):
+        # New IDs or category changes do not create independent observations.
+        for replacement_kind in ("technical_term", "negation", "uncertainty"):
+            study = example_study()
+            duplicate = copy.deepcopy(study["records"][0]["critical_spans"][1])
+            duplicate["span_ref"] = "inflated-second-observation"
+            duplicate["kind"] = replacement_kind
+            study["records"][0]["critical_spans"].append(duplicate)
+            with self.subTest(kind=replacement_kind):
+                with self.assertRaisesRegex(
+                    ValueError, "^invalid_or_incomplete_local_study_input$"
+                ):
+                    evaluate_local_study(study)
+
+    def test_repeat_literal_on_different_independent_page_is_not_rejected(self):
+        study = example_study()
+        another_page = copy.deepcopy(study["records"][0])
+        another_page["case_ref"] = "FICTION-HM4"
+        another_page["source_file_sha256"] = "0" * 64
+        another_page["extraction_sha256"] = "1" * 64
+        study["records"].append(another_page)
+        result = evaluate_local_study(study)
+        self.assertEqual(result["pages_measured_or_screened"], 4)
+        self.assertEqual(result["overall"]["reference_positive"], 6)
+        self.assertEqual(result["overall"]["ocr_positive_measured"], 5)
+        self.assertEqual(result["overall"]["ocr_exact_found"], 3)
+        self.assertFalse(result["pilot_accepted"])
+
+    def test_same_source_page_under_different_case_alias_is_not_independent(self):
+        study = example_study()
+        # Keep identical original bytes and page, but disguise the source with
+        # a new case ID, document version, and extraction digest.
+        alias = copy.deepcopy(study["records"][0])
+        alias["case_ref"] = "FICTION-ALIAS-OF-HM1"
+        alias["document_version"] = 42
+        alias["extraction_sha256"] = "9" * 64
+        study["records"].append(alias)
+        with self.assertRaisesRegex(
+            ValueError, "^invalid_or_incomplete_local_study_input$"
+        ):
+            evaluate_local_study(study)
+
+    def test_same_document_distinct_page_locator_is_separate_claimed_page(self):
+        study = example_study()
+        next_page = copy.deepcopy(study["records"][0])
+        next_page["page_locator"] = "page:2"
+        next_page["extraction_sha256"] = "9" * 64
+        study["records"].append(next_page)
+        report = evaluate_local_study(study)
+        self.assertEqual(report["pages_measured_or_screened"], 4)
+        self.assertEqual(report["overall"]["reference_positive"], 6)
+        self.assertEqual(report["source_and_extraction_hashes"], "format_checked_not_source_attested")
+        self.assertFalse(report["reference_transcript_independently_adjudicated"])
+        self.assertFalse(report["pilot_accepted"])
+
+    def test_alias_source_cli_fails_without_printing_paths_hashes_or_text(self):
+        study = example_study()
+        alias = copy.deepcopy(study["records"][0])
+        alias["case_ref"] = "PRIVATE-FAKE-ALIAS"
+        alias["extraction_sha256"] = "9" * 64
+        study["records"].append(alias)
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "private_study_input.json"
+            path.write_text(json.dumps(study, ensure_ascii=False), encoding="utf-8")
+            stdout, stderr = StringIO(), StringIO()
+            with redirect_stdout(stdout), redirect_stderr(stderr):
+                exit_code = main(["--input", str(path)])
+            self.assertEqual(exit_code, 2)
+            self.assertEqual(stdout.getvalue(), "")
+            self.assertEqual(stderr.getvalue().strip(), "ocr_validation_input_rejected")
+            self.assertNotIn("PRIVATE-FAKE-ALIAS", stderr.getvalue())
+            self.assertNotIn("توربوشارژر", stderr.getvalue())
+            self.assertNotIn("a" * 64, stderr.getvalue())
+            self.assertNotIn(str(path), stderr.getvalue())
+
+    def test_duplicate_span_cli_rejects_without_echoing_local_text(self):
+        study = example_study()
+        duplicate = copy.deepcopy(study["records"][0]["critical_spans"][0])
+        duplicate["span_ref"] = "other-fictitious-label"
+        study["records"][0]["critical_spans"].append(duplicate)
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "private_local_input.json"
+            path.write_text(json.dumps(study, ensure_ascii=False), encoding="utf-8")
+            stdout, stderr = StringIO(), StringIO()
+            with redirect_stdout(stdout), redirect_stderr(stderr):
+                code = main(["--input", str(path)])
+            self.assertEqual(code, 2)
+            self.assertEqual(stdout.getvalue(), "")
+            self.assertEqual(stderr.getvalue().strip(), "ocr_validation_input_rejected")
+            self.assertNotIn("معلوم نیست", stderr.getvalue())
+            self.assertNotIn(str(path), stderr.getvalue())
+
     def test_no_denominator_is_not_perfect_score(self):
         study = example_study()
         study["records"] = study["records"][2:]
