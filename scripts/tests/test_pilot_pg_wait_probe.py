@@ -149,6 +149,22 @@ class PilotPgWaitProbeTests(unittest.TestCase):
         self.assertNotIn("secret", out.getvalue())
         self.assertNotIn("db.invalid", out.getvalue())
 
+    def test_due_tick_workflow_uses_bounded_finer_probe_not_relaxed_tests(self):
+        workflow = (
+            Path(__file__).resolve().parents[2]
+            / ".github/workflows/postgres-concurrency-regressions.yml"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            "python -u ../../scripts/pilot_pg_wait_probe.py "
+            "--interval-seconds 30 --max-samples 25 &",
+            workflow,
+        )
+        self.assertIn("trap cleanup_probe EXIT", workflow)
+        self.assertIn("faulthandler_timeout=180", workflow)
+        self.assertIn("pytest_exit=$?", workflow)
+        self.assertIn('exit "$pytest_exit"', workflow)
+        self.assertIn("name: PostgreSQL concurrency gate", workflow)
+
     def test_guard_failure_does_not_display_uri(self):
         out = io.StringIO()
         with patch.dict(os.environ, {"APP_ENV": "production",
