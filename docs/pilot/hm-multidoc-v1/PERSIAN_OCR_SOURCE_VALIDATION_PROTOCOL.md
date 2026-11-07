@@ -286,6 +286,12 @@ or hash; successful output includes only aggregate file counts/byte totals
 and `local_source_hashes_matched=true`. The inventory and source files
 must remain **outside public CI / GitHub / connected storage**, and the
 repository tests use only fictional tiny binary files. File limit is 256 MiB.
+In addition, the opened file descriptor must match the device/inode identity
+observed during the path check. This rejects a source file (or intermediate
+directory) swapped between inspection and open, **even when replacement bytes
+match the operator-supplied SHA-256**. Local source directories must still be
+protected against concurrent adversarial writes; this does not prove file
+origin, eliminate all filesystem races, or authenticate the claimed cohort.
 Use an appropriately protected machine and source store; this helper has
 no network client and is not an evidence ingestion path.
 
