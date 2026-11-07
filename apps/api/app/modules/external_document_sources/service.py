@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from ipaddress import ip_address
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import Uuid, bindparam, select
 from sqlalchemy.orm import Session
 
 from app.modules.external_document_sources.models import (
@@ -424,14 +424,19 @@ def _ensure_profile_integrity(db: Session, profile: ExternalDocumentSourceProfil
     _verify_receipts(db, profile)
 
 
+# Reuse only the SQL structure. Every execution still binds this call's tenant
+# and profile, reads through the caller's Session, and runs integrity checks.
+# Explicit UUID types also work before foreign-key model types finish resolving.
+_PROFILE_LOOKUP = select(ExternalDocumentSourceProfile).where(
+    ExternalDocumentSourceProfile.id == bindparam("profile_id", type_=Uuid(as_uuid=True)),
+    ExternalDocumentSourceProfile.organization_id == bindparam("organization_id", type_=Uuid(as_uuid=True)),
+)
+_PROFILE_LOOKUP_FOR_UPDATE = _PROFILE_LOOKUP.with_for_update()
+
+
 def _get_profile(db: Session, *, organization_id: UUID, profile_id: UUID, for_update: bool = False) -> ExternalDocumentSourceProfile:
-    stmt = select(ExternalDocumentSourceProfile).where(
-        ExternalDocumentSourceProfile.id == profile_id,
-        ExternalDocumentSourceProfile.organization_id == organization_id,
-    )
-    if for_update:
-        stmt = stmt.with_for_update()
-    profile = db.scalar(stmt)
+    stmt = _PROFILE_LOOKUP_FOR_UPDATE if for_update else _PROFILE_LOOKUP
+    profile = db.scalar(stmt, {"profile_id": profile_id, "organization_id": organization_id})
     if profile is None:
         raise ExternalDocumentSourceNotFoundError("External document source profile not found")
     return profile

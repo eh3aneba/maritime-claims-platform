@@ -1,5 +1,179 @@
 # SeeClaims — Execution Roadmap v1 | Status and gates
 
+## SQL-template final integration — 2026-11-04 (Asia/Tehran)
+
+Current main inspected at `3bf2861b53a10382bc0d1ac43fb3d172fc2914c7`, protected
+merge of #868 after all11 required checks. Its post-merge security run41781197019
+and production policy41781196978 both passed. Historical risk JSON was preserved;
+no application or workflow change in that merge.
+
+Principal #875 branch `test/credential-lineage-final-freshness`; this containing
+commit anchors final integration with latest main. Reuses typed immutable SQL
+structures only; no result/row/Session/validation cache. Final upstream lineage,
+tenant filters, approval/receipt checks and requested locks retained. Service
+SHA256 `d16274335d9d8ddb1d4359c1283cb2c9edea83d5f92b592a6896cba3927340c5`
+and new profile regression SHA256
+`a5d74f747f35c8de25374182715d0b7cf10c257e18c0ac484eef7b15a8c7a936`
+remain the exact previously tested bytes. No migration, dependency, policy,
+classifier, selector or production-workflow change. Unsafe single-validation
+shortcut remains withdrawn.
+
+Completed safety: local related29 passed; a fresh PostgreSQL18.4 related suite
+also29 passed (28 PostgreSQL, one deliberately SQLite fresh-process import), plus
+real two-connection lock/block/release proof. Original candidate c7ad7ed full64
+run41776449563 passed with all1628 nodes accounted for (1575 passed,53 expected
+PostgreSQL-only skips); separate PostgreSQL/other hosted gates passed. Source
+and script checkpoints preserve the poller's read failures; no pass was inferred
+from its nonzero exits. Independent completed-run metadata/log audit subsequently
+verified source pins, first attempts, real install/compile/pytest steps, zip CRC,
+all64 jobs and exact node/shard/outcome parity without any rerun/redispatch.
+
+One corrected same-inventory canary, both Python3.13.18 / ubuntu-24.04:
+
+| Arm | Exact head / run | Wall minutes | Shard runner-minutes | Cache restores |
+| --- | --- | ---: | ---: | ---: |
+| Original query control | de5640be55cce130422e7d9bfaa6b6158d2a158e /41784646993 |35.45|500.50|44/64|
+| Reused query candidate |0f88915d76311b9405a4294d1831d88bce32579a /41781043584|33.65|471.45|44/64|
+
+Observed wall **5.08% lower**, shard cost **5.80% lower**; all64 executed, identical
+1628 test IDs/shards/outcomes and locks. The candidate app tree equals c7ad7ed;
+only experiment workflow runtime/runner labels were pinned equally. Production
+workflow stays unchanged. Runner build distributions differ; candidate ran first,
+with other-workload/queue/cache/CPU noise. This is one bounded canary, not a CI
+median/p95, causal isolation, guaranteed future speedup or customer latency result.
+Local component signals (SQLite15.62%, PostgreSQL7.15%, slow case about5% lower)
+are corroborating component evidence, not independent global-CI cohorts.
+
+Engineering review accepts the narrow SQL-construction optimization for final
+protected validation on consistent directional component/canary benefit, unchanged
+validation semantics, regression coverage and low rollback/state risk. No general
+CI-acceleration claim or #866 acceptance is awarded. No material code/security
+finding remains from review; real hosted final integration gates are still
+mandatory. This final head must receive normal Ready/full64 and all11 required
+contexts; old-head/pinned experiment results alone do not admit a changed head.
+Only after those pass and latest main/head/thread checks may ordinary protected
+squash merge proceed under Product Owner's current authorization. No bypass.
+
+The uncontrolled earlier comparison was stopped: run41776449563 mixed50 shards
+Python3.13.17 and14 Python3.13.18, so control41780276877 was explicitly CANCELLED,
+not passed; no speed acceptance from it. All control/pinned branches NEVER MERGE.
+#866 remains unchanged Draft998858f31d8c6ff8b8a2fe4b1184d787975efdf3, not adopted.
+No extra cohorts planned. Live #553/#647 carry raw reports and subsequent outcomes.
+
+Next three: complete all final-head normal hosted gates; verify latest main,
+head and threads then protected merge if green; inspect post-merge security and
+resume bounded synthetic source/export reliability. Rollback is normal revert,
+no data/schema migration. Security/operations and independent bilingual H&M
+reviewer UNASSIGNED — HUMAN APPOINTMENT REQUIRED; signature freshness policy
+NOT APPROVED; original OCR holds and human decision authority retained. AI and
+external adapters OFF; synthetic only; Customer Pilot **NO-GO**. Dated history below
+is superseded by this integration entry and live execution evidence.
+
+## Active SQL-template canary — security first (2026-11-04, Asia/Tehran)
+
+Principal branch `test/credential-lineage-final-freshness`, Draft PR #875;
+this containing commit anchors the candidate. Main remains
+`811461563fa2076f751ac828c9821b4a27353f25`. The unsafe single-validation
+shortcut below remains rejected. This separate approach reuses only two
+immutable SQL statement structures for profile reads, binding typed tenant
+and profile UUIDs per call. No rows, Sessions or validation outcomes are cached.
+All receipt, approval, final credential-lineage checks and requested row locks
+remain. All 25 other profile-service functions are AST-identical to baseline;
+Session visibility/isolation semantics are unchanged, not strengthened.
+
+Actual isolated local validation: **29 passed**, four existing deprecation
+warnings, 58.99s, across profile governance/integrity, credential references,
+connection authorization/bootstrap and five new query regressions. Four new
+regressions passed against baseline together; the fifth fresh-process case also
+passed baseline separately. The first SQL-template prototype failed that fifth
+case: early imports captured an unresolved foreign-key bind type. Explicit
+`Uuid(as_uuid=True)` bindings fix the confirmed proposal-only defect; the exact
+new regression failed before and passed after that fix. Current main was not
+shown vulnerable. The original mid-read credential drift guard also passes.
+
+Final-source warm-cache SQLite component: five alternating-order pairs, 1,000
+fully validated reads per arm. Median 0.431506s baseline / 0.364106s candidate
+(**15.62% lower**); all ten arms executed exactly 2,000 SELECTs. Unchanged slow
+synthetic lifecycle test: baseline **511.58s pytest / 518.981s outer**, final
+candidate **485.88s pytest / 493.760s outer**, both passed; approximately 5% lower
+in this single local comparison. Source SHA256 stayed
+`5bd9b4cec06ccf8703300b96d21cacbb362429c0bbf77ea2c7153a2b95d2a247`.
+Final service SHA256:
+`d16274335d9d8ddb1d4359c1283cb2c9edea83d5f92b592a6896cba3927340c5`.
+An earlier warm-import prototype replay was 473.85s; do not substitute it for
+the final candidate or pool these stages as identical paired cohorts.
+
+**Review canary only, not accepted or merge-ready.** Local SQLite/Python3.13.16
+is not hosted PostgreSQL/Python3.13.17 evidence. One slow baseline/final replay
+cannot establish a CI median, tail latency, runner-minute saving or causality;
+new subprocess-regression startup cost must be included in whole-CI comparisons.
+PostgreSQL row-lock SQL compilation is tested, not independent concurrency proof.
+Early restricted-executor TestClient attempts stalled and were terminated without
+results; an independent tiny FastAPI reproduction also stalled there and passed
+with approved executor permissions. Accepted runs used those permissions.
+
+Previous #875 head `12b76f57d880bf58de7b54d683e5bde7a5cb40bb` passed its
+previously executed hosted workflows; Draft-triggered Backend was skipped, not
+passed. Authorized full64 manual run **41769488626** is pinned to that old head;
+latest observation before preparing this commit: **62/64 shards passed, no
+failures, two running**. It cannot validate this new production-source candidate.
+Do not cancel it to hide a result. Read live #647/#553 and PR #875 for subsequent
+exact-head outcomes. New candidate requires its own all64 and 11 required gates;
+Draft policy, workflow names and classifier remain unchanged. No merge/deployment.
+
+Next three: finish/evaluate old full64 then obtain final-head full64 and all
+required gates; perform a bounded comparable confirmation including PostgreSQL,
+cache/runtime differences and the added test cost; review acceptance or rejection
+before adoption. Rollback is an ordinary revert of SQL construction, without a
+schema/data migration. #866 remains isolated unchanged Draft at
+`998858f31d8c6ff8b8a2fe4b1184d787975efdf3` and is not adopted.
+Security/operations owner and independent bilingual H&M reviewer remain
+UNASSIGNED — HUMAN APPOINTMENT REQUIRED; freshness policy NOT APPROVED;
+OCR/source-review holds intact, synthetic data only, AI/external adapters OFF.
+Customer Pilot remains **NO-GO**. Older entries below are dated history.
+
+## Current safety gate — final credential lineage (2026-11-03, Asia/Tehran)
+
+Main baseline `811461563fa2076f751ac828c9821b4a27353f25` remains unchanged in
+production behavior. The shared-manifest and matrix-order experiments were not
+adopted; #866 stays unchanged Draft at
+`998858f31d8c6ff8b8a2fe4b1184d787975efdf3`. See #553 comments 6607851504 and
+6611365677 for completed reliability/performance decisions.
+
+One unchanged synthetic replay test passed under local content-free profiling:
+557.18s, with prerequisite construction 344.00s and two asserted product actions
+205.35s. 1,851,209 SQL executions led to a proposal to reuse a validated profile.
+Cursor timing excludes fetching/ORM; no speedup was established by that profile.
+Reproducible baseline: #553 comment 6613418698 (proposal subsequently withdrawn).
+
+**The initial optimization is rejected on a concrete safety counterexample.**
+A new synthetic regression changes an upstream bootstrap receipt while binding
+receipts are being checked. Original code rejects the drift; the proposed
+single-validation shortcut returns successfully and fails the regression.
+The prototype was discarded and production source restored byte-for-byte.
+This is a regression in the proposed optimization, not a demonstrated defect
+or exploit in the current production implementation. Final upstream checking
+must remain effective; no cross-call validation cache or weakened check.
+
+Principal branch `test/credential-lineage-final-freshness` retains only the new
+protective test and this status update; this containing commit anchors its head.
+Local existing-plus-new credential suite: **4 passed**, 3 existing deprecation
+warnings, 15.01s pytest time. The exact final regression also rejected the
+prototype (expected failing experiment). Synthetic SQLite/session-local drift
+is not proof of real concurrent PostgreSQL behavior. Hosted exact-head checks
+remain pending; no optimized candidate, full-regression pass, speedup, merge,
+deployment or human signoff is claimed. Test rollback confirms valid reads
+recover and the injected drift does not persist.
+
+Next three: review hosted validation of the protective test; investigate an
+optimization that preserves final freshness semantics; profile a new candidate
+only after security regressions pass. Keep all64 shards,11 required contexts
+and the existing classifier. No production configuration or customer evidence.
+Security/operations and independent bilingual reviewer remain UNASSIGNED —
+HUMAN APPOINTMENT REQUIRED; freshness policy NOT APPROVED; OCR holds intact.
+Customer Pilot remains **NO-GO**. The old pending-state entries below are dated
+history, reconciled by this entry and the live #647 execution handoff.
+
 ## Active source/export reliability — XLSX error-like literals (2026-11-02 UTC)
 
 Current baseline main `26d5e9d0feaa299392dd15505be3d00588bb60b8` normally merged
