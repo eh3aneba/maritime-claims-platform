@@ -121,6 +121,15 @@ jobs:
                 postgres_required=true
                 add_group admission-execution
                 ;;
+              scripts/pilot_local_ai_hm_loopback_smoke.py|scripts/pilot_local_ai_hm_fixture_matrix.py|scripts/pilot_local_ai_hm_repeat_smoke.py|scripts/pilot_local_ai_hm_critical_quote_coverage.py|scripts/pilot_local_ai_source_gate.py|scripts/pilot_local_ai_synthetic_handoff.py)
+                # The AST exception below applies only to the three test
+                # modules, not to their imported helper implementations.
+                # Changing any audited helper requires the entire DB matrix;
+                # a future helper import must first pass the closure guard.
+                postgres_required=true
+                fail_closed=true
+                break
+                ;;
               apps/api/tests/test_local_ai_hm_loopback_smoke.py|apps/api/tests/test_local_ai_hm_fixture_matrix.py|apps/api/tests/test_local_ai_hm_repeat_smoke.py)
                 # Exact code-owned synthetic-only test modules. If a new
                 # dependency or DB-affecting call appears, require every

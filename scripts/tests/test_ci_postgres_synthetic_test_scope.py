@@ -1,4 +1,5 @@
 """Regression tests for exact-path offline AI-only PostgreSQL CI scope."""
+import ast
 from pathlib import Path
 import tempfile
 import unittest
@@ -88,6 +89,63 @@ class OfflineAISyntheticPostgresScopeTests(unittest.TestCase):
             target.write_text("from app.modules.external_document_sources.service import helper\n", encoding="utf-8")
             with patch.object(guard, "_ROOT", Path(root)):
                 self.assertFalse(guard.is_db_free_synthetic_test(MATRIX))
+
+    def test_audited_test_transitive_script_imports_fail_closed_on_helper_changes(self):
+        # A source change inside an imported helper must never inherit the
+        # three offline test files' AST-only exception by accident. Keep the
+        # explicit workflow arm equal to the actual local import closure.
+        roots = (LOOPBACK, MATRIX, REPEAT)
+        expected_helpers = (
+            "scripts/pilot_local_ai_hm_loopback_smoke.py",
+            "scripts/pilot_local_ai_hm_fixture_matrix.py",
+            "scripts/pilot_local_ai_hm_repeat_smoke.py",
+            "scripts/pilot_local_ai_hm_critical_quote_coverage.py",
+            "scripts/pilot_local_ai_source_gate.py",
+            "scripts/pilot_local_ai_synthetic_handoff.py",
+        )
+        discovered = set()
+        visited = set()
+        pending = list(roots)
+        while pending:
+            path = pending.pop()
+            if path in visited:
+                continue
+            visited.add(path)
+            tree = ast.parse((REPO / path).read_text(encoding="utf-8"))
+            modules = []
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ImportFrom):
+                    self.assertEqual(node.level, 0, msg=path)
+                    self.assertNotEqual(node.module, "scripts", msg=path)
+                    if node.module and node.module.startswith("scripts."):
+                        modules.append(node.module)
+                elif isinstance(node, ast.Import):
+                    for alias in node.names:
+                        self.assertNotEqual(alias.name, "scripts", msg=path)
+                        if alias.name.startswith("scripts."):
+                            modules.append(alias.name)
+            for module in modules:
+                helper_path = module.replace(".", "/") + ".py"
+                self.assertIn(helper_path, expected_helpers, msg=path)
+                discovered.add(helper_path)
+                pending.append(helper_path)
+        self.assertEqual(discovered, set(expected_helpers))
+
+        workflow = (REPO / ".github/workflows/postgres-concurrency-regressions.yml").read_text(
+            encoding="utf-8"
+        )
+        # Fail closed to ALL DB groups for any helper change, including one
+        # helper on its own with no modified test or app source.
+        arm = "              " + "|".join(expected_helpers) + ")"
+        self.assertEqual(workflow.count(arm), 1)
+        first = workflow.index(arm)
+        body = workflow[first:workflow.index(";;", first)]
+        for statement in ("postgres_required=true", "fail_closed=true", "break"):
+            self.assertIn(statement, body)
+        test_arm = "apps/api/tests/test_local_ai_hm_loopback_smoke.py|"
+        catch_all = ".github/workflows/postgres-*.yml|"
+        self.assertLess(first, workflow.index(test_arm))
+        self.assertLess(workflow.index(test_arm), workflow.index(catch_all))
 
     def test_workflow_retains_exact_paths_and_fail_closed_gate(self):
         workflow = (REPO / ".github/workflows/postgres-concurrency-regressions.yml").read_text(
