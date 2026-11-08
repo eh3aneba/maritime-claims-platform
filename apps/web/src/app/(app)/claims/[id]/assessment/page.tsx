@@ -178,8 +178,14 @@ export default function InitialAssessmentPage() {
       await loadWorkspace(assessment.id);
     } catch (e) {
       if (e instanceof ApiError && e.status === 409) {
-        setError(t("staleWrite"));
+        // Reload can reset the error banner. Report the rejected write *after*
+        // refresh, distinguishing a fresh-version OCR hold from stale data.
         await loadWorkspace(assessment.id);
+        setError(
+          e.detail.includes("Unresolved operator-reported OCR source discrepancy")
+            ? t("ocrHoldWriteBlocked")
+            : t("staleWrite"),
+        );
       } else if (e instanceof ApiError && e.status === 403) setError(t("permissionError"));
       else if (e instanceof ApiError && e.status === 422) setError(t("validationError"));
       else setError(e instanceof ApiError ? e.detail : t("reviewError"));
@@ -212,8 +218,14 @@ export default function InitialAssessmentPage() {
       await loadWorkspace(approved.id);
     } catch (e) {
       if (e instanceof ApiError && e.status === 409) {
-        setError(t("staleWrite"));
+        // Reload can reset the error banner. Report the rejected write *after*
+        // refresh, distinguishing a fresh-version OCR hold from stale data.
         await loadWorkspace(assessment.id);
+        setError(
+          e.detail.includes("Unresolved operator-reported OCR source discrepancy")
+            ? t("ocrHoldWriteBlocked")
+            : t("staleWrite"),
+        );
       } else if (e instanceof ApiError && e.status === 403) setError(t("permissionError"));
       else if (e instanceof ApiError && e.status === 422) setError(t("validationError"));
       else setError(e instanceof ApiError ? e.detail : t("approvalError"));
