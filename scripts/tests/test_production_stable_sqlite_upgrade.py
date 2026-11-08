@@ -28,6 +28,28 @@ def _stage(dockerfile: str, name: str) -> str:
     return stage.group("body")
 
 
+
+# Literal source-policy check, not a shell/dataflow proof. Inspect ALL lines,
+# including continued RUN arguments and script copies, instead of only the
+# first physical RUN line.
+_FORBIDDEN_APK_SOURCE_PATTERNS = (
+    r"(?i)(?<![\w-])--repository(?:[=\s]|$)",
+    r"(?i)(?<![\w-])-X(?:[=\s]|$)",
+    r"(?i)(?<![\w-])--allow-untrusted\b",
+    r"(?i)(?<![\w-])--insecure\b",
+    r"(?i)(?<![\w-])--no-check-certificate\b",
+    r"(?i)/etc/apk/repositories",
+    r"(?i)(?:dl-cdn\.)?alpinelinux\.org/alpine/(?!v3\.24(?:/|$))[\w.]+",
+)
+
+
+def _forbidden_apk_source(text: str) -> str | None:
+    for pattern in _FORBIDDEN_APK_SOURCE_PATTERNS:
+        if re.search(pattern, text):
+            return pattern
+    return None
+
+
 class StableSqliteRuntimePolicyTests(unittest.TestCase):
     def test_both_runtime_images_upgrade_sqlite_from_supported_sources(self) -> None:
         text = DOCKERFILE.read_text(encoding="utf-8")
@@ -47,14 +69,24 @@ class StableSqliteRuntimePolicyTests(unittest.TestCase):
 
     def test_no_unapproved_repositories_or_unsigned_apk_inputs(self) -> None:
         text = DOCKERFILE.read_text(encoding="utf-8")
-        # The official python:...-alpine3.24 repositories are the only APK
-        # source; no stable-to-edge mix or locally unsigned apk artifacts.
-        for pattern in (
-            r"(?m)^RUN.*(?:/etc/apk/repositories|\b--repository\b|\b-X\s)",
-            r"(?<![\w-])(?:--allow-untrusted|--insecure|--no-check-certificate)(?![\w-])",
-            r"dl-cdn\.alpinelinux\.org/alpine/edge",
+        # The pinned official Alpine runtime's signed v3.24 repositories
+        # remain the sole APK input; alternate sources fail closed.
+        self.assertIsNone(_forbidden_apk_source(text))
+
+    def test_repository_override_on_continued_lines_is_rejected(self) -> None:
+        for injected in (
+            "RUN apk add \\\n    --repository https://dl-cdn.alpinelinux.org/alpine/edge/main sqlite-libs",
+            "RUN apk add \\\n    -X https://mirror.invalid/alpine/staging sqlite-libs",
+            "RUN printf '%s\\n' edge >> /etc/apk/repositories",
+            "RUN apk add --allow-untrusted /tmp/sqlite-libs.apk",
         ):
-            self.assertIsNone(re.search(pattern, text), pattern)
+            with self.subTest(injected=injected.splitlines()[0]):
+                self.assertIsNotNone(_forbidden_apk_source(injected))
+        self.assertIsNone(
+            _forbidden_apk_source(
+                "RUN /sbin/apk upgrade --no-cache libssl3 libcrypto3 zlib sqlite-libs"
+            )
+        )
 
     def test_mandatory_high_scanning_remains_enforced(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
