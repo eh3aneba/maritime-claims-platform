@@ -155,6 +155,9 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Verify signed stable SQLite source and unchanged High policy
+        run: python -m unittest scripts.tests.test_production_stable_sqlite_upgrade -v
+
       - name: Classify production-image scan scope
         id: image-scope
         shell: bash
