@@ -6,7 +6,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.modules.assessments.models import AssessmentSection, AssessmentStatus, InitialAssessment
-from app.modules.assessments.source_integrity import assessment_source_state
+from app.modules.assessments.source_integrity import (
+    assessment_source_state,
+    assessment_unverified_ocr_fact_review_hold,
+)
 from app.modules.claims.models import Claim
 
 
@@ -69,6 +72,13 @@ def build_approved_assessment_handoff(db: Session, *, claim: Claim) -> dict[str,
         "blocking_items": list(assessment.blocking_items or []),
         "source_fingerprint": assessment.source_fingerprint,
         "source_state_at_export": source_state,
+        # Read-time, snapshot-bound operator allegation; not a change to
+        # the underlying approved assessment or approved-content digest.
+        "unverified_ocr_fact_source_review_hold_at_export": (
+            assessment_unverified_ocr_fact_review_hold(
+                db, claim=claim, assessment=assessment,
+            )
+        ),
         "current_source_fingerprint_at_export": current_source_fingerprint,
         "approved_content_hash": assessment.approved_content_hash,
         "approved_by_id": str(assessment.approved_by_id) if assessment.approved_by_id else None,
