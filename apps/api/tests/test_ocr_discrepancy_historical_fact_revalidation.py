@@ -192,9 +192,15 @@ def test_new_assessment_cannot_launder_unverified_ocr_fact_source_dispute() -> N
     )
     with TestingSessionLocal() as db:
         claim = db.get(Claim, UUID(ids["claim_id"]))
+        fact = db.scalar(select(ClaimFact).where(
+            ClaimFact.organization_id == claim.organization_id,
+            ClaimFact.claim_id == claim.id,
+            ClaimFact.field_path == "equipment.maker",
+        ))
+        assert fact is not None
         fake_old_version = SimpleNamespace(source_snapshot={
             "sources": {"claim_facts": [
-                {"id": _get_facts(ids)["id"], "row_hash": "0" * 64}
+                {"id": str(fact.id), "row_hash": "0" * 64}
             ]},
         })
         assert not assessment_unverified_ocr_fact_review_hold(
