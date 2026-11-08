@@ -18,8 +18,8 @@ GRYPE = ROOT / ".grype.yaml"
 
 def _stage(dockerfile: str, name: str) -> str:
     stage = re.search(
-        rf"^FROM python:3\\.14\\.10-alpine3\\.24 AS {re.escape(name)}\\s*$"
-        r"(?P<body>.*?)(?=^FROM |\\Z)",
+        rf"^FROM python:3\.14\.10-alpine3\.24 AS {re.escape(name)}\s*$"
+        r"(?P<body>.*?)(?=^FROM |\Z)",
         dockerfile,
         re.MULTILINE | re.DOTALL,
     )
@@ -50,9 +50,9 @@ class StableSqliteRuntimePolicyTests(unittest.TestCase):
         # The official python:...-alpine3.24 repositories are the only APK
         # source; no stable-to-edge mix or locally unsigned apk artifacts.
         for pattern in (
-            r"(?m)^RUN.*(?:/etc/apk/repositories|\\b--repository\\b|\\b-X\\s)",
-            r"\\b(?:--allow-untrusted|--insecure|--no-check-certificate)\\b",
-            r"dl-cdn\\.alpinelinux\\.org/alpine/edge",
+            r"(?m)^RUN.*(?:/etc/apk/repositories|\b--repository\b|\b-X\s)",
+            r"(?<![\w-])(?:--allow-untrusted|--insecure|--no-check-certificate)(?![\w-])",
+            r"dl-cdn\.alpinelinux\.org/alpine/edge",
         ):
             self.assertIsNone(re.search(pattern, text), pattern)
 
