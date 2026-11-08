@@ -147,6 +147,54 @@ def build_assessment_source_snapshot(db: Session, *, claim: Claim) -> tuple[dict
     return snapshot, canonical_hash(snapshot)
 
 
+
+def assessment_unverified_ocr_fact_review_hold(
+    db: Session, *, claim: Claim, assessment: Any,
+) -> bool:
+    """Read-only hold for AI facts actually bound into this assessment snapshot.
+
+    A matching operator allegation triggers review, never a conclusion that
+    the original approved fact is false. Unrelated source documents and facts
+    added after this assessment was generated must not spread the hold.
+    """
+    snapshot = assessment.source_snapshot
+    if type(snapshot) is not dict:
+        return False
+    sources = snapshot.get("sources")
+    if type(sources) is not dict:
+        return False
+    bound = sources.get("claim_facts")
+    if type(bound) is not list:
+        return False
+    bound_ids = {
+        row["id"] for row in bound
+        if type(row) is dict and type(row.get("id")) is str
+    }
+    if not bound_ids:
+        return False
+    facts = [
+        row for row in _claim_rows(
+            db, ClaimFact, claim, ClaimFact.provenance_kind == "ai_review"
+        )
+        if str(row.id) in bound_ids
+    ]
+    if not facts:
+        return False
+    document_ids = {fact.source_document_id for fact in facts}
+    documents = _claim_rows(
+        db, Document, claim,
+        Document.id.in_(document_ids),
+        Document.deleted_at.is_(None),
+        Document.is_current.is_(True),
+    )
+    return bool(current_source_discrepancy_receipts(
+        db,
+        organization_id=claim.organization_id,
+        claim_id=claim.id,
+        documents=documents,
+    ))
+
+
 def assessment_source_state(
     db: Session,
     *,
@@ -186,6 +234,17 @@ def assert_assessment_source_current(
                 "Reload the assessment before continuing."
             ),
         )
+    # The source-report writer takes this same tenant/claim PostgreSQL row
+    # lock. Serialize the last freshness/dispute check with a new report so a
+    # concurrent report cannot slip between our check and approval commit.
+    locked_claim_id = db.scalar(
+        select(Claim.id).where(
+            Claim.organization_id == claim.organization_id,
+            Claim.id == claim.id,
+        ).with_for_update()
+    )
+    if locked_claim_id is None:
+        raise HTTPException(status_code=404, detail="Claim not found")
     _, current = build_assessment_source_snapshot(db, claim=claim)
     if current != stored:
         raise HTTPException(
@@ -193,6 +252,19 @@ def assert_assessment_source_current(
             detail=(
                 "The claim evidence or human-reviewed upstream state changed after this assessment was "
                 "generated. This assessment is now stale; generate a new version before reviewing or approving it."
+            ),
+        )
+    if assessment_unverified_ocr_fact_review_hold(
+        db, claim=claim, assessment=assessment,
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Unresolved operator-reported OCR source discrepancy affects "
+                "a human-approved AI Claim Fact used in this assessment. "
+                "A newer source fingerprint or new assessment version does "
+                "not resolve the dispute; independent source review is required "
+                "before further section review or assessment approval."
             ),
         )
     return current
