@@ -203,9 +203,34 @@ def main() -> None:
         page.unroute(assessment_pattern, current_ocr_hold_response)
         page.unroute(history_pattern, history_ocr_hold_response)
         page.get_by_role("button", name="EN").click()
+        page.reload(wait_until="networkidle")
+
+        # An operator can encounter a real 409 after a formerly current page
+        # loaded. Model only the HTTP response race in this invented browser
+        # session, not an actual source report or server bypass. The client must
+        # show the OCR-specific reason AFTER reloading, not clear it accidentally.
+        review_pattern = "**/api/v1/claims/*/initial-assessment/sections/*/review"
+
+        def late_ocr_409(route):
+            route.fulfill(status=409, json={
+                "detail": (
+                    "Unresolved operator-reported OCR source discrepancy "
+                    "affects this synthetic assessment."
+                ),
+            })
+
+        page.route(review_pattern, late_ocr_409)
+        expect(page.get_by_role("button", name="Approve", exact=True).first).to_be_visible()
+        page.get_by_role("button", name="Approve", exact=True).first.click()
+        expect(page.get_by_text(
+            "Unresolved OCR source concern: section review and assessment approval "
+            "are blocked. A new assessment version does not clear the source hold.",
+            exact=True,
+        )).to_be_visible()
+        page.unroute(review_pattern, late_ocr_409)
 
         # 5) Normal current-source path still permits human review and
-        # approval after the browser-only synthetic overlay is removed.
+        # approval after the browser-only synthetic overlays are removed.
         _review_all(request, claim_id, current)
         approved_current = _approve(request, claim_id, current, "13.8C current source-bound human approval")
         current_digest = approved_current.get("approved_content_hash")
