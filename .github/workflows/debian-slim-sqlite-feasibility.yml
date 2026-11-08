@@ -1,0 +1,27 @@
+name: Debian Slim SQLite Feasibility (diagnostic only)
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/probe_debian_slim_sqlite.py'
+      - 'scripts/tests/test_probe_debian_slim_sqlite.py'
+      - '.github/workflows/debian-slim-sqlite-feasibility.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  read-only-debian-probe:
+    name: Debian Slim SQLite inventory (NOT a security gate)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - name: Verify offline fail-closed evidence contract
+        run: python -m unittest scripts.tests.test_probe_debian_slim_sqlite -v
+      - name: Probe official Debian Slim baseline without network in container
+        run: python -m scripts.probe_debian_slim_sqlite
