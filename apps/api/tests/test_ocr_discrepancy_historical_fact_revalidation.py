@@ -426,3 +426,106 @@ def test_historical_claim_pack_notice_ignores_wrong_hash_and_foreign_tenant_rece
     listed = client.get(f"/api/v1/claims/{ids['claim_id']}/claim-pack-exports")
     assert listed.status_code == 200, listed.text
     assert listed.json()["current_unverified_ocr_source_report_count"] == 0
+
+
+def test_approved_assessment_claim_pack_reports_later_bound_ocr_dispute_without_reapproval() -> None:
+    """Preserve a real human approval while disclosing its later unverified source hold."""
+    ids, report = _setup_ocr_reviewed_fact()
+    from app.modules.claims.models import ClaimStatus
+    from app.modules.users.models import UserRole
+
+    with TestingSessionLocal() as db:
+        claim = db.get(Claim, UUID(ids["claim_id"]))
+        user = db.scalar(select(User).where(
+            User.organization_id == claim.organization_id,
+            User.email == "alpha@example.com",
+        ))
+        assert claim is not None and user is not None
+        claim.status = ClaimStatus.INVESTIGATION
+        user.role = UserRole.CLAIMS_MANAGER
+        db.commit()
+    login("alpha", "alpha@example.com")
+
+    base = f"/api/v1/claims/{ids['claim_id']}/initial-assessment"
+    generated = client.post(f"{base}/generate", json={
+        "allow_if_not_ready": True,
+        "override_reason": "Fictional baseline approved before any reported OCR source discrepancy.",
+    })
+    assert generated.status_code == 200, generated.text
+    assessment = generated.json()
+    assert not assessment["unverified_ocr_fact_source_review_hold"]
+    for section in assessment["sections"]:
+        reviewed = client.post(f"{base}/sections/{section['id']}/review", json={
+            "action": "approve",
+            "expected_source_fingerprint": assessment["source_fingerprint"],
+        })
+        assert reviewed.status_code == 200, reviewed.text
+    approved = client.post(f"{base}/{assessment['id']}/approve", json={
+        "expected_source_fingerprint": assessment["source_fingerprint"],
+        "note": "Fictional preliminary historical approval before OCR allegation.",
+    })
+    assert approved.status_code == 200, approved.text
+    digest = approved.json()["approved_content_hash"]
+    assert digest and len(digest) == 64
+
+    def pack() -> dict:
+        with TestingSessionLocal() as db:
+            claim = db.get(Claim, UUID(ids["claim_id"]))
+            user = db.scalar(select(User).where(
+                User.organization_id == claim.organization_id,
+                User.email == "alpha@example.com",
+            ))
+            return build_claim_pack_snapshot(
+                db, claim=claim, user=user,
+                generation_note="Fictional historical approval and later unverified source report.",
+                generated_at=datetime(2026, 11, 8, 9, 0, tzinfo=UTC),
+            )
+
+    baseline = pack()
+    handoff_before = baseline["approved_assessment"]
+    assert handoff_before["status"] == "approved"
+    assert handoff_before["unverified_ocr_fact_source_review_hold_at_export"] is False
+    assert baseline["summary"]["approved_assessment_unverified_ocr_fact_source_review_hold_at_export"] is False
+
+    reported = client.post(
+        f"/api/v1/claims/{ids['claim_id']}/documents/{ids['document_id']}"
+        "/processing/source-discrepancies",
+        json=report,
+    )
+    assert reported.status_code == 201, reported.text
+    assert reported.json()["review_state"] == "reported_unverified"
+
+    snapshot = pack()
+    handoff = snapshot["approved_assessment"]
+    assert handoff["id"] == assessment["id"]
+    assert handoff["status"] == "approved"
+    assert handoff["approved_content_hash"] == digest
+    assert handoff["unverified_ocr_fact_source_review_hold_at_export"] is True
+    assert snapshot["summary"]["approved_assessment_unverified_ocr_fact_source_review_hold_at_export"] is True
+    assert snapshot["summary"]["review_state"] == "attention_required"
+    assert handoff["source_state_at_export"] == "stale"
+
+    pdf = PdfReader(BytesIO(render_pdf(snapshot)))
+    pdf_text = "\n".join(page.extract_text() or "" for page in pdf.pages)
+    assert "Unverified OCR source review hold for bound AI facts at export: Yes" in pdf_text
+    assert "Independent original-source review is required" in pdf_text
+
+    workbook = load_workbook(BytesIO(render_xlsx(snapshot)), read_only=True)
+    try:
+        rows = list(workbook["Approved Assessment"].values)
+        found = [
+            value for (label, value, *_) in rows
+            if label == "Unverified OCR source review hold at export"
+        ]
+        assert len(found) == 1
+        assert "Reported, unverified" in found[0]
+        assert "no automatic reversal of historical approval" in found[0]
+    finally:
+        workbook.close()
+    # A later operator allegation is not an authorization to rewrite an
+    # existing factual value or the historical approval digest.
+    assert _get_facts(ids)["value"] == "ABB"
+    stored = client.get(f"{base}/versions/{assessment['id']}")
+    assert stored.status_code == 200, stored.text
+    assert stored.json()["approved_content_hash"] == digest
+    assert stored.json()["status"] == "approved"
