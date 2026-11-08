@@ -166,17 +166,24 @@ def assessment_unverified_ocr_fact_review_hold(
     bound = sources.get("claim_facts")
     if type(bound) is not list:
         return False
-    bound_ids = {
-        row["id"] for row in bound
-        if type(row) is dict and type(row.get("id")) is str
+    bound_states = {
+        row["id"]: row["row_hash"]
+        for row in bound
+        if (
+            type(row) is dict
+            and type(row.get("id")) is str
+            and type(row.get("row_hash")) is str
+        )
     }
-    if not bound_ids:
+    if not bound_states:
         return False
+    # Do not attach a later-edited current fact's different source to an
+    # older assessment simply because the same canonical fact ID was reused.
     facts = [
         row for row in _claim_rows(
             db, ClaimFact, claim, ClaimFact.provenance_kind == "ai_review"
         )
-        if str(row.id) in bound_ids
+        if bound_states.get(str(row.id)) == _row_state(row)["row_hash"]
     ]
     if not facts:
         return False
