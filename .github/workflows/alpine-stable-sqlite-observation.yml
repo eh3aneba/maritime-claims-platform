@@ -1,6 +1,11 @@
 name: Supported Alpine SQLite Observation
 
 on:
+  pull_request:
+    paths:
+      - 'scripts/observe_alpine_stable_sqlite.py'
+      - 'scripts/tests/test_observe_alpine_stable_sqlite.py'
+      - '.github/workflows/alpine-stable-sqlite-observation.yml'
   schedule:
     - cron: '27 4 * * 1'
   workflow_dispatch:
