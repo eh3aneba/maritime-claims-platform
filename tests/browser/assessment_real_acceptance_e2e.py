@@ -148,8 +148,60 @@ def main() -> None:
         if stale_write.status != 409:
             raise AssertionError(f"Expected stale assessment write to fail closed with 409, got {stale_write.status}")
 
-        # 4) Deliberately generate, human-review and approve the new current version.
+        # 4) Deliberately generate the new current version.
         current = _generate(request, claim_id, f"13.8C deliberate recovery version {suffix}")
+
+        # UI-only fixture: inject the exact bounded OCR review-hold fields
+        # into read responses without adding an unverified AuditLog or altering
+        # any real claim facts. Server-side hold admission is separately proven
+        # by synthetic API regression tests.
+        assessment_pattern = "**/api/v1/claims/*/initial-assessment"
+        history_pattern = "**/api/v1/claims/*/initial-assessment/history"
+
+        def current_ocr_hold_response(route):
+            response = route.fetch()
+            data = response.json()
+            if data and data.get("id") == current["id"]:
+                data["unverified_ocr_fact_source_review_hold"] = True
+            route.fulfill(response=response, json=data)
+
+        def history_ocr_hold_response(route):
+            response = route.fetch()
+            data = response.json()
+            for item in data.get("items", []):
+                if item.get("id") == current["id"]:
+                    item["unverified_ocr_fact_source_review_hold"] = True
+            route.fulfill(response=response, json=data)
+
+        page.route(assessment_pattern, current_ocr_hold_response)
+        page.route(history_pattern, history_ocr_hold_response)
+        page.goto(f"{BASE_URL}/claims/{claim_id}/assessment", wait_until="networkidle")
+        expect(page.get_by_role(
+            "heading", name="Unverified OCR source concern — review hold", exact=True
+        )).to_be_visible()
+        expect(page.get_by_text(
+            "OCR source review hold — unresolved", exact=True
+        )).to_be_visible()
+        approval_label = (
+            "Approve preliminary" if current["is_preliminary"]
+            else "Approve final assessment"
+        )
+        for button in page.get_by_role("button", name=approval_label, exact=True).all():
+            expect(button).to_be_disabled()
+        expect(page.get_by_role("button", name="Approve", exact=True)).to_have_count(0)
+        page.get_by_role("button", name="FA").click()
+        expect(page.get_by_role(
+            "heading", name="ابهام تأییدنشده در منبع OCR — توقف بازبینی", exact=True
+        )).to_be_visible()
+        expect(page.get_by_text(
+            "توقف بازبینی منبع OCR — حل‌نشده", exact=True
+        )).to_be_visible()
+        page.unroute(assessment_pattern, current_ocr_hold_response)
+        page.unroute(history_pattern, history_ocr_hold_response)
+        page.get_by_role("button", name="EN").click()
+
+        # 5) Normal current-source path still permits human review and
+        # approval after the browser-only synthetic overlay is removed.
         _review_all(request, claim_id, current)
         approved_current = _approve(request, claim_id, current, "13.8C current source-bound human approval")
         current_digest = approved_current.get("approved_content_hash")
@@ -166,7 +218,7 @@ def main() -> None:
         if not by_id[approved_current["id"]]["is_latest"]:
             raise AssertionError("Deliberately regenerated approved version must be latest")
 
-        # 5) Real operator workspace: latest/current, exact historical navigation, then FA/RTL state.
+        # 6) Real operator workspace: latest/current, exact historical navigation, then FA/RTL state.
         page.goto(f"{BASE_URL}/claims/{claim_id}/assessment", wait_until="networkidle")
         expect(page.get_by_role("heading", name="Initial Assessment", exact=True)).to_be_visible(timeout=15_000)
         expect(page.get_by_role("heading", name="Version history", exact=True)).to_be_visible()
@@ -197,7 +249,7 @@ def main() -> None:
         current_button.click()
         expect(page.get_by_text(current_digest, exact=False)).to_be_visible()
 
-        # 6) Immutable downstream audit/export handoff uses exactly the digest-bound approved assessment.
+        # 7) Immutable downstream audit/export handoff uses exactly the digest-bound approved assessment.
         export = _json(
             request.post(
                 f"{API_URL}/api/v1/claims/{claim_id}/claim-pack-exports",
