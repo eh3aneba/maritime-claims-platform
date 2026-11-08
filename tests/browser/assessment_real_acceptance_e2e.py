@@ -186,9 +186,13 @@ def main() -> None:
             "Approve preliminary" if current["is_preliminary"]
             else "Approve final assessment"
         )
-        for button in page.get_by_role("button", name=approval_label, exact=True).all():
+        approval_buttons = page.get_by_role("button", name=approval_label, exact=True)
+        expect(approval_buttons).to_have_count(2)
+        for button in approval_buttons.all():
             expect(button).to_be_disabled()
         expect(page.get_by_role("button", name="Approve", exact=True)).to_have_count(0)
+        expect(page.get_by_role("button", name="Edit", exact=True)).to_have_count(0)
+        expect(page.get_by_text("Locked for OCR source review", exact=True).first).to_be_visible()
         page.get_by_role("button", name="FA").click()
         expect(page.get_by_role(
             "heading", name="ابهام تأییدنشده در منبع OCR — توقف بازبینی", exact=True
