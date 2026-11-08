@@ -20,7 +20,7 @@ db = sqlite3.connect(":memory:")
 db.execute("CREATE VIRTUAL TABLE probe USING fts5(term)")
 db.execute("INSERT INTO probe(term) VALUES (?)", ("synthetic",))
 fts5_ok = db.execute("SELECT count(*) FROM probe WHERE probe MATCH 'synthetic'").fetchone()[0] == 1
-pkg = subprocess.run(["dpkg-query", "-W", "-f=\${Version}", "libsqlite3-0"],
+pkg = subprocess.run(["dpkg-query", "-W", "-f=${Version}", "libsqlite3-0"],
                      check=True, capture_output=True, text=True).stdout.strip()
 print(json.dumps({"sqlite_version": sqlite3.sqlite_version,
                   "debian_sqlite_package": pkg,
@@ -65,11 +65,11 @@ def report(data: dict, image_digest: str) -> str:
         "### Debian Slim SQLite feasibility — diagnostic ONLY",
         "",
         "**NO-GO: not approved as a security remediation or a production base-image change.**",
-        f"- Base image: \`{IMAGE}\` (observed digest \`{image_digest}\`).",
-        f"- Python-linked SQLite: \`{data['sqlite_version']}\`.",
-        f"- Debian libsqlite3-0 package: \`{data['debian_sqlite_package']}\`.",
-        f"- sqlite3 CLI present: \`{str(data['sqlite_cli_present']).lower()}\`.",
-        f"- Synthetic in-memory FTS5 check: \`{str(data['fts5_synthetic_ok']).lower()}\`.",
+        f"- Base image: `{IMAGE}` (observed digest `{image_digest}`).",
+        f"- Python-linked SQLite: `{data['sqlite_version']}`.",
+        f"- Debian libsqlite3-0 package: `{data['debian_sqlite_package']}`.",
+        f"- sqlite3 CLI present: `{str(data['sqlite_cli_present']).lower()}`.",
+        f"- Synthetic in-memory FTS5 check: `{str(data['fts5_synthetic_ok']).lower()}`.",
         f"- Version interpretation: {preliminary}",
         "- Reference: https://security-tracker.debian.org/tracker/source-package/sqlite3",
         "- A distro backport may fix a CVE without changing the upstream version.",
