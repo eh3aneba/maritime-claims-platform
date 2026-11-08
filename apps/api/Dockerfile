@@ -127,10 +127,14 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-RUN /sbin/apk upgrade --no-cache libssl3 libcrypto3 zlib \
+# Upgrade SQLite only from the supported, signed Alpine v3.24 repositories.
+# The upstream Python runtime and the worker's NSS dependency both use it;
+# never use Edge packages or disguise an unresolved High scanner finding.
+RUN /sbin/apk upgrade --no-cache libssl3 libcrypto3 zlib sqlite-libs \
     && /sbin/apk add --no-cache 'zlib>=1.3.2-r1' libuuid \
-    && /sbin/apk info -v libssl3 libcrypto3 zlib \
-    && python -c "import _uuid, uuid, zlib; value = uuid.uuid4(); assert value.version == 4; print(value, zlib.ZLIB_VERSION)" \
+    && /sbin/apk info -v libssl3 libcrypto3 zlib sqlite-libs \
+    && python -c "import _uuid, uuid, zlib, sqlite3; value = uuid.uuid4(); assert value.version == 4; print(value, zlib.ZLIB_VERSION, sqlite3.sqlite_version)" \
+    && ! command -v sqlite3 \
     && rm -rf /usr/local/lib/python3.14/site-packages/pip* /usr/local/bin/pip*
 
 COPY --from=python-builder /opt/venv /opt/venv
@@ -150,7 +154,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-RUN /sbin/apk upgrade --no-cache libssl3 libcrypto3 zlib \
+# Upgrade SQLite only from the supported, signed Alpine v3.24 repositories.
+# The upstream Python runtime and the worker's NSS dependency both use it;
+# never use Edge packages or disguise an unresolved High scanner finding.
+RUN /sbin/apk upgrade --no-cache libssl3 libcrypto3 zlib sqlite-libs \
     && /sbin/apk add --no-cache 'zlib>=1.3.2-r1' \
         cairo \
         ca-certificates \
@@ -169,7 +176,9 @@ RUN /sbin/apk upgrade --no-cache libssl3 libcrypto3 zlib \
         libxml2 \
         nss \
         openjpeg \
-    && /sbin/apk info -v libssl3 libcrypto3 zlib \
+    && /sbin/apk info -v libssl3 libcrypto3 zlib sqlite-libs \
+    && python -c "import sqlite3; print('worker-sqlite-runtime', sqlite3.sqlite_version)" \
+    && ! command -v sqlite3 \
     && python -c "import hashlib,pathlib,urllib.request; files=[('eng.traineddata',23466654,'f4744c201359d02ced6914c77f0de68ee9bbdd74'),('fas.traineddata',561272,'a0b9843164d928caad5afb0bd6973c964ba5b0b9')]; base='https://raw.githubusercontent.com/tesseract-ocr/tessdata/ced78752cc61322fb554c280d13360b35b8684e4/'; out=pathlib.Path('/usr/share/tessdata'); out.mkdir(parents=True,exist_ok=True); [(lambda name,size,want: (lambda data: ((_ for _ in ()).throw(AssertionError(len(data))) if len(data)!=size else None, (_ for _ in ()).throw(AssertionError('git sha mismatch')) if hashlib.sha1(b'blob '+str(len(data)).encode()+b'\\0'+data).hexdigest()!=want else None, print(name+'.sha256='+hashlib.sha256(data).hexdigest()), (out/name).write_bytes(data)))(urllib.request.urlopen(base+name,timeout=120).read()))(name,size,want) for name,size,want in files]" \
     && rm -rf /usr/local/lib/python3.14/site-packages/pip* /usr/local/bin/pip*
 
