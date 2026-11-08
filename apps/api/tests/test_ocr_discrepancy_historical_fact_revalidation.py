@@ -139,6 +139,83 @@ def test_later_ocr_report_flags_historical_fact_and_stales_assessment_without_re
     assert after_reprocess["source_revalidation_reason"] == "source_ocr_discrepancy_reported_unverified"
 
 
+def test_new_assessment_cannot_launder_unverified_ocr_fact_source_dispute() -> None:
+    """New fingerprint includes allegation but does not make it source-clean."""
+    ids, payload = _setup_ocr_reviewed_fact()
+    base = f"/api/v1/claims/{ids['claim_id']}/initial-assessment"
+    old_response = client.post(f"{base}/generate", json={
+        "allow_if_not_ready": True,
+        "override_reason": "Fictional pre-report baseline for source-control validation.",
+    })
+    assert old_response.status_code == 200, old_response.text
+    old = old_response.json()
+    assert old["unverified_ocr_fact_source_review_hold"] is False
+
+    reported = client.post(
+        f"/api/v1/claims/{ids['claim_id']}/documents/{ids['document_id']}"
+        "/processing/source-discrepancies",
+        json=payload,
+    )
+    assert reported.status_code == 201, reported.text
+    assert reported.json()["review_state"] == "reported_unverified"
+
+    new_response = client.post(f"{base}/generate", json={
+        "allow_if_not_ready": True,
+        "override_reason": "A new source fingerprint is not human source adjudication.",
+    })
+    assert new_response.status_code == 200, new_response.text
+    new = new_response.json()
+    # The new snapshot is fresh relative to the *reported* allegation,
+    # but the earlier approved AI fact in that snapshot is still disputed.
+    assert new["source_state"] == "current"
+    assert new["unverified_ocr_fact_source_review_hold"] is True
+    assert new["source_fingerprint"] != old["source_fingerprint"]
+    historical = client.get(f"{base}/versions/{old['id']}")
+    assert historical.status_code == 200
+    assert historical.json()["source_state"] == "stale"
+    assert historical.json()["unverified_ocr_fact_source_review_hold"] is True
+
+    history = client.get(f"{base}/history")
+    assert history.status_code == 200, history.text
+    assert [item["unverified_ocr_fact_source_review_hold"]
+            for item in history.json()["items"]] == [True, True]
+    assert [item["source_state"] for item in history.json()["items"]] == [
+        "current", "stale",
+    ]
+
+    blocked_review = client.post(
+        f"{base}/sections/{new['sections'][0]['id']}/review",
+        json={"action": "approve", "expected_source_fingerprint": new["source_fingerprint"]},
+    )
+    assert blocked_review.status_code == 409, blocked_review.text
+    assert "Unresolved operator-reported OCR source discrepancy" in blocked_review.text
+
+    # Elevate the fictional user for the manager-only approval route. The
+    # server must reject an attempt even when the version fingerprint is fresh.
+    from app.modules.users.models import UserRole
+    with TestingSessionLocal() as db:
+        user = db.scalar(select(User).where(User.email == "alpha@example.com"))
+        assert user is not None
+        user.role = UserRole.CLAIMS_MANAGER
+        db.commit()
+    login("alpha", "alpha@example.com")
+    blocked_approval = client.post(
+        f"{base}/{new['id']}/approve",
+        json={"expected_source_fingerprint": new["source_fingerprint"]},
+    )
+    assert blocked_approval.status_code == 409, blocked_approval.text
+    assert "Unresolved operator-reported OCR source discrepancy" in blocked_approval.text
+
+    unchanged = _get_facts(ids)
+    assert unchanged["value"] == "ABB"
+    assert unchanged["source_revalidation_required"] is True
+    with TestingSessionLocal() as db:
+        row = db.get(InitialAssessment, UUID(new["id"]))
+        assert row.status.value == "draft"
+        assert row.approved_at is None
+        assert row.approved_content_hash is None
+
+
 def test_mismatched_or_foreign_tenant_reports_do_not_mark_fact_stale() -> None:
     ids, payload = _setup_ocr_reviewed_fact()
     with TestingSessionLocal() as db:
@@ -175,6 +252,10 @@ def test_mismatched_or_foreign_tenant_reports_do_not_mark_fact_stale() -> None:
     )
     assert baseline.status_code == 200, baseline.text
     assert baseline.json()["source_state"] == "current"
+    assert baseline.json()["unverified_ocr_fact_source_review_hold"] is False
+    history = client.get(f"/api/v1/claims/{ids['claim_id']}/initial-assessment/history")
+    assert history.status_code == 200, history.text
+    assert history.json()["items"][0]["unverified_ocr_fact_source_review_hold"] is False
 
 
 def test_later_ocr_discrepancy_is_disclosed_in_new_pdf_xlsx_claim_pack() -> None:
