@@ -142,6 +142,15 @@ def test_later_ocr_report_flags_historical_fact_and_stales_assessment_without_re
 def test_new_assessment_cannot_launder_unverified_ocr_fact_source_dispute() -> None:
     """New fingerprint includes allegation but does not make it source-clean."""
     ids, payload = _setup_ocr_reviewed_fact()
+    # This fixture starts in NEW; move to INVESTIGATION before generating
+    # either snapshot so the manager-approval test exercises the OCR hold,
+    # not the independent NEW-claim readiness restriction.
+    from app.modules.claims.models import ClaimStatus
+    with TestingSessionLocal() as db:
+        claim = db.get(Claim, UUID(ids["claim_id"]))
+        assert claim is not None
+        claim.status = ClaimStatus.INVESTIGATION
+        db.commit()
     base = f"/api/v1/claims/{ids['claim_id']}/initial-assessment"
     old_response = client.post(f"{base}/generate", json={
         "allow_if_not_ready": True,
