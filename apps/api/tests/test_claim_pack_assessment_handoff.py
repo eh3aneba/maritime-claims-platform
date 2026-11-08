@@ -87,6 +87,8 @@ def test_claim_pack_uses_only_digest_bound_approved_assessment_and_preserves_sta
         assert handoff["approved_content_hash"] == digest
         assert handoff["source_fingerprint"] == approved.source_fingerprint
         assert handoff["source_state_at_export"] == "current"
+        assert handoff["unverified_ocr_fact_source_review_hold_at_export"] is False
+        assert current_snapshot["summary"]["approved_assessment_unverified_ocr_fact_source_review_hold_at_export"] is False
         assert handoff["sections"]
 
         claim.incident_description = "Turbocharger failure with later reviewed source-state update"
@@ -94,6 +96,8 @@ def test_claim_pack_uses_only_digest_bound_approved_assessment_and_preserves_sta
         stale_snapshot = _snapshot(db, claim, user)
         stale_handoff = stale_snapshot["approved_assessment"]
         assert stale_handoff["source_state_at_export"] == "stale"
+        # Generic historical staleness does not fabricate a matching OCR allegation.
+        assert stale_handoff["unverified_ocr_fact_source_review_hold_at_export"] is False
         assert stale_handoff["approved_content_hash"] == digest
         assert stale_handoff["source_fingerprint"] == approved.source_fingerprint
         assert stale_snapshot["summary"]["approved_assessment_source_state_at_export"] == "stale"
@@ -115,6 +119,8 @@ def test_claim_pack_uses_only_digest_bound_approved_assessment_and_preserves_sta
         assert "Approved content digest" in values
         assert digest in values
         assert "Source state at export" in values
+        assert "Unverified OCR source review hold at export" in values
+        assert "No matching bound-fact OCR source report at export" in values
         assert "stale" in values
 
 
