@@ -184,6 +184,23 @@ def test_new_assessment_cannot_launder_unverified_ocr_fact_source_dispute() -> N
     assert historical.json()["source_state"] == "stale"
     assert historical.json()["unverified_ocr_fact_source_review_hold"] is True
 
+    # An unrelated or superseded fact snapshot must not acquire the hold
+    # through a reused current canonical fact ID with a different row hash.
+    from types import SimpleNamespace
+    from app.modules.assessments.source_integrity import (
+        assessment_unverified_ocr_fact_review_hold,
+    )
+    with TestingSessionLocal() as db:
+        claim = db.get(Claim, UUID(ids["claim_id"]))
+        fake_old_version = SimpleNamespace(source_snapshot={
+            "sources": {"claim_facts": [
+                {"id": _get_facts(ids)["id"], "row_hash": "0" * 64}
+            ]},
+        })
+        assert not assessment_unverified_ocr_fact_review_hold(
+            db, claim=claim, assessment=fake_old_version,
+        )
+
     history = client.get(f"{base}/history")
     assert history.status_code == 200, history.text
     assert [item["unverified_ocr_fact_source_review_hold"]
