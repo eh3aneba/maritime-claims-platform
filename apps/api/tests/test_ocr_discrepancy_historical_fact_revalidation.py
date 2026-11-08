@@ -507,8 +507,9 @@ def test_approved_assessment_claim_pack_reports_later_bound_ocr_dispute_without_
 
     pdf = PdfReader(BytesIO(render_pdf(snapshot)))
     pdf_text = "\n".join(page.extract_text() or "" for page in pdf.pages)
-    assert "Unverified OCR source review hold for bound AI facts at export: Yes" in pdf_text
-    assert "Independent original-source review is required" in pdf_text
+    normalized_pdf_text = " ".join(pdf_text.split())
+    assert "Unverified OCR source review hold for bound AI facts at export: Yes" in normalized_pdf_text
+    assert "Independent original-source review is required" in normalized_pdf_text
 
     workbook = load_workbook(BytesIO(render_xlsx(snapshot)), read_only=True)
     try:
