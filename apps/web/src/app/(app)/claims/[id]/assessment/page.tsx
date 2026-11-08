@@ -158,6 +158,10 @@ export default function InitialAssessmentPage() {
       setError(t("staleWrite"));
       return;
     }
+    if (assessment.unverified_ocr_fact_source_review_hold) {
+      setError(t("ocrHoldWriteBlocked"));
+      return;
+    }
     setBusy(true);
     setError("");
     try {
@@ -190,6 +194,10 @@ export default function InitialAssessmentPage() {
       setError(t("staleWrite"));
       return;
     }
+    if (assessment.unverified_ocr_fact_source_review_hold) {
+      setError(t("ocrHoldWriteBlocked"));
+      return;
+    }
     setBusy(true);
     setError("");
     try {
@@ -217,7 +225,11 @@ export default function InitialAssessmentPage() {
   if (!claim) return <div className="py-20 text-center text-sm text-slate-500">{t("loading")}</div>;
 
   const sourceWriteBlocked = Boolean(
-    assessment && (!assessment.is_latest || assessment.source_state !== "current"),
+    assessment && (
+      !assessment.is_latest
+      || assessment.source_state !== "current"
+      || assessment.unverified_ocr_fact_source_review_hold
+    ),
   );
   const domains = assessment?.current_domain_status;
   const technical = asRecord(domains?.technical);
@@ -271,6 +283,12 @@ export default function InitialAssessmentPage() {
         <button disabled={busy} onClick={() => generate(true)} className="secondary-button mt-3">{t("generateNew")}</button>
       </section>
     ) : null}
+    {assessment?.unverified_ocr_fact_source_review_hold ? (
+      <section role="alert" aria-live="polite" className="mt-5 rounded-xl border border-amber-300 bg-amber-50 p-5">
+        <h2 className="text-sm font-semibold text-amber-950">{t("ocrHoldTitle")}</h2>
+        <p className="mt-2 text-sm leading-6 text-amber-900">{t("ocrHoldBody")}</p>
+      </section>
+    ) : null}
     {assessment?.source_state === "legacy_unbound" ? (
       <section className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-5">
         <h2 className="text-sm font-semibold text-amber-950">{t("legacyTitle")}</h2>
@@ -297,6 +315,9 @@ export default function InitialAssessmentPage() {
                 <span className={`rounded-full px-2 py-1 text-[11px] font-semibold ${item.is_latest ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-600"}`}>{item.is_latest ? t("latest") : t("historical")}</span>
               </div>
               <p className="mt-2 text-xs font-semibold text-slate-600">{stateLabel(item.status)} · {stateLabel(item.source_state)}</p>
+              {item.unverified_ocr_fact_source_review_hold ? (
+                <p className="mt-1 text-xs font-semibold text-amber-800">{t("ocrHoldHistory")}</p>
+              ) : null}
               <p className="mt-1 text-xs text-slate-400" dir="ltr">{formatWhen(item.created_at)}</p>
               <p className="mt-3 text-xs font-semibold text-slate-700">{t("openVersion", { version: `v${item.version}` })}</p>
             </button>;
@@ -344,7 +365,9 @@ export default function InitialAssessmentPage() {
       <div className="mt-6 space-y-5">{assessment.sections.map((section) => {
         const text = section.approved_text ?? section.draft_text;
         const reviewed = section.status !== "pending";
-        const canWrite = assessment.is_latest && assessment.status !== "approved" && assessment.source_state === "current";
+        const canWrite = assessment.is_latest && assessment.status !== "approved"
+          && assessment.source_state === "current"
+          && !assessment.unverified_ocr_fact_source_review_hold;
         return <section key={section.id} className="panel p-6">
           <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start"><div><p className="eyebrow" dir="ltr">{String(section.sort_order / 10).padStart(2, "0")}</p><h2 className="section-title mt-1" dir="auto">{section.title}</h2><div className="mt-1 flex flex-wrap items-center gap-2"><span className={`text-xs font-semibold uppercase tracking-wide ${reviewed ? "text-emerald-700" : "text-slate-400"}`}>{reviewed ? t("reviewed", { status: stateLabel(section.status) }) : t("pending")}</span>{section.reviewed_at ? <span className="text-xs text-slate-400" dir="ltr">{formatWhen(section.reviewed_at)}</span> : null}</div></div><div className="flex gap-2">{canWrite && !reviewed ? <button disabled={busy} onClick={() => review(section.id, "approve")} className="secondary-button">{t("approve")}</button> : null}{canWrite ? <button disabled={busy} onClick={() => setEditing({ ...editing, [section.id]: editing[section.id] ?? text })} className="secondary-button">{t("edit")}</button> : <span className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-600">{t("locked")}</span>}</div></div>
           {editing[section.id] !== undefined && canWrite ? <div className="mt-4"><textarea rows={7} dir="auto" className="field resize-y" value={editing[section.id]} onChange={(event) => setEditing({ ...editing, [section.id]: event.target.value })} /><div className="mt-2 flex gap-2"><button disabled={busy} onClick={() => review(section.id, "edit")} className="primary-button">{t("saveEdit")}</button><button onClick={() => { const next = { ...editing }; delete next[section.id]; setEditing(next); }} className="secondary-button">{t("cancel")}</button></div></div> : <div className="mt-4 whitespace-pre-wrap text-sm leading-7 text-slate-700" dir="auto">{text}</div>}
