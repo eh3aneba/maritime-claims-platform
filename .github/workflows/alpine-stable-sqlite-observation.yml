@@ -1,0 +1,24 @@
+name: Supported Alpine SQLite Observation
+
+on:
+  schedule:
+    - cron: '27 4 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  stable-sqlite-observe:
+    name: Read-only stable SQLite package observation
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - name: Verify fail-closed offline observer contract
+        run: python -m unittest scripts.tests.test_observe_alpine_stable_sqlite -v
+      - name: Read official supported Alpine stable package indices
+        run: python -m scripts.observe_alpine_stable_sqlite
