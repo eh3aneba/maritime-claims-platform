@@ -286,12 +286,20 @@ or hash; successful output includes only aggregate file counts/byte totals
 and `local_source_hashes_matched=true`. The inventory and source files
 must remain **outside public CI / GitHub / connected storage**, and the
 repository tests use only fictional tiny binary files. File limit is 256 MiB.
-In addition, the opened file descriptor must match the device/inode identity
-observed during the path check. This rejects a source file (or intermediate
-directory) swapped between inspection and open, **even when replacement bytes
-match the operator-supplied SHA-256**. Local source directories must still be
-protected against concurrent adversarial writes; this does not prove file
-origin, eliminate all filesystem races, or authenticate the claimed cohort.
+The opened file descriptor is bound to its inspected device/inode identity.
+On supported **POSIX** hosts, the verifier now opens the source root and each
+parent directory with descriptor-relative `openat` / `O_NOFOLLOW`, verifies
+each directory's original device/inode identity, then opens the file relative
+to the validated directory descriptor. This refuses a swapped parent
+directory **even if it contains a hard link with the identical original file
+inode and SHA-256**. It also refuses a parent replaced with a symlink.
+
+On **Windows**, where this POSIX directory-descriptor traversal is not
+available, the existing file-descriptor identity and path checks remain,
+but fully race-resistant parent-directory custody is **not claimed**.
+All local source directories still need appropriately protected permissions;
+this test cannot establish trusted file origin, eliminate every filesystem
+race, independently authenticate source enrollment, or establish pilot GO.
 Use an appropriately protected machine and source store; this helper has
 no network client and is not an evidence ingestion path.
 
