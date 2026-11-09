@@ -42,6 +42,23 @@ def sqlite_library_paths(maps: str) -> list[str]:
     return sorted(paths)
 
 
+
+def validate_runtime_provenance(evidence: dict) -> None:
+    """Reject mismatched/ambiguous runtime evidence without deciding any CVE."""
+    package_version = evidence["sqlite_package_version"]
+    match = re.fullmatch(r"(\\d+(?:\\.\\d+){2,3})-r\\d+", package_version)
+    if match is None:
+        raise RuntimeError("Malformed installed SQLite package revision")
+    if evidence["python_sqlite_version"] != match.group(1):
+        raise RuntimeError("Python SQLite is not the APK-installed SQLite version")
+    if evidence["sqlite_cli_present"]:
+        raise RuntimeError("Unexpected SQLite command-line tool in final image")
+    if not evidence["mapped_sqlite_libraries"]:
+        raise RuntimeError("No mapped SQLite shared library")
+    if evidence["cve_clearance"] is not False:
+        raise RuntimeError("Runtime observations must never imply CVE clearance")
+
+
 def get_evidence(role: str) -> dict:
     if role not in ROLES:
         raise RuntimeError("Unknown SeeClaims production image role")
@@ -61,7 +78,7 @@ def get_evidence(role: str) -> dict:
             fts5_available = True
     finally:
         connection.close()
-    return {
+    evidence = {
         "role": role,
         "sqlite_package_version": version,
         "python_sqlite_version": sqlite3.sqlite_version,
@@ -74,6 +91,8 @@ def get_evidence(role: str) -> dict:
         ),
         "cve_clearance": False,
     }
+    validate_runtime_provenance(evidence)
+    return evidence
 
 
 def main() -> int:
