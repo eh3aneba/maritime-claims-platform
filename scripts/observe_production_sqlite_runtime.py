@@ -46,7 +46,7 @@ def sqlite_library_paths(maps: str) -> list[str]:
 def validate_runtime_provenance(evidence: dict) -> None:
     """Reject mismatched/ambiguous runtime evidence without deciding any CVE."""
     package_version = evidence["sqlite_package_version"]
-    match = re.fullmatch(r"(\\d+(?:\\.\\d+){2,3})-r\\d+", package_version)
+    match = re.fullmatch(r"(\d+(?:\.\d+){2,3})-r\d+", package_version)
     if match is None:
         raise RuntimeError("Malformed installed SQLite package revision")
     if evidence["python_sqlite_version"] != match.group(1):
