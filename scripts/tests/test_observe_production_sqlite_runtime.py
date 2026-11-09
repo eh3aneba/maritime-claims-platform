@@ -3,10 +3,11 @@ from __future__ import annotations
 
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 from scripts.observe_production_sqlite_runtime import (
     ROLES, extract_package_version, get_evidence, sqlite_library_paths,
-    validate_runtime_provenance,
+    validate_runtime_provenance, nss_runtime_version,
 )
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -75,6 +76,45 @@ class SqliteRuntimeEvidenceContract(unittest.TestCase):
             with self.subTest(change=change), self.assertRaises(RuntimeError):
                 validate_runtime_provenance({**evidence, **change})
 
+    def test_worker_nss_shared_library_linkage_is_required(self) -> None:
+        class VersionFunction:
+            restype = None
+
+            def __init__(self, value: bytes | None) -> None:
+                self.value = value
+
+            def __call__(self) -> bytes | None:
+                return self.value
+
+        class FakeNss:
+            def __init__(self, value: bytes | None) -> None:
+                self.NSS_GetVersion = VersionFunction(value)
+
+        with patch(
+            "scripts.observe_production_sqlite_runtime.ctypes.CDLL",
+            return_value=FakeNss(b"3.119.2"),
+        ) as loader:
+            self.assertEqual(nss_runtime_version(), "3.119.2")
+            loader.assert_called_once_with("libnss3.so")
+        for raw in (b"", None, b"invalid", b"3.119;injected"):
+            with self.subTest(raw=raw), patch(
+                "scripts.observe_production_sqlite_runtime.ctypes.CDLL",
+                return_value=FakeNss(raw),
+            ), self.assertRaises(RuntimeError):
+                nss_runtime_version()
+
+        evidence = {
+            "role": "worker",
+            "sqlite_package_version": "3.53.4-r0",
+            "python_sqlite_version": "3.53.4",
+            "sqlite_cli_present": False,
+            "mapped_sqlite_libraries": ["/usr/lib/libsqlite3.so.3.53.4"],
+            "cve_clearance": False,
+        }
+        with self.assertRaises(RuntimeError):
+            validate_runtime_provenance(evidence)
+        validate_runtime_provenance({**evidence, "worker_nss_version": "3.119.2"})
+
     def test_no_security_clearance_and_synthetic_only(self) -> None:
         source = (ROOT / "scripts" / "observe_production_sqlite_runtime.py").read_text(
             encoding="utf-8"
@@ -86,6 +126,8 @@ class SqliteRuntimeEvidenceContract(unittest.TestCase):
         self.assertIn("PRAGMA compile_options", source)
         self.assertIn("ENABLE_FTS5", source)
         self.assertIn("ENABLE_SESSION", source)
+        self.assertIn('ctypes.CDLL("libnss3.so")', source)
+        self.assertIn('if role == "worker" else None', source)
         self.assertIn('shutil.which("sqlite3")', source)
         self.assertIn('Path("/proc/self/maps")', source)
         self.assertNotIn("--allow-untrusted", source)
