@@ -18,9 +18,13 @@ ROLES = frozenset({"api", "worker"})
 
 
 def extract_package_version(output: str) -> str:
-    lines = output.strip().splitlines()
+    # With no package argument, apk info -v emits one name-version per
+    # installed package. Passing a package name instead produces detailed,
+    # multi-line metadata, not an unambiguous version inventory.
+    lines = [line.strip() for line in output.splitlines()
+             if line.strip().startswith("sqlite-libs-")]
     if len(lines) != 1:
-        raise RuntimeError("Expected one installed sqlite-libs package")
+        raise RuntimeError("Expected exactly one installed sqlite-libs version")
     match = PACKAGE_PATTERN.fullmatch(lines[0])
     if not match:
         raise RuntimeError("Unexpected installed SQLite package identifier")
@@ -42,7 +46,7 @@ def get_evidence(role: str) -> dict:
     if role not in ROLES:
         raise RuntimeError("Unknown SeeClaims production image role")
     package = subprocess.run(
-        ["/sbin/apk", "info", "-v", "sqlite-libs"],
+        ["/sbin/apk", "info", "-v"],
         check=True, capture_output=True, text=True, timeout=15,
     ).stdout
     version = extract_package_version(package)
