@@ -26,6 +26,7 @@ REPOS = (
 ALPINE_READ_ONLY_SH = r"""
 set -eu
 test -d /etc/apk/keys
+test "$(uname -m)" = "$OBSERVE_ARCH"
 test "$(find /etc/apk/keys -type f -name '*.rsa.pub' | wc -l)" -ge 1
 actual="$(grep -v '^#' /etc/apk/repositories | grep -v '^$')"
 expected="https://dl-cdn.alpinelinux.org/alpine/v3.24/main
@@ -58,8 +59,8 @@ def validate_digest(value: str) -> str:
 
 def render(results: dict[str, str], image_digest: str) -> str:
     validate_digest(image_digest)
-    if set(results) != set(ARCHITECTURES):
-        raise ObservationFailure("Incomplete architecture verification")
+    if len(results) != 1 or not set(results).issubset(set(ARCHITECTURES)):
+        raise ObservationFailure("Must verify exactly one native architecture per job")
     if any(
         not isinstance(value, str)
         or not PACKAGE_LINE.fullmatch(f"sqlite-libs-{value}")
@@ -78,7 +79,7 @@ def render(results: dict[str, str], image_digest: str) -> str:
         "| Index architecture | Signed-repository sqlite-libs candidate |",
         "| --- | --- |",
     ]
-    rows.extend(f"| `{arch}` | `{results[arch]}` |" for arch in ARCHITECTURES)
+    rows.extend(f"| `{arch}` | `{version}` |" for arch, version in results.items())
     rows.extend([
         "",
         ("**CANDIDATE CHANGED: SECURITY REVIEW REQUIRED**"
@@ -115,26 +116,34 @@ def run_bounded(args: list[str], seconds: int) -> tuple[str, str]:
 
 def main() -> int:
     try:
-        run_bounded(["docker", "pull", IMAGE], 180)
+        arch = os.environ.get("OBSERVE_ARCH")
+        if arch not in ARCHITECTURES:
+            raise ObservationFailure("Explicit native architecture required")
+        platform = "linux/amd64" if arch == "x86_64" else "linux/arm64"
+        run_bounded(["docker", "pull", "--platform", platform, IMAGE], 180)
         digest_raw, _ = run_bounded(
             ["docker", "image", "inspect", "--format",
              "{{index .RepoDigests 0}}", IMAGE], 20
         )
         digest = validate_digest(digest_raw)
-        results = {}
-        for arch in ARCHITECTURES:
-            stdout, _ = run_bounded(
-                [
-                    "docker", "run", "--rm", "--read-only",
-                    "--tmpfs", "/tmp:rw,nosuid,nodev,size=16m",
-                    "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
-                    "--pids-limit", "64", "--memory", "128m",
-                    "--env", f"OBSERVE_ARCH={arch}",
-                    "--entrypoint", "/bin/sh", IMAGE, "-ec",
-                    ALPINE_READ_ONLY_SH,
-                ], 90
-            )
-            results[arch] = parse_candidate(stdout)
+        actual_arch, _ = run_bounded(
+            ["docker", "image", "inspect", "--format", "{{.Architecture}}", IMAGE], 20
+        )
+        if actual_arch != ("amd64" if arch == "x86_64" else "arm64"):
+            raise ObservationFailure("Docker image architecture mismatch")
+        stdout, _ = run_bounded(
+            [
+                "docker", "run", "--rm", "--read-only",
+                "--platform", platform,
+                "--tmpfs", "/tmp:rw,nosuid,nodev,size=16m",
+                "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
+                "--pids-limit", "64", "--memory", "128m",
+                "--env", f"OBSERVE_ARCH={arch}",
+                "--entrypoint", "/bin/sh", IMAGE, "-ec",
+                ALPINE_READ_ONLY_SH,
+            ], 90
+        )
+        results = {arch: parse_candidate(stdout)}
         summary = render(results, digest)
     except ObservationFailure as exc:
         print(f"INCONCLUSIVE: {exc}", file=sys.stderr)
