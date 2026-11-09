@@ -16,8 +16,17 @@ class SqliteRuntimeEvidenceContract(unittest.TestCase):
         self.assertEqual(
             extract_package_version("sqlite-libs-3.53.4-r0\n"), "3.53.4-r0"
         )
+        # A real apk info -v inventory contains many other installed
+        # packages. Only the exact single sqlite-libs record is relevant.
+        self.assertEqual(
+            extract_package_version(
+                "busybox-1.37.0-r1\nlibssl3-3.5.4-r0\n"
+                "sqlite-libs-3.53.4-r0\nzlib-1.3.2-r1\n"
+            ), "3.53.4-r0"
+        )
         for value in (
-            "", "sqlite-3.53.4-r0", "sqlite-libs-3.53.4-r0\nother",
+            "", "sqlite-3.53.4-r0",
+            "sqlite-libs-3.53.4-r0\nsqlite-libs-3.54.1-r0",
             "sqlite-libs-3.54.0-r0; unexpected", "sqlite-libs-no-version",
         ):
             with self.subTest(value=value), self.assertRaises(RuntimeError):
@@ -44,6 +53,8 @@ class SqliteRuntimeEvidenceContract(unittest.TestCase):
         source = (ROOT / "scripts" / "observe_production_sqlite_runtime.py").read_text(
             encoding="utf-8"
         )
+        self.assertIn('["/sbin/apk", "info", "-v"]', source)
+        self.assertNotIn('["/sbin/apk", "info", "-v", "sqlite-libs"]', source)
         self.assertIn('"cve_clearance": False', source)
         self.assertIn('sqlite3.connect(":memory:")', source)
         self.assertIn("PRAGMA compile_options", source)
