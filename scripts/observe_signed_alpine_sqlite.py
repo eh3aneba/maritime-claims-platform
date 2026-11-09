@@ -70,7 +70,7 @@ def render(results: dict[str, str], image_digest: str) -> str:
     rows = [
         "### Alpine 3.24 signed APKINDEX SQLite verification (read-only)",
         "",
-        f"- Official Alpine image: \`{IMAGE}\` (observed digest \`{image_digest}\`)",
+        f"- Official Alpine image: `{IMAGE}` (observed digest `{image_digest}`)",
         "- Package manager: Alpine apk with image-bundled trusted public keys",
         "- Index source: official v3.24/main and v3.24/community only",
         "- apk did NOT use --allow-untrusted, alternate repositories, packages, or installs",
@@ -78,7 +78,7 @@ def render(results: dict[str, str], image_digest: str) -> str:
         "| Index architecture | Signed-repository sqlite-libs candidate |",
         "| --- | --- |",
     ]
-    rows.extend(f"| \`{arch}\` | \`{results[arch]}\` |" for arch in ARCHITECTURES)
+    rows.extend(f"| `{arch}` | `{results[arch]}` |" for arch in ARCHITECTURES)
     rows.extend([
         "",
         ("**CANDIDATE CHANGED: SECURITY REVIEW REQUIRED**"
@@ -99,8 +99,15 @@ def run_bounded(args: list[str], seconds: int) -> tuple[str, str]:
         proc = subprocess.run(
             args, check=True, capture_output=True, text=True, timeout=seconds
         )
-    except (OSError, subprocess.TimeoutExpired, subprocess.CalledProcessError) as err:
-        raise ObservationFailure("Docker or signed index verification failed") from err
+    except subprocess.CalledProcessError as err:
+        detail = ((err.stderr or "") + "\n" + (err.stdout or ""))[-1400:]
+        raise ObservationFailure(
+            f"Docker/apk command {args[0]!r} exited {err.returncode}; diagnostic: {detail}"
+        ) from err
+    except (OSError, subprocess.TimeoutExpired) as err:
+        raise ObservationFailure(
+            f"Bounded Docker/apk command {args[0]!r} did not complete: {type(err).__name__}"
+        ) from err
     if re.search(r"(?i)untrusted|bad signature|warning:|error:", proc.stderr):
         raise ObservationFailure("apk signature/source verification was inconclusive")
     return proc.stdout.strip(), proc.stderr.strip()
