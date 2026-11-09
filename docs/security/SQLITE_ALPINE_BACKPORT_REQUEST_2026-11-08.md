@@ -49,6 +49,23 @@ Thank you for any authoritative supported-branch package and applicability guida
 - [Debian CVE-2026-119586 unresolved tracker](https://security-tracker.debian.org/tracker/CVE-2026-119586).
 - [Separate Debian upstream CLI report](https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=1152878).
 
+## Independent source-package consistency check (2026-11-09)
+
+The official upstream Alpine aports source mirror
+[`3.24-stable/main/sqlite/APKBUILD`](https://github.com/alpinelinux/aports/blob/3.24-stable/main/sqlite/APKBUILD)
+still declares `pkgver=3.53.4`, `pkgrel=0` (Git blob
+`715a0c42b11a70c0e9be931482daae8f6debb310`). The matching
+[`3.24-stable/main/sqlite-tools/APKBUILD`](https://github.com/alpinelinux/aports/blob/3.24-stable/main/sqlite-tools/APKBUILD)
+also declares `3.53.4-r0` (Git blob
+`24450076c4f43336055260f5d1d20199d72461e9`). The sqlite APKBUILD
+explicitly requires corresponding sqlite-tools source versions, so a
+full upstream update must coordinate the pair. A supported vendor
+backport may retain the `3.53.4` semantic version with a higher
+Alpine `pkgrel`; **only official signed package provenance and a
+vendor security disposition can establish that it fixes any CVE**.
+Neither a source file nor this version observation is a replacement
+for signed APK index checks or final-image Grype.
+
 ## Submission, package, and release gates
 
 | Gate | Verified state on 2026-11-09 |
