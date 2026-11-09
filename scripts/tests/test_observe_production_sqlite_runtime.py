@@ -6,6 +6,7 @@ import unittest
 
 from scripts.observe_production_sqlite_runtime import (
     ROLES, extract_package_version, get_evidence, sqlite_library_paths,
+    validate_runtime_provenance,
 )
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -48,6 +49,31 @@ class SqliteRuntimeEvidenceContract(unittest.TestCase):
         for role in ("", "web", "api;command", "producer"):
             with self.subTest(role=role), self.assertRaises(RuntimeError):
                 get_evidence(role)
+
+    def test_runtime_provenance_is_fail_closed(self) -> None:
+        evidence = {
+            "sqlite_package_version": "3.53.4-r0",
+            "python_sqlite_version": "3.53.4",
+            "sqlite_cli_present": False,
+            "mapped_sqlite_libraries": ["/usr/lib/libsqlite3.so.3.53.4"],
+            "cve_clearance": False,
+        }
+        # A signed vendor backport can change revision without changing the
+        # SQLite API's embedded semantic version. This is not CVE clearance.
+        validate_runtime_provenance(evidence)
+        validate_runtime_provenance({
+            **evidence, "sqlite_package_version": "3.53.4-r1",
+        })
+        for change in (
+            {"sqlite_package_version": "3.54.1-r0"},
+            {"python_sqlite_version": "3.54.1"},
+            {"sqlite_cli_present": True},
+            {"mapped_sqlite_libraries": []},
+            {"cve_clearance": True},
+            {"sqlite_package_version": "3.54.1-r0; injected"},
+        ):
+            with self.subTest(change=change), self.assertRaises(RuntimeError):
+                validate_runtime_provenance({**evidence, **change})
 
     def test_no_security_clearance_and_synthetic_only(self) -> None:
         source = (ROOT / "scripts" / "observe_production_sqlite_runtime.py").read_text(
