@@ -15,8 +15,16 @@ permissions:
 
 jobs:
   signed-sqlite-index:
-    name: Signed stable SQLite index read-only verification
-    runs-on: ubuntu-24.04
+    name: Signed stable SQLite index (native ${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 7
     steps:
       - uses: actions/checkout@v6
@@ -25,5 +33,7 @@ jobs:
           python-version: '3.13'
       - name: Verify offline fail-closed observation contract
         run: python -m unittest scripts.tests.test_observe_signed_alpine_sqlite -v
-      - name: Verify official Alpine v3.24 signed APKINDEX on both architectures
+      - name: Verify official Alpine v3.24 signed APKINDEX using native trusted keys
+        env:
+          OBSERVE_ARCH: ${{ matrix.arch }}
         run: python -m scripts.observe_signed_alpine_sqlite
