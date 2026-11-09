@@ -1,12 +1,12 @@
-# Alpine 3.24 stable SQLite security backport — upstream report READY, NOT SENT
+# Alpine 3.24 stable SQLite security backport — mailing-list request SENT, GitLab issue pending
 
 **Originally prepared:** 2026-11-08. **Updated with live, final-image evidence:** 2026-11-09.  
-**Submission status:** **NOT SUBMITTED**; no Alpine issue number or maintainer response exists.  
+**Submission status:** **Email SENT 2026-11-09**, verified in the connected Gmail Sent folder. Recipient: public Alpine development list `~alpine/devel@lists.alpinelinux.org`; CC: public sqlite APKBUILD maintainer `huajingyun@loongson.cn`. **GitLab issue NOT submitted; no Alpine maintainer acknowledgement or patch exists.** A Sent-folder record confirms a message was submitted for delivery, not that the list accepted or a maintainer read it.  
 **Intended channel:** official [Alpine aports packaging issues](https://gitlab.alpinelinux.org/alpine/aports/-/issues) or an approved Alpine security channel. The GitHub aports repository is a read-only mirror for these purposes; do not claim a GitHub report was submitted.  
 **Tracking:** [SeeClaims #876](https://github.com/eh3aneba/maritime-claims-platform/issues/876).  
-**Safety:** this document includes public vulnerability and synthetic runtime information only. It does not authorize deployment or CVE suppression.
+**Safety:** this document includes public vulnerability and synthetic runtime information only. It does not authorize deployment or CVE suppression. The mailing-list message sent was an earlier condensed technical variant of the detailed template below; do not claim the full template was sent verbatim.
 
-## Ready-to-submit report
+## Sent mailing-list request: technical content and GitLab-ready template
 
 **Suggested title:** Alpine v3.24: request signed supported sqlite-libs FTS5/SESSION security backport; clarify CLI-only CVE-2026-119586
 
@@ -53,7 +53,8 @@ Thank you for any authoritative supported-branch package and applicability guida
 
 | Gate | Verified state on 2026-11-09 |
 | --- | --- |
-| Official upstream request submitted and receipted | **NO — NOT SENT** |
+| Alpine development mailing-list request | **SENT 2026-11-09; no acknowledgement or response yet** | 
+| Alpine GitLab aports issue URL/receipt | **NONE — not filed** |
 | Supported, independently verified signed Alpine v3.24 fixed SQLite candidate | **NO: currently 3.53.4-r0 (both arches)** |
 | Authoritative CLI applicability/repair ruling | **NO** |
 | Final API/Worker Grype High | **FAIL / FAIL** |
