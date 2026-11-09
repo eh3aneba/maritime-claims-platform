@@ -5,6 +5,7 @@ This is NOT a vulnerability scan, a VEX ruling, or a CVE exception.
 """
 from __future__ import annotations
 
+import ctypes
 import json
 import os
 import re
@@ -43,6 +44,20 @@ def sqlite_library_paths(maps: str) -> list[str]:
 
 
 
+def nss_runtime_version() -> str:
+    """Prove that worker NSS and its transitive shared libraries can load."""
+    nss = ctypes.CDLL("libnss3.so")
+    getter = nss.NSS_GetVersion
+    getter.restype = ctypes.c_char_p
+    data = getter()
+    if not data or not isinstance(data, bytes):
+        raise RuntimeError("NSS linkage did not return a version")
+    version = data.decode("ascii", errors="strict")
+    if not re.fullmatch(r"[0-9]+(?:\\.[0-9]+){1,3}", version):
+        raise RuntimeError("Unexpected NSS runtime version")
+    return version
+
+
 def validate_runtime_provenance(evidence: dict) -> None:
     """Reject mismatched/ambiguous runtime evidence without deciding any CVE."""
     package_version = evidence["sqlite_package_version"]
@@ -55,6 +70,8 @@ def validate_runtime_provenance(evidence: dict) -> None:
         raise RuntimeError("Unexpected SQLite command-line tool in final image")
     if not evidence["mapped_sqlite_libraries"]:
         raise RuntimeError("No mapped SQLite shared library")
+    if evidence.get("role") == "worker" and not evidence.get("worker_nss_version"):
+        raise RuntimeError("Worker NSS runtime linkage was not attested")
     if evidence["cve_clearance"] is not False:
         raise RuntimeError("Runtime observations must never imply CVE clearance")
 
@@ -85,6 +102,7 @@ def get_evidence(role: str) -> dict:
         "fts5_compile_option": "ENABLE_FTS5" in flags,
         "fts5_available_synthetic": fts5_available,
         "session_compile_option": "ENABLE_SESSION" in flags,
+        "worker_nss_version": nss_runtime_version() if role == "worker" else None,
         "sqlite_cli_present": shutil.which("sqlite3") is not None,
         "mapped_sqlite_libraries": sqlite_library_paths(
             Path("/proc/self/maps").read_text(encoding="utf-8")
