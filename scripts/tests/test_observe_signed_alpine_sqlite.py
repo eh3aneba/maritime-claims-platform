@@ -25,22 +25,23 @@ class SignedAlpineIndexTests(unittest.TestCase):
                 validate_digest(digest)
 
     def test_all_architectures_required_and_no_false_clearance(self):
-        valid = dict.fromkeys(ARCHITECTURES, BASELINE)
+        valid = {"x86_64": BASELINE}
         output = render(valid, D)
         self.assertIn("NO NEW CANDIDATE", output)
         self.assertIn("NOT A FIX", output)
         self.assertIn("High", output.replace("HIGH", "High"))
-        for results in ({}, {"x86_64": BASELINE},
-                        {"x86_64": BASELINE, "aarch64": "not-a-version"}):
+        for results in ({}, dict.fromkeys(ARCHITECTURES, BASELINE),
+                        {"x86_64": "not-a-version"}, {"unknown": BASELINE}):
             with self.subTest(results=results), self.assertRaises(ObservationFailure):
                 render(results, D)
-        changed = render({"x86_64": "3.54.1-r0", "aarch64": BASELINE}, D)
+        changed = render({"aarch64": "3.54.1-r0"}, D)
         self.assertIn("SECURITY REVIEW REQUIRED", changed)
         self.assertIn("NOT A FIX", changed)
 
     def test_strict_sources_and_default_apk_signature_validation(self):
         self.assertEqual(IMAGE, "alpine:3.24")
         self.assertIn('test "$actual" = "$expected"', ALPINE_READ_ONLY_SH)
+        self.assertIn('test "$(uname -m)" = "$OBSERVE_ARCH"', ALPINE_READ_ONLY_SH)
         self.assertIn("apk --arch", ALPINE_READ_ONLY_SH)
         self.assertIn("--update-cache search --exact sqlite-libs", ALPINE_READ_ONLY_SH)
         self.assertNotIn("--allow-untrusted", ALPINE_READ_ONLY_SH)
