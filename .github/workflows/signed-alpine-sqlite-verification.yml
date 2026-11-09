@@ -1,0 +1,29 @@
+name: Signed Alpine SQLite Index Verification
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/observe_signed_alpine_sqlite.py'
+      - 'scripts/tests/test_observe_signed_alpine_sqlite.py'
+      - '.github/workflows/signed-alpine-sqlite-verification.yml'
+  schedule:
+    - cron: '37 4 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  signed-sqlite-index:
+    name: Signed stable SQLite index read-only verification
+    runs-on: ubuntu-24.04
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - name: Verify offline fail-closed observation contract
+        run: python -m unittest scripts.tests.test_observe_signed_alpine_sqlite -v
+      - name: Verify official Alpine v3.24 signed APKINDEX on both architectures
+        run: python -m scripts.observe_signed_alpine_sqlite
