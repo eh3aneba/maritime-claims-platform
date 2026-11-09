@@ -173,10 +173,13 @@ current state or a scoped PR-check success for final-image acceptance.
   [Debian still lists as undetermined through SQLite 3.54.1-2](https://security-tracker.debian.org/tracker/CVE-2026-119586).
   **CLI absence does not provide an authority to suppress the Grype match**,
   and the three library CVEs remain relevant where FTS5/Session are enabled.
-- The **ready-to-submit but UNSENT** official stable-repository backport
-  request has been updated with all of this evidence in
+- The signed-stable backport request was **sent by email to Alpine's
+  public development list on 2026-11-09**, CC'ing the public SQLite
+  APKBUILD maintainer; Gmail Sent-folder evidence confirms submission
+  for delivery, **not list acceptance or a maintainer acknowledgement**.
+  No GitLab aports issue was filed and no Alpine fix/advisory was received.
+  The fuller public issue/report template remains at
   `docs/security/SQLITE_ALPINE_BACKPORT_REQUEST_2026-11-08.md`.
-  No upstream issue or advisory receipt is asserted.
 
 **Non-negotiable next decision:** obtain official Alpine v3.24 signed
 stable-repository library backport and authoritative CLI fix/applicability
