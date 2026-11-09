@@ -53,7 +53,7 @@ def nss_runtime_version() -> str:
     if not data or not isinstance(data, bytes):
         raise RuntimeError("NSS linkage did not return a version")
     version = data.decode("ascii", errors="strict")
-    if not re.fullmatch(r"[0-9]+(?:\\.[0-9]+){1,3}", version):
+    if not re.fullmatch(r"[0-9]+(?:\.[0-9]+){1,3}", version):
         raise RuntimeError("Unexpected NSS runtime version")
     return version
 
