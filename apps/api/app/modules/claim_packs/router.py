@@ -9,8 +9,8 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import FileResponse
-from starlette.background import BackgroundTask
 from sqlalchemy.orm import Session
+from starlette.types import Receive, Scope, Send
 
 from app.db.session import get_db
 from app.modules.audit.service import write_audit_log
@@ -89,6 +89,36 @@ def _verified_archive_copy(
     except BaseException:
         private.cleanup()
         raise
+
+
+class _VerifiedArchiveFileResponse(FileResponse):
+    """Always delete private verified bytes, even on invalid Range or disconnect.
+
+    Starlette's normal FileResponse background task is bypassed by some early
+    400/416 Range responses. Forcing body streaming (rather than delegating a
+    temporary pathname to the optional ASGI pathsend extension) also ensures
+    cleanup cannot race with a server that opens the pathname later.
+    """
+
+    def __init__(self, *, private: TemporaryDirectory, **kwargs) -> None:
+        self._private = private
+        super().__init__(**kwargs)
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        try:
+            extensions = scope.get("extensions", {})
+            if "http.response.pathsend" in extensions:
+                scope = {
+                    **scope,
+                    "extensions": {
+                        key: value
+                        for key, value in extensions.items()
+                        if key != "http.response.pathsend"
+                    },
+                }
+            await super().__call__(scope, receive, send)
+        finally:
+            self._private.cleanup()
 
 
 @router.get("", response_model=ClaimPackExportListResponse)
@@ -227,11 +257,11 @@ def download_export(
         created_at = item.created_at
         if created_at.tzinfo is None:
             created_at = created_at.replace(tzinfo=UTC)
-        return FileResponse(
+        return _VerifiedArchiveFileResponse(
+            private=private,
             path=verified_path,
             media_type=item.mime_type,
             filename=item.filename,
-            background=BackgroundTask(private.cleanup),
             headers={
                 "ETag": f'"{item.file_hash}"',
                 "Last-Modified": format_datetime(created_at.astimezone(UTC), usegmt=True),
