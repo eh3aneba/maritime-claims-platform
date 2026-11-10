@@ -1,7 +1,7 @@
-"""Fail-closed synthetic tests for the two official LibTIFF distribution paths.
+"""Fail-closed synthetic tests for the approved LibTIFF distribution mirror set.
 
 Tests never access networks and cannot approve a different production digest.
-They prove fallback is restricted to transport failures and approved hosts,
+They prove fallback is restricted to transport failures and fixed mirror hosts,
 while publication requires the existing fixed SHA-512 byte-for-byte.
 """
 from __future__ import annotations
@@ -23,6 +23,8 @@ class OfficialLibtiffSourceTests(unittest.TestCase):
         self.assertEqual(
             release.URLS,
             (
+                "https://fra.de.distfiles.macports.org/tiff/tiff-4.7.2.tar.gz",
+                "https://mse.uk.distfiles.macports.org/tiff/tiff-4.7.2.tar.gz",
                 "https://download-cache.osgeo.org/libtiff/tiff-4.7.2.tar.gz",
                 "https://download.osgeo.org/libtiff/tiff-4.7.2.tar.gz",
             ),
@@ -33,14 +35,19 @@ class OfficialLibtiffSourceTests(unittest.TestCase):
             "b8a433dd4ee81c6c4dabfb50094152d440aa1f32b5299098c9ae29e55de2e41fc"
         ))
         self.assertEqual(release.MAX_ATTEMPTS_PER_SOURCE, 2)
-        self.assertLessEqual(release.TIMEOUT_SECONDS, 60)
+        self.assertLessEqual(release.TIMEOUT_SECONDS, 30)
         self.assertEqual(
             {urlsplit(url).hostname for url in release.URLS},
-            {"download-cache.osgeo.org", "download.osgeo.org"},
+            {
+                "fra.de.distfiles.macports.org",
+                "mse.uk.distfiles.macports.org",
+                "download-cache.osgeo.org",
+                "download.osgeo.org",
+            },
         )
         self.assertTrue(all(urlsplit(url).scheme == "https" for url in release.URLS))
 
-    def test_valid_cache_bytes_publish_without_contacting_primary(self) -> None:
+    def test_valid_first_mirror_bytes_publish_without_contacting_another(self) -> None:
         synthetic = b"fixed-synthetic-osgeo-release"
         calls = []
         sleeps = []
@@ -59,7 +66,7 @@ class OfficialLibtiffSourceTests(unittest.TestCase):
             self.assertEqual(calls, [(release.URLS[0], release.TIMEOUT_SECONDS)])
             self.assertEqual(sleeps, [])
 
-    def test_exhaust_cache_then_fetch_identical_pinned_primary(self) -> None:
+    def test_exhaust_first_mirror_then_fetch_identical_pinned_second(self) -> None:
         synthetic = b"same-synthetic-release-bytes"
         calls = []
         sleeps = []
@@ -115,11 +122,13 @@ class OfficialLibtiffSourceTests(unittest.TestCase):
                 release.DownloadUnavailable, "pinned_libtiff_download_unavailable",
             ):
                 release.fetch(output, open_url=unavailable, sleep=sleeps.append)
-            self.assertEqual(calls, [
-                release.URLS[0], release.URLS[0],
-                release.URLS[1], release.URLS[1],
-            ])
-            self.assertEqual(sleeps, [2, 2])
+            self.assertEqual(
+                calls,
+                [url for url in release.URLS for _ in range(release.MAX_ATTEMPTS_PER_SOURCE)],
+            )
+            self.assertEqual(
+                sleeps, [2] * len(release.URLS),
+            )
             self.assertFalse(output.exists())
             self.assertFalse(output.with_name(output.name + ".unverified").exists())
 
