@@ -193,3 +193,62 @@ def test_archive_replacement_after_verification_never_changes_sent_bytes(
         assert path.read_bytes() != original
     finally:
         path.write_bytes(original)
+
+
+@pytest.mark.parametrize("export_format", ["pdf", "xlsx"])
+def test_verified_archived_download_preserves_range_and_stable_etag(export_format: str) -> None:
+    """Range requests must read the verified private copy, not original storage."""
+    base_url, metadata = _create_export(export_format)
+    download_url = f"{base_url}/{metadata['id']}/download"
+    original = _archive_path(metadata["id"]).read_bytes()
+    full = client.get(download_url)
+    assert full.status_code == 200, full.text
+    assert full.headers["etag"] == f'"{metadata["file_hash"]}"'
+    assert full.headers["accept-ranges"] == "bytes"
+    assert full.headers["last-modified"]
+
+    # Resume via the same content-addressed validator across separate HTTP
+    # requests, each of which uses an independently verified private copy.
+    partial = client.get(
+        download_url,
+        headers={"Range": "bytes=0-15", "If-Range": full.headers["etag"]},
+    )
+    assert partial.status_code == 206, partial.text
+    assert partial.content == original[:16]
+    assert partial.headers["content-range"] == f"bytes 0-15/{len(original)}"
+    assert partial.headers["etag"] == full.headers["etag"]
+    assert partial.headers["x-claim-pack-file-sha256"] == metadata["file_hash"]
+
+    suffix = client.get(download_url, headers={"Range": "bytes=-8"})
+    assert suffix.status_code == 206, suffix.text
+    assert suffix.content == original[-8:]
+    assert suffix.headers["content-range"] == (
+        f"bytes {len(original)-8}-{len(original)-1}/{len(original)}"
+    )
+
+    outside = client.get(download_url, headers={"Range": f"bytes={len(original)}-"})
+    assert outside.status_code == 416
+    assert outside.headers["content-range"] == f"*/{len(original)}"
+
+
+def test_verified_archived_copy_cleanup_after_success_and_denied_download(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Private temporary evidence copies must not survive completed responses."""
+    base_url, metadata = _create_export("xlsx")
+    url = f"{base_url}/{metadata['id']}/download"
+    capture = claim_pack_router._verified_archive_copy
+    temp_locations = []
+
+    def inspect_verified_copy(*args, **kwargs):
+        verified_path, private = capture(*args, **kwargs)
+        temp_locations.append(verified_path)
+        return verified_path, private
+
+    monkeypatch.setattr(
+        claim_pack_router, "_verified_archive_copy", inspect_verified_copy,
+    )
+    response = client.get(url, headers={"Range": "bytes=0-7"})
+    assert response.status_code == 206
+    assert temp_locations
+    assert all(not path.exists() for path in temp_locations)
