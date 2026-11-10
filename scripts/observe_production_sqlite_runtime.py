@@ -70,6 +70,12 @@ def validate_runtime_provenance(evidence: dict) -> None:
         raise RuntimeError("Unexpected SQLite command-line tool in final image")
     if not evidence["mapped_sqlite_libraries"]:
         raise RuntimeError("No mapped SQLite shared library")
+    # Python's reported version alone cannot attest to the actually mapped
+    # library. The current supported Alpine ABI exposes this exact filename;
+    # require human review if the vendor changes the ABI/path convention.
+    expected_library = "/usr/lib/libsqlite3.so." + match.group(1)
+    if evidence["mapped_sqlite_libraries"] != [expected_library]:
+        raise RuntimeError("Mapped SQLite library does not match signed APK runtime")
     if evidence.get("role") == "worker" and not evidence.get("worker_nss_version"):
         raise RuntimeError("Worker NSS runtime linkage was not attested")
     if evidence["cve_clearance"] is not False:
