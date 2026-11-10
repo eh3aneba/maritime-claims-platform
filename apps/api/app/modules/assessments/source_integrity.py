@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, time
+from datetime import UTC, date, datetime, time
 from decimal import Decimal
 import hashlib
 import json
@@ -296,8 +296,24 @@ def assert_assessment_source_current(
     return current
 
 
-def approved_assessment_content_hash(assessment: Any, sections: list[Any]) -> str:
-    """Digest only persisted approved assessment content and its bound source identity."""
+def approved_assessment_content_hash(
+    assessment: Any, sections: list[Any], *, assume_utc_for_naive_approval: bool = False,
+) -> str:
+    """Digest persisted approved content. Preserve the historical hash format.
+
+    SQLite drops timezone information from timestamps on reload; the approval
+    timestamp was written in UTC while reviewed section timestamps were already
+    reloaded from storage before approval. The opt-in read-side compatibility
+    mode restores UTC *only* to a naive approval timestamp, not to the sections.
+    It never rewrites approved facts, hashes or timestamps in the database.
+    """
+    approved_at = assessment.approved_at
+    if (
+        assume_utc_for_naive_approval
+        and isinstance(approved_at, datetime)
+        and approved_at.tzinfo is None
+    ):
+        approved_at = approved_at.replace(tzinfo=UTC)
 
     payload = {
         "assessment_id": assessment.id,
@@ -311,7 +327,7 @@ def approved_assessment_content_hash(assessment: Any, sections: list[Any]) -> st
         "generation_override_reason": assessment.generation_override_reason,
         "source_fingerprint": assessment.source_fingerprint,
         "approved_by_id": assessment.approved_by_id,
-        "approved_at": assessment.approved_at,
+        "approved_at": approved_at,
         "sections": [
             {
                 "id": section.id,
