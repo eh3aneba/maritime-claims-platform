@@ -228,7 +228,7 @@ def test_verified_archived_download_preserves_range_and_stable_etag(export_forma
 
     outside = client.get(download_url, headers={"Range": f"bytes={len(original)}-"})
     assert outside.status_code == 416
-    assert outside.headers["content-range"] == f"*/{len(original)}"
+    assert outside.headers["content-range"] == f"bytes */{len(original)}"
 
 
 def test_verified_archived_copy_cleanup_after_success_and_denied_download(
@@ -251,4 +251,15 @@ def test_verified_archived_copy_cleanup_after_success_and_denied_download(
     response = client.get(url, headers={"Range": "bytes=0-7"})
     assert response.status_code == 206
     assert temp_locations
+    assert all(not path.exists() for path in temp_locations)
+
+    # Starlette's early 416 and 400 responses do not necessarily execute its
+    # normal FileResponse background task; our wrapper must still cleanup.
+    too_large = client.get(
+        url, headers={"Range": f"bytes={metadata['file_size_bytes']}-"},
+    )
+    assert too_large.status_code == 416, too_large.text
+    malformed = client.get(url, headers={"Range": "items=0-7"})
+    assert malformed.status_code == 400, malformed.text
+    assert len(temp_locations) == 3
     assert all(not path.exists() for path in temp_locations)
