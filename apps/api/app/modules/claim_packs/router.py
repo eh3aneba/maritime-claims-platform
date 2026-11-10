@@ -20,6 +20,7 @@ from app.modules.claim_packs.schemas import (
     ClaimPackGenerateRequest,
 )
 from app.modules.claim_packs.renderers import UnsupportedClaimPackPDFTextError
+from app.modules.claim_packs.service import _snapshot_hash
 from app.modules.claim_packs.source_report_notice import current_ocr_source_report_count
 from app.modules.claim_packs.recovery_service import (
     generate_claim_pack,
@@ -185,6 +186,19 @@ def download_export(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Claim-pack export not found",
+        )
+
+    # Both the archived file and its stored source snapshot need an exact
+    # generation-time attestation. Otherwise a later JSON change could be
+    # served alongside the original, now-misleading snapshot SHA-256 header.
+    if not hmac.compare_digest(_snapshot_hash(item.snapshot), item.snapshot_hash):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Archived Claim Pack snapshot no longer matches its recorded "
+                "SHA-256 digest. Download blocked pending archive integrity "
+                "review; the original export record was not changed."
+            ),
         )
     try:
         path = _storage().path_for(item.storage_key)
