@@ -1,3 +1,6 @@
+import hashlib
+import hmac
+from pathlib import Path
 from typing import Annotated
 from uuid import UUID
 
@@ -28,6 +31,44 @@ router = APIRouter(
     prefix="/claims/{claim_id}/claim-pack-exports",
     tags=["claim-pack-exports"],
 )
+
+
+def _assert_archived_file_intact(
+    path: Path, *, expected_size: int, expected_sha256: str,
+) -> None:
+    """Fail closed if local archive bytes drift from immutable export metadata.
+
+    Process the file in bounded chunks rather than buffering a potentially
+    large Claim Pack in memory. Checking only Content-Length or returning a
+    stored SHA-256 header is insufficient: neither attests the served bytes.
+    """
+    digest = hashlib.sha256()
+    size = 0
+    try:
+        with path.open("rb") as stored_file:
+            while chunk := stored_file.read(1024 * 1024):
+                size += len(chunk)
+                if size > expected_size:
+                    break
+                digest.update(chunk)
+    except OSError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail="Archived Claim Pack file is unavailable for integrity verification.",
+        ) from exc
+
+    if (
+        size != expected_size
+        or not hmac.compare_digest(digest.hexdigest(), expected_sha256)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Archived Claim Pack content no longer matches its recorded "
+                "size or SHA-256 digest. Download blocked pending archive "
+                "integrity review; the original export record was not changed."
+            ),
+        )
 
 
 @router.get("", response_model=ClaimPackExportListResponse)
@@ -123,6 +164,16 @@ def download_export(
             status_code=status.HTTP_410_GONE,
             detail="Export metadata exists but the immutable file is unavailable.",
         ) from exc
+
+    # Compare the actual local file against its persisted generation-time
+    # integrity metadata *before* producing a successful download response or
+    # success audit entry. A stored hash response header alone is not evidence
+    # that the current archive bytes match it.
+    _assert_archived_file_intact(
+        path,
+        expected_size=item.file_size_bytes,
+        expected_sha256=item.file_hash,
+    )
 
     # Read-time claim-wide advisory only. Never mutate archived snapshot
     # bytes or imply that an unverified report proves an error in this pack.
