@@ -5,6 +5,8 @@ from sqlalchemy import select
 
 from app.core.security import hash_password
 from app.modules.assessments.models import AssessmentSection, AssessmentStatus
+from app.modules.assessments.history import list_assessment_history
+from app.modules.assessments.source_integrity import canonical_hash
 from app.modules.assessments.service import approve_assessment, generate_assessment, get_assessment, review_section
 from app.modules.assessments.source_integrity import assessment_source_state
 from app.modules.claims.models import Claim, ClaimStatus
@@ -196,3 +198,65 @@ def test_optimistic_source_hash_and_legacy_unbound_rows_fail_closed():
             assert "predates source-state binding" in str(exc.detail)
         else:
             raise AssertionError("legacy unbound assessment should not accept writes")
+
+
+def test_saved_assessment_source_snapshot_tamper_fails_closed_even_if_live_fingerprint_matches():
+    """A rewritten snapshot must never launder source-current approval."""
+    claim_id, user_id = _seed()
+    with TestingSessionLocal() as db:
+        claim = db.get(Claim, claim_id)
+        user = db.get(User, user_id)
+        assessment = generate_assessment(
+            db, claim=claim, user=user,
+            allow_if_not_ready=True,
+            override_reason="Synthetic saved source-binding integrity regression",
+        )
+        bound_fingerprint = assessment.source_fingerprint
+        assert bound_fingerprint and canonical_hash(assessment.source_snapshot) == bound_fingerprint
+        section = db.scalar(
+            select(AssessmentSection).where(
+                AssessmentSection.assessment_id == assessment.id,
+                AssessmentSection.section_key == "incident",
+            )
+        )
+        assert section is not None
+
+        # The actual claim and its canonical source state remain unchanged;
+        # only the stored assessment-bound lineage has been altered.
+        assessment.source_snapshot = {
+            "schema": "assessment-source-v1",
+            "claim_id": str(claim_id),
+            "sources": {"claim_facts": []},
+        }
+        db.flush()
+        assert canonical_hash(assessment.source_snapshot) != bound_fingerprint
+        state, current = assessment_source_state(db, claim=claim, assessment=assessment)
+        assert state == "stale"
+        assert current == bound_fingerprint
+        history = list_assessment_history(db, claim=claim)
+        assert history["items"][0]["source_state"] == "stale"
+
+        try:
+            review_section(
+                db, claim=claim, section=section, user=user, action="approve", text=None,
+                expected_source_fingerprint=bound_fingerprint,
+            )
+        except HTTPException as exc:
+            assert exc.status_code == 409
+            assert "saved source snapshot" in str(exc.detail)
+        else:
+            raise AssertionError("changed bound source snapshot must block review")
+        assert section.approved_text is None
+        assert assessment.approved_content_hash is None
+
+        # A separate current version with correctly bound lineage remains
+        # usable; never retroactively rewrite the suspicious historical row.
+        replacement = generate_assessment(
+            db, claim=claim, user=user,
+            allow_if_not_ready=True,
+            override_reason="Regenerated source-bound version after synthetic integrity hold",
+        )
+        assert replacement.source_fingerprint == bound_fingerprint
+        assert canonical_hash(replacement.source_snapshot) == bound_fingerprint
+        assert assessment.source_fingerprint == bound_fingerprint
+        assert canonical_hash(assessment.source_snapshot) != bound_fingerprint
