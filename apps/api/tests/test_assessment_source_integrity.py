@@ -248,6 +248,20 @@ def test_saved_assessment_source_snapshot_tamper_fails_closed_even_if_live_finge
             raise AssertionError("changed bound source snapshot must block review")
         assert section.approved_text is None
         assert assessment.approved_content_hash is None
+        try:
+            approve_assessment(
+                db, claim=claim, assessment=assessment, user=user,
+                note="Synthetic approval attempt must not bypass snapshot binding",
+                expected_source_fingerprint=bound_fingerprint,
+            )
+        except HTTPException as exc:
+            assert exc.status_code == 409
+            assert "saved source snapshot" in str(exc.detail)
+        else:
+            raise AssertionError("changed bound source snapshot must block manager approval")
+        assert assessment.approved_by_id is None
+        assert assessment.approved_at is None
+        assert assessment.approved_content_hash is None
 
         # A separate current version with correctly bound lineage remains
         # usable; never retroactively rewrite the suspicious historical row.
