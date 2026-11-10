@@ -211,8 +211,15 @@ def assessment_source_state(
     if not assessment.source_fingerprint:
         return "legacy_unbound", None
     _, current_fingerprint = build_assessment_source_snapshot(db, claim=claim)
+    # A stored fingerprint is not sufficient if the immutable source snapshot
+    # bound to that fingerprint was modified or replaced afterwards.
+    snapshot = assessment.source_snapshot
+    identity_intact = (
+        type(snapshot) is dict
+        and canonical_hash(snapshot) == assessment.source_fingerprint
+    )
     return (
-        "current" if current_fingerprint == assessment.source_fingerprint else "stale",
+        "current" if identity_intact and current_fingerprint == assessment.source_fingerprint else "stale",
         current_fingerprint,
     )
 
@@ -252,6 +259,18 @@ def assert_assessment_source_current(
     )
     if locked_claim_id is None:
         raise HTTPException(status_code=404, detail="Claim not found")
+    # Reject corrupted/replaced saved snapshots, including cases where the
+    # caller's fingerprint happens to match today's live source state.
+    snapshot = assessment.source_snapshot
+    if type(snapshot) is not dict or canonical_hash(snapshot) != stored:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "The assessment's saved source snapshot no longer matches its "
+                "immutable bound fingerprint; source integrity review is required "
+                "before section review or approval."
+            ),
+        )
     _, current = build_assessment_source_snapshot(db, claim=claim)
     if current != stored:
         raise HTTPException(
