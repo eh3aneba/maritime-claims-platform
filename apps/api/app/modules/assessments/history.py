@@ -9,6 +9,7 @@ from app.modules.assessments.models import InitialAssessment
 from app.modules.assessments.source_integrity import (
     assessment_unverified_ocr_fact_review_hold,
     build_assessment_source_snapshot,
+    canonical_hash,
 )
 from app.modules.claims.models import Claim
 
@@ -47,6 +48,12 @@ def list_assessment_history(db: Session, *, claim: Claim) -> dict[str, Any]:
     for row in rows:
         if not row.source_fingerprint:
             source_state = "legacy_unbound"
+        elif (
+            type(row.source_snapshot) is not dict
+            or canonical_hash(row.source_snapshot) != row.source_fingerprint
+        ):
+            # Do not report a corrupt saved lineage as source-current.
+            source_state = "stale"
         elif row.source_fingerprint == current_source_fingerprint:
             source_state = "current"
         else:
