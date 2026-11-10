@@ -1,11 +1,14 @@
 import hashlib
 import hmac
 from pathlib import Path
-from typing import Annotated
+from tempfile import SpooledTemporaryFile
+from typing import Annotated, BinaryIO, Iterator
+from urllib.parse import quote
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.responses import FileResponse
+from fastapi.responses import StreamingResponse
+from starlette.background import BackgroundTask
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -33,42 +36,68 @@ router = APIRouter(
 )
 
 
-def _assert_archived_file_intact(
+def _verified_archive_copy(
     path: Path, *, expected_size: int, expected_sha256: str,
-) -> None:
-    """Fail closed if local archive bytes drift from immutable export metadata.
+) -> BinaryIO:
+    """Capture exactly the bytes whose digest was verified, then serve only those.
 
-    Process the file in bounded chunks rather than buffering a potentially
-    large Claim Pack in memory. Checking only Content-Length or returning a
-    stored SHA-256 header is insufficient: neither attests the served bytes.
+    A FileResponse would reopen the original archive after the check, so a
+    raced-in replacement could be served under the old approved hash. A
+    private, spooled copy (1 MiB RAM, then temporary disk) binds the actual
+    response to the digest and bounds resident-memory use. No original source
+    data or historical export metadata is modified.
     """
+    verified: BinaryIO = SpooledTemporaryFile(max_size=1024 * 1024, mode="w+b")
     digest = hashlib.sha256()
     size = 0
     try:
-        with path.open("rb") as stored_file:
-            while chunk := stored_file.read(1024 * 1024):
-                size += len(chunk)
-                if size > expected_size:
-                    break
-                digest.update(chunk)
-    except OSError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_410_GONE,
-            detail="Archived Claim Pack file is unavailable for integrity verification.",
-        ) from exc
+        try:
+            with path.open("rb") as stored_file:
+                while chunk := stored_file.read(1024 * 1024):
+                    size += len(chunk)
+                    if size > expected_size:
+                        break
+                    digest.update(chunk)
+                    verified.write(chunk)
+        except OSError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_410_GONE,
+                detail="Archived Claim Pack file is unavailable for integrity verification.",
+            ) from exc
+        if (
+            size != expected_size
+            or not hmac.compare_digest(digest.hexdigest(), expected_sha256)
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "Archived Claim Pack content no longer matches its recorded "
+                    "size or SHA-256 digest. Download blocked pending archive "
+                    "integrity review; the original export record was not changed."
+                ),
+            )
+        verified.seek(0)
+        return verified
+    except BaseException:
+        verified.close()
+        raise
 
-    if (
-        size != expected_size
-        or not hmac.compare_digest(digest.hexdigest(), expected_sha256)
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=(
-                "Archived Claim Pack content no longer matches its recorded "
-                "size or SHA-256 digest. Download blocked pending archive "
-                "integrity review; the original export record was not changed."
-            ),
-        )
+
+def _iter_verified_archive(verified: BinaryIO) -> Iterator[bytes]:
+    try:
+        while chunk := verified.read(1024 * 1024):
+            yield chunk
+    finally:
+        verified.close()
+
+
+def _download_disposition(filename: str) -> str:
+    encoded = quote(filename)
+    return (
+        f"attachment; filename*=utf-8''{encoded}"
+        if encoded != filename
+        else f'attachment; filename="{filename}"'
+    )
 
 
 @router.get("", response_model=ClaimPackExportListResponse)
@@ -139,7 +168,7 @@ def download_export(
     export_id: UUID,
     current_user: CurrentUser,
     db: Annotated[Session, Depends(get_db)],
-) -> FileResponse:
+) -> StreamingResponse:
     try:
         item = get_claim_pack_export(
             db,
@@ -165,40 +194,44 @@ def download_export(
             detail="Export metadata exists but the immutable file is unavailable.",
         ) from exc
 
-    # Compare the actual local file against its persisted generation-time
-    # integrity metadata *before* producing a successful download response or
-    # success audit entry. A stored hash response header alone is not evidence
-    # that the current archive bytes match it.
-    _assert_archived_file_intact(
+    # Capture exactly the verified bytes before the audit and response. The
+    # original archive may be renamed, replaced or edited after this point,
+    # but the returned stream is isolated from those later changes.
+    verified = _verified_archive_copy(
         path,
         expected_size=item.file_size_bytes,
         expected_sha256=item.file_hash,
     )
-
-    # Read-time claim-wide advisory only. Never mutate archived snapshot
-    # bytes or imply that an unverified report proves an error in this pack.
-    current_ocr_reports = current_ocr_source_report_count(
-        db, claim_id=claim_id, organization_id=current_user.organization_id,
-    )
-    write_audit_log(
-        db,
-        organization_id=current_user.organization_id,
-        user_id=current_user.id,
-        action="DOWNLOAD_CLAIM_PACK_EXPORT",
-        entity_type="claim_pack_export",
-        entity_id=item.id,
-        details=f"Downloaded {item.filename}",
-    )
-    db.commit()
-    return FileResponse(
-        path=path,
-        media_type=item.mime_type,
-        filename=item.filename,
-        headers={
-            "X-Content-Type-Options": "nosniff",
-            "Cache-Control": "private, no-store",
-            "X-Claim-Pack-Snapshot-SHA256": item.snapshot_hash,
-            "X-Claim-Pack-File-SHA256": item.file_hash,
-            "X-Claim-Current-Unverified-OCR-Source-Report-Count": str(current_ocr_reports),
-        },
-    )
+    try:
+        # Read-time claim-wide advisory only. Never mutate archived snapshot
+        # bytes or imply that an unverified report proves an error in this pack.
+        current_ocr_reports = current_ocr_source_report_count(
+            db, claim_id=claim_id, organization_id=current_user.organization_id,
+        )
+        write_audit_log(
+            db,
+            organization_id=current_user.organization_id,
+            user_id=current_user.id,
+            action="DOWNLOAD_CLAIM_PACK_EXPORT",
+            entity_type="claim_pack_export",
+            entity_id=item.id,
+            details=f"Downloaded {item.filename}",
+        )
+        db.commit()
+        return StreamingResponse(
+            _iter_verified_archive(verified),
+            media_type=item.mime_type,
+            background=BackgroundTask(verified.close),
+            headers={
+                "Content-Length": str(item.file_size_bytes),
+                "Content-Disposition": _download_disposition(item.filename),
+                "X-Content-Type-Options": "nosniff",
+                "Cache-Control": "private, no-store",
+                "X-Claim-Pack-Snapshot-SHA256": item.snapshot_hash,
+                "X-Claim-Pack-File-SHA256": item.file_hash,
+                "X-Claim-Current-Unverified-OCR-Source-Report-Count": str(current_ocr_reports),
+            },
+        )
+    except BaseException:
+        verified.close()
+        raise
