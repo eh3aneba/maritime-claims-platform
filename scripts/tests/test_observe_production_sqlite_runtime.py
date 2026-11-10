@@ -70,6 +70,11 @@ class SqliteRuntimeEvidenceContract(unittest.TestCase):
             {"python_sqlite_version": "3.54.1"},
             {"sqlite_cli_present": True},
             {"mapped_sqlite_libraries": []},
+            {"mapped_sqlite_libraries": ["/usr/lib/libsqlite3.so.3.54.1"]},
+            {"mapped_sqlite_libraries": ["/opt/vendor/libsqlite3.so.3.53.4"]},
+            {"mapped_sqlite_libraries": ["/usr/lib/libsqlite3.so.3.53.4 (deleted)"]},
+            {"mapped_sqlite_libraries": ["/usr/lib/libsqlite3.so.3.53.4",
+                                         "/usr/lib/libsqlite3.so.3.54.1"]},
             {"cve_clearance": True},
             {"sqlite_package_version": "3.54.1-r0; injected"},
         ):
@@ -130,6 +135,7 @@ class SqliteRuntimeEvidenceContract(unittest.TestCase):
         self.assertIn('if role == "worker" else None', source)
         self.assertIn('shutil.which("sqlite3")', source)
         self.assertIn('Path("/proc/self/maps")', source)
+        self.assertIn('expected_library = "/usr/lib/libsqlite3.so." + match.group(1)', source)
         self.assertNotIn("--allow-untrusted", source)
 
     def test_image_scan_runs_after_evidence_even_on_observer_failure(self) -> None:
