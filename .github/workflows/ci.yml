@@ -30,6 +30,9 @@ jobs:
       - name: Verify audited synthetic H&M E2E scope gate
         run: python -m unittest scripts.tests.test_ci_browser_offline_hm_scope -v
 
+      - name: Verify official pinned LibTIFF source fallback and integrity
+        run: python -m unittest scripts.tests.test_pinned_libtiff_official_mirror -v
+
       - name: Classify exact-head general CI scope
         id: scope
         shell: bash
