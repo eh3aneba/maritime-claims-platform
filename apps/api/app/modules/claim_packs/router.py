@@ -1,13 +1,14 @@
+from datetime import UTC
+from email.utils import format_datetime
 import hashlib
 import hmac
 from pathlib import Path
-from tempfile import SpooledTemporaryFile
-from typing import Annotated, BinaryIO, Iterator
-from urllib.parse import quote
+from tempfile import NamedTemporaryFile, TemporaryDirectory
+from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse
 from starlette.background import BackgroundTask
 from sqlalchemy.orm import Session
 
@@ -39,27 +40,34 @@ router = APIRouter(
 
 def _verified_archive_copy(
     path: Path, *, expected_size: int, expected_sha256: str,
-) -> BinaryIO:
-    """Capture exactly the bytes whose digest was verified, then serve only those.
+) -> tuple[Path, TemporaryDirectory]:
+    """Return a private file containing only digest-verified archive bytes.
 
-    A FileResponse would reopen the original archive after the check, so a
-    raced-in replacement could be served under the old approved hash. A
-    private, spooled copy (1 MiB RAM, then temporary disk) binds the actual
-    response to the digest and bounds resident-memory use. No original source
-    data or historical export metadata is modified.
+    FileResponse supplies full/single-range/multipart-range and conditional
+    download semantics. Crucially its path points to an isolated, mode-0600
+    copy in a private temporary directory, never the mutable source archive.
+    Copying in 1 MiB chunks bounds application memory. The caller must clean
+    up the returned directory after the response completes (also on failure).
     """
-    verified: BinaryIO = SpooledTemporaryFile(max_size=1024 * 1024, mode="w+b")
+    private = TemporaryDirectory(prefix="seeclaims-verified-archive-")
     digest = hashlib.sha256()
     size = 0
     try:
         try:
-            with path.open("rb") as stored_file:
-                while chunk := stored_file.read(1024 * 1024):
-                    size += len(chunk)
-                    if size > expected_size:
-                        break
-                    digest.update(chunk)
-                    verified.write(chunk)
+            with path.open("rb") as source:
+                # NamedTemporaryFile uses private 0600 permissions. The parent
+                # TemporaryDirectory is 0700, restricting access while an
+                # async FileResponse streams bytes from this one verified copy.
+                with NamedTemporaryFile(
+                    mode="w+b", dir=private.name, prefix="verified-", delete=False,
+                ) as capture:
+                    verified_path = Path(capture.name)
+                    while chunk := source.read(1024 * 1024):
+                        size += len(chunk)
+                        if size > expected_size:
+                            break
+                        digest.update(chunk)
+                        capture.write(chunk)
         except OSError as exc:
             raise HTTPException(
                 status_code=status.HTTP_410_GONE,
@@ -77,28 +85,10 @@ def _verified_archive_copy(
                     "integrity review; the original export record was not changed."
                 ),
             )
-        verified.seek(0)
-        return verified
+        return verified_path, private
     except BaseException:
-        verified.close()
+        private.cleanup()
         raise
-
-
-def _iter_verified_archive(verified: BinaryIO) -> Iterator[bytes]:
-    try:
-        while chunk := verified.read(1024 * 1024):
-            yield chunk
-    finally:
-        verified.close()
-
-
-def _download_disposition(filename: str) -> str:
-    encoded = quote(filename)
-    return (
-        f"attachment; filename*=utf-8''{encoded}"
-        if encoded != filename
-        else f'attachment; filename="{filename}"'
-    )
 
 
 @router.get("", response_model=ClaimPackExportListResponse)
@@ -169,7 +159,7 @@ def download_export(
     export_id: UUID,
     current_user: CurrentUser,
     db: Annotated[Session, Depends(get_db)],
-) -> StreamingResponse:
+) -> FileResponse:
     try:
         item = get_claim_pack_export(
             db,
@@ -211,7 +201,7 @@ def download_export(
     # Capture exactly the verified bytes before the audit and response. The
     # original archive may be renamed, replaced or edited after this point,
     # but the returned stream is isolated from those later changes.
-    verified = _verified_archive_copy(
+    verified_path, private = _verified_archive_copy(
         path,
         expected_size=item.file_size_bytes,
         expected_sha256=item.file_hash,
@@ -232,13 +222,19 @@ def download_export(
             details=f"Downloaded {item.filename}",
         )
         db.commit()
-        return StreamingResponse(
-            _iter_verified_archive(verified),
+        # A stable content-derived ETag preserves If-Range resume requests
+        # even though every download gets its own private temporary pathname.
+        created_at = item.created_at
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=UTC)
+        return FileResponse(
+            path=verified_path,
             media_type=item.mime_type,
-            background=BackgroundTask(verified.close),
+            filename=item.filename,
+            background=BackgroundTask(private.cleanup),
             headers={
-                "Content-Length": str(item.file_size_bytes),
-                "Content-Disposition": _download_disposition(item.filename),
+                "ETag": f'"{item.file_hash}"',
+                "Last-Modified": format_datetime(created_at.astimezone(UTC), usegmt=True),
                 "X-Content-Type-Options": "nosniff",
                 "Cache-Control": "private, no-store",
                 "X-Claim-Pack-Snapshot-SHA256": item.snapshot_hash,
@@ -247,5 +243,5 @@ def download_export(
             },
         )
     except BaseException:
-        verified.close()
+        private.cleanup()
         raise
