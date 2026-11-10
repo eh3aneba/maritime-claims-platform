@@ -130,3 +130,59 @@ false-green image job by changing the path classifier.
 
 This file is an evidence-backed checkpoint, not a claim that the
 supplier-dependent fix has been accomplished.
+
+
+## 7. Verified 2026-11-09 checkpoint — real-image runtime and vendor escalation
+
+This appended checkpoint **supersedes only earlier status statements**, not the
+root-cause reasoning. Do not mistake a date-specific archived scan for the
+current state or a scoped PR-check success for final-image acceptance.
+
+- [#889](https://github.com/eh3aneba/maritime-claims-platform/pull/889)
+  **merged** on `main@e9a1f903a2899f72df74bb23f9e158f01ed865e7`,
+  after all eleven protected contexts passed. It supplements the existing
+  #886 HTTPS package-index observer with **actual apk signature-verification**
+  on native x86_64/aarch64 official Alpine v3.24 images. Both authenticated
+  v3.24/main candidates were still `sqlite-libs 3.53.4-r0`; see
+  [run #42560311243](https://github.com/eh3aneba/maritime-claims-platform/actions/runs/42560311243).
+  A signed index is not a package installation, a security fix or a Grype pass.
+- [Draft #885](https://github.com/eh3aneba/maritime-claims-platform/pull/885)
+  was synchronized with that main. Its two final runtime stages explicitly
+  upgrade `sqlite-libs` from the **same supported signed repositories**;
+  no fixed revision was available. An initial read-only observer used an
+  incorrect multi-line `apk info` invocation and failed. It was corrected
+  to inspect installed APK inventory; no Grype scans were skipped.
+- The corrected **actual final-image** SQLite runtime inventory
+  [run #42586615777](https://github.com/eh3aneba/maritime-claims-platform/actions/runs/42586615777)
+  and the follow-up provenance validation
+  [run #42589764085](https://github.com/eh3aneba/maritime-claims-platform/actions/runs/42589764085)
+  both recorded, in API **and** Worker:
+  `sqlite-libs 3.53.4-r0`, `sqlite3.sqlite_version=3.53.4`,
+  mapped `/usr/lib/libsqlite3.so.3.53.4`,
+  `ENABLE_FTS5=true` with a synthetic in-memory FTS5 probe succeeding,
+  `ENABLE_SESSION=true`, and **no sqlite3 CLI executable**.
+  The evidence explicitly records `cve_clearance=false`.
+- The same actual Grype runs completed
+  **API FAIL / Worker FAIL / Web PASS** because each final API and Worker
+  image still contains four High CVEs
+  `CVE-2026-119373/119374/119379/119586`.
+  All other required CI, PostgreSQL and Operational Performance workflows
+  on the latest completed #885 exact head succeeded; the normal Full
+  Backend Pre-Merge workflow was skipped because the PR stayed Draft.
+- `CVE-2026-119586` is the CLI-specific `.recover` path, which
+  [Debian still lists as undetermined through SQLite 3.54.1-2](https://security-tracker.debian.org/tracker/CVE-2026-119586).
+  **CLI absence does not provide an authority to suppress the Grype match**,
+  and the three library CVEs remain relevant where FTS5/Session are enabled.
+- The signed-stable backport request was **sent by email to Alpine's
+  public development list on 2026-11-09**, CC'ing the public SQLite
+  APKBUILD maintainer; Gmail Sent-folder evidence confirms submission
+  for delivery, **not list acceptance or a maintainer acknowledgement**.
+  No GitLab aports issue was filed and no Alpine fix/advisory was received.
+  The fuller public issue/report template remains at
+  `docs/security/SQLITE_ALPINE_BACKPORT_REQUEST_2026-11-08.md`.
+
+**Non-negotiable next decision:** obtain official Alpine v3.24 signed
+stable-repository library backport and authoritative CLI fix/applicability
+information, then run real package/runtime/Grype High checks on the exact
+final images. Do not mark this item closed or release a customer pilot based
+on a diagnostic-only workflow.
