@@ -12,6 +12,7 @@ from uuid import UUID
 
 import pytest
 
+from app.modules.claim_packs import router as claim_pack_router
 from app.modules.claim_packs.models import ClaimPackExport
 from app.modules.documents.service import _storage
 from tests.db_harness import TestingSessionLocal, client, reset_database
@@ -117,3 +118,50 @@ def test_missing_archived_file_returns_gone_not_a_successful_download() -> None:
     assert rejected.status_code == 410, rejected.text
     assert "unavailable" in rejected.json()["detail"]
     assert "x-claim-pack-file-sha256" not in rejected.headers
+
+
+@pytest.mark.parametrize("replacement", ["in_place", "renamed"])
+def test_archive_replacement_after_verification_never_changes_sent_bytes(
+    monkeypatch: pytest.MonkeyPatch, replacement: str,
+) -> None:
+    """Verification and response must operate on one captured byte sequence.
+
+    The mutation is deliberately inserted after the verification helper has
+    returned but before the framework starts consuming the response stream.
+    The previous FileResponse path-reopen design would have sent changed bytes
+    with the original SHA-256 header in this precise interval.
+    """
+    base_url, metadata = _create_export("xlsx")
+    path = _archive_path(metadata["id"])
+    original = path.read_bytes()
+    original_capture = claim_pack_router._verified_archive_copy
+
+    def replace_after_capturing(archive_path, *, expected_size, expected_sha256):
+        captured = original_capture(
+            archive_path,
+            expected_size=expected_size,
+            expected_sha256=expected_sha256,
+        )
+        mutated = b"TAMPER" + original[6:]
+        if replacement == "in_place":
+            archive_path.write_bytes(mutated)
+        else:
+            alternate = archive_path.with_name(archive_path.name + ".synthetic")
+            alternate.write_bytes(mutated)
+            alternate.replace(archive_path)
+        return captured
+
+    monkeypatch.setattr(
+        claim_pack_router, "_verified_archive_copy", replace_after_capturing,
+    )
+    try:
+        response = client.get(f"{base_url}/{metadata['id']}/download")
+        assert response.status_code == 200, response.text
+        assert response.content == original
+        assert hashlib.sha256(response.content).hexdigest() == metadata["file_hash"]
+        assert response.headers["x-claim-pack-file-sha256"] == metadata["file_hash"]
+        assert response.headers["content-length"] == str(len(original))
+        assert response.headers["content-disposition"].startswith("attachment; ")
+        assert path.read_bytes() != original
+    finally:
+        path.write_bytes(original)
