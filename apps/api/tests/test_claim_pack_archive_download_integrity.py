@@ -109,6 +109,34 @@ def test_corrupt_stored_integrity_metadata_is_rejected(field: str) -> None:
     assert "SHA-256" in rejected.json()["detail"]
 
 
+@pytest.mark.parametrize("mutation", ["snapshot_json", "snapshot_hash"])
+def test_stored_snapshot_integrity_drift_blocks_download(mutation: str) -> None:
+    """File checksum alone cannot attest modified historical snapshot metadata."""
+    base_url, metadata = _create_export("xlsx")
+    path = _archive_path(metadata["id"])
+    original_file_hash = hashlib.sha256(path.read_bytes()).hexdigest()
+    assert original_file_hash == metadata["file_hash"]
+
+    with TestingSessionLocal() as db:
+        record = db.get(ClaimPackExport, UUID(metadata["id"]))
+        assert record is not None
+        if mutation == "snapshot_json":
+            record.snapshot = {
+                **record.snapshot,
+                "generation_note": "Altered after immutable export generation",
+            }
+        else:
+            record.snapshot_hash = "0" * 64
+        db.commit()
+
+    response = client.get(f"{base_url}/{metadata['id']}/download")
+    assert response.status_code == 409, response.text
+    assert "snapshot" in response.json()["detail"]
+    assert "SHA-256" in response.json()["detail"]
+    assert "x-claim-pack-snapshot-sha256" not in response.headers
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == original_file_hash
+
+
 def test_missing_archived_file_returns_gone_not_a_successful_download() -> None:
     base_url, metadata = _create_export("xlsx")
     path = _archive_path(metadata["id"])
