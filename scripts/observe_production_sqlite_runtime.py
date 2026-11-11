@@ -35,9 +35,12 @@ def extract_package_version(output: str) -> str:
 def sqlite_library_paths(maps: str) -> list[str]:
     paths = set()
     for line in maps.splitlines():
-        fields = line.split()
-        if len(fields) >= 6 and "/libsqlite3.so" in fields[-1]:
-            paths.add(fields[-1])
+        # /proc/self/maps has five metadata fields, then the whole pathname.
+        # Preserve spaces and Linux's " (deleted)" suffix so a stale/additional
+        # mapped library reaches the strict canonical-path check below.
+        fields = line.split(maxsplit=5)
+        if len(fields) == 6 and "/libsqlite3.so" in fields[5]:
+            paths.add(fields[5])
     if not paths:
         raise RuntimeError("SQLite shared-library mapping could not be attested")
     return sorted(paths)

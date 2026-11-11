@@ -2,6 +2,9 @@
 from __future__ import annotations
 
 from pathlib import Path
+import subprocess
+import sys
+import textwrap
 import unittest
 from unittest.mock import patch
 
@@ -50,6 +53,49 @@ class SqliteRuntimeEvidenceContract(unittest.TestCase):
         for role in ("", "web", "api;command", "producer"):
             with self.subTest(role=role), self.assertRaises(RuntimeError):
                 get_evidence(role)
+
+    def test_observer_process_rejects_hidden_extra_sqlite_mappings(self) -> None:
+        # Exercise the actual observer entry point: valid APK/Python versions
+        # must not hide another SQLite mapping with a deleted or spaced path.
+        good = "1000-2000 r-xp 0000 00:00 123 /usr/lib/libsqlite3.so.3.53.4\n"
+        cases = {
+            "normal_segments": (good + good.replace("1000-2000", "3000-4000"), True),
+            "deleted_old_library": (
+                good + "3000-4000 r-xp 0000 00:00 456 /opt/libsqlite3.so.3.46.1 (deleted)\n",
+                False,
+            ),
+            "deleted_same_version": (good + good.rstrip() + " (deleted)\n", False),
+            "spaced_path": (
+                good + "3000-4000 r-xp 0000 00:00 456 /opt/libsqlite3.so.3.46.1 backup\n",
+                False,
+            ),
+        }
+        for name, (maps, accepted) in cases.items():
+            with self.subTest(name=name):
+                code = textwrap.dedent('''
+                    import os
+                    from types import SimpleNamespace
+                    from unittest.mock import patch
+                    from scripts import observe_production_sqlite_runtime as observer
+
+                    with patch.dict(os.environ, {"SEECLAIMS_RUNTIME_ROLE": "api"}), \\
+                         patch.object(observer.subprocess, "run", return_value=SimpleNamespace(stdout="sqlite-libs-3.53.4-r0")), \\
+                         patch.object(observer.sqlite3, "sqlite_version", "3.53.4"), \\
+                         patch.object(observer.shutil, "which", return_value=None), \\
+                         patch.object(observer.Path, "read_text", return_value=MAPS):
+                        raise SystemExit(observer.main())
+                ''').replace("MAPS", repr(maps))
+                result = subprocess.run(
+                    [sys.executable, "-c", code], cwd=ROOT,
+                    text=True, capture_output=True, timeout=15,
+                )
+                if accepted:
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertIn('"cve_clearance": false', result.stdout)
+                else:
+                    self.assertNotEqual(result.returncode, 0, result.stdout)
+                    self.assertIn("Mapped SQLite library does not match", result.stderr)
+                    self.assertEqual(result.stdout, "")
 
     def test_runtime_provenance_is_fail_closed(self) -> None:
         evidence = {
