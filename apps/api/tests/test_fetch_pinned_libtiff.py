@@ -27,12 +27,19 @@ class Response:
 
 
 def test_upstream_version_digest_timeout_and_retry_budget_remain_pinned():
-    assert pinned.URL == "https://download.osgeo.org/libtiff/tiff-4.7.2.tar.gz"
+    assert pinned.URLS == (
+        "https://fra.de.distfiles.macports.org/tiff/tiff-4.7.2.tar.gz",
+        "https://mse.uk.distfiles.macports.org/tiff/tiff-4.7.2.tar.gz",
+        "https://download-cache.osgeo.org/libtiff/tiff-4.7.2.tar.gz",
+        "https://download.osgeo.org/libtiff/tiff-4.7.2.tar.gz",
+    )
     assert pinned.SHA512 == (
         "bad66954a7e7e158c6dcbfc0e2d0032b8f3e2a354b6d0fdbb8038a7963e36c5b8a433dd4ee81c6c4dabfb50094152d440aa1f32b5299098c9ae29e55de2e41fc"
     )
-    assert pinned.TIMEOUT_SECONDS == 120
-    assert pinned.MAX_ATTEMPTS == 3
+    assert pinned.TIMEOUT_SECONDS == 25
+    assert pinned.MAX_ATTEMPTS_PER_SOURCE == 2
+    # Every transport path uses this unchanged digest. Mirrors do not
+    # supply a new approval boundary for a different archive.
 
 
 def test_socket_timeout_then_success_verifies_before_writing(tmp_path, monkeypatch):
@@ -50,7 +57,10 @@ def test_socket_timeout_then_success_verifies_before_writing(tmp_path, monkeypat
 
     pinned.fetch(filename, open_url=opener, sleep=waits.append)
     assert filename.read_bytes() == DATA
-    assert calls == [(pinned.URL, 120), (pinned.URL, 120)]
+    assert calls == [
+        (pinned.URLS[0], pinned.TIMEOUT_SECONDS),
+        (pinned.URLS[0], pinned.TIMEOUT_SECONDS),
+    ]
     assert waits == [2]
     assert not (tmp_path / "tiff.tar.gz.unverified").exists()
 
@@ -64,7 +74,7 @@ def test_network_read_timeout_retries_then_success(tmp_path, monkeypatch):
 
     path = tmp_path / "tiff.tar.gz"
     pinned.fetch(path, open_url=opener, sleep=lambda _: None)
-    assert calls == [120, 120]
+    assert calls == [pinned.TIMEOUT_SECONDS] * 2
     assert path.read_bytes() == DATA
 
 
@@ -79,8 +89,12 @@ def test_retry_exhaustion_fails_and_leaves_no_partial_archive(tmp_path):
 
     with pytest.raises(pinned.DownloadUnavailable, match="^pinned_libtiff_download_unavailable$"):
         pinned.fetch(filename, open_url=offline, sleep=waits.append)
-    assert calls == [120, 120, 120]
-    assert waits == [2, 4]
+    assert calls == [
+        pinned.TIMEOUT_SECONDS
+        for _source in pinned.URLS
+        for _attempt in range(pinned.MAX_ATTEMPTS_PER_SOURCE)
+    ]
+    assert waits == [2] * len(pinned.URLS)
     assert not filename.exists()
     assert not (tmp_path / "tiff.tar.gz.unverified").exists()
 
