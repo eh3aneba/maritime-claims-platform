@@ -32,7 +32,7 @@ TIMEOUT_SECONDS = 25
 
 
 class DownloadUnavailable(RuntimeError):
-    """Both bounded official source download paths failed to deliver bytes."""
+    """All bounded, preapproved distribution sources failed to deliver bytes."""
 
 
 class IntegrityMismatch(RuntimeError):
