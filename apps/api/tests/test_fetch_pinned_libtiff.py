@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+from urllib.error import HTTPError
 
 import pytest
 
@@ -28,6 +29,9 @@ class Response:
 
 def test_upstream_version_digest_timeout_and_retry_budget_remain_pinned():
     assert pinned.URL == "https://download.osgeo.org/libtiff/tiff-4.7.2.tar.gz"
+    assert pinned.FALLBACK_URL == (
+        "https://distfiles.alpinelinux.org/distfiles/v3.24/tiff-4.7.2.tar.gz"
+    )
     assert pinned.SHA512 == (
         "bad66954a7e7e158c6dcbfc0e2d0032b8f3e2a354b6d0fdbb8038a7963e36c5b8a433dd4ee81c6c4dabfb50094152d440aa1f32b5299098c9ae29e55de2e41fc"
     )
@@ -50,7 +54,7 @@ def test_socket_timeout_then_success_verifies_before_writing(tmp_path, monkeypat
 
     pinned.fetch(filename, open_url=opener, sleep=waits.append)
     assert filename.read_bytes() == DATA
-    assert calls == [(pinned.URL, 120), (pinned.URL, 120)]
+    assert calls == [(pinned.URL, 120), (pinned.FALLBACK_URL, 120)]
     assert waits == [2]
     assert not (tmp_path / "tiff.tar.gz.unverified").exists()
 
@@ -68,18 +72,70 @@ def test_network_read_timeout_retries_then_success(tmp_path, monkeypatch):
     assert path.read_bytes() == DATA
 
 
+def test_primary_success_does_not_contact_cache(tmp_path, monkeypatch):
+    monkeypatch.setattr(pinned, "SHA512", hashlib.sha512(DATA).hexdigest())
+    calls = []
+
+    def opener(url, timeout):
+        calls.append((url, timeout))
+        return Response(DATA)
+
+    path = tmp_path / "tiff.tar.gz"
+    pinned.fetch(path, open_url=opener, sleep=lambda _: pytest.fail("no retry needed"))
+    assert calls == [(pinned.URL, 120)]
+    assert path.read_bytes() == DATA
+
+
+def test_primary_503_uses_identical_pinned_cache_bytes(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(pinned, "SHA512", hashlib.sha512(DATA).hexdigest())
+    calls = []
+
+    def opener(url, timeout):
+        calls.append((url, timeout))
+        if url == pinned.URL:
+            raise HTTPError(url, 503, "unavailable", None, None)
+        assert url == "https://distfiles.alpinelinux.org/distfiles/v3.24/tiff-4.7.2.tar.gz"
+        return Response(DATA)
+
+    path = tmp_path / "tiff.tar.gz"
+    pinned.fetch(path, open_url=opener, sleep=lambda _: None)
+    assert len(calls) == 2
+    assert path.read_bytes() == DATA
+    assert capsys.readouterr().out == "pinned_libtiff_verified_source=alpine_stable_cache\n"
+
+
+def test_cache_hash_mismatch_is_fatal_without_retry_or_publication(tmp_path):
+    path = tmp_path / "tiff.tar.gz"
+    path.write_bytes(b"stale archive")
+    calls = []
+    waits = []
+
+    def opener(url, timeout):
+        calls.append((url, timeout))
+        if len(calls) == 1:
+            raise TimeoutError("primary unavailable")
+        return Response(DATA)
+
+    with pytest.raises(pinned.IntegrityMismatch, match="^pinned_libtiff_sha512_mismatch$"):
+        pinned.fetch(path, open_url=opener, sleep=waits.append)
+    assert calls == [(pinned.URL, 120), (pinned.FALLBACK_URL, 120)]
+    assert waits == [2]
+    assert not path.exists()
+    assert not path.with_name(path.name + ".unverified").exists()
+
+
 def test_retry_exhaustion_fails_and_leaves_no_partial_archive(tmp_path):
     filename = tmp_path / "tiff.tar.gz"
     filename.write_bytes(b"old unverified file")
     calls = []
     waits = []
-    def offline(_url, timeout):
-        calls.append(timeout)
+    def offline(url, timeout):
+        calls.append((url, timeout))
         raise TimeoutError("transport unavailable")
 
     with pytest.raises(pinned.DownloadUnavailable, match="^pinned_libtiff_download_unavailable$"):
         pinned.fetch(filename, open_url=offline, sleep=waits.append)
-    assert calls == [120, 120, 120]
+    assert calls == [(pinned.URL, 120), (pinned.FALLBACK_URL, 120), (pinned.FALLBACK_URL, 120)]
     assert waits == [2, 4]
     assert not filename.exists()
     assert not (tmp_path / "tiff.tar.gz.unverified").exists()

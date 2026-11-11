@@ -1,7 +1,8 @@
 """Fetch the fixed LibTIFF source for the isolated OCR Docker builder.
 
-No caller-provided URL, version, digest, alternate mirror or bypass. Transient
-transport failures alone get a bounded retry; integrity mismatch is fatal.
+No caller-provided URL, version, digest, mirror or bypass. Transport failures
+alone use Alpine's stable source cache within the same bounded retry budget;
+integrity mismatch from either source is fatal.
 """
 from __future__ import annotations
 
@@ -12,6 +13,9 @@ import time
 from urllib.request import urlopen
 
 URL = "https://download.osgeo.org/libtiff/tiff-4.7.2.tar.gz"
+# Alpine's v3.24 tiff APKBUILD publishes this same upstream archive and SHA-512.
+# This is a second source for identical bytes, not a package/version substitute.
+FALLBACK_URL = "https://distfiles.alpinelinux.org/distfiles/v3.24/tiff-4.7.2.tar.gz"
 SHA512 = "bad66954a7e7e158c6dcbfc0e2d0032b8f3e2a354b6d0fdbb8038a7963e36c5b8a433dd4ee81c6c4dabfb50094152d440aa1f32b5299098c9ae29e55de2e41fc"
 MAX_ATTEMPTS = 3
 TIMEOUT_SECONDS = 120
@@ -37,7 +41,8 @@ def fetch(output: Path = Path("/tmp/tiff.tar.gz"), *, open_url=None, sleep=None)
     try:
         for attempt in range(1, MAX_ATTEMPTS + 1):
             try:
-                with opener(URL, timeout=TIMEOUT_SECONDS) as stream:
+                source = URL if attempt == 1 else FALLBACK_URL
+                with opener(source, timeout=TIMEOUT_SECONDS) as stream:
                     archive = stream.read()
             except OSError:
                 # urllib.error.URLError, TimeoutError and socket errors are
@@ -54,6 +59,8 @@ def fetch(output: Path = Path("/tmp/tiff.tar.gz"), *, open_url=None, sleep=None)
             # A failed write/rename is not a network failure and is not retried.
             temporary.write_bytes(archive)
             temporary.replace(destination)
+            verified_source = "upstream" if source == URL else "alpine_stable_cache"
+            print(f"pinned_libtiff_verified_source={verified_source}")
             return
     finally:
         temporary.unlink(missing_ok=True)
