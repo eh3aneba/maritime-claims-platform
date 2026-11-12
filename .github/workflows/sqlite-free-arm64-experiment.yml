@@ -7,6 +7,7 @@ on:
       - "apps/api/Dockerfile"
       - "apps/api/build_tools/**"
       - "apps/api/requirements.lock"
+      - "scripts/sqlite_free_runtime_probe.py"
       - ".grype.yaml"
       - ".github/workflows/sqlite-free-arm64-experiment.yml"
 
@@ -22,6 +23,9 @@ jobs:
       - name: Check out exact PR head
         uses: actions/checkout@v6
 
+      - name: Validate synthetic offline OCR probe syntax
+        run: python3 -m py_compile scripts/sqlite_free_runtime_probe.py
+
       - name: Verify native runner and build final images
         shell: bash
         run: |
@@ -31,6 +35,20 @@ jobs:
           docker build --pull --target worker --tag maritime-claims-worker:arm64-experiment apps/api
           test "$(docker image inspect --format '{{.Architecture}}' maritime-claims-api:arm64-experiment)" = "arm64"
           test "$(docker image inspect --format '{{.Architecture}}' maritime-claims-worker:arm64-experiment)" = "arm64"
+
+      - name: Execute actual final-worker synthetic OCR and SQLite-removal probe
+        id: runtime-probe
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Disposable synthetic fixture, no network, no root capabilities,
+          # no host or customer Evidence mount, read-only image filesystem.
+          docker run --rm -i --network none --user 1000:1000 \
+            --read-only --cap-drop ALL --security-opt no-new-privileges \
+            --tmpfs /tmp:rw,nosuid,nodev,mode=1777,size=128m \
+            --entrypoint python maritime-claims-worker:arm64-experiment - \
+            < scripts/sqlite_free_runtime_probe.py
 
       - name: Scan actual API arm64 final image
         id: scan-api
@@ -61,8 +79,11 @@ jobs:
         env:
           API_RESULT: ${{ steps.scan-api.outcome }}
           WORKER_RESULT: ${{ steps.scan-worker.outcome }}
+          RUNTIME_RESULT: ${{ steps.runtime-probe.outcome }}
         run: |
           echo "arm64 API scan: $API_RESULT"
           echo "arm64 Worker scan: $WORKER_RESULT"
+          echo "arm64 restricted offline runtime OCR probe: $RUNTIME_RESULT"
           test "$API_RESULT" = success
           test "$WORKER_RESULT" = success
+          test "$RUNTIME_RESULT" = success
