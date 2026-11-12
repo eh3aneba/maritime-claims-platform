@@ -1,9 +1,9 @@
 # Isolation experiment for #876: the final image must not inherit Python's SQLite layers.
 # The official Python image is used ONLY as a source of the sanitized /usr/local tree.
-FROM python:3.14.10-alpine3.24 AS python-stdlib-without-sqlite
+FROM python:3.13.18-alpine3.24 AS python-stdlib-without-sqlite
 RUN set -eu; \
-    find /usr/local/lib/python3.14/lib-dynload -maxdepth 1 -type f -name '_sqlite3*.so' -delete; \
-    ! find /usr/local/lib/python3.14/lib-dynload -maxdepth 1 -name '_sqlite3*.so' -print -quit | grep -q .
+    find /usr/local/lib/python3.13/lib-dynload -maxdepth 1 -type f -name '_sqlite3*.so' -delete; \
+    ! find /usr/local/lib/python3.13/lib-dynload -maxdepth 1 -name '_sqlite3*.so' -print -quit | grep -q .
 
 FROM alpine:3.24 AS python-runtime
 COPY --from=python-stdlib-without-sqlite /usr/local /usr/local
@@ -17,7 +17,7 @@ RUN set -eux; \
     ! apk info -e sqlite-libs; \
     python -c "import ssl, uuid, zlib, ctypes; assert uuid.uuid4().version == 4"
 
-FROM python:3.14.10-alpine3.24 AS python-builder
+FROM python:3.13.18-alpine3.24 AS python-builder
 
 WORKDIR /app
 
@@ -36,7 +36,7 @@ RUN python -m venv /opt/venv \
     && /opt/venv/bin/python -m pip check \
     && /opt/venv/bin/python -c "import alembic, fastapi, sqlalchemy; print('venv-ready')"
 
-FROM python:3.14.10-alpine3.24 AS worker-tools-builder
+FROM python:3.13.18-alpine3.24 AS worker-tools-builder
 
 ENV PKG_CONFIG_PATH="/opt/ocr/lib/pkgconfig:/opt/poppler/lib/pkgconfig" \
     CPPFLAGS="-I/opt/ocr/include" \
@@ -150,7 +150,7 @@ RUN /sbin/apk upgrade --no-cache libssl3 libcrypto3 zlib \
     && /sbin/apk add --no-cache 'zlib>=1.3.2-r1' libuuid \
     && /sbin/apk info -v libssl3 libcrypto3 zlib \
     && python -c "import _uuid, uuid, zlib; value = uuid.uuid4(); assert value.version == 4; print(value, zlib.ZLIB_VERSION)" \
-    && rm -rf /usr/local/lib/python3.14/site-packages/pip* /usr/local/bin/pip*
+    && rm -rf /usr/local/lib/python3.13/site-packages/pip* /usr/local/bin/pip*
 
 COPY --from=python-builder /opt/venv /opt/venv
 RUN set -eu; \
@@ -193,7 +193,7 @@ RUN /sbin/apk upgrade --no-cache libssl3 libcrypto3 zlib \
         openjpeg \
     && /sbin/apk info -v libssl3 libcrypto3 zlib \
     && python -c "import hashlib,pathlib,urllib.request; files=[('eng.traineddata',23466654,'f4744c201359d02ced6914c77f0de68ee9bbdd74'),('fas.traineddata',561272,'a0b9843164d928caad5afb0bd6973c964ba5b0b9')]; base='https://raw.githubusercontent.com/tesseract-ocr/tessdata/ced78752cc61322fb554c280d13360b35b8684e4/'; out=pathlib.Path('/usr/share/tessdata'); out.mkdir(parents=True,exist_ok=True); [(lambda name,size,want: (lambda data: ((_ for _ in ()).throw(AssertionError(len(data))) if len(data)!=size else None, (_ for _ in ()).throw(AssertionError('git sha mismatch')) if hashlib.sha1(b'blob '+str(len(data)).encode()+b'\\0'+data).hexdigest()!=want else None, print(name+'.sha256='+hashlib.sha256(data).hexdigest()), (out/name).write_bytes(data)))(urllib.request.urlopen(base+name,timeout=120).read()))(name,size,want) for name,size,want in files]" \
-    && rm -rf /usr/local/lib/python3.14/site-packages/pip* /usr/local/bin/pip*
+    && rm -rf /usr/local/lib/python3.13/site-packages/pip* /usr/local/bin/pip*
 
 COPY --from=worker-tools-builder /opt/ocr /opt/ocr
 COPY --from=worker-tools-builder /opt/poppler /opt/poppler
