@@ -1,11 +1,11 @@
 # Isolation experiment for #876: the final image must not inherit Python's SQLite layers.
 # The official Python image is used ONLY as a source of the sanitized /usr/local tree.
-FROM python:3.13.18-alpine3.24 AS python-stdlib-without-sqlite
+FROM python:3.13.18-alpine3.24@sha256:9ef1a599f863231c3d91e941389bfdc4a2d6070557243d54df1a4e57015b960e AS python-stdlib-without-sqlite
 RUN set -eu; \
     find /usr/local/lib/python3.13/lib-dynload -maxdepth 1 -type f -name '_sqlite3*.so' -delete; \
     ! find /usr/local/lib/python3.13/lib-dynload -maxdepth 1 -name '_sqlite3*.so' -print -quit | grep -q .
 
-FROM alpine:3.24 AS python-runtime
+FROM alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf AS python-runtime
 COPY --from=python-stdlib-without-sqlite /usr/local /usr/local
 RUN set -eux; \
     apk add --no-cache ca-certificates 'zlib>=1.3.2-r1' pax-utils; \
@@ -17,7 +17,7 @@ RUN set -eux; \
     ! apk info -e sqlite-libs; \
     python -c "import ssl, uuid, zlib, ctypes; assert uuid.uuid4().version == 4"
 
-FROM python:3.13.18-alpine3.24 AS python-builder
+FROM python:3.13.18-alpine3.24@sha256:9ef1a599f863231c3d91e941389bfdc4a2d6070557243d54df1a4e57015b960e AS python-builder
 
 WORKDIR /app
 
@@ -36,7 +36,7 @@ RUN python -m venv /opt/venv \
     && /opt/venv/bin/python -m pip check \
     && /opt/venv/bin/python -c "import alembic, fastapi, sqlalchemy; print('venv-ready')"
 
-FROM python:3.13.18-alpine3.24 AS worker-tools-builder
+FROM python:3.13.18-alpine3.24@sha256:9ef1a599f863231c3d91e941389bfdc4a2d6070557243d54df1a4e57015b960e AS worker-tools-builder
 
 ENV PKG_CONFIG_PATH="/opt/ocr/lib/pkgconfig:/opt/poppler/lib/pkgconfig" \
     CPPFLAGS="-I/opt/ocr/include" \
