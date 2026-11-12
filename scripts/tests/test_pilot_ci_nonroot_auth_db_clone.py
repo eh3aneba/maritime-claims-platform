@@ -229,6 +229,10 @@ class NonrootIsolatedAuthClonePolicy(unittest.TestCase):
             "    && /sbin/apk info -v", 1
         )[0]
         self.assertNotRegex(runtime_packages, r"(?m)^\s+(glib|pango|nss) \\$")
+        # libtiff is compiled with Zstandard enabled in the builder, so the
+        # copy-only runtime must explicitly provide the signed stable library.
+        self.assertIn("        zstd-libs \\", runtime_packages)
+        self.assertIn("ctypes.CDLL('/opt/ocr/lib/libtiff.so.6')", worker)
 
         # An unanticipated transitive apk dependency fails the Docker build.
         for guard in (
