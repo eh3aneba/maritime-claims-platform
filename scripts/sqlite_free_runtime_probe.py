@@ -36,7 +36,7 @@ def _no_sqlite_runtime() -> None:
 
 def _pgm_pixels(path: Path) -> tuple[int, int, bytes]:
     payload = path.read_bytes()
-    header = re.match(rb"P5\\s+(\\d+)\\s+(\\d+)\\s+(\\d+)\\s", payload)
+    header = re.match(rb"P5\s+(\d+)\s+(\d+)\s+(\d+)\s", payload)
     assert header is not None, "Unexpected grayscale raster header"
     width, height, maximum = map(int, header.groups())
     pixels = payload[header.end():]
