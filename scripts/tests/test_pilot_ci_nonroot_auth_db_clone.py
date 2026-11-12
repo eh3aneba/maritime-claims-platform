@@ -177,9 +177,9 @@ class NonrootIsolatedAuthClonePolicy(unittest.TestCase):
 
     def test_worker_has_readable_font_fallback_for_scanned_pdf_fixture(self):
         dockerfile = (ROOT / "apps" / "api" / "Dockerfile").read_text(encoding="utf-8")
-        # Discover a consistent patch-pinned runtime instead of locking the test
-        # to a formerly vulnerable patch release. Require the security-fixed
-        # Python 3.14.10 baseline (or a newer 3.14 patch).
+        # Only independently supported security-patched release lines. Python
+        # 3.14.10 has CVE-2026-119170; 3.14.9 predates critical CA distrust.
+        # Do not admit either release or an unreviewed Python major upgrade.
         from_lines = [line for line in dockerfile.splitlines() if line.startswith("FROM python:")]
         self.assertEqual(len(from_lines), 3)
         self.assertIn("FROM alpine:3.24 AS python-runtime", dockerfile)
@@ -188,9 +188,17 @@ class NonrootIsolatedAuthClonePolicy(unittest.TestCase):
         tags = {line.split()[1] for line in from_lines}
         self.assertEqual(len(tags), 1)
         python_image = next(iter(tags))
-        match = re.fullmatch(r"python:3\.14\.(\d+)-alpine3\.24", python_image)
+        match = re.fullmatch(r"python:3\.(13|14)\.(\d+)-alpine3\.24", python_image)
         self.assertIsNotNone(match)
-        self.assertGreaterEqual(int(match.group(1)), 10)
+        minor, patch = (int(value) for value in match.groups())
+        self.assertTrue(
+            (minor == 13 and patch >= 18) or (minor == 14 and patch >= 11),
+            "Python runtime must be a reviewed security-patched 3.13 or 3.14 release",
+        )
+        self.assertIn(
+            f"/usr/local/lib/python3.{minor}/lib-dynload",
+            dockerfile,
+        )
         worker = dockerfile.split("FROM python-runtime AS worker\n", 1)[1].split(
             "\nFROM base AS api", 1
         )[0]
