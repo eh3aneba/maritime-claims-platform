@@ -182,15 +182,25 @@ class NonrootIsolatedAuthClonePolicy(unittest.TestCase):
         # Do not admit either release or an unreviewed Python major upgrade.
         from_lines = [line for line in dockerfile.splitlines() if line.startswith("FROM python:")]
         self.assertEqual(len(from_lines), 3)
-        self.assertIn("FROM alpine:3.24 AS python-runtime", dockerfile)
+        self.assertIn(
+            "FROM alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf AS python-runtime",
+            dockerfile,
+        )
         self.assertIn("COPY --from=python-stdlib-without-sqlite /usr/local /usr/local", dockerfile)
         self.assertIn("! apk info -e sqlite-libs", dockerfile)
         tags = {line.split()[1] for line in from_lines}
         self.assertEqual(len(tags), 1)
         python_image = next(iter(tags))
-        match = re.fullmatch(r"python:3\.(13|14)\.(\d+)-alpine3\.24", python_image)
+        match = re.fullmatch(
+            r"python:3\.(13|14)\.(\d+)-alpine3\.24@sha256:([0-9a-f]{64})",
+            python_image,
+        )
         self.assertIsNotNone(match)
-        minor, patch = (int(value) for value in match.groups())
+        minor, patch = (int(value) for value in match.group(1, 2))
+        self.assertEqual(
+            match.group(3),
+            "9ef1a599f863231c3d91e941389bfdc4a2d6070557243d54df1a4e57015b960e",
+        )
         self.assertTrue(
             (minor == 13 and patch >= 18) or (minor == 14 and patch >= 11),
             "Python runtime must be a reviewed security-patched 3.13 or 3.14 release",
