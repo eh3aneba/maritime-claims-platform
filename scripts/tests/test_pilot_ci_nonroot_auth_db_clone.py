@@ -181,31 +181,36 @@ class NonrootIsolatedAuthClonePolicy(unittest.TestCase):
         # to a formerly vulnerable patch release. Require the security-fixed
         # Python 3.14.10 baseline (or a newer 3.14 patch).
         from_lines = [line for line in dockerfile.splitlines() if line.startswith("FROM python:")]
-        self.assertEqual(len(from_lines), 4)
+        self.assertEqual(len(from_lines), 3)
+        self.assertIn("FROM alpine:3.24 AS python-runtime", dockerfile)
+        self.assertIn("COPY --from=python-stdlib-without-sqlite /usr/local /usr/local", dockerfile)
+        self.assertIn("! apk info -e sqlite-libs", dockerfile)
         tags = {line.split()[1] for line in from_lines}
         self.assertEqual(len(tags), 1)
         python_image = next(iter(tags))
         match = re.fullmatch(r"python:3\.14\.(\d+)-alpine3\.24", python_image)
         self.assertIsNotNone(match)
         self.assertGreaterEqual(int(match.group(1)), 10)
-        worker = dockerfile.split(f"FROM {python_image} AS worker\n", 1)[1].split(
+        worker = dockerfile.split("FROM python-runtime AS worker\n", 1)[1].split(
             "\nFROM base AS api", 1
         )[0]
         self.assertIn("        font-liberation \\", worker)
         self.assertIn("test -r /usr/share/fonts/liberation/LiberationSans-Regular.ttf", worker)
         self.assertIn("fc-match -f '%{family}' Helvetica | grep -F 'Liberation Sans'", worker)
         self.assertIn("RUN python --version", worker)
-        base = dockerfile.split(f"FROM {python_image} AS base\n", 1)[1].split(
-            f"FROM {python_image} AS worker\n", 1
+        base = dockerfile.split("FROM python-runtime AS base\n", 1)[1].split(
+            "FROM python-runtime AS worker\n", 1
         )[0]
         self.assertNotIn("font-liberation", base)
 
     def test_worker_runtime_excludes_vulnerable_unused_glib(self):
         """Do not ship the optional Poppler GLib bindings into the OCR runtime."""
         dockerfile = (ROOT / "apps" / "api" / "Dockerfile").read_text(encoding="utf-8")
-        poppler = dockerfile.split("FROM python:", 2)[2].split(
-            "\nFROM python:", 1
+        poppler = dockerfile.split(" AS worker-tools-builder\n", 1)[1].split(
+            "\nFROM python-runtime AS base\n", 1
         )[0]
+        self.assertIn("-DENABLE_NSS3=OFF", poppler)
+        self.assertNotRegex(poppler, r"(?m)^\s+nss-dev \\$")
         self.assertIn("-DENABLE_GLIB=OFF", poppler)
         self.assertIn("-DENABLE_GOBJECT_INTROSPECTION=OFF", poppler)
 
@@ -215,11 +220,13 @@ class NonrootIsolatedAuthClonePolicy(unittest.TestCase):
         runtime_packages = worker.split("RUN /sbin/apk upgrade", 1)[1].split(
             "    && /sbin/apk info -v", 1
         )[0]
-        self.assertNotRegex(runtime_packages, r"(?m)^\s+(glib|pango) \\$")
+        self.assertNotRegex(runtime_packages, r"(?m)^\s+(glib|pango|nss) \\$")
 
         # An unanticipated transitive apk dependency fails the Docker build.
         for guard in (
             "&& ! /sbin/apk info -e glib",
+            "&& ! /sbin/apk info -e nss",
+            "&& ! /sbin/apk info -e sqlite-libs",
             "&& ! /sbin/apk info -e pango",
             "&& test ! -e /opt/poppler/lib/libpoppler-glib.so",
             "&& ldd /opt/ocr/bin/tesseract",
