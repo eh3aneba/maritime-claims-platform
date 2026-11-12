@@ -5,6 +5,9 @@ on:
     branches: [main]
     paths:
       - "apps/api/Dockerfile"
+      - "apps/api/build_tools/**"
+      - "apps/api/requirements.lock"
+      - ".grype.yaml"
       - ".github/workflows/sqlite-free-arm64-experiment.yml"
 
 permissions:
