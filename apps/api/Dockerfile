@@ -191,6 +191,7 @@ RUN /sbin/apk upgrade --no-cache libssl3 libcrypto3 zlib \
         libwebpmux \
         libxml2 \
         openjpeg \
+        zstd-libs \
     && /sbin/apk info -v libssl3 libcrypto3 zlib \
     && python -c "import hashlib,pathlib,urllib.request; files=[('eng.traineddata',23466654,'f4744c201359d02ced6914c77f0de68ee9bbdd74'),('fas.traineddata',561272,'a0b9843164d928caad5afb0bd6973c964ba5b0b9')]; base='https://raw.githubusercontent.com/tesseract-ocr/tessdata/ced78752cc61322fb554c280d13360b35b8684e4/'; out=pathlib.Path('/usr/share/tessdata'); out.mkdir(parents=True,exist_ok=True); [(lambda name,size,want: (lambda data: ((_ for _ in ()).throw(AssertionError(len(data))) if len(data)!=size else None, (_ for _ in ()).throw(AssertionError('git sha mismatch')) if hashlib.sha1(b'blob '+str(len(data)).encode()+b'\\0'+data).hexdigest()!=want else None, print(name+'.sha256='+hashlib.sha256(data).hexdigest()), (out/name).write_bytes(data)))(urllib.request.urlopen(base+name,timeout=120).read()))(name,size,want) for name,size,want in files]" \
     && rm -rf /usr/local/lib/python3.13/site-packages/pip* /usr/local/bin/pip*
@@ -200,6 +201,8 @@ COPY --from=worker-tools-builder /opt/poppler /opt/poppler
 COPY --from=python-builder /opt/venv /opt/venv
 
 RUN python --version \
+    && test -r /usr/lib/libzstd.so.1 \
+    && python -c "import ctypes; ctypes.CDLL('/opt/ocr/lib/libtiff.so.6'); print('libtiff-linked-zstd-ready')" \
     && test -r /usr/share/fonts/liberation/LiberationSans-Regular.ttf \
     && fc-match -f '%{family}' Helvetica | grep -F 'Liberation Sans' \
     && tesseract --version | head -n 2 \
