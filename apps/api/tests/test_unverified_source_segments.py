@@ -97,6 +97,7 @@ def test_source_segments_are_tenant_scoped_machine_unverified_and_read_only(
     assert len(body["extraction_text_hash"]) == 64
     assert body["extraction_method"] == "python-docx"
     assert body["source_text_quality_state"] == "not_an_ocr_extraction"
+    assert body["pdf_signature_check_state"] == "not_a_pdf_extraction"
     assert body["review_disposition"] == "machine_unverified"
     assert body["total_segments"] == 1
     assert body["offset"] == 0
@@ -112,7 +113,8 @@ def test_source_segments_are_tenant_scoped_machine_unverified_and_read_only(
     assert not any("verified" in key or "approved" in key for key in segment)
     assert set(body) == {
         "document_id", "document_version", "source_file_hash", "extraction_text_hash",
-        "extraction_method", "source_text_quality_state", "review_disposition",
+        "extraction_method", "source_text_quality_state",
+        "pdf_signature_check_state", "review_disposition",
         "total_segments", "offset", "limit", "segments",
     }
     out_of_bounds = client.get(url, params={"offset": 1, "limit": 1})
