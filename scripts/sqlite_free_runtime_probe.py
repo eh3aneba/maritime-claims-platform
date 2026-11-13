@@ -26,7 +26,7 @@ def _run(args: list[str], *, timeout: int = 45) -> None:
 def _no_sqlite_runtime() -> None:
     assert importlib.util.find_spec("_sqlite3") is None, "Python _sqlite3 was retained"
     assert shutil.which("sqlite3") is None, "SQLite CLI is present"
-    assert subprocess.run(["apk", "info", "-e", "sqlite-libs"], capture_output=True).returncode != 0
+    assert subprocess.run(["/sbin/apk", "info", "-e", "sqlite-libs"], capture_output=True).returncode != 0
     for root in (Path("/usr/lib"), Path("/usr/local"), Path("/opt")):
         assert not any(
             p.is_file() and (p.name.startswith("libsqlite3.so") or p.name.startswith("_sqlite3."))
