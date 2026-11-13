@@ -48,6 +48,9 @@ export function OcrSourceComparison({
           data.extraction_text_hash !== expectedExtractionHash ||
           data.review_disposition !== "machine_unverified" ||
           data.source_text_quality_state !== "ocr_human_source_comparison_required" ||
+          (data.extraction_method.toLowerCase().startsWith("pypdf")
+            ? data.pdf_signature_check_state !== "not_checked"
+            : data.pdf_signature_check_state !== "not_a_pdf_extraction") ||
           !data.extraction_method.toLowerCase().includes("tesseract:") ||
           data.offset !== offset || data.limit !== PAGE_SIZE
         ) {

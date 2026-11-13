@@ -160,14 +160,15 @@ def read_unverified_source_segments(
             .limit(limit)
         )
     )
-    quality = TextExtractionSummary.model_validate(extraction).source_text_quality_state
+    extraction_disclosure = TextExtractionSummary.model_validate(extraction)
     return SourceExtractionSegmentsResponse(
         document_id=document.id,
         document_version=document.version_number,
         source_file_hash=document.file_hash,
         extraction_text_hash=extraction.text_hash,
         extraction_method=extraction.extraction_method,
-        source_text_quality_state=quality,
+        source_text_quality_state=extraction_disclosure.source_text_quality_state,
+        pdf_signature_check_state=extraction_disclosure.pdf_signature_check_state,
         review_disposition="machine_unverified",
         total_segments=extraction.segment_count,
         offset=offset,

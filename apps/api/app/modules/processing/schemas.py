@@ -49,6 +49,21 @@ class TextExtractionSummary(BaseModel):
             return "ocr_human_source_comparison_required"
         return "not_an_ocr_extraction"
 
+    @computed_field
+    @property
+    def pdf_signature_check_state(self) -> Literal[
+        "not_checked", "not_a_pdf_extraction"
+    ]:
+        """Text/OCR extraction never validates a PDF cryptographic signature.
+
+        This does NOT detect whether a document was signed. A file hash, text
+        hash, parse result, or successfully completed OCR is not evidence of a
+        valid signer, certificate chain, or untampered signed revision.
+        """
+        if self.extraction_method.lower().startswith("pypdf"):
+            return "not_checked"
+        return "not_a_pdf_extraction"
+
 
 class OperatorProcessingJobResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -91,6 +106,9 @@ class SourceExtractionSegmentsResponse(BaseModel):
     extraction_method: str
     source_text_quality_state: Literal[
         "ocr_human_source_comparison_required", "not_an_ocr_extraction"
+    ]
+    pdf_signature_check_state: Literal[
+        "not_checked", "not_a_pdf_extraction"
     ]
     review_disposition: Literal["machine_unverified"]
     total_segments: int

@@ -385,6 +385,7 @@ export interface DocumentProcessingSummary {
     text_hash: string | null;
     warnings: unknown[] | null;
     source_text_quality_state: "ocr_human_source_comparison_required" | "not_an_ocr_extraction";
+    pdf_signature_check_state: "not_checked" | "not_a_pdf_extraction";
   } | null;
   operator_status: OperatorProcessingStatus;
   can_retry: boolean;
@@ -401,6 +402,7 @@ export interface SourceExtractionSegmentsResponse {
   extraction_text_hash: string | null;
   extraction_method: string;
   source_text_quality_state: "ocr_human_source_comparison_required" | "not_an_ocr_extraction";
+  pdf_signature_check_state: "not_checked" | "not_a_pdf_extraction";
   review_disposition: "machine_unverified";
   total_segments: number;
   offset: number;
