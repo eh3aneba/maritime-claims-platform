@@ -100,3 +100,37 @@ def test_non_pdf_extractions_do_not_imply_pdf_signature_check(method):
     assert extraction.model_dump(mode="json")["pdf_signature_check_state"] == (
         "not_a_pdf_extraction"
     )
+
+
+def test_real_synthetic_pdf_extraction_does_not_claim_signature_authenticity(tmp_path):
+    """Real parser, synthetic blank PDF; not a cryptographic signed-PDF test."""
+    from io import BytesIO
+    from pypdf import PdfWriter
+
+    from app.modules.processing.extractors import extract_document_text
+
+    writer = PdfWriter()
+    writer.add_blank_page(width=612, height=792)
+    stream = BytesIO()
+    writer.write(stream)
+    pdf_path = tmp_path / "synthetic-evidence.pdf"
+    original = stream.getvalue()
+    pdf_path.write_bytes(original)
+
+    result = extract_document_text(pdf_path, enable_ocr=False)
+    assert result.method == "pypdf"
+    assert pdf_path.read_bytes() == original
+    summary = TextExtractionSummary(
+        extraction_method=result.method,
+        extractor_version="2.1",
+        char_count=len(result.combined_text),
+        segment_count=len(result.segments),
+        requires_ocr=result.requires_ocr,
+        text_hash=result.text_hash,
+        warnings=result.warnings,
+    )
+    data = summary.model_dump(mode="json")
+    assert data["pdf_signature_check_state"] == "not_checked"
+    assert data["text_hash"] is None
+    # A successful parser and unchanged source bytes do not establish signer
+    # authenticity; this smoke fixture deliberately contains no real signature.
