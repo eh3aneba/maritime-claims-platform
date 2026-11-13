@@ -13,7 +13,14 @@ COMPOSE = ROOT / "docker-compose.yml"
 class WebLeastPrivilegeContractTests(unittest.TestCase):
     def test_only_final_production_runner_switches_to_stable_uid_gid(self):
         source = DOCKERFILE.read_text(encoding="utf-8")
-        parts = source.split("FROM node:22-alpine3.24 AS runner")
+        image = "node:22-alpine3.24@sha256:1314fb30ec37592d5845e5a160d522c0e680972aa534549940b8d73bde88481a"
+        # The three stages must use the immutable base whose actual final
+        # image was verified; no floating Node tag may reappear in a stage.
+        self.assertEqual(
+            [line for line in source.splitlines() if line.startswith("FROM ")],
+            [f"FROM {image} AS {stage}" for stage in ("deps", "builder", "runner")],
+        )
+        parts = source.split(f"FROM {image} AS runner")
         self.assertEqual(len(parts), 2)
         runtime = parts[1]
         self.assertRegex(runtime, r"(?m)^USER 1000:1000$")
