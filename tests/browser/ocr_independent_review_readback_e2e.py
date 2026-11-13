@@ -42,6 +42,7 @@ def main():
     source = dict(document_id=document, document_version=1, source_file_hash="a" * 64,
         extraction_text_hash="b" * 64, extraction_method="tesseract:eng+fas",
         source_text_quality_state="ocr_human_source_comparison_required",
+        pdf_signature_check_state="not_a_pdf_extraction",
         review_disposition="machine_unverified", total_segments=1, offset=0, limit=5,
         segments=[dict(segment_index=0, locator_type="page", locator_value="1",
             text_preview="Invented incomplete machine clause", source_char_count=34,
@@ -72,7 +73,8 @@ def main():
             body = source
         elif path.endswith("/processing"):
             body = dict(operator_status="completed", processing_release_required=False,
-                text_extraction=dict(source_text_quality_state=source["source_text_quality_state"], text_hash="b" * 64))
+                text_extraction=dict(source_text_quality_state=source["source_text_quality_state"],
+                    pdf_signature_check_state=source["pdf_signature_check_state"], text_hash="b" * 64))
         elif path.endswith("/documents"):
             body = dict(items=[doc], quarantined_items=[])
         elif path.endswith("/facts"):
