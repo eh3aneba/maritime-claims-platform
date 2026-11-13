@@ -195,3 +195,49 @@ def test_unscanned_document_stays_denied_even_after_extraction(tmp_path, monkeyp
     assert denied.json()["detail"] == (
         "Clean, processed, authorized evidence is required for source comparison"
     )
+
+
+def test_synthetic_pdf_worker_and_both_operator_endpoints_never_attest_signatures(
+    tmp_path, monkeypatch
+) -> None:
+    """Real PDF parser, real worker and authenticated API; no signed fixture."""
+    from hashlib import sha256
+    from io import BytesIO
+
+    from pypdf import PdfWriter
+
+    _fake_clean_malware_scan(monkeypatch)
+    ids = seed_claim()
+    configure_storage(tmp_path)
+    login("alpha", "alpha@example.com")
+
+    writer = PdfWriter()
+    writer.add_blank_page(width=612, height=792)
+    buffer = BytesIO()
+    writer.write(buffer)
+    payload = buffer.getvalue()
+    upload = client.post(
+        f"/api/v1/claims/{ids['claim_id']}/documents",
+        files={"file": ("synthetic-only.pdf", payload, "application/pdf")},
+    )
+    assert upload.status_code == 201, upload.text
+    document_id = upload.json()["id"]
+
+    _run_worker()
+    base_url = f"/api/v1/claims/{ids['claim_id']}/documents/{document_id}/processing"
+
+    summary = client.get(base_url)
+    assert summary.status_code == 200, summary.text
+    extraction = summary.json()["text_extraction"]
+    assert extraction["extraction_method"] == "pypdf"
+    assert extraction["pdf_signature_check_state"] == "not_checked"
+    assert extraction["text_hash"] is None
+
+    comparison = client.get(base_url + "/source-segments")
+    assert comparison.status_code == 200, comparison.text
+    record = comparison.json()
+    assert record["source_file_hash"] == sha256(payload).hexdigest()
+    assert record["pdf_signature_check_state"] == "not_checked"
+    assert record["extraction_method"] == "pypdf"
+    assert record["review_disposition"] == "machine_unverified"
+    assert comparison.headers["cache-control"] == "no-store"
