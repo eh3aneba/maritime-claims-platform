@@ -47,7 +47,7 @@ jobs:
           artifacts/maritime-claims-platform.spdx.json
 
       - name: Upload SBOM
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: maritime-claims-platform-sbom
           path: artifacts/maritime-claims-platform.spdx.json
