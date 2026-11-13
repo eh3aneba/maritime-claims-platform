@@ -1,0 +1,71 @@
+# Independent cross-architecture proof for immutable Node Web base (issue #474).
+name: Web ARM64 Base Digest Verification
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "apps/web/Dockerfile"
+      - "apps/web/package*.json"
+      - ".github/workflows/web-base-arm64-pin.yml"
+      - ".grype.yaml"
+
+permissions:
+  contents: read
+
+jobs:
+  web-arm64:
+    name: Native ARM64 Web pinned-base build and High scan
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 40
+    steps:
+      - name: Check out exact PR head
+        uses: actions/checkout@v6
+
+      - name: Require immutable single Node base reference in all stages
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='node:22-alpine3.24@sha256:1314fb30ec37592d5845e5a160d522c0e680972aa534549940b8d73bde88481a'
+          test "$(grep -c '^FROM ' apps/web/Dockerfile)" -eq 3
+          test "$(grep -c "^FROM ${expected} AS " apps/web/Dockerfile)" -eq 3
+          ! grep -Eq '^FROM node:[^@ ]+ AS ' apps/web/Dockerfile
+
+      - name: Build actual native ARM64 Web final image
+        id: build
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = "aarch64"
+          docker build --pull --target runner \
+            --build-arg NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000/api/v1 \
+            --tag maritime-claims-web:arm64-base-pin apps/web
+          test "$(docker image inspect --format '{{.Architecture}}' maritime-claims-web:arm64-base-pin)" = arm64
+          docker run --rm --network none --read-only \
+            --cap-drop ALL --security-opt no-new-privileges --user 1000:1000 \
+            --entrypoint node maritime-claims-web:arm64-base-pin \
+            -e "const fs=require('node:fs'); fs.accessSync('/app/server.js'); console.log('PASS: native ARM64 unprivileged Node web runtime')"
+
+      - name: Scan actual native ARM64 Web final image
+        id: scan-web
+        if: ${{ steps.build.outcome == 'success' }}
+        continue-on-error: true
+        uses: anchore/scan-action@e1165082ffb1fe366ebaf02d8526e7c4989ea9d2 # v7
+        with:
+          image: maritime-claims-web:arm64-base-pin
+          config: .grype.yaml
+          fail-build: true
+          severity-cutoff: high
+          output-format: table
+          cache-db: true
+
+      - name: Enforce native Web build and High scan
+        if: ${{ always() }}
+        env:
+          BUILD_OUTCOME: ${{ steps.build.outcome }}
+          WEB_SCAN_OUTCOME: ${{ steps.scan-web.outcome }}
+        run: |
+          echo "Native ARM64 Web build: $BUILD_OUTCOME"
+          echo "Native ARM64 Web Grype High: $WEB_SCAN_OUTCOME"
+          test "$BUILD_OUTCOME" = success
+          test "$WEB_SCAN_OUTCOME" = success

@@ -180,7 +180,7 @@ jobs:
           image_scan_required=false
           while IFS= read -r changed_path; do
             case "$changed_path" in
-              apps/api/app/*|apps/api/alembic/*|apps/api/build_tools/*|apps/api/requirements.lock|apps/api/pyproject.toml|apps/api/alembic.ini|apps/api/Dockerfile|apps/web/*|.grype.yaml|.github/workflows/supply-chain.yml|.github/workflows/sqlite-free-arm64-experiment.yml|scripts/sqlite_free_runtime_probe.py)
+              apps/api/app/*|apps/api/alembic/*|apps/api/build_tools/*|apps/api/requirements.lock|apps/api/pyproject.toml|apps/api/alembic.ini|apps/api/Dockerfile|apps/web/*|.grype.yaml|.github/workflows/supply-chain.yml|.github/workflows/sqlite-free-arm64-experiment.yml|.github/workflows/web-base-arm64-pin.yml|scripts/sqlite_free_runtime_probe.py)
                 image_scan_required=true
                 break
                 ;;
