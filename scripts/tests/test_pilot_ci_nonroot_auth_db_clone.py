@@ -177,35 +177,58 @@ class NonrootIsolatedAuthClonePolicy(unittest.TestCase):
 
     def test_worker_has_readable_font_fallback_for_scanned_pdf_fixture(self):
         dockerfile = (ROOT / "apps" / "api" / "Dockerfile").read_text(encoding="utf-8")
-        # Discover a consistent patch-pinned runtime instead of locking the test
-        # to a formerly vulnerable patch release. Require the security-fixed
-        # Python 3.14.10 baseline (or a newer 3.14 patch).
+        # Only independently supported security-patched release lines. Python
+        # 3.14.10 has CVE-2026-119170; 3.14.9 predates critical CA distrust.
+        # Do not admit either release or an unreviewed Python major upgrade.
         from_lines = [line for line in dockerfile.splitlines() if line.startswith("FROM python:")]
-        self.assertEqual(len(from_lines), 4)
+        self.assertEqual(len(from_lines), 3)
+        self.assertIn(
+            "FROM alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf AS python-runtime",
+            dockerfile,
+        )
+        self.assertIn("COPY --from=python-stdlib-without-sqlite /usr/local /usr/local", dockerfile)
+        self.assertIn("! apk info -e sqlite-libs", dockerfile)
         tags = {line.split()[1] for line in from_lines}
         self.assertEqual(len(tags), 1)
         python_image = next(iter(tags))
-        match = re.fullmatch(r"python:3\.14\.(\d+)-alpine3\.24", python_image)
+        match = re.fullmatch(
+            r"python:3\.(13|14)\.(\d+)-alpine3\.24@sha256:([0-9a-f]{64})",
+            python_image,
+        )
         self.assertIsNotNone(match)
-        self.assertGreaterEqual(int(match.group(1)), 10)
-        worker = dockerfile.split(f"FROM {python_image} AS worker\n", 1)[1].split(
+        minor, patch = (int(value) for value in match.group(1, 2))
+        self.assertEqual(
+            match.group(3),
+            "9ef1a599f863231c3d91e941389bfdc4a2d6070557243d54df1a4e57015b960e",
+        )
+        self.assertTrue(
+            (minor == 13 and patch >= 18) or (minor == 14 and patch >= 11),
+            "Python runtime must be a reviewed security-patched 3.13 or 3.14 release",
+        )
+        self.assertIn(
+            f"/usr/local/lib/python3.{minor}/lib-dynload",
+            dockerfile,
+        )
+        worker = dockerfile.split("FROM python-runtime AS worker\n", 1)[1].split(
             "\nFROM base AS api", 1
         )[0]
         self.assertIn("        font-liberation \\", worker)
         self.assertIn("test -r /usr/share/fonts/liberation/LiberationSans-Regular.ttf", worker)
         self.assertIn("fc-match -f '%{family}' Helvetica | grep -F 'Liberation Sans'", worker)
         self.assertIn("RUN python --version", worker)
-        base = dockerfile.split(f"FROM {python_image} AS base\n", 1)[1].split(
-            f"FROM {python_image} AS worker\n", 1
+        base = dockerfile.split("FROM python-runtime AS base\n", 1)[1].split(
+            "FROM python-runtime AS worker\n", 1
         )[0]
         self.assertNotIn("font-liberation", base)
 
     def test_worker_runtime_excludes_vulnerable_unused_glib(self):
         """Do not ship the optional Poppler GLib bindings into the OCR runtime."""
         dockerfile = (ROOT / "apps" / "api" / "Dockerfile").read_text(encoding="utf-8")
-        poppler = dockerfile.split("FROM python:", 2)[2].split(
-            "\nFROM python:", 1
+        poppler = dockerfile.split(" AS worker-tools-builder\n", 1)[1].split(
+            "\nFROM python-runtime AS base\n", 1
         )[0]
+        self.assertIn("-DENABLE_NSS3=OFF", poppler)
+        self.assertNotRegex(poppler, r"(?m)^\s+nss-dev \\$")
         self.assertIn("-DENABLE_GLIB=OFF", poppler)
         self.assertIn("-DENABLE_GOBJECT_INTROSPECTION=OFF", poppler)
 
@@ -215,11 +238,17 @@ class NonrootIsolatedAuthClonePolicy(unittest.TestCase):
         runtime_packages = worker.split("RUN /sbin/apk upgrade", 1)[1].split(
             "    && /sbin/apk info -v", 1
         )[0]
-        self.assertNotRegex(runtime_packages, r"(?m)^\s+(glib|pango) \\$")
+        self.assertNotRegex(runtime_packages, r"(?m)^\s+(glib|pango|nss) \\$")
+        # libtiff is compiled with Zstandard enabled in the builder, so the
+        # copy-only runtime must explicitly provide the signed stable library.
+        self.assertIn("        zstd-libs \\", runtime_packages)
+        self.assertIn("ctypes.CDLL('/opt/ocr/lib/libtiff.so.6')", worker)
 
         # An unanticipated transitive apk dependency fails the Docker build.
         for guard in (
             "&& ! /sbin/apk info -e glib",
+            "&& ! /sbin/apk info -e nss",
+            "&& ! /sbin/apk info -e sqlite-libs",
             "&& ! /sbin/apk info -e pango",
             "&& test ! -e /opt/poppler/lib/libpoppler-glib.so",
             "&& ldd /opt/ocr/bin/tesseract",

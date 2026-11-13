@@ -1,4 +1,23 @@
-FROM python:3.14.10-alpine3.24 AS python-builder
+# Isolation experiment for #876: the final image must not inherit Python's SQLite layers.
+# The official Python image is used ONLY as a source of the sanitized /usr/local tree.
+FROM python:3.13.18-alpine3.24@sha256:9ef1a599f863231c3d91e941389bfdc4a2d6070557243d54df1a4e57015b960e AS python-stdlib-without-sqlite
+RUN set -eu; \
+    find /usr/local/lib/python3.13/lib-dynload -maxdepth 1 -type f -name '_sqlite3*.so' -delete; \
+    ! find /usr/local/lib/python3.13/lib-dynload -maxdepth 1 -name '_sqlite3*.so' -print -quit | grep -q .
+
+FROM alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf AS python-runtime
+COPY --from=python-stdlib-without-sqlite /usr/local /usr/local
+RUN set -eux; \
+    apk add --no-cache ca-certificates 'zlib>=1.3.2-r1' pax-utils; \
+    runDeps="$(scanelf --needed --nobanner --format '%n#p' --recursive /usr/local \
+      | tr ',' '\n' | sort -u \
+      | awk 'NF && system("[ -e /usr/local/lib/" $1 " ]") != 0 { print "so:" $1 }')"; \
+    apk add --no-cache $runDeps; \
+    apk del pax-utils; \
+    ! apk info -e sqlite-libs; \
+    python -c "import ssl, uuid, zlib, ctypes; assert uuid.uuid4().version == 4"
+
+FROM python:3.13.18-alpine3.24@sha256:9ef1a599f863231c3d91e941389bfdc4a2d6070557243d54df1a4e57015b960e AS python-builder
 
 WORKDIR /app
 
@@ -17,7 +36,7 @@ RUN python -m venv /opt/venv \
     && /opt/venv/bin/python -m pip check \
     && /opt/venv/bin/python -c "import alembic, fastapi, sqlalchemy; print('venv-ready')"
 
-FROM python:3.14.10-alpine3.24 AS worker-tools-builder
+FROM python:3.13.18-alpine3.24@sha256:9ef1a599f863231c3d91e941389bfdc4a2d6070557243d54df1a4e57015b960e AS worker-tools-builder
 
 ENV PKG_CONFIG_PATH="/opt/ocr/lib/pkgconfig:/opt/poppler/lib/pkgconfig" \
     CPPFLAGS="-I/opt/ocr/include" \
@@ -44,7 +63,6 @@ RUN /sbin/apk add --no-cache \
         libtool \
         libwebp-dev \
         libxml2-dev \
-        nss-dev \
         openjpeg-dev \
         pango-dev \
         samurai \
@@ -104,6 +122,7 @@ RUN set -eu; \
         -DCMAKE_PREFIX_PATH=/opt/ocr \
         -DCMAKE_BUILD_TYPE=RelWithDebInfo \
         -DENABLE_GPGME=OFF \
+        -DENABLE_NSS3=OFF \
         -DENABLE_GLIB=OFF \
         -DENABLE_GOBJECT_INTROSPECTION=OFF \
         -DENABLE_LIBCURL=OFF \
@@ -119,7 +138,7 @@ RUN set -eu; \
     && cmake --install /src/poppler/build \
     && rm -f /tmp/poppler.tar.xz
 
-FROM python:3.14.10-alpine3.24 AS base
+FROM python-runtime AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -131,16 +150,20 @@ RUN /sbin/apk upgrade --no-cache libssl3 libcrypto3 zlib \
     && /sbin/apk add --no-cache 'zlib>=1.3.2-r1' libuuid \
     && /sbin/apk info -v libssl3 libcrypto3 zlib \
     && python -c "import _uuid, uuid, zlib; value = uuid.uuid4(); assert value.version == 4; print(value, zlib.ZLIB_VERSION)" \
-    && rm -rf /usr/local/lib/python3.14/site-packages/pip* /usr/local/bin/pip*
+    && rm -rf /usr/local/lib/python3.13/site-packages/pip* /usr/local/bin/pip*
 
 COPY --from=python-builder /opt/venv /opt/venv
+RUN set -eu; \
+    ! /sbin/apk info -e sqlite-libs; \
+    ! find /usr/lib /usr/local /opt/venv \( -name 'libsqlite3.so*' -o -name '_sqlite3*.so' \) -print -quit | grep -q .; \
+    python -c "import importlib.util, alembic, fastapi, sqlalchemy, psycopg; assert importlib.util.find_spec('_sqlite3') is None"
 COPY pyproject.toml alembic.ini ./
 COPY alembic ./alembic
 COPY app ./app
 
 EXPOSE 8000
 
-FROM python:3.14.10-alpine3.24 AS worker
+FROM python-runtime AS worker
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -167,17 +190,19 @@ RUN /sbin/apk upgrade --no-cache libssl3 libcrypto3 zlib \
         libwebp \
         libwebpmux \
         libxml2 \
-        nss \
         openjpeg \
+        zstd-libs \
     && /sbin/apk info -v libssl3 libcrypto3 zlib \
     && python -c "import hashlib,pathlib,urllib.request; files=[('eng.traineddata',23466654,'f4744c201359d02ced6914c77f0de68ee9bbdd74'),('fas.traineddata',561272,'a0b9843164d928caad5afb0bd6973c964ba5b0b9')]; base='https://raw.githubusercontent.com/tesseract-ocr/tessdata/ced78752cc61322fb554c280d13360b35b8684e4/'; out=pathlib.Path('/usr/share/tessdata'); out.mkdir(parents=True,exist_ok=True); [(lambda name,size,want: (lambda data: ((_ for _ in ()).throw(AssertionError(len(data))) if len(data)!=size else None, (_ for _ in ()).throw(AssertionError('git sha mismatch')) if hashlib.sha1(b'blob '+str(len(data)).encode()+b'\\0'+data).hexdigest()!=want else None, print(name+'.sha256='+hashlib.sha256(data).hexdigest()), (out/name).write_bytes(data)))(urllib.request.urlopen(base+name,timeout=120).read()))(name,size,want) for name,size,want in files]" \
-    && rm -rf /usr/local/lib/python3.14/site-packages/pip* /usr/local/bin/pip*
+    && rm -rf /usr/local/lib/python3.13/site-packages/pip* /usr/local/bin/pip*
 
 COPY --from=worker-tools-builder /opt/ocr /opt/ocr
 COPY --from=worker-tools-builder /opt/poppler /opt/poppler
 COPY --from=python-builder /opt/venv /opt/venv
 
 RUN python --version \
+    && test -r /usr/lib/libzstd.so.1 \
+    && python -c "import ctypes; ctypes.CDLL('/opt/ocr/lib/libtiff.so.6'); print('libtiff-linked-zstd-ready')" \
     && test -r /usr/share/fonts/liberation/LiberationSans-Regular.ttf \
     && fc-match -f '%{family}' Helvetica | grep -F 'Liberation Sans' \
     && tesseract --version | head -n 2 \
@@ -186,6 +211,9 @@ RUN python --version \
     && ldd /opt/ocr/bin/tesseract \
     && ldd /opt/poppler/bin/pdftotext \
     && ldd /opt/poppler/bin/pdftoppm \
+    && ! /sbin/apk info -e nss \
+    && ! /sbin/apk info -e sqlite-libs \
+    && ! find /usr/lib /usr/local /opt/venv /opt/ocr /opt/poppler \( -name 'libsqlite3.so*' -o -name '_sqlite3*.so' \) -print -quit | grep -q . \
     && ! /sbin/apk info -e glib \
     && ! /sbin/apk info -e pango \
     && test ! -e /opt/poppler/lib/libpoppler-glib.so \
