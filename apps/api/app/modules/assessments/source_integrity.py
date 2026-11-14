@@ -17,7 +17,10 @@ from app.modules.claims.models import Claim
 from app.modules.documents.models import Document
 from app.modules.financial.models import CostItem, FinancialFlag, ReserveHistory
 from app.modules.intelligence.models import AIReviewStatus, DocumentExtraction
-from app.modules.processing.ocr_discrepancy_receipts import current_source_discrepancy_receipts
+from app.modules.processing.ocr_discrepancy_receipts import (
+    bound_fact_source_discrepancy_receipts,
+    current_source_discrepancy_receipts,
+)
 from app.modules.rules.models import ClaimDocumentRequirement, ClaimIssue
 from app.modules.tasks.models import ClaimTask, TaskStatus
 
@@ -188,13 +191,13 @@ def assessment_unverified_ocr_fact_review_hold(
     if not facts:
         return False
     document_ids = {fact.source_document_id for fact in facts}
+    # The fact remains bound to the original source document/version even
+    # after a later file supersedes or logically deletes that document. Such
+    # a lifecycle change never resolves a reported OCR discrepancy.
     documents = _claim_rows(
-        db, Document, claim,
-        Document.id.in_(document_ids),
-        Document.deleted_at.is_(None),
-        Document.is_current.is_(True),
+        db, Document, claim, Document.id.in_(document_ids),
     )
-    return bool(current_source_discrepancy_receipts(
+    return bool(bound_fact_source_discrepancy_receipts(
         db,
         organization_id=claim.organization_id,
         claim_id=claim.id,

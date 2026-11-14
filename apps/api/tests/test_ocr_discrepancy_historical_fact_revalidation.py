@@ -530,3 +530,60 @@ def test_approved_assessment_claim_pack_reports_later_bound_ocr_dispute_without_
     assert stored.status_code == 200, stored.text
     assert stored.json()["approved_content_hash"] == digest
     assert stored.json()["status"] == "approved"
+
+
+def test_superseding_a_disputed_source_does_not_clear_bound_assessment_hold() -> None:
+    """Changing the current document must not launder an older bound AI fact."""
+    ids, report = _setup_ocr_reviewed_fact()
+    from types import SimpleNamespace
+    from app.modules.assessments.source_integrity import (
+        assessment_unverified_ocr_fact_review_hold,
+        build_assessment_source_snapshot,
+    )
+
+    base = f"/api/v1/claims/{ids['claim_id']}/initial-assessment"
+    baseline = client.post(f"{base}/generate", json={
+        "allow_if_not_ready": True,
+        "override_reason": "Fictional baseline before supersession and OCR allegation.",
+    })
+    assert baseline.status_code == 200, baseline.text
+    assessment = baseline.json()
+
+    reported = client.post(
+        f"/api/v1/claims/{ids['claim_id']}/documents/{ids['document_id']}"
+        "/processing/source-discrepancies",
+        json=report,
+    )
+    assert reported.status_code == 201, reported.text
+    before = client.get(f"{base}/versions/{assessment['id']}")
+    assert before.status_code == 200, before.text
+    assert before.json()["unverified_ocr_fact_source_review_hold"] is True
+
+    # Simulate a later replacement of this source: the original fact and its
+    # approval are not edited, but the original version stops being current.
+    with TestingSessionLocal() as db:
+        document = db.get(Document, UUID(ids["document_id"]))
+        assert document is not None
+        document.is_current = False
+        document.superseded_at = datetime.now(UTC)
+        db.commit()
+
+    historical = client.get(f"{base}/versions/{assessment['id']}")
+    assert historical.status_code == 200, historical.text
+    assert historical.json()["source_state"] == "stale"
+    assert historical.json()["unverified_ocr_fact_source_review_hold"] is True
+
+    # A newly constructed source snapshot does not include this old document
+    # in its claim-wide current-source receipts, but the still-bound AI fact's
+    # original OCR allegation remains unresolved and requires human review.
+    with TestingSessionLocal() as db:
+        claim = db.get(Claim, UUID(ids["claim_id"]))
+        assert claim is not None
+        snapshot, _ = build_assessment_source_snapshot(db, claim=claim)
+        assert "reported_ocr_source_discrepancies" not in snapshot["sources"]
+        assert assessment_unverified_ocr_fact_review_hold(
+            db, claim=claim, assessment=SimpleNamespace(source_snapshot=snapshot),
+        ) is True
+    fact = _get_facts(ids)
+    assert fact["source_revalidation_required"] is True
+    assert fact["source_revalidation_reason"] == "source_document_not_current"
