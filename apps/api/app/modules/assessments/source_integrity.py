@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, time
+from datetime import UTC, date, datetime, time
 from decimal import Decimal
 import hashlib
 import json
@@ -147,6 +147,61 @@ def build_assessment_source_snapshot(db: Session, *, claim: Claim) -> tuple[dict
     return snapshot, canonical_hash(snapshot)
 
 
+
+def assessment_unverified_ocr_fact_review_hold(
+    db: Session, *, claim: Claim, assessment: Any,
+) -> bool:
+    """Read-only hold for AI facts actually bound into this assessment snapshot.
+
+    A matching operator allegation triggers review, never a conclusion that
+    the original approved fact is false. Unrelated source documents and facts
+    added after this assessment was generated must not spread the hold.
+    """
+    snapshot = assessment.source_snapshot
+    if type(snapshot) is not dict:
+        return False
+    sources = snapshot.get("sources")
+    if type(sources) is not dict:
+        return False
+    bound = sources.get("claim_facts")
+    if type(bound) is not list:
+        return False
+    bound_states = {
+        row["id"]: row["row_hash"]
+        for row in bound
+        if (
+            type(row) is dict
+            and type(row.get("id")) is str
+            and type(row.get("row_hash")) is str
+        )
+    }
+    if not bound_states:
+        return False
+    # Do not attach a later-edited current fact's different source to an
+    # older assessment simply because the same canonical fact ID was reused.
+    facts = [
+        row for row in _claim_rows(
+            db, ClaimFact, claim, ClaimFact.provenance_kind == "ai_review"
+        )
+        if bound_states.get(str(row.id)) == _row_state(row)["row_hash"]
+    ]
+    if not facts:
+        return False
+    document_ids = {fact.source_document_id for fact in facts}
+    documents = _claim_rows(
+        db, Document, claim,
+        Document.id.in_(document_ids),
+        Document.deleted_at.is_(None),
+        Document.is_current.is_(True),
+    )
+    return bool(current_source_discrepancy_receipts(
+        db,
+        organization_id=claim.organization_id,
+        claim_id=claim.id,
+        documents=documents,
+    ))
+
+
 def assessment_source_state(
     db: Session,
     *,
@@ -156,8 +211,15 @@ def assessment_source_state(
     if not assessment.source_fingerprint:
         return "legacy_unbound", None
     _, current_fingerprint = build_assessment_source_snapshot(db, claim=claim)
+    # A stored fingerprint is not sufficient if the immutable source snapshot
+    # bound to that fingerprint was modified or replaced afterwards.
+    snapshot = assessment.source_snapshot
+    identity_intact = (
+        type(snapshot) is dict
+        and canonical_hash(snapshot) == assessment.source_fingerprint
+    )
     return (
-        "current" if current_fingerprint == assessment.source_fingerprint else "stale",
+        "current" if identity_intact and current_fingerprint == assessment.source_fingerprint else "stale",
         current_fingerprint,
     )
 
@@ -186,6 +248,29 @@ def assert_assessment_source_current(
                 "Reload the assessment before continuing."
             ),
         )
+    # The source-report writer takes this same tenant/claim PostgreSQL row
+    # lock. Serialize the last freshness/dispute check with a new report so a
+    # concurrent report cannot slip between our check and approval commit.
+    locked_claim_id = db.scalar(
+        select(Claim.id).where(
+            Claim.organization_id == claim.organization_id,
+            Claim.id == claim.id,
+        ).with_for_update()
+    )
+    if locked_claim_id is None:
+        raise HTTPException(status_code=404, detail="Claim not found")
+    # Reject corrupted/replaced saved snapshots, including cases where the
+    # caller's fingerprint happens to match today's live source state.
+    snapshot = assessment.source_snapshot
+    if type(snapshot) is not dict or canonical_hash(snapshot) != stored:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "The assessment's saved source snapshot no longer matches its "
+                "immutable bound fingerprint; source integrity review is required "
+                "before section review or approval."
+            ),
+        )
     _, current = build_assessment_source_snapshot(db, claim=claim)
     if current != stored:
         raise HTTPException(
@@ -195,11 +280,40 @@ def assert_assessment_source_current(
                 "generated. This assessment is now stale; generate a new version before reviewing or approving it."
             ),
         )
+    if assessment_unverified_ocr_fact_review_hold(
+        db, claim=claim, assessment=assessment,
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Unresolved operator-reported OCR source discrepancy affects "
+                "a human-approved AI Claim Fact used in this assessment. "
+                "A newer source fingerprint or new assessment version does "
+                "not resolve the dispute; independent source review is required "
+                "before further section review or assessment approval."
+            ),
+        )
     return current
 
 
-def approved_assessment_content_hash(assessment: Any, sections: list[Any]) -> str:
-    """Digest only persisted approved assessment content and its bound source identity."""
+def approved_assessment_content_hash(
+    assessment: Any, sections: list[Any], *, assume_utc_for_naive_approval: bool = False,
+) -> str:
+    """Digest persisted approved content. Preserve the historical hash format.
+
+    SQLite drops timezone information from timestamps on reload; the approval
+    timestamp was written in UTC while reviewed section timestamps were already
+    reloaded from storage before approval. The opt-in read-side compatibility
+    mode restores UTC *only* to a naive approval timestamp, not to the sections.
+    It never rewrites approved facts, hashes or timestamps in the database.
+    """
+    approved_at = assessment.approved_at
+    if (
+        assume_utc_for_naive_approval
+        and isinstance(approved_at, datetime)
+        and approved_at.tzinfo is None
+    ):
+        approved_at = approved_at.replace(tzinfo=UTC)
 
     payload = {
         "assessment_id": assessment.id,
@@ -213,7 +327,7 @@ def approved_assessment_content_hash(assessment: Any, sections: list[Any]) -> st
         "generation_override_reason": assessment.generation_override_reason,
         "source_fingerprint": assessment.source_fingerprint,
         "approved_by_id": assessment.approved_by_id,
-        "approved_at": assessment.approved_at,
+        "approved_at": approved_at,
         "sections": [
             {
                 "id": section.id,
