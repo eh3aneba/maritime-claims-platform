@@ -6,7 +6,11 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.modules.assessments.models import InitialAssessment
-from app.modules.assessments.source_integrity import build_assessment_source_snapshot
+from app.modules.assessments.source_integrity import (
+    assessment_unverified_ocr_fact_review_hold,
+    build_assessment_source_snapshot,
+    canonical_hash,
+)
 from app.modules.claims.models import Claim
 
 
@@ -44,6 +48,12 @@ def list_assessment_history(db: Session, *, claim: Claim) -> dict[str, Any]:
     for row in rows:
         if not row.source_fingerprint:
             source_state = "legacy_unbound"
+        elif (
+            type(row.source_snapshot) is not dict
+            or canonical_hash(row.source_snapshot) != row.source_fingerprint
+        ):
+            # Do not report a corrupt saved lineage as source-current.
+            source_state = "stale"
         elif row.source_fingerprint == current_source_fingerprint:
             source_state = "current"
         else:
@@ -56,6 +66,11 @@ def list_assessment_history(db: Session, *, claim: Claim) -> dict[str, Any]:
                 "is_preliminary": row.is_preliminary,
                 "is_latest": row.version == latest_version,
                 "source_state": source_state,
+                "unverified_ocr_fact_source_review_hold": (
+                    assessment_unverified_ocr_fact_review_hold(
+                        db, claim=claim, assessment=row,
+                    )
+                ),
                 "source_fingerprint": row.source_fingerprint,
                 "approved_content_hash": row.approved_content_hash,
                 "generated_by_id": row.generated_by_id,

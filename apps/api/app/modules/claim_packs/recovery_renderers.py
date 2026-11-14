@@ -36,6 +36,8 @@ def _assessment_lines(snapshot: dict[str, Any]) -> list[str]:
             f"Status: {_safe(assessment.get('status'))}",
             f"Approved at: {_safe(assessment.get('approved_at'))}",
             f"Source state at export: {_safe(assessment.get('source_state_at_export'))}",
+            "Unverified OCR source review hold for bound AI facts at export: "
+            f"{_safe(assessment.get('unverified_ocr_fact_source_review_hold_at_export'))}",
             f"Bound source fingerprint: {_safe(assessment.get('source_fingerprint'))}",
             f"Approved content digest: {_safe(assessment.get('approved_content_hash'))}",
             "",
@@ -43,6 +45,13 @@ def _assessment_lines(snapshot: dict[str, Any]) -> list[str]:
             "historical version stale but never rewrites its approved content or digest.",
         ]
     )
+    if assessment.get("unverified_ocr_fact_source_review_hold_at_export"):
+        lines.append(
+            "WARNING: An operator-reported OCR source discrepancy remains unverified "
+            "for an AI ClaimFact bound to this approved historical assessment. "
+            "Independent original-source review is required; no automatic "
+            "fact correction or reversal of earlier human approval occurred."
+        )
     return lines
 
 
@@ -240,7 +249,7 @@ def _prepare_assessment_sheet(workbook, snapshot: dict[str, Any]) -> None:
     if "Approved Assessment" not in workbook.sheetnames:
         return
     sheet = workbook["Approved Assessment"]
-    sheet.insert_rows(1, amount=9)
+    sheet.insert_rows(1, amount=10)
     assessment = snapshot.get("approved_assessment")
     rows = [
         ("Control", "Digest-bound approved assessment handoff only"),
@@ -248,6 +257,16 @@ def _prepare_assessment_sheet(workbook, snapshot: dict[str, Any]) -> None:
         ("Version", f"v{assessment.get('version')}" if assessment else "None"),
         ("Classification", assessment.get("classification") if assessment else "None"),
         ("Source state at export", assessment.get("source_state_at_export") if assessment else "None"),
+        (
+            "Unverified OCR source review hold at export",
+            (
+                "Reported, unverified — independent original-source review required; "
+                "no automatic reversal of historical approval"
+                if assessment and assessment.get("unverified_ocr_fact_source_review_hold_at_export")
+                else "No matching bound-fact OCR source report at export"
+                if assessment else "No eligible approved assessment"
+            ),
+        ),
         ("Source fingerprint", assessment.get("source_fingerprint") if assessment else "None"),
         ("Approved content digest", assessment.get("approved_content_hash") if assessment else "None"),
         ("Control notice", assessment.get("disclaimer") if assessment else "Draft, under-review and undigested legacy assessments are excluded."),
@@ -256,7 +275,7 @@ def _prepare_assessment_sheet(workbook, snapshot: dict[str, Any]) -> None:
         sheet.cell(index, 1, row[0])
         sheet.cell(index, 2, row[1])
         sheet.cell(index, 1).font = Font(bold=True)
-    sheet.freeze_panes = "A11"
+    sheet.freeze_panes = "A12"
     for row in sheet.iter_rows():
         for cell in row:
             cell.alignment = Alignment(vertical="top", wrap_text=True)

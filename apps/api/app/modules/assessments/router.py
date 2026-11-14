@@ -17,7 +17,9 @@ from app.modules.assessments.schemas import (
     AssessmentSectionReview,
 )
 from app.modules.assessments.service import approve_assessment, generate_assessment, get_assessment, review_section
-from app.modules.assessments.source_integrity import assessment_source_state
+from app.modules.assessments.source_integrity import (
+    assessment_source_state, assessment_unverified_ocr_fact_review_hold,
+)
 from app.modules.auth.dependencies import CurrentUser, require_roles
 from app.modules.claims.security import get_claim_for_tenant
 from app.modules.pilot.service import record_active_event
@@ -49,6 +51,9 @@ def _response(db: Session, claim, assessment, sections):
         source_fingerprint=assessment.source_fingerprint,
         current_source_fingerprint=current_source_fingerprint,
         source_state=source_state,
+        unverified_ocr_fact_source_review_hold=assessment_unverified_ocr_fact_review_hold(
+            db, claim=claim, assessment=assessment,
+        ),
         approved_content_hash=assessment.approved_content_hash,
         is_latest=assessment.version == latest_version,
         latest_version=latest_version,

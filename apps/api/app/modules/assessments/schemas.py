@@ -60,6 +60,9 @@ class AssessmentRead(BaseModel):
     source_fingerprint: str | None
     current_source_fingerprint: str | None
     source_state: AssessmentSourceState
+    # Operator allegation concerning an AI fact bound into this version;
+    # not an independent verification or reversal of human approval.
+    unverified_ocr_fact_source_review_hold: bool = False
     approved_content_hash: str | None
     is_latest: bool
     latest_version: int
@@ -76,6 +79,7 @@ class AssessmentHistoryItem(BaseModel):
     is_preliminary: bool
     is_latest: bool
     source_state: AssessmentSourceState
+    unverified_ocr_fact_source_review_hold: bool = False
     source_fingerprint: str | None
     approved_content_hash: str | None
     generated_by_id: UUID | None

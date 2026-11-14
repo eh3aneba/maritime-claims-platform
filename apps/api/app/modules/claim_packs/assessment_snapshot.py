@@ -2,11 +2,16 @@ from __future__ import annotations
 
 from typing import Any
 
+from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.modules.assessments.models import AssessmentSection, AssessmentStatus, InitialAssessment
-from app.modules.assessments.source_integrity import assessment_source_state
+from app.modules.assessments.source_integrity import (
+    approved_assessment_content_hash,
+    assessment_source_state,
+    assessment_unverified_ocr_fact_review_hold,
+)
 from app.modules.claims.models import Claim
 
 
@@ -51,6 +56,25 @@ def build_approved_assessment_handoff(db: Session, *, claim: Claim) -> dict[str,
             .order_by(AssessmentSection.sort_order.asc(), AssessmentSection.section_key.asc())
         )
     )
+    # A stored hash's mere presence cannot attest that approved sections
+    # still match it. Recompute from the exact tenant-scoped persisted rows;
+    # never export altered content under an older human approval. The bounded
+    # SQLite compatibility check only restores the originally UTC approval
+    # timestamp after that backend has discarded its timezone on reload.
+    digest = approved_assessment_content_hash(assessment, sections)
+    if digest != assessment.approved_content_hash and (
+        approved_assessment_content_hash(
+            assessment, sections, assume_utc_for_naive_approval=True,
+        ) != assessment.approved_content_hash
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "The approved assessment content no longer matches its saved approval digest. "
+                "Claim Pack export is blocked pending independent integrity review; "
+                "historical approvals and source records have not been modified."
+            ),
+        )
     source_state, current_source_fingerprint = assessment_source_state(
         db,
         claim=claim,
@@ -69,6 +93,13 @@ def build_approved_assessment_handoff(db: Session, *, claim: Claim) -> dict[str,
         "blocking_items": list(assessment.blocking_items or []),
         "source_fingerprint": assessment.source_fingerprint,
         "source_state_at_export": source_state,
+        # Read-time, snapshot-bound operator allegation; not a change to
+        # the underlying approved assessment or approved-content digest.
+        "unverified_ocr_fact_source_review_hold_at_export": (
+            assessment_unverified_ocr_fact_review_hold(
+                db, claim=claim, assessment=assessment,
+            )
+        ),
         "current_source_fingerprint_at_export": current_source_fingerprint,
         "approved_content_hash": assessment.approved_content_hash,
         "approved_by_id": str(assessment.approved_by_id) if assessment.approved_by_id else None,

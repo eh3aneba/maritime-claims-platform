@@ -1,11 +1,16 @@
 from datetime import UTC, datetime
 from io import BytesIO
 
+import pytest
+from fastapi import HTTPException
 from openpyxl import load_workbook
+from sqlalchemy import select
 
+from app.modules.assessments.models import InitialAssessment
 from app.modules.assessments.service import approve_assessment, generate_assessment, get_assessment, review_section
 from app.modules.claim_packs.recovery_renderers import render_xlsx
-from app.modules.claim_packs.recovery_service import build_claim_pack_snapshot
+from app.modules.claim_packs.models import ClaimPackExport, ClaimPackFormat
+from app.modules.claim_packs.recovery_service import build_claim_pack_snapshot, generate_claim_pack
 from app.modules.claims.models import Claim
 from app.modules.users.models import User
 from tests.db_harness import TestingSessionLocal, reset_database
@@ -87,6 +92,8 @@ def test_claim_pack_uses_only_digest_bound_approved_assessment_and_preserves_sta
         assert handoff["approved_content_hash"] == digest
         assert handoff["source_fingerprint"] == approved.source_fingerprint
         assert handoff["source_state_at_export"] == "current"
+        assert handoff["unverified_ocr_fact_source_review_hold_at_export"] is False
+        assert current_snapshot["summary"]["approved_assessment_unverified_ocr_fact_source_review_hold_at_export"] is False
         assert handoff["sections"]
 
         claim.incident_description = "Turbocharger failure with later reviewed source-state update"
@@ -94,6 +101,8 @@ def test_claim_pack_uses_only_digest_bound_approved_assessment_and_preserves_sta
         stale_snapshot = _snapshot(db, claim, user)
         stale_handoff = stale_snapshot["approved_assessment"]
         assert stale_handoff["source_state_at_export"] == "stale"
+        # Generic historical staleness does not fabricate a matching OCR allegation.
+        assert stale_handoff["unverified_ocr_fact_source_review_hold_at_export"] is False
         assert stale_handoff["approved_content_hash"] == digest
         assert stale_handoff["source_fingerprint"] == approved.source_fingerprint
         assert stale_snapshot["summary"]["approved_assessment_source_state_at_export"] == "stale"
@@ -115,6 +124,8 @@ def test_claim_pack_uses_only_digest_bound_approved_assessment_and_preserves_sta
         assert "Approved content digest" in values
         assert digest in values
         assert "Source state at export" in values
+        assert "Unverified OCR source review hold at export" in values
+        assert "No matching bound-fact OCR source report at export" in values
         assert "stale" in values
 
 
@@ -131,3 +142,67 @@ def test_approved_row_without_digest_is_excluded_instead_of_fabricating_integrit
         assert snapshot["approved_assessment"] is None
         assert snapshot["summary"]["approved_assessment_version"] is None
         assert snapshot["summary"]["approved_assessment_content_hash"] is None
+
+
+def test_modified_approved_section_fails_closed_before_creating_new_claim_pack() -> None:
+    """An existing digest must not launder a later database-side text change."""
+    claim_id, user_id = seed()
+    with TestingSessionLocal() as db:
+        claim = db.get(Claim, claim_id)
+        user = db.get(User, user_id)
+        approved = _approve_current(db, claim, user)
+        approved_id = approved.id
+        old_digest = approved.approved_content_hash
+
+        # Force a fresh database read, including SQLite's naive timestamp
+        # representation, to cover legacy approval digests without a migration.
+        db.expire_all()
+        valid = _snapshot(db, claim, user)
+        assert valid["approved_assessment"]["approved_content_hash"] == old_digest
+        persisted, sections = get_assessment(db, claim=claim, assessment_id=approved_id)
+        assert persisted is not None and sections
+        original = sections[0].approved_text
+        sections[0].approved_text = (original or "") + "\nUNREVIEWED SOURCE CHANGE"
+        db.commit()
+
+        with pytest.raises(HTTPException) as blocked:
+            _snapshot(db, claim, user)
+        assert blocked.value.status_code == 409
+        assert "approval digest" in str(blocked.value.detail)
+
+        # The actual export service must fail *before* file storage or a new
+        # ClaimPackExport record can be created. Prior records are untouched.
+        with pytest.raises(HTTPException) as blocked_export:
+            generate_claim_pack(
+                db,
+                claim_id=claim_id,
+                organization_id=claim.organization_id,
+                user=user,
+                export_format=ClaimPackFormat.XLSX,
+                generation_note="Should not export altered approved sections",
+            )
+        assert blocked_export.value.status_code == 409
+        assert db.scalar(select(ClaimPackExport.id).where(
+            ClaimPackExport.claim_id == claim_id,
+        )) is None
+
+        persisted, restored = get_assessment(db, claim=claim, assessment_id=approved_id)
+        assert persisted.approved_content_hash == old_digest
+        assert restored[0].approved_text.endswith("UNREVIEWED SOURCE CHANGE")
+
+
+def test_modified_approved_assessment_metadata_cannot_reuse_old_digest() -> None:
+    claim_id, user_id = seed()
+    with TestingSessionLocal() as db:
+        claim = db.get(Claim, claim_id)
+        user = db.get(User, user_id)
+        approved = _approve_current(db, claim, user)
+        saved_hash = approved.approved_content_hash
+        approved.readiness_score += 1
+        db.commit()
+
+        with pytest.raises(HTTPException) as blocked:
+            _snapshot(db, claim, user)
+        assert blocked.value.status_code == 409
+        assert "approval digest" in str(blocked.value.detail)
+        assert db.get(InitialAssessment, approved.id).approved_content_hash == saved_hash

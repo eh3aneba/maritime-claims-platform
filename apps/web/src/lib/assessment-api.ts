@@ -16,6 +16,7 @@ export type SourceAwareInitialAssessment = InitialAssessment & {
   source_fingerprint: string | null;
   current_source_fingerprint: string | null;
   source_state: AssessmentSourceState;
+  unverified_ocr_fact_source_review_hold: boolean;
   approved_content_hash: string | null;
   is_latest: boolean;
   latest_version: number;
@@ -29,6 +30,7 @@ export type AssessmentHistoryItem = {
   is_preliminary: boolean;
   is_latest: boolean;
   source_state: AssessmentSourceState;
+  unverified_ocr_fact_source_review_hold: boolean;
   source_fingerprint: string | null;
   approved_content_hash: string | null;
   generated_by_id: string | null;
