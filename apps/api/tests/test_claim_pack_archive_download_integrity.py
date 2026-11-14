@@ -1,0 +1,265 @@
+"""Synthetic H&M Claim Pack archive-download integrity regressions.
+
+An immutable export's stored SHA-256 header is meaningful only if the local
+archived bytes were checked against their persisted generation-time digest.
+No test here changes a real customer claim or performs an external download.
+"""
+
+from __future__ import annotations
+
+import hashlib
+from uuid import UUID
+
+import pytest
+
+from app.modules.claim_packs import router as claim_pack_router
+from app.modules.claim_packs.models import ClaimPackExport
+from app.modules.documents.service import _storage
+from tests.db_harness import TestingSessionLocal, client, reset_database
+from tests.test_claims_api import create_orion_claim
+
+
+def setup_function() -> None:
+    reset_database()
+
+
+def _create_export(export_format: str) -> tuple[str, dict]:
+    seeded = create_orion_claim()
+    claim_id = seeded["claim"]["id"]
+    base_url = f"/api/v1/claims/{claim_id}/claim-pack-exports"
+    response = client.post(
+        base_url,
+        json={
+            "export_format": export_format,
+            "acknowledge_review_aid": True,
+            "generation_note": "Synthetic local archive integrity only",
+        },
+    )
+    assert response.status_code == 201, response.text
+    return base_url, response.json()
+
+
+def _archive_path(export_id: str):
+    with TestingSessionLocal() as db:
+        record = db.get(ClaimPackExport, UUID(export_id))
+        assert record is not None
+        return _storage().path_for(record.storage_key)
+
+
+@pytest.mark.parametrize("export_format", ["pdf", "xlsx"])
+def test_unchanged_archive_is_verified_and_downloadable(export_format: str) -> None:
+    base_url, metadata = _create_export(export_format)
+    response = client.get(f"{base_url}/{metadata['id']}/download")
+    assert response.status_code == 200, response.text
+    assert len(response.content) == metadata["file_size_bytes"]
+    assert hashlib.sha256(response.content).hexdigest() == metadata["file_hash"]
+    assert response.headers["x-claim-pack-file-sha256"] == metadata["file_hash"]
+    assert response.headers["cache-control"] == "private, no-store"
+
+
+@pytest.mark.parametrize("mutation", ["same_size", "length_changed"])
+def test_mutated_archive_is_rejected_without_rewriting_original_record(mutation: str) -> None:
+    base_url, metadata = _create_export("xlsx")
+    path = _archive_path(metadata["id"])
+    original = path.read_bytes()
+    assert original
+
+    if mutation == "same_size":
+        changed = (b"X" if original[0] != 88 else b"Y") + original[1:]
+        assert len(changed) == len(original)
+    else:
+        changed = original + b"UNAPPROVED CHANGE"
+
+    try:
+        path.write_bytes(changed)
+        rejected = client.get(f"{base_url}/{metadata['id']}/download")
+        assert rejected.status_code == 409, rejected.text
+        assert "SHA-256" in rejected.json()["detail"]
+        assert "UNAPPROVED CHANGE" not in rejected.text
+        assert "x-claim-pack-file-sha256" not in rejected.headers
+
+        with TestingSessionLocal() as db:
+            recorded = db.get(ClaimPackExport, UUID(metadata["id"]))
+            assert recorded is not None
+            assert recorded.file_hash == metadata["file_hash"]
+            assert recorded.file_size_bytes == metadata["file_size_bytes"]
+            assert recorded.snapshot_hash == metadata["snapshot_hash"]
+    finally:
+        path.write_bytes(original)
+
+    restored = client.get(f"{base_url}/{metadata['id']}/download")
+    assert restored.status_code == 200
+    assert hashlib.sha256(restored.content).hexdigest() == metadata["file_hash"]
+
+
+@pytest.mark.parametrize("field", ["file_hash", "file_size_bytes"])
+def test_corrupt_stored_integrity_metadata_is_rejected(field: str) -> None:
+    base_url, metadata = _create_export("xlsx")
+    with TestingSessionLocal() as db:
+        record = db.get(ClaimPackExport, UUID(metadata["id"]))
+        assert record is not None
+        if field == "file_hash":
+            record.file_hash = "0" * 64
+        else:
+            record.file_size_bytes = record.file_size_bytes - 1
+        db.commit()
+
+    rejected = client.get(f"{base_url}/{metadata['id']}/download")
+    assert rejected.status_code == 409, rejected.text
+    assert "SHA-256" in rejected.json()["detail"]
+
+
+@pytest.mark.parametrize("mutation", ["snapshot_json", "snapshot_hash"])
+def test_stored_snapshot_integrity_drift_blocks_download(mutation: str) -> None:
+    """File checksum alone cannot attest modified historical snapshot metadata."""
+    base_url, metadata = _create_export("xlsx")
+    path = _archive_path(metadata["id"])
+    original_file_hash = hashlib.sha256(path.read_bytes()).hexdigest()
+    assert original_file_hash == metadata["file_hash"]
+
+    with TestingSessionLocal() as db:
+        record = db.get(ClaimPackExport, UUID(metadata["id"]))
+        assert record is not None
+        if mutation == "snapshot_json":
+            record.snapshot = {
+                **record.snapshot,
+                "generation_note": "Altered after immutable export generation",
+            }
+        else:
+            record.snapshot_hash = "0" * 64
+        db.commit()
+
+    response = client.get(f"{base_url}/{metadata['id']}/download")
+    assert response.status_code == 409, response.text
+    assert "snapshot" in response.json()["detail"]
+    assert "SHA-256" in response.json()["detail"]
+    assert "x-claim-pack-snapshot-sha256" not in response.headers
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == original_file_hash
+
+
+def test_missing_archived_file_returns_gone_not_a_successful_download() -> None:
+    base_url, metadata = _create_export("xlsx")
+    path = _archive_path(metadata["id"])
+    path.unlink()
+
+    rejected = client.get(f"{base_url}/{metadata['id']}/download")
+    assert rejected.status_code == 410, rejected.text
+    assert "unavailable" in rejected.json()["detail"]
+    assert "x-claim-pack-file-sha256" not in rejected.headers
+
+
+@pytest.mark.parametrize("replacement", ["in_place", "renamed"])
+def test_archive_replacement_after_verification_never_changes_sent_bytes(
+    monkeypatch: pytest.MonkeyPatch, replacement: str,
+) -> None:
+    """Verification and response must operate on one captured byte sequence.
+
+    The mutation is deliberately inserted after the verification helper has
+    returned but before the framework starts consuming the response stream.
+    The previous FileResponse path-reopen design would have sent changed bytes
+    with the original SHA-256 header in this precise interval.
+    """
+    base_url, metadata = _create_export("xlsx")
+    path = _archive_path(metadata["id"])
+    original = path.read_bytes()
+    original_capture = claim_pack_router._verified_archive_copy
+
+    def replace_after_capturing(archive_path, *, expected_size, expected_sha256):
+        captured = original_capture(
+            archive_path,
+            expected_size=expected_size,
+            expected_sha256=expected_sha256,
+        )
+        mutated = b"TAMPER" + original[6:]
+        if replacement == "in_place":
+            archive_path.write_bytes(mutated)
+        else:
+            alternate = archive_path.with_name(archive_path.name + ".synthetic")
+            alternate.write_bytes(mutated)
+            alternate.replace(archive_path)
+        return captured
+
+    monkeypatch.setattr(
+        claim_pack_router, "_verified_archive_copy", replace_after_capturing,
+    )
+    try:
+        response = client.get(f"{base_url}/{metadata['id']}/download")
+        assert response.status_code == 200, response.text
+        assert response.content == original
+        assert hashlib.sha256(response.content).hexdigest() == metadata["file_hash"]
+        assert response.headers["x-claim-pack-file-sha256"] == metadata["file_hash"]
+        assert response.headers["content-length"] == str(len(original))
+        assert response.headers["content-disposition"].startswith("attachment; ")
+        assert path.read_bytes() != original
+    finally:
+        path.write_bytes(original)
+
+
+@pytest.mark.parametrize("export_format", ["pdf", "xlsx"])
+def test_verified_archived_download_preserves_range_and_stable_etag(export_format: str) -> None:
+    """Range requests must read the verified private copy, not original storage."""
+    base_url, metadata = _create_export(export_format)
+    download_url = f"{base_url}/{metadata['id']}/download"
+    original = _archive_path(metadata["id"]).read_bytes()
+    full = client.get(download_url)
+    assert full.status_code == 200, full.text
+    assert full.headers["etag"] == f'"{metadata["file_hash"]}"'
+    assert full.headers["accept-ranges"] == "bytes"
+    assert full.headers["last-modified"]
+
+    # Resume via the same content-addressed validator across separate HTTP
+    # requests, each of which uses an independently verified private copy.
+    partial = client.get(
+        download_url,
+        headers={"Range": "bytes=0-15", "If-Range": full.headers["etag"]},
+    )
+    assert partial.status_code == 206, partial.text
+    assert partial.content == original[:16]
+    assert partial.headers["content-range"] == f"bytes 0-15/{len(original)}"
+    assert partial.headers["etag"] == full.headers["etag"]
+    assert partial.headers["x-claim-pack-file-sha256"] == metadata["file_hash"]
+
+    suffix = client.get(download_url, headers={"Range": "bytes=-8"})
+    assert suffix.status_code == 206, suffix.text
+    assert suffix.content == original[-8:]
+    assert suffix.headers["content-range"] == (
+        f"bytes {len(original)-8}-{len(original)-1}/{len(original)}"
+    )
+
+    outside = client.get(download_url, headers={"Range": f"bytes={len(original)}-"})
+    assert outside.status_code == 416
+    assert outside.headers["content-range"] == f"bytes */{len(original)}"
+
+
+def test_verified_archived_copy_cleanup_after_success_and_denied_download(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Private temporary evidence copies must not survive completed responses."""
+    base_url, metadata = _create_export("xlsx")
+    url = f"{base_url}/{metadata['id']}/download"
+    capture = claim_pack_router._verified_archive_copy
+    temp_locations = []
+
+    def inspect_verified_copy(*args, **kwargs):
+        verified_path, private = capture(*args, **kwargs)
+        temp_locations.append(verified_path)
+        return verified_path, private
+
+    monkeypatch.setattr(
+        claim_pack_router, "_verified_archive_copy", inspect_verified_copy,
+    )
+    response = client.get(url, headers={"Range": "bytes=0-7"})
+    assert response.status_code == 206
+    assert temp_locations
+    assert all(not path.exists() for path in temp_locations)
+
+    # Starlette's early 416 and 400 responses do not necessarily execute its
+    # normal FileResponse background task; our wrapper must still cleanup.
+    too_large = client.get(
+        url, headers={"Range": f"bytes={metadata['file_size_bytes']}-"},
+    )
+    assert too_large.status_code == 416, too_large.text
+    malformed = client.get(url, headers={"Range": "items=0-7"})
+    assert malformed.status_code == 400, malformed.text
+    assert len(temp_locations) == 3
+    assert all(not path.exists() for path in temp_locations)
