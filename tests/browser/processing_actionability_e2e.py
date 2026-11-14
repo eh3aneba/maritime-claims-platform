@@ -84,6 +84,9 @@ def main() -> None:
         FAILED_DOCUMENT_ID: "failed",
         STALE_DOCUMENT_ID: "running",
     }
+    # An extension-based fallback must still disclose unchecked signatures
+    # when the upload MIME is generic and no extraction has completed.
+    documents["items"][1]["mime_type"] = "application/octet-stream"
     retry_calls = {FAILED_DOCUMENT_ID: 0, STALE_DOCUMENT_ID: 0}
 
     def summary(document_id: str) -> dict:
@@ -190,6 +193,13 @@ def main() -> None:
         page.route(f"**/api/v1/claims/{CLAIM_ID}/documents/*/processing**", route_processing)
         page.goto(f"{BASE_URL}/claims/{CLAIM_ID}", wait_until="networkidle")
 
+        # Both running and failed PDFs have no extraction summary. A
+        # source SHA-256 display must not be mistaken for signer verification.
+        for document_id in (FAILED_DOCUMENT_ID, STALE_DOCUMENT_ID):
+            signature_note = page.get_by_test_id(f"pdf-signature-unchecked-{document_id}")
+            expect(signature_note).to_be_visible()
+            expect(signature_note).to_contain_text("not cryptographically checked")
+
         expect(page.get_by_text("Processing · failed", exact=True)).to_be_visible()
         expect(page.get_by_text("Processing · running", exact=True)).to_be_visible()
         expect(page.get_by_text("Attempts 3/3", exact=True)).to_be_visible()
@@ -209,6 +219,9 @@ def main() -> None:
 
         expect(page.get_by_role("button", name="Recover processing")).to_have_count(0)
         expect(page.get_by_role("button", name="Retry processing")).to_have_count(0)
+
+        for document_id in (FAILED_DOCUMENT_ID, STALE_DOCUMENT_ID):
+            expect(page.get_by_test_id(f"pdf-signature-unchecked-{document_id}")).to_be_visible()
 
         browser.close()
 
