@@ -8,6 +8,8 @@ from datetime import UTC, datetime
 from io import BytesIO
 from uuid import UUID
 
+import pytest
+
 from openpyxl import load_workbook
 from pypdf import PdfReader
 
@@ -532,8 +534,11 @@ def test_approved_assessment_claim_pack_reports_later_bound_ocr_dispute_without_
     assert stored.json()["status"] == "approved"
 
 
-def test_superseding_a_disputed_source_does_not_clear_bound_assessment_hold() -> None:
-    """Changing the current document must not launder an older bound AI fact."""
+@pytest.mark.parametrize("source_lifecycle", ("superseded", "soft_deleted"))
+def test_old_disputed_source_lifecycle_does_not_clear_bound_assessment_hold(
+    source_lifecycle: str,
+) -> None:
+    """Supersession or soft deletion must never erase an old bound AI-fact hold."""
     ids, report = _setup_ocr_reviewed_fact()
     from types import SimpleNamespace
     from app.modules.assessments.source_integrity import (
@@ -559,13 +564,20 @@ def test_superseding_a_disputed_source_does_not_clear_bound_assessment_hold() ->
     assert before.status_code == 200, before.text
     assert before.json()["unverified_ocr_fact_source_review_hold"] is True
 
-    # Simulate a later replacement of this source: the original fact and its
-    # approval are not edited, but the original version stops being current.
+    # The original fact and approval remain untouched. Both replacing the
+    # source and soft-deleting it must retain the source-bound dispute receipt.
     with TestingSessionLocal() as db:
         document = db.get(Document, UUID(ids["document_id"]))
         assert document is not None
-        document.is_current = False
-        document.superseded_at = datetime.now(UTC)
+        if source_lifecycle == "superseded":
+            document.is_current = False
+            document.superseded_at = datetime.now(UTC)
+        else:
+            # Preserve is_current=True to prove deleted_at alone cannot
+            # suppress a historical disputed-source assessment hold.
+            assert source_lifecycle == "soft_deleted"
+            assert document.is_current is True
+            document.deleted_at = datetime.now(UTC)
         db.commit()
 
     historical = client.get(f"{base}/versions/{assessment['id']}")
