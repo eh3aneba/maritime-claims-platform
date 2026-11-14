@@ -1,5 +1,14 @@
 from uuid import UUID
 
+import pytest
+from sqlalchemy import select
+
+import app.modules.external_document_sources.credential_reference_service as credential_service
+from app.modules.external_document_sources.connection_bootstrap_models import (
+    ExternalDocumentSourceConnectionBootstrapExecutionReceipt,
+)
+from app.modules.external_document_sources.service import ExternalDocumentSourceConflictError
+
 from app.modules.claims.models import Claim
 from app.modules.documents.models import Document
 from app.modules.external_document_sources.credential_reference_models import (
@@ -67,6 +76,50 @@ def _approve_binding(profile_id: str, binding_id: str, actor_id: UUID):
         headers=_headers(actor_id),
         json={"reason": "Independently approve the non-secret credential-reference metadata only."},
     )
+
+
+def test_read_rejects_upstream_receipt_drift_during_binding_validation(monkeypatch) -> None:
+    """The final lineage read must detect drift after initial validation."""
+    org_id, requester, approver, profile_id, _, _, execution_id = _completed_bootstrap("cred-final-freshness")
+    requested = _request_binding(profile_id, execution_id, requester, key="cred-final-freshness-binding")
+    assert requested.status_code == 201, requested.text
+    binding_id = requested.json()["id"]
+    approved = _approve_binding(profile_id, binding_id, approver)
+    assert approved.status_code == 200, approved.text
+
+    original_receipts = credential_service._receipts
+    drifted = False
+
+    def receipts_then_drift(db, binding):
+        nonlocal drifted
+        rows = original_receipts(db, binding)
+        if not drifted:
+            receipt = db.scalar(select(ExternalDocumentSourceConnectionBootstrapExecutionReceipt).where(
+                ExternalDocumentSourceConnectionBootstrapExecutionReceipt.execution_id == binding.bootstrap_execution_id,
+                ExternalDocumentSourceConnectionBootstrapExecutionReceipt.organization_id == binding.organization_id,
+                ExternalDocumentSourceConnectionBootstrapExecutionReceipt.sequence_number == 1,
+            ))
+            assert receipt is not None
+            receipt.reason = "Synthetic upstream receipt drift during the credential read."
+            db.flush()
+            drifted = True
+        return rows
+
+    monkeypatch.setattr(credential_service, "_receipts", receipts_then_drift)
+    with TestingSessionLocal() as db:
+        try:
+            with pytest.raises(ExternalDocumentSourceConflictError):
+                credential_service.get_external_document_source_credential_reference(
+                    db, organization_id=org_id, profile_id=UUID(profile_id), binding_id=UUID(binding_id)
+                )
+            assert drifted
+        finally:
+            db.rollback()
+        # Rolled-back synthetic drift must not leak into a later valid read.
+        restored = credential_service.get_external_document_source_credential_reference(
+            db, organization_id=org_id, profile_id=UUID(profile_id), binding_id=UUID(binding_id)
+        )
+        assert restored.id == UUID(binding_id)
 
 
 def test_credential_reference_full_governance_input_safety_and_tamper_without_secret_execution() -> None:
