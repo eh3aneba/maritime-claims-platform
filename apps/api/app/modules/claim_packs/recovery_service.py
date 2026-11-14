@@ -86,6 +86,10 @@ def build_claim_pack_snapshot(
             "approved_assessment_source_state_at_export": (
                 approved_assessment["source_state_at_export"] if approved_assessment else None
             ),
+            "approved_assessment_unverified_ocr_fact_source_review_hold_at_export": (
+                approved_assessment["unverified_ocr_fact_source_review_hold_at_export"]
+                if approved_assessment else None
+            ),
             "recovery_human_closure_review_state": recovery["human_closure_review_state"],
             "recovery_counterparty_count": summary["counterparty_count"],
             "recovery_timebar_scenario_count": summary["timebar_scenario_count"],
@@ -108,7 +112,10 @@ def build_claim_pack_snapshot(
     # fully reviewed in the Claim Pack's summary.
     if stale_approved_ai_facts or (
         approved_assessment
-        and approved_assessment["source_state_at_export"] != "current"
+        and (
+            approved_assessment["source_state_at_export"] != "current"
+            or approved_assessment["unverified_ocr_fact_source_review_hold_at_export"]
+        )
     ):
         snapshot["summary"]["review_state"] = "attention_required"
     if recovery["human_closure_review_state"] == "attention_required":
@@ -192,6 +199,10 @@ def generate_claim_pack(
                 "approved_assessment_version": assessment["version"] if assessment else None,
                 "approved_assessment_content_hash": assessment["approved_content_hash"] if assessment else None,
                 "approved_assessment_source_state_at_export": assessment["source_state_at_export"] if assessment else None,
+                "approved_assessment_unverified_ocr_fact_source_review_hold_at_export": (
+                    assessment["unverified_ocr_fact_source_review_hold_at_export"]
+                    if assessment else None
+                ),
                 "recovery_human_closure_review_state": snapshot["summary"]["recovery_human_closure_review_state"],
                 "recovery_human_decision_count": snapshot["summary"]["recovery_human_decision_count"],
                 "recovery_human_action_count": snapshot["summary"]["recovery_human_action_count"],
