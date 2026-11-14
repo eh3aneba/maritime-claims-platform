@@ -586,4 +586,4 @@ def test_superseding_a_disputed_source_does_not_clear_bound_assessment_hold() ->
         ) is True
     fact = _get_facts(ids)
     assert fact["source_revalidation_required"] is True
-    assert fact["source_revalidation_reason"] == "source_document_not_current"
+    assert fact["source_revalidation_reason"] == "source_document_unusable"
