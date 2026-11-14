@@ -1,5 +1,88 @@
 # SeeClaims — Execution Roadmap v1 | Status and gates
 
+## Current main checkpoint — 2026-11-14 (source-only merges, Pilot NO-GO)
+
+**Current main code baseline:** `5693fc6f72aa8e6ccee2b37b92b9a97b121ae419`.
+This checkpoint supersedes the dated October / earlier November "pending" statements
+below *for their historical commits only*; do not erase or reinterpret their
+recorded outcomes. No customer, production or selected-host deployment was made.
+
+### Merged code and exact acceptance evidence
+
+- **[PR #902](https://github.com/eh3aneba/maritime-claims-platform/pull/902)**:
+  squash-merged as `537d37b7ae49880c7848bf9010777c5f9448d61b`.
+  API/Worker Mako 1.4.1 was replaced with official PyPI hash-locked 1.4.3
+  in production/dev lockfiles, with an explicit 1.4.2 fixed-version floor.
+  The actual API/Worker final-image Grype medium Mako advisory no longer appeared;
+  all 64 backend shards, CI/lock regeneration, x86_64 and native ARM64 High
+  scans, PG concurrency and operational smoke passed on source PR head.
+  [Post-merge main security #43607839070](https://github.com/eh3aneba/maritime-claims-platform/actions/runs/43607839070)
+  and deployment policy #43607838999 were SUCCESS.
+- **[PR #901](https://github.com/eh3aneba/maritime-claims-platform/pull/901)**:
+  squash-merged as the current main commit `5693fc6f72aa8e6ccee2b37b92b9a97b121ae419`.
+  The exact reconciled PR head `1f82e9d04ae16b8c243fe8555d45ceb773f9cf93`
+  passed 64/64 Backend shards and all 11 mandatory checks:
+  [backend #43608009596](https://github.com/eh3aneba/maritime-claims-platform/actions/runs/43608009596),
+  [CI/browser #43608009565](https://github.com/eh3aneba/maritime-claims-platform/actions/runs/43608009565),
+  [final-image security #43608009600](https://github.com/eh3aneba/maritime-claims-platform/actions/runs/43608009600),
+  [PG concurrency #43608009550](https://github.com/eh3aneba/maritime-claims-platform/actions/runs/43608009550),
+  [performance #43608009564](https://github.com/eh3aneba/maritime-claims-platform/actions/runs/43608009564),
+  [policy #43608009560](https://github.com/eh3aneba/maritime-claims-platform/actions/runs/43608009560).
+  It adds source-bound read-side assessment/history OCR allegation holds, approval
+  admission guards under the claim lock, fail-closed approved Claim Pack content
+  digest verification, and bilingual disclosure. It does **not** decide whether
+  an OCR allegation is factually correct, modify historical approved decisions,
+  or authorize automated insurance determinations.
+- **Immediate post-merge #901 evidence (as checked at this checkpoint)**:
+  [main deployment policy #43613096259](https://github.com/eh3aneba/maritime-claims-platform/actions/runs/43613096259)
+  SUCCESS; [main final-image security #43613096220](https://github.com/eh3aneba/maritime-claims-platform/actions/runs/43613096220)
+  **IN PROGRESS** at the time this entry was recorded. Recheck its final
+  conclusion on GitHub; do not treat earlier-head scans as that run's result.
+
+### Engineering completeness versus independent release gates
+
+The active GitHub main ruleset [#20842512](https://github.com/eh3aneba/maritime-claims-platform/rules/20842512)
+requires 11 exact green contexts, up-to-date head, squash merge, resolved
+threads and zero bypass actors. Its required approving review count is **0**.
+The #901 code merge complied with the enforced rules and the product owner's
+explicit merge instruction, but **there is no recorded independent security/code
+review or independent bilingual Persian/English H&M original-scan review**.
+No review record may be inferred from CI, AI assistance or merged code.
+
+**Outstanding GO/NO-GO decisions are independent from code integration**:
+
+1. [#810](https://github.com/eh3aneba/maritime-claims-platform/issues/810)
+   — human-reviewed Persian negation, chronology and technical-term OCR
+   accuracy on original scans; no fabricated transcript repair or expert approval.
+2. [#850](https://github.com/eh3aneba/maritime-claims-platform/issues/850)
+   — merged source-bound guard needs authorized independent case/source
+   acceptance, historical lifecycle and provenance disposition.
+3. [#894](https://github.com/eh3aneba/maritime-claims-platform/issues/894)
+   — signed incoming PDF evidence: explicit product/security scope and independent
+   assessment of cryptographic verification versus unverified disclosure.
+4. [#764](https://github.com/eh3aneba/maritime-claims-platform/issues/764)
+   — private security-owner review of eight historical Gitleaks findings;
+   PR secret checks do not prove the historical schedule clean.
+5. [#653](https://github.com/eh3aneba/maritime-claims-platform/issues/653)
+   and [#647](https://github.com/eh3aneba/maritime-claims-platform/issues/647)
+   — fresh-host, backup/restore, rollback, monitoring, accountable operators and
+   customer-specific Pilot v1 acceptance; real SFTP exercise [#652](https://github.com/eh3aneba/maritime-claims-platform/issues/652)
+   only if enabled for pilot.
+
+**Human appointments still required:** security/operations owner and
+independent bilingual H&M reviewer are unassigned; ClamAV freshness
+admission policy is not approved. Preserve all original OCR evidence, source
+hashes, approval history, signed-PDF unverified disclosures and review holds.
+Do not enable external AI against real customer files by default.
+
+**Decision: customer Pilot/Production GO = NO.** Next engineering work should
+first verify the exact main post-merge image scan, then prepare human reviewer
+packet and chosen-host restore/rehearsal evidence without asserting human
+acceptance or deploying customer data.
+
+---
+
+
 ## Active source/export reliability — XLSX error-like literals (2026-11-02 UTC)
 
 Current baseline main `26d5e9d0feaa299392dd15505be3d00588bb60b8` normally merged
