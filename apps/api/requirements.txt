@@ -4,6 +4,7 @@ pydantic>=2.12,<3
 pydantic-settings>=2.10,<3
 SQLAlchemy>=2.0.40,<2.1
 alembic>=1.16,<2
+mako>=1.4.2,<2  # GHSA-5639-2j2p-m4mx: reject pre-fix template URI traversal
 psycopg[binary]>=3.2,<4
 python-multipart>=0.0.20,<1
 PyJWT[crypto]>=2.10,<3
