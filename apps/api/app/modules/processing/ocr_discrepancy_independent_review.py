@@ -7,6 +7,7 @@ separate, expressly authorized disposition lifecycle is implemented.
 """
 from __future__ import annotations
 
+import re
 from typing import Annotated, Literal
 from uuid import UUID
 
@@ -84,7 +85,7 @@ def _as_receipt(row: AuditLog) -> IndependentOcrObservationReceipt:
 def _original_report(
     db: Session, *, organization_id: UUID, claim_id: UUID, document_id: UUID,
     report_id: UUID, current_file_hash: str, current_text_hash: str,
-    current_version: int,
+    current_version: int, historical_readback_only: bool = False,
 ) -> AuditLog:
     report = db.scalar(select(AuditLog).where(
         AuditLog.id == report_id,
@@ -102,7 +103,19 @@ def _original_report(
         or type(v.get("document_version")) is not int
         or v["document_version"] != current_version
         or v.get("source_file_hash") != current_file_hash
-        or v.get("extraction_text_hash") != current_text_hash
+        # Only historical GET readback may follow a newer OCR extraction.
+        # POST review admission must still match the currently stored text.
+        or (
+            v.get("extraction_text_hash") != current_text_hash
+            and not historical_readback_only
+        )
+        or (
+            historical_readback_only
+            and (
+                type(v.get("extraction_text_hash")) is not str
+                or re.fullmatch(r"[0-9a-f]{64}", v["extraction_text_hash"]) is None
+            )
+        )
         or v.get("review_state") != "reported_unverified"
     ):
         raise HTTPException(status_code=409, detail="Report no longer matches current OCR source")
@@ -231,12 +244,18 @@ def list_independent_observations(
     document, extraction = _source_guard(
         db, claim_id=claim_id, document_id=document_id, user=current_user,
     )
-    _original_report(
+    # Reading an old immutable independent-observation receipt must not depend
+    # on the OCR engine retaining an identical extracted text hash forever.
+    # Keep the original file/version, tenant, claim, processing-release and
+    # clean-Evidence controls; do not loosen new review submission.
+    report = _original_report(
         db, organization_id=current_user.organization_id, claim_id=claim_id,
         document_id=document.id, report_id=report_id,
         current_version=document.version_number,
         current_file_hash=document.file_hash, current_text_hash=extraction.text_hash,
+        historical_readback_only=True,
     )
+    original_binding = report.new_values
     rows = db.scalars(select(AuditLog).where(
         AuditLog.organization_id == current_user.organization_id,
         AuditLog.entity_type == "document",
@@ -246,6 +265,13 @@ def list_independent_observations(
     matched = [
         r for r in rows if type(r.new_values) is dict
         and r.new_values.get("report_id") == str(report_id)
+        and r.new_values.get("claim_id") == str(claim_id)
+        and r.new_values.get("document_version") == original_binding["document_version"]
+        and r.new_values.get("source_file_hash") == original_binding["source_file_hash"]
+        and r.new_values.get("extraction_text_hash") == original_binding["extraction_text_hash"]
+        and r.new_values.get("review_state") == "independent_observation_no_clearance"
+        and r.new_values.get("source_hold_cleared") is False
+        and r.new_values.get("claim_fact_approved") is False
     ]
     return IndependentOcrObservationList(
         items=[_as_receipt(r) for r in matched[offset:offset+limit]],
