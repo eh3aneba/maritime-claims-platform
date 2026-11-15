@@ -169,7 +169,9 @@ def evaluate_local_study(payload: Any) -> dict[str, Any]:
         neg = counts["ocr_negative_measured"]
         search_n = counts["search_measured_given_ocr_found"]
         reference_positive = counts["reference_positive"]
+        reference_negative = counts["reference_negative_controls"]
         unknown = counts["ocr_positive_unknown"]
+        negative_unknown = counts["ocr_negative_unknown"]
         # Unknown full-page OCR is neither a true miss nor a success.
         # Show the arithmetic range across every declared reference-positive
         # literal: lower bound assumes unknown are missing; upper assumes
@@ -191,6 +193,21 @@ def evaluate_local_study(payload: Any) -> dict[str, Any]:
             "ocr_exact_literal_recall_wilson95_descriptive": _wilson(found, n),
             "false_insertion_rate_on_negative_controls": (
                 round(counts["ocr_false_insertion"] / neg, 4) if neg else None
+            ),
+            # Measured-only false-insertion rate may look reassuring while
+            # some reference-negative source pages have incomplete OCR.
+            # Unknown remains unknown: bound the arithmetic range rather
+            # than treating an unobserved negative control as clean.
+            "reference_negative_observation_coverage": (
+                round(neg / reference_negative, 4) if reference_negative else None
+            ),
+            "false_insertion_rate_all_negative_lower_bound": (
+                round(counts["ocr_false_insertion"] / reference_negative, 4)
+                if reference_negative else None
+            ),
+            "false_insertion_rate_all_negative_upper_bound": (
+                round((counts["ocr_false_insertion"] + negative_unknown) / reference_negative, 4)
+                if reference_negative else None
             ),
             "search_exact_retrieval_given_ocr_literal_present": (
                 round(counts["search_exact_found"] / search_n, 4) if search_n else None
