@@ -36,6 +36,7 @@ def main():
         workpaper_file_hash="c" * 64, custody_state="managed_clean_document_record_linked",
         original_source_hold_cleared=False, claim_fact_approved=False)
     doc = dict(id=document, claim_id=claim, original_filename="invented-hm05.png",
+        mime_type="image/png",
         file_hash="a" * 64, file_size_bytes=100, version_number=1, is_current=True,
         document_type="chief_engineer_report", confidentiality_level="internal",
         malware_scan_status="clean", processing_status="processed", created_at=now)
@@ -103,6 +104,8 @@ def main():
 
         history = open_source()
         expect(history).to_be_visible()
+        # A PNG source is not a PDF and must not be given the signature warning.
+        expect(page.get_by_test_id(f"pdf-signature-unchecked-{document}")).to_have_count(0)
         assert not review_requests, "History must be on demand"
         history.get_by_role("button", name="Independent review history", exact=True).click()
         expect(history.get_by_test_id("ocr-independent-observation")).to_have_count(1)
