@@ -81,6 +81,9 @@ class OperatorProcessingJobResponse(BaseModel):
 class DocumentProcessingSummary(BaseModel):
     job: OperatorProcessingJobResponse | None
     text_extraction: TextExtractionSummary | None
+    # Input-type disclosure is independent of any completed extraction.
+    # "not_checked" does not mean a signature was found or was valid.
+    pdf_signature_check_state: Literal["not_checked", "not_declared_pdf"]
     operator_status: Literal["uploaded", "queued", "running", "completed", "failed"]
     can_retry: bool
     retry_recommended: bool
