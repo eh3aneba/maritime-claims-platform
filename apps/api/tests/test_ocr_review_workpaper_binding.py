@@ -187,7 +187,7 @@ def test_workpaper_historical_get_rejects_cross_linked_or_tampered_metadata(
         ("extraction_text_hash", "e" * 64),
         ("source_file_hash", "f" * 64),
         ("workpaper_file_hash", "e" * 64),
-        ("review_id", str(uuid4())),
+        ("report_id", str(uuid4())),
         ("original_source_hold_cleared", True),
         ("claim_fact_approved", True),
     ):
