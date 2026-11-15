@@ -223,6 +223,25 @@ def main() -> None:
         for document_id in (FAILED_DOCUMENT_ID, STALE_DOCUMENT_ID):
             expect(page.get_by_test_id(f"pdf-signature-unchecked-{document_id}")).to_be_visible()
 
+        # An image scan with generic MIME must show a separate OCR warning
+        # even when the extractor is failed or still queued; no PDF warning.
+        image = documents["items"][0]
+        image["original_filename"] = "unverified-scan.png"
+        image["mime_type"] = "application/octet-stream"
+        for pending_state in ("failed", "queued"):
+            states[FAILED_DOCUMENT_ID] = pending_state
+            page.reload(wait_until="networkidle")
+            note = page.get_by_test_id(f"ocr-source-review-{FAILED_DOCUMENT_ID}")
+            expect(note).to_be_visible()
+            expect(note).to_contain_text("Image evidence needs comparison")
+            expect(page.get_by_test_id(f"pdf-signature-unchecked-{FAILED_DOCUMENT_ID}")).to_have_count(0)
+
+        # The warning is localized and does not claim to verify OCR.
+        page.evaluate("localStorage.setItem('mcri.locale', 'fa')")
+        page.reload(wait_until="networkidle")
+        expect(page.get_by_test_id(f"ocr-source-review-{FAILED_DOCUMENT_ID}")).to_contain_text(
+            "اسکن تصویری نیازمند مقایسه"
+        )
         browser.close()
 
     print("A04 processing actionability browser E2E passed.")
