@@ -13,6 +13,7 @@ import json
 import os
 from pathlib import Path
 import re
+import stat
 import subprocess
 import sys
 
@@ -234,14 +235,34 @@ def main(argv: list[str] | None = None) -> int:
         print("NO-GO draft created. No runtime, security or pilot evidence was verified.")
         return 0
     try:
-        if args.record.stat().st_size > MAX_RC_RECORD_BYTES:
-            raise ValueError("oversized_release_record")
-        with args.record.open(encoding="utf-8") as fh:
-            data = json.load(
-                fh,
-                object_pairs_hook=_reject_duplicate_record_keys,
-                parse_constant=_reject_nonstandard_json_constant,
-            )
+        # The release record is private local evidence metadata, not arbitrary
+        # machine input. Read a single inspected descriptor: a pre-open stat()
+        # followed by Path.open() could race a swapped file/symlink.
+        if args.record.is_symlink():
+            raise ValueError("symlink_release_record")
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+        descriptor = os.open(args.record, flags)
+        try:
+            metadata = os.fstat(descriptor)
+            if not stat.S_ISREG(metadata.st_mode):
+                raise ValueError("nonregular_release_record")
+            if os.name == "posix" and stat.S_IMODE(metadata.st_mode) & 0o077:
+                raise ValueError("publicly_accessible_release_record")
+            if metadata.st_size > MAX_RC_RECORD_BYTES:
+                raise ValueError("oversized_release_record")
+            with os.fdopen(descriptor, "rb") as fh:
+                descriptor = -1  # fdopen owns/always closes this descriptor.
+                raw = fh.read(MAX_RC_RECORD_BYTES + 1)
+            if len(raw) > MAX_RC_RECORD_BYTES:
+                raise ValueError("oversized_release_record")
+        finally:
+            if descriptor != -1:
+                os.close(descriptor)
+        data = json.loads(
+            raw.decode("utf-8"),
+            object_pairs_hook=_reject_duplicate_record_keys,
+            parse_constant=_reject_nonstandard_json_constant,
+        )
     except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
         print(f"NO-GO: cannot read JSON record ({type(exc).__name__})", file=sys.stderr)
         return 1
