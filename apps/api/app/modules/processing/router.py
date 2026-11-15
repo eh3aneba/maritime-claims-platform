@@ -60,6 +60,25 @@ def _operator_state(document, job, *, processing_release_required: bool = False)
     return "failed", True, True
 
 
+def _pdf_input_signature_state(
+    *, mime_type: str | None, original_filename: str | None,
+    extraction_method: str | None = None,
+) -> str:
+    """Never infer signer validity from input metadata or an OCR method.
+
+    A parser-recognized PDF must not be reported as non-PDF when an upload
+    carries a misleading MIME/filename. Both sources only mean NOT CHECKED.
+    """
+    declared_mime = (mime_type or "").split(";", 1)[0].strip().lower()
+    declared_name = (original_filename or "").strip().lower()
+    parsed_pdf = (extraction_method or "").lower().startswith("pypdf")
+    return (
+        "not_checked"
+        if declared_mime == "application/pdf" or declared_name.endswith(".pdf") or parsed_pdf
+        else "not_declared_pdf"
+    )
+
+
 @router.get("", response_model=DocumentProcessingSummary)
 def processing_summary(
     claim_id: UUID,
@@ -91,6 +110,11 @@ def processing_summary(
     return DocumentProcessingSummary(
         job=OperatorProcessingJobResponse.model_validate(job) if job else None,
         text_extraction=extraction,
+        pdf_signature_check_state=_pdf_input_signature_state(
+            mime_type=document.mime_type,
+            original_filename=document.original_filename,
+            extraction_method=extraction.extraction_method if extraction else None,
+        ),
         operator_status=operator_status,
         can_retry=can_retry,
         retry_recommended=retry_recommended,

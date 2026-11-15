@@ -376,6 +376,8 @@ export interface ProcessingJobSummary extends OperatorProcessingJobSummary {
 
 export interface DocumentProcessingSummary {
   job: OperatorProcessingJobSummary | null;
+  /** Declared PDF input still has NO cryptographic signature validation, even before extraction. */
+  pdf_signature_check_state: "not_checked" | "not_declared_pdf";
   text_extraction: {
     extraction_method: string;
     extractor_version: string;
