@@ -17,7 +17,7 @@ import stat
 import subprocess
 import sys
 
-SCHEMA = "mcri-pilot-rc-v4"
+SCHEMA = "mcri-pilot-rc-v5"
 # An unselected capability is not implicitly disabled. An RC operator must
 # attest the actual deployed flags and the controlled disablement evidence.
 FEATURE_MODES = {
@@ -40,6 +40,9 @@ PROOFS = (
     "persian_critical_ocr_acceptance",
     "actual_feature_flag_enforcement",
     "source_discrepancy_review_and_resolution_policy",
+    # #894: successful OCR/PDF parsing is never evidence of a verified signer.
+    # Require an independently decided inbound signed-PDF policy for ALL pilots.
+    "signed_pdf_inbound_scope_security_disposition",
     "fresh_host_deployment",
     "migration_and_preflight",
     "browser_operator_journey",
