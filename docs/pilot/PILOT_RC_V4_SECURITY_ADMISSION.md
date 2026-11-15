@@ -1,13 +1,13 @@
 # Pilot v1 release candidate v4 — historical security admission
 
-**Status: fail-closed structural gate, NOT approval to process real customer claims.**
+**HISTORICAL v4 DOCUMENT — no longer the active release-record format.** Current release candidates use [v5 signed-PDF admission](PILOT_RC_V5_SIGNED_PDF_ADMISSION.md) and `mcri-pilot-rc-v5`; never submit an old v4 record for Pilot GO. This guide preserves the independently required historical-secret disposition controls from v4. The gate is structural, NOT approval to process real customer claims.
 Related: [#764](https://github.com/eh3aneba/maritime-claims-platform/issues/764), [#653](https://github.com/eh3aneba/maritime-claims-platform/issues/653), [#647](https://github.com/eh3aneba/maritime-claims-platform/issues/647), and [Security workflow](../../.github/workflows/supply-chain.yml).
 
 ## Why v4
 
 The v3 record required `supply_chain_exact_head=pass` for a release candidate. But the PR / exact-head **Secret history scan** can be green while the **weekly scheduled full-history Gitleaks scan** continues reporting eight August 2026 historical findings (see #764). A green source check is not evidence that every historic credential-like finding was independently classified. A structurally complete v3 record could omit this separation.
 
-The current validator uses **`mcri-pilot-rc-v4`** and adds the unconditional `historical_secret_findings_disposition` proof. Older v1/v2/v3 records are rejected; do not relabel existing JSON or copy historic `pass` values. Reconstruct a new private release record from current evidence. All three runtime feature choices and the no-go boundaries from the [historical v3 feature guide](PILOT_RC_V3_FEATURE_ADMISSION.md) still apply.
+The historical v4 validator introduced **`mcri-pilot-rc-v4`** and the unconditional `historical_secret_findings_disposition` proof. The **current v5 validator rejects all v1/v2/v3/v4 records**; do not relabel existing JSON or copy historic `pass` values. Reconstruct a new private release record from current evidence. All three runtime feature choices and the no-go boundaries from the [historical v3 feature guide](PILOT_RC_V3_FEATURE_ADMISSION.md) still apply.
 
 ## Required independent security evidence
 
@@ -24,12 +24,12 @@ An accountable independent security owner must establish and privately retain al
 
 ## Private RC record workflow
 
-Create a fresh v4 draft in access-controlled local storage, never in this repository:
+For a **new** release candidate, use v5 in access-controlled local storage, never a v4 draft or this repository:
 
 ```sh
 python -m scripts.pilot_rc_gate init \
   --release-sha "<independently-verified-exact-40-character-sha>" \
-  --output /secure/pilot-releases/rc-v4.json
+  --output /secure/pilot-releases/rc-v5.json
 ```
 
 The new proof starts as:
@@ -43,11 +43,11 @@ The new proof starts as:
 }
 ```
 
-Only after completing all six requirements above, the authorized operator may populate the proof with `pass`, a **non-secret reference** to the private signed security decision, accountable owner, and actually observed UTC timestamp. Then validate **only record shape and completeness**:
+These historical-secret requirements remain mandatory in v5; a separate **signed-PDF inbound scope/security disposition** is also unconditionally required. Follow the [v5 admission guide](PILOT_RC_V5_SIGNED_PDF_ADMISSION.md) before submitting a record. Only after completing all six requirements above, the authorized operator may populate the historical-secret proof with `pass`, a **non-secret reference** to the private signed security decision, accountable owner, and actually observed UTC timestamp. Then validate **only record shape and completeness**:
 
 ```sh
 python -m scripts.pilot_rc_gate check \
-  /secure/pilot-releases/rc-v4.json \
+  /secure/pilot-releases/rc-v5.json \
   --expected-sha "<independently-verified-exact-40-character-sha>"
 ```
 
