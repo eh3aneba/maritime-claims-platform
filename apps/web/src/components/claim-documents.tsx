@@ -487,7 +487,7 @@ export function ClaimDocuments({ claimId }: { claimId: string }) {
           <span className="rounded-full bg-slate-100 px-2.5 py-1">{ev("summary.currentVersions", { current: currentDocumentCount, versions: documents.length })}</span>
           {quarantinedUploads.length ? <span className="rounded-full bg-red-50 px-2.5 py-1 text-red-700">{ev("summary.quarantined", { count: quarantinedUploads.length })}</span> : null}
           {canManageEvidence && legacyCount ? <button type="button" onClick={() => void queueLegacyRescan()} className="rounded-full bg-amber-100 px-2.5 py-1 text-amber-800 hover:bg-amber-200">{operationState.rescan || ev("summary.rescanLegacy", { count: legacyCount })}</button> : null}
-          <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-emerald-700">{ev("summary.securityActive")}</span>
+          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-600">{ev("summary.securityActive")}</span>
         </div>
       </div>
 
