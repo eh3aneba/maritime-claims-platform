@@ -75,9 +75,66 @@ jobs:
           printf "%s\n" "$classification" >> "$GITHUB_OUTPUT"
           printf "%s\n" "$classification"
 
+  backend-collection:
+    name: Backend collection manifest
+    needs: classify
+    if: ${{ (github.event_name == 'workflow_dispatch' || github.event.pull_request.draft == false) && needs.classify.outputs.backend_required == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      manifest_sha256: ${{ steps.collect.outputs.manifest_sha256 }}
+      artifact_name: ${{ steps.collect.outputs.artifact_name }}
+    defaults:
+      run:
+        working-directory: apps/api
+    env:
+      APP_ENV: test
+      DATABASE_URL: postgresql+psycopg://ci:ci@127.0.0.1:5432/mcri_ci
+      SECRET_KEY: ci-only-not-a-deployment-secret-change-on-every-run-2026
+      AI_PROVIDER: disabled
+      OPENAI_API_KEY: ""
+      LOCAL_STORAGE_PATH: /tmp/mcri-ci-documents
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          # Test the workflow checkout (PR merge commit), never a moving ref.
+          ref: ${{ github.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: apps/api/requirements-dev.lock
+
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --require-hashes -r requirements-dev.lock
+          python -m pip check
+
+      - name: Collect exact-commit backend manifest
+        id: collect
+        shell: bash
+        run: |
+          set -euo pipefail
+          python ../../scripts/backend_shard_selector.py --shards 64 \
+            --write-manifest "$RUNNER_TEMP/backend-nodes.json" \
+            --commit "$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+          echo "artifact_name=backend-collection-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+
+      - name: Upload current-run collection manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.collect.outputs.artifact_name }}
+          path: ${{ runner.temp }}/backend-nodes.json
+          if-no-files-found: error
+          retention-days: 1
+
   backend-shard:
     name: Backend tests shard ${{ matrix.shard }}
-    needs: classify
+    needs: [classify, backend-collection]
     if: ${{ (github.event_name == 'workflow_dispatch' || github.event.pull_request.draft == false) && needs.classify.outputs.backend_required == 'true' }}
     runs-on: ubuntu-latest
     # Individual end-to-end Evidence lineage tests can legitimately approach 25 minutes;
@@ -103,6 +160,9 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
+        with:
+          # Test the workflow checkout (PR merge commit), never a moving ref.
+          ref: ${{ github.sha }}
 
       - name: Set up Python
         uses: actions/setup-python@v7
@@ -120,15 +180,26 @@ jobs:
       - name: Compile backend
         run: python -m compileall app alembic
 
+      - name: Download current-run collection manifest
+        uses: actions/download-artifact@v4
+        with:
+          # Reuse the successful producer's output on a failed-jobs-only retry.
+          name: ${{ needs.backend-collection.outputs.artifact_name }}
+          path: ${{ runner.temp }}/backend-collection
+
       - name: Run backend test shard
         shell: bash
+        env:
+          MANIFEST_SHA256: ${{ needs.backend-collection.outputs.manifest_sha256 }}
         run: |
           set -euo pipefail
           selected_nodes_file="$(mktemp)"
           trap 'rm -f "$selected_nodes_file"' EXIT
           # Capture selector exit status directly (no process-substitution
           # masking of failed collection); NUL delimiters preserve node IDs.
-          python ../../scripts/backend_shard_selector.py --shard "${{ matrix.shard }}" --shards 64 > "$selected_nodes_file"
+          python ../../scripts/backend_shard_selector.py --shard "${{ matrix.shard }}" --shards 64 \
+            --manifest "$RUNNER_TEMP/backend-collection/backend-nodes.json" \
+            --commit "$GITHUB_SHA" --manifest-sha256 "$MANIFEST_SHA256" > "$selected_nodes_file"
           mapfile -d '' -t shard_nodes < "$selected_nodes_file"
           if (( ${#shard_nodes[@]} == 0 )); then
             echo "No backend test nodes selected for shard ${{ matrix.shard }}" >&2
@@ -203,6 +274,7 @@ jobs:
     name: Backend tests
     needs:
       - classify
+      - backend-collection
       - backend-shard
       - backend-narrow
     if: ${{ always() && (github.event_name == 'workflow_dispatch' || github.event.pull_request.draft == false) }}
@@ -216,12 +288,14 @@ jobs:
           FULL_REQUIRED: ${{ needs.classify.outputs.backend_required }}
           NARROW_REQUIRED: ${{ needs.classify.outputs.narrow_required }}
           SHARD_RESULT: ${{ needs.backend-shard.result }}
+          COLLECTION_RESULT: ${{ needs.backend-collection.result }}
           NARROW_RESULT: ${{ needs.backend-narrow.result }}
         run: |
           set -euo pipefail
           [ "$CLASSIFIER_RESULT" = "success" ] || { echo "Backend classifier failed" >&2; exit 1; }
           case "$FULL_REQUIRED/$NARROW_REQUIRED" in
             true/false)
+              [ "$COLLECTION_RESULT" = "success" ] || { echo "Backend collection failed" >&2; exit 1; }
               [ "$SHARD_RESULT" = "success" ] || { echo "Full backend matrix failed" >&2; exit 1; }
               echo 'All 64 Backend shards passed.'
               ;;
