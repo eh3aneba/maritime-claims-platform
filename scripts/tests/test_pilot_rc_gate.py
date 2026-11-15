@@ -11,7 +11,7 @@ import tempfile
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from pilot_rc_gate import FEATURE_MODES, IMAGES, PROOFS, draft, main, validate  # noqa: E402
+from pilot_rc_gate import FEATURE_MODES, IMAGES, PROOFS, SCHEMA, draft, main, validate  # noqa: E402
 
 SHA = "a" * 40
 STAMP = "2026-10-09T09:30:00Z"
@@ -36,6 +36,36 @@ def complete_record():
 
 
 class PilotRCGateTests(unittest.TestCase):
+    def test_active_release_operator_docs_use_v5_and_historical_docs_do_not_misstate_current_schema(self):
+        """Prevent a stale v4 operator command from bypassing the new PDF admission proof."""
+        repo_root = Path(__file__).resolve().parents[2]
+        active = (
+            repo_root / "docs/operations/PILOT_RELEASE_CANDIDATE.md"
+        ).read_text(encoding="utf-8")
+        v5 = (
+            repo_root / "docs/pilot/PILOT_RC_V5_SIGNED_PDF_ADMISSION.md"
+        ).read_text(encoding="utf-8")
+        rehearsal = (
+            repo_root / "docs/operations/PILOT_FRESH_HOST_REHEARSAL.md"
+        ).read_text(encoding="utf-8")
+        old_v4 = (
+            repo_root / "docs/pilot/PILOT_RC_V4_SECURITY_ADMISSION.md"
+        ).read_text(encoding="utf-8")
+        old_v3 = (
+            repo_root / "docs/pilot/PILOT_RC_V3_FEATURE_ADMISSION.md"
+        ).read_text(encoding="utf-8")
+        self.assertEqual(SCHEMA, "mcri-pilot-rc-v5")
+        self.assertIn(SCHEMA, active)
+        self.assertIn(SCHEMA, v5)
+        self.assertIn("signed_pdf_inbound_scope_security_disposition", active)
+        self.assertIn("signed_pdf_inbound_scope_security_disposition", v5)
+        self.assertIn("signed_pdf_inbound_scope_security_disposition", rehearsal)
+        self.assertIn("PILOT_RC_V5_SIGNED_PDF_ADMISSION.md", rehearsal)
+        self.assertIn("HISTORICAL v4 DOCUMENT", old_v4)
+        self.assertIn(SCHEMA, old_v4)
+        self.assertIn(SCHEMA, old_v3)
+        self.assertNotIn("--output /secure/pilot-releases/rc-v4.json", old_v4)
+
     def test_draft_is_no_go(self):
         issues = validate(draft(SHA), SHA)
         self.assertTrue(issues)
