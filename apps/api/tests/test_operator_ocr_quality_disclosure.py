@@ -165,7 +165,7 @@ def test_pdf_input_disclosure_is_conservative_before_any_extraction(mime_type, f
     ) == expected
 
 
-@pytest.mark.parametrize("state", [DocumentProcessingStatus.FAILED, DocumentProcessingStatus.PENDING])
+@pytest.mark.parametrize("state", [DocumentProcessingStatus.FAILED, DocumentProcessingStatus.UPLOADED])
 def test_processing_response_exposes_pdf_not_checked_without_any_extraction(state):
     """An unsuccessful or absent OCR/PDF extraction cannot hide the PDF caution."""
     org_id, claim_id, doc_id = UUID(int=1), UUID(int=2), UUID(int=3)
