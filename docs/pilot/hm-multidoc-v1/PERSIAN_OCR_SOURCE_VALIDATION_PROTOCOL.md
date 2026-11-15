@@ -183,6 +183,20 @@ Input `schema_version: 1`, `records: [...]` contains one page per record:
   false-insertion/retrieval counts. The tool rejects contradictory reports,
   out-of-scope fields and inconsistent literal labels. These intervals do
   not correct biased/non-random sampling.
+- **Incomplete OCR coverage must not masquerade as 100% recall.** The
+  aggregate and every critical kind now also report
+  `reference_positive_observation_coverage` (complete-OCR observations
+  divided by all reference-positive observations), plus
+  `ocr_exact_literal_recall_all_reference_lower_bound` and
+  `ocr_exact_literal_recall_all_reference_upper_bound`. The lower bound
+  provisionally treats *unknown* OCR pages as missing; the upper provisionally
+  treats them as found. The bounds are arithmetic constraints on
+  **self-supplied reference labels**, not Wilson intervals, calibrated
+  quality guarantees, or an authorization to infer missing Persian negation.
+  If no reference-positive literal exists, all three outputs are null rather
+  than a manufactured perfect result. A measured-only 100% alongside 50%
+  observation coverage can therefore still have a conservative lower bound
+  of 50%. No threshold is adopted for Pilot GO.
 - A given **exact literal may be counted at most once per page**, regardless
   of how many `span_ref` names or critical-kind labels it receives. Repeating
   the same boolean presence observation would artificially enlarge the OCR
