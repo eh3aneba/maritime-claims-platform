@@ -1,6 +1,6 @@
 # Pilot v1 Release Candidate v3 — Feature and Evidence Admission (historical)
 
-**Historical v3 note:** Superseded for new release records by [v4 security admission](PILOT_RC_V4_SECURITY_ADMISSION.md) and `mcri-pilot-rc-v4`; v3 records are rejected by the current validator and must not be silently relabeled. The feature-mode rules below still explain v3 design intent.
+**Historical v3 note:** Superseded for new release records by [v4 historical security admission](PILOT_RC_V4_SECURITY_ADMISSION.md) and the current [v5 signed-PDF admission](PILOT_RC_V5_SIGNED_PDF_ADMISSION.md) (`mcri-pilot-rc-v5`). The current validator rejects v1–v4 records; never relabel or reuse stale `pass` values. The feature-mode rules below still explain the original v3 design intent, and all independent current release gates remain mandatory.
 
 **Status: documentation and structural check only.** This is not a Pilot GO decision, real-source OCR validation, or local AI authorization. Source: [#653](https://github.com/eh3aneba/maritime-claims-platform/issues/653); Pilot scope [#647](https://github.com/eh3aneba/maritime-claims-platform/issues/647).
 

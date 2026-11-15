@@ -119,7 +119,7 @@ Keep operator and independent reviewer identity, exact host/environment, timing,
 
 ## 5. Final candidate record and acceptance decision
 
-Create and independently verify the [release candidate evidence record](PILOT_RELEASE_CANDIDATE.md), using:
+Create and independently verify a **fresh v5** [release candidate evidence record](PILOT_RELEASE_CANDIDATE.md), using the [current v5 signed-PDF/verification scope admission guide](../pilot/PILOT_RC_V5_SIGNED_PDF_ADMISSION.md):
 
 ```bash
 python scripts/pilot_rc_gate.py init \
@@ -127,6 +127,6 @@ python scripts/pilot_rc_gate.py init \
   --output /secure/pilot-releases/rc-001.json
 ```
 
-Populate the Alembic head, **reviewed registry image digests**, configuration/limitations references, actual operator attestations and exact-SHA CI references *only when observed*. A successful `pilot_rc_gate.py check` only establishes the shape of this record; it does not verify host evidence or authorize Pilot GO.
+The v5 record contains **mandatory, independent** `signed_pdf_inbound_scope_security_disposition` and `historical_secret_findings_disposition` proofs even when AI/SFTP/Persian critical extraction are disabled. Do not treat the `not_checked` PDF disclosure, green PR Gitleaks, or a completed OCR run as approval. Populate the Alembic head, **reviewed registry image digests**, configuration/limitations references, actual operator attestations and exact-SHA CI references *only when observed*. A successful `pilot_rc_gate.py check` only establishes the shape of this record; it does not verify host evidence or authorize Pilot GO.
 
 **Evidence disposition:** [#461](https://github.com/eh3aneba/maritime-claims-platform/issues/461) requires independently reviewed red-blocked/green-clean enforcement; [#652](https://github.com/eh3aneba/maritime-claims-platform/issues/652) is required before any SFTP-enabled Pilot; and [#653](https://github.com/eh3aneba/maritime-claims-platform/issues/653) remains OPEN until the actual fresh-host, matched restore, rollback, monitoring, tenant and operator exercises have independently passed. Any unknown or failed P0 is **NO-GO**, even when all CI workflows are green.
