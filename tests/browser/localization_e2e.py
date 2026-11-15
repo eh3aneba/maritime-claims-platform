@@ -215,7 +215,7 @@ def main() -> None:
 
         page.route(f"**/api/v1/claims/{claim_id}/documents", route_evidence)
 
-        # Existing claim workspace and evidence security are localized without changing claim state or authority.
+        # Existing claim workspace and per-document Evidence checks are localized without changing claim state or authority.
         page.goto(f"{BASE_URL}{claim_href}", wait_until="networkidle")
         expect(page.locator("html")).to_have_attribute("lang", "fa")
         expect(page.get_by_role("heading", name="MT ORION")).to_be_visible()
@@ -229,7 +229,8 @@ def main() -> None:
         expect(workspace_imo).to_have_attribute("dir", "ltr")
 
         expect(page.get_by_role("heading", name="شواهد و اسناد")).to_be_visible()
-        expect(page.get_by_text("امنیت شواهد فعال است", exact=True)).to_be_visible()
+        expect(page.get_by_text("وضعیت بررسی هر مدرک در ردیف آن نمایش داده می‌شود", exact=True)).to_be_visible()
+        expect(page.get_by_text("امنیت شواهد فعال است", exact=True)).to_have_count(0)
         expect(page.get_by_label("نوع سند")).to_be_visible()
         expect(page.get_by_label("سطح محرمانگی")).to_be_visible()
         expect(page.get_by_text("مدارک پرونده را اینجا رها کنید", exact=True)).to_be_visible()
@@ -252,6 +253,8 @@ def main() -> None:
         expect(page.locator("html")).to_have_attribute("dir", "ltr")
         expect(page.get_by_text("Claim overview", exact=True)).to_be_visible()
         expect(page.get_by_role("heading", name="Evidence & documents")).to_be_visible()
+        expect(page.get_by_text("Document checks are shown per file", exact=True)).to_be_visible()
+        expect(page.get_by_text("Evidence security active", exact=True)).to_have_count(0)
         expect(page.get_by_text("Malware scan · Clean", exact=True).first).to_be_visible()
         expect(page.get_by_text("Blocked by evidence security", exact=True)).to_be_visible()
         expect(page.get_by_role("heading", name="Quarantined evidence")).to_be_visible()
