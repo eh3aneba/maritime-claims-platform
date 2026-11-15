@@ -14,7 +14,6 @@ from pathlib import Path
 import shutil
 import subprocess
 
-import pytest
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -148,10 +147,11 @@ def _cryptographic_content_integrity(
     return completed.returncode == 0
 
 
-@pytest.mark.skipif(shutil.which("openssl") is None, reason="test-only OpenSSL CLI unavailable")
 def test_intact_and_tampered_signed_pdf_both_remain_unverified_in_seeclaims(
     tmp_path: Path,
 ) -> None:
+    # Missing test verifier is a failed acceptance control, never a green skip.
+    assert shutil.which("openssl"), "OpenSSL CLI required for signed-PDF test"
     original, cms, byte_range = _fictional_signed_pdf()
     tampered = original.replace(b"Engine stable", b"Engine failed")
     assert original != tampered
