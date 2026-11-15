@@ -308,6 +308,58 @@ class LocalPersianOcrValidationTests(unittest.TestCase):
         self.assertIsNone(report["false_insertion_rate_all_negative_lower_bound"])
         self.assertIsNone(report["false_insertion_rate_all_negative_upper_bound"])
 
+    def test_search_retrieval_unknowns_bound_conditional_success(self):
+        study = example_study()
+        page = study["records"][0]
+        # Three independent OCR-visible, reference-positive literals, but
+        # only one searched. One 100%-successful retrieval must not mask the
+        # other two unknown search attempts.
+        page["reference_page_text"] = "توربوشارژر موتور روتور"
+        page["ocr_page_text"] = "توربوشارژر موتور روتور"
+        page["critical_spans"] = [
+            {"span_ref": "machine", "kind": "technical_term",
+             "literal": "توربوشارژر", "expected_present": True, "search_exact_hit": True},
+            {"span_ref": "motor", "kind": "technical_term",
+             "literal": "موتور", "expected_present": True, "search_exact_hit": None},
+            {"span_ref": "rotor", "kind": "technical_term",
+             "literal": "روتور", "expected_present": True, "search_exact_hit": None},
+        ]
+        study["records"] = [page]
+        result = evaluate_local_study(study)
+        total = result["overall"]
+        self.assertEqual(total["ocr_exact_found"], 3)
+        self.assertEqual(total["search_measured_given_ocr_found"], 1)
+        self.assertEqual(total["search_unmeasured_given_ocr_found"], 2)
+        self.assertEqual(total["search_exact_retrieval_given_ocr_literal_present"], 1.0)
+        self.assertEqual(total["search_retrieval_observation_coverage_given_ocr_found"], 0.3333)
+        self.assertEqual(total["search_exact_retrieval_all_ocr_found_lower_bound"], 0.3333)
+        self.assertEqual(total["search_exact_retrieval_all_ocr_found_upper_bound"], 1.0)
+        self.assertEqual(
+            result["by_kind"]["technical_term"]["search_retrieval_observation_coverage_given_ocr_found"],
+            0.3333,
+        )
+        self.assertFalse(result["pilot_accepted"])
+        self.assertFalse(result["human_bilingual_review_completed"])
+
+        # All OCR positives unqueried: no measured success rate; unknown
+        # search outcomes leave the possible success range unconstrained.
+        for span in page["critical_spans"]:
+            span["search_exact_hit"] = None
+        unknown = evaluate_local_study(study)["overall"]
+        self.assertIsNone(unknown["search_exact_retrieval_given_ocr_literal_present"])
+        self.assertEqual(unknown["search_retrieval_observation_coverage_given_ocr_found"], 0.0)
+        self.assertEqual(unknown["search_exact_retrieval_all_ocr_found_lower_bound"], 0.0)
+        self.assertEqual(unknown["search_exact_retrieval_all_ocr_found_upper_bound"], 1.0)
+
+        # No literal present in OCR: there is no conditional retrieval cohort;
+        # reject a fake 0% denominator, despite a reference-positive phrase.
+        page["ocr_page_text"] = ""
+        absent = evaluate_local_study(study)["overall"]
+        self.assertEqual(absent["ocr_exact_found"], 0)
+        self.assertIsNone(absent["search_retrieval_observation_coverage_given_ocr_found"])
+        self.assertIsNone(absent["search_exact_retrieval_all_ocr_found_lower_bound"])
+        self.assertIsNone(absent["search_exact_retrieval_all_ocr_found_upper_bound"])
+
     def test_zero_reference_positive_has_no_claimed_recall_bounds(self):
         study = example_study()
         page = study["records"][0]

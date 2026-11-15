@@ -168,6 +168,7 @@ def evaluate_local_study(payload: Any) -> dict[str, Any]:
         found = counts["ocr_exact_found"]
         neg = counts["ocr_negative_measured"]
         search_n = counts["search_measured_given_ocr_found"]
+        search_unknown = counts["search_unmeasured_given_ocr_found"]
         reference_positive = counts["reference_positive"]
         reference_negative = counts["reference_negative_controls"]
         unknown = counts["ocr_positive_unknown"]
@@ -211,6 +212,20 @@ def evaluate_local_study(payload: Any) -> dict[str, Any]:
             ),
             "search_exact_retrieval_given_ocr_literal_present": (
                 round(counts["search_exact_found"] / search_n, 4) if search_n else None
+            ),
+            # Conditional retrieval success among *actually searched* OCR-found
+            # positives is not an end-to-end search quality estimate when
+            # many of those literals were never queried. Keep unknown distinct
+            # from a miss or a hit and expose arithmetic possible bounds.
+            "search_retrieval_observation_coverage_given_ocr_found": (
+                round(search_n / found, 4) if found else None
+            ),
+            "search_exact_retrieval_all_ocr_found_lower_bound": (
+                round(counts["search_exact_found"] / found, 4) if found else None
+            ),
+            "search_exact_retrieval_all_ocr_found_upper_bound": (
+                round((counts["search_exact_found"] + search_unknown) / found, 4)
+                if found else None
             ),
         }
 

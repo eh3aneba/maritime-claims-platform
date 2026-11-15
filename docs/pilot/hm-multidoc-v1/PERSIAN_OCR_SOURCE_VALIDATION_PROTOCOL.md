@@ -231,6 +231,27 @@ Input `schema_version: 1`, `records: [...]` contains one page per record:
   pages; a matching source checksum and a different locator do not verify
   actual page identity, authorized provenance or cohort independence.
 
+- **Conditional search coverage matters independently of OCR recall.** When
+  an annotated reference-positive literal is present in a **complete**
+  OCR page, its exact-search result may still be untested. The original
+  `search_exact_retrieval_given_ocr_literal_present` remains a rate on
+  measured retrieval attempts only. A separate
+  `search_retrieval_observation_coverage_given_ocr_found` now reports
+  the proportion of OCR-present literals with an observed search result.
+  `search_exact_retrieval_all_ocr_found_lower_bound` and
+  `search_exact_retrieval_all_ocr_found_upper_bound` show arithmetic
+  success-rate possibilities if every unmeasured search would fail or
+  succeed, respectively. If only one of three OCR-present phrases was
+  searched and found, the measured-only score is 100% but coverage is
+  33.33% and the all-OCR-found possible range is 33.33%–100%.
+  With no OCR-present literals, conditional coverage and both bounds
+  are `null`. With OCR-present literals but zero search attempts,
+  measured-only score is `null`, coverage is zero and the range is
+  0%–100%. These are unverified, self-reported aggregate observations;
+  search results still require original page, source/version/hash binding
+  and are **not** certified by the metric code. They do not prove lexical,
+  Persian semantic or independent H&M accuracy.
+
 **This instrument checks the syntactic shape of hash metadata, not the
 image bytes, reviewer qualifications, independent source/adjudication,
 negation scope semantics, authorization or true holdout status.** Even if
