@@ -43,8 +43,22 @@ authorizes settlement, or enables real-customer AI processing.
 
 The earlier standalone digest-only independent-review receipts remain
 historically readable as claimed metadata and do not gain workpaper custody
-retroactively. Historical bindings remain append-only if a workpaper is later
-superseded; new bindings require the currently managed document.
+retroactively. **GET-only** readback of an existing managed-workpaper binding
+remains available after the original document is superseded or its OCR text
+hash is replaced by a subsequent processing run. This reads an immutable
+historical statement, using the **original report/review extraction hash**,
+unchanged document version/source-file hash, authenticated tenant/claim scope,
+and the linked workpaper identity/digest from the original audit receipt.
+Source evidence must remain clean, processed and processing-authorized;
+changing the original file hash is not acceptable. A later-superseded
+workpaper does not erase its historical binding. The readback does **not**
+reverify current workpaper custody or cryptographic signer provenance.
+
+**POST still requires the active original document, current original OCR
+text hash, independent reviewer identity, and active managed workpaper.**
+Reprocessing, supersession or changed source bytes never authorizes
+a new old-source binding, hold clearance, claim-fact approval or re-review
+of the original allegation.
 
 ## Open prerequisites
 
