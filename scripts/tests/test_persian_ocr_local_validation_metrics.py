@@ -107,6 +107,18 @@ class LocalPersianOcrValidationTests(unittest.TestCase):
         self.assertEqual(total["search_exact_found"], 1)
         self.assertEqual(total["search_exact_missing"], 1)
         self.assertEqual(total["ocr_exact_literal_recall_measured_only"], 0.6667)
+        self.assertEqual(total["reference_positive_observation_coverage"], 0.75)
+        self.assertEqual(total["ocr_exact_literal_recall_all_reference_lower_bound"], 0.5)
+        self.assertEqual(total["ocr_exact_literal_recall_all_reference_upper_bound"], 0.75)
+        self.assertEqual(
+            actual["by_kind"]["uncertainty"]["reference_positive_observation_coverage"], 0.0
+        )
+        self.assertEqual(
+            actual["by_kind"]["uncertainty"]["ocr_exact_literal_recall_all_reference_lower_bound"], 0.0
+        )
+        self.assertEqual(
+            actual["by_kind"]["uncertainty"]["ocr_exact_literal_recall_all_reference_upper_bound"], 1.0
+        )
         self.assertEqual(total["false_insertion_rate_on_negative_controls"], 0.5)
         self.assertEqual(total["search_exact_retrieval_given_ocr_literal_present"], 0.5)
         self.assertLess(total["ocr_exact_literal_recall_wilson95_descriptive"]["lower"], 0.6667)
@@ -217,9 +229,42 @@ class LocalPersianOcrValidationTests(unittest.TestCase):
         result = evaluate_local_study(study)
         self.assertIsNone(result["overall"]["ocr_exact_literal_recall_measured_only"])
         self.assertIsNone(result["overall"]["ocr_exact_literal_recall_wilson95_descriptive"])
+        self.assertEqual(result["overall"]["reference_positive_observation_coverage"], 0.0)
+        self.assertEqual(result["overall"]["ocr_exact_literal_recall_all_reference_lower_bound"], 0.0)
+        self.assertEqual(result["overall"]["ocr_exact_literal_recall_all_reference_upper_bound"], 1.0)
         self.assertIsNone(result["overall"]["false_insertion_rate_on_negative_controls"])
         self.assertIsNone(result["overall"]["search_exact_retrieval_given_ocr_literal_present"])
         self.assertEqual(result["overall"]["ocr_positive_unknown"], 1)
+
+    def test_measured_only_perfect_score_does_not_hide_unknown_positive_pages(self):
+        study = example_study()
+        # Complete and found on one page, unknown on another: raw measured
+        # recall is 100%, but 50% of reference-positive observations are unmeasured.
+        complete = copy.deepcopy(study["records"][0])
+        complete["critical_spans"] = [complete["critical_spans"][1]]
+        complete["ocr_page_text"] = "توربوشارژر"
+        missing = copy.deepcopy(study["records"][2])
+        missing["critical_spans"] = [missing["critical_spans"][0]]
+        study["records"] = [complete, missing]
+        report = evaluate_local_study(study)["overall"]
+        self.assertEqual(report["reference_positive"], 2)
+        self.assertEqual(report["ocr_exact_literal_recall_measured_only"], 1.0)
+        self.assertEqual(report["reference_positive_observation_coverage"], 0.5)
+        self.assertEqual(report["ocr_exact_literal_recall_all_reference_lower_bound"], 0.5)
+        self.assertEqual(report["ocr_exact_literal_recall_all_reference_upper_bound"], 1.0)
+
+    def test_zero_reference_positive_has_no_claimed_recall_bounds(self):
+        study = example_study()
+        page = study["records"][0]
+        page["critical_spans"] = [page["critical_spans"][2]]
+        result = evaluate_local_study({"schema_version": 1, "records": [page]})
+        overall = result["overall"]
+        self.assertEqual(overall["reference_positive"], 0)
+        self.assertIsNone(overall["ocr_exact_literal_recall_measured_only"])
+        self.assertIsNone(overall["reference_positive_observation_coverage"])
+        self.assertIsNone(overall["ocr_exact_literal_recall_all_reference_lower_bound"])
+        self.assertIsNone(overall["ocr_exact_literal_recall_all_reference_upper_bound"])
+        self.assertFalse(result["pilot_accepted"])
 
     def test_bad_or_contradictory_provenance_input_fails_closed(self):
         originals = example_study()
