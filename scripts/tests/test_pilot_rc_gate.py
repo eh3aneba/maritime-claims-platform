@@ -3,7 +3,9 @@
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 import json
+import os
 from pathlib import Path
+import stat
 import sys
 import tempfile
 import unittest
@@ -323,6 +325,37 @@ class PilotRCGateTests(unittest.TestCase):
             self.assertEqual(0, main(["init", "--output", str(output), "--release-sha", SHA]))
             self.assertEqual(2, main(["init", "--output", str(output), "--release-sha", SHA]))
             self.assertEqual(1, main(["check", str(output), "--expected-sha", SHA]))
+
+    @unittest.skipUnless(os.name == "posix", "POSIX owner-only file mode assertion")
+    def test_init_creates_owner_only_private_record_even_if_umask_permits_read(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "sensitive-rc-draft.json"
+            previous_umask = os.umask(0o000)
+            try:
+                with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
+                    code = main(["init", "--output", str(path), "--release-sha", SHA])
+            finally:
+                os.umask(previous_umask)
+            self.assertEqual(code, 0)
+            self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
+            self.assertEqual(draft(SHA), json.loads(path.read_text(encoding="utf-8")))
+
+    def test_init_rejects_existing_symlink_without_modifying_target(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "existing-rc.json"
+            target.write_text("synthetic-owner-record-unchanged", encoding="utf-8")
+            link = Path(directory) / "symlink-rc.json"
+            try:
+                link.symlink_to(target)
+            except (NotImplementedError, OSError):
+                self.skipTest("symlink creation not supported on this platform")
+            err = StringIO()
+            with redirect_stdout(StringIO()), redirect_stderr(err):
+                code = main(["init", "--output", str(link), "--release-sha", SHA])
+            self.assertEqual(code, 2)
+            self.assertIn("ERROR: cannot create record:", err.getvalue())
+            self.assertNotIn(str(target), err.getvalue())
+            self.assertEqual(target.read_text(encoding="utf-8"), "synthetic-owner-record-unchanged")
 
     def test_missing_file_fails(self):
         self.assertEqual(1, main(["check", "/no/such/release.json", "--expected-sha", SHA]))
