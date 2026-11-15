@@ -8,7 +8,7 @@ On an Ubuntu test runner with the OpenSSL CLI, a test-only detached CMS integrit
 
 Both intact and modified PDFs are independently fed into the actual SeeClaims pypdf text extractor. In each case, text extraction may succeed, while the source bytes and their original SHA-256 remain unchanged by processing. Both responses must report pdf_signature_check_state=not_checked, without a signer verification or signature validity assertion. A successful PDF parse is not evidence that a signed revision remains intact.
 
-**Scope:** The fictional certificate is self-signed and intentionally untrusted. OpenSSL -noverify here checks cryptographic **content integrity only**, not certificate-chain trust, revocation, time-of-signing policy or the claimed signer's identity. The test is skipped if the OpenSSL CLI is missing; review the hosted test result to distinguish pass from skip. This fixture is not a real customer scan or independent signed-PDF evaluation cohort.
+**Scope:** The fictional certificate is self-signed and intentionally untrusted. OpenSSL -noverify here checks cryptographic **content integrity only**, not certificate-chain trust, revocation, time-of-signing policy or the claimed signer's identity. The test FAILS CLOSED if the OpenSSL CLI is missing from the controlled runner; an unavailable integrity oracle cannot count as a green acceptance control. This fixture is not a real customer scan or independent signed-PDF evaluation cohort.
 
 ## Release and owner decision remain unresolved
 
