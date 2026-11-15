@@ -15,7 +15,7 @@ import re
 import subprocess
 import sys
 
-SCHEMA = "mcri-pilot-rc-v3"
+SCHEMA = "mcri-pilot-rc-v4"
 # An unselected capability is not implicitly disabled. An RC operator must
 # attest the actual deployed flags and the controlled disablement evidence.
 FEATURE_MODES = {
@@ -51,6 +51,9 @@ PROOFS = (
     "ci_exact_head",
     "postgres_concurrency_exact_head",
     "supply_chain_exact_head",
+    # Exact-head green PR checks cannot certify historical Gitleaks findings.
+    # Require separately owned full-history security disposition before RC.
+    "historical_secret_findings_disposition",
     "operational_performance_exact_head",
     "production_deployment_policy_exact_head",
 )
