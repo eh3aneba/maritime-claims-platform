@@ -76,10 +76,24 @@ Both contract and browser regressions run inside the existing CI jobs.
 - Missing or mismatched report/source/version/hash, a reviewer who filed
   the report, unauthorized role, tenant mismatch or unauthenticated
   original source access fail closed.
-- The read endpoint covers **currently valid source versions** only.
-  Historical superseded report/review entries remain in the immutable
-  Audit ledger; adding a controlled historical audit retrieval flow is a
-  separate concern.
+- An authenticated `GET .../source-discrepancies/{report_id}/independent-reviews`
+  now supports **read-only historical receipt metadata** after a newer OCR
+  processing run changes the extraction-text hash or the same original
+  document row is superseded (`is_current=false`). It still verifies the
+  report's exact tenant/claim/document, immutable original file hash and
+  document version, and filters each review receipt to the report's **original
+  extraction hash**. This is access to a *past observation*, not a claim
+  that the old OCR text is still current, a corrected transcript, or a
+  cleared source hold. The `POST` route still rejects an old extraction hash
+  and a non-current document, including idempotent-looking retries.
+- This bounded GET still requires an existing un-deleted, clean, processed,
+  accessible original Document and the existing external-source processing
+  release authorization. Soft-deleted, unavailable/unclean or changed
+  original-byte identities remain blocked; it is not a universal archive
+  retrieval API. The current-source browser panel intentionally offers
+  history only for source-matched current reports. Older Audit records
+  remain immutable and additional authorized archive-access policy needs
+  its own review.
 - No raw OCR transcript, personal claim narrative, correction content or
   workpaper bytes are written to this review receipt.
 
