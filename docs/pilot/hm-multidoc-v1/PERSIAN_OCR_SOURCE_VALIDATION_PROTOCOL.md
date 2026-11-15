@@ -197,6 +197,24 @@ Input `schema_version: 1`, `records: [...]` contains one page per record:
   than a manufactured perfect result. A measured-only 100% alongside 50%
   observation coverage can therefore still have a conservative lower bound
   of 50%. No threshold is adopted for Pilot GO.
+- **Negative controls also need coverage disclosure.** The original
+  `false_insertion_rate_on_negative_controls` remains a **measured-only**
+  literal rate. `reference_negative_observation_coverage` now reports
+  complete-OCR negative controls divided by all annotated negative
+  controls. `false_insertion_rate_all_negative_lower_bound` counts only
+  *observed* false insertions over all declared controls;
+  `false_insertion_rate_all_negative_upper_bound` provisionally counts
+  every **unknown/incomplete** negative control as a possible insertion.
+  E.g. one observed insertion among two complete controls plus one
+  incomplete control gives measured-only 50%, coverage 66.67%, and
+  all-control possible false-insertion range 33.33%–66.67%. These are
+  **arithmetic uncertainty bounds**, not a statistical confidence interval
+  or proof that any unobserved text was inserted/absent. With zero
+  reference-negative controls, coverage and both bounds are null;
+  with no complete negative controls, measured-only rate is null even
+  when the possible range spans 0%–100%. The same rules apply
+  independently to every critical kind. No new Pilot GO threshold or
+  human source approval is implied.
 - A given **exact literal may be counted at most once per page**, regardless
   of how many `span_ref` names or critical-kind labels it receives. Repeating
   the same boolean presence observation would artificially enlarge the OCR

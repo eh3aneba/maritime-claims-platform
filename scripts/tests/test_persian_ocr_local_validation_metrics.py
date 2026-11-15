@@ -253,6 +253,61 @@ class LocalPersianOcrValidationTests(unittest.TestCase):
         self.assertEqual(report["ocr_exact_literal_recall_all_reference_lower_bound"], 0.5)
         self.assertEqual(report["ocr_exact_literal_recall_all_reference_upper_bound"], 1.0)
 
+    def test_incomplete_negative_controls_cannot_look_like_zero_insertion(self):
+        study = example_study()
+        unknown_control = copy.deepcopy(study["records"][1])
+        unknown_control["case_ref"] = "FICTION-HM4"
+        unknown_control["source_file_sha256"] = "0" * 64
+        unknown_control["extraction_sha256"] = "1" * 64
+        unknown_control["ocr_page_complete"] = False
+        unknown_control["ocr_page_text"] = ""
+        unknown_control["critical_spans"] = [unknown_control["critical_spans"][1]]
+        study["records"].append(unknown_control)
+
+        report = evaluate_local_study(study)
+        total = report["overall"]
+        self.assertEqual(total["reference_negative_controls"], 3)
+        self.assertEqual(total["ocr_negative_measured"], 2)
+        self.assertEqual(total["ocr_negative_unknown"], 1)
+        self.assertEqual(total["ocr_false_insertion"], 1)
+        self.assertEqual(total["false_insertion_rate_on_negative_controls"], 0.5)
+        self.assertEqual(total["reference_negative_observation_coverage"], 0.6667)
+        self.assertEqual(total["false_insertion_rate_all_negative_lower_bound"], 0.3333)
+        self.assertEqual(total["false_insertion_rate_all_negative_upper_bound"], 0.6667)
+        self.assertEqual(
+            report["by_kind"]["technical_term"]["reference_negative_observation_coverage"], 0.5
+        )
+        self.assertEqual(
+            report["by_kind"]["technical_term"]["false_insertion_rate_all_negative_lower_bound"], 0.0
+        )
+        self.assertEqual(
+            report["by_kind"]["technical_term"]["false_insertion_rate_all_negative_upper_bound"], 0.5
+        )
+        self.assertFalse(report["pilot_accepted"])
+        self.assertFalse(report["negation_scope_semantics_verified"])
+
+        # No complete OCR on any reference-negative control does not mean
+        # a measured 0% false-insertion rate; all such controls stay unknown.
+        study["records"] = [unknown_control]
+        unknown_only = evaluate_local_study(study)["overall"]
+        self.assertIsNone(unknown_only["false_insertion_rate_on_negative_controls"])
+        self.assertEqual(unknown_only["reference_negative_observation_coverage"], 0.0)
+        self.assertEqual(unknown_only["false_insertion_rate_all_negative_lower_bound"], 0.0)
+        self.assertEqual(unknown_only["false_insertion_rate_all_negative_upper_bound"], 1.0)
+
+    def test_zero_negative_controls_have_null_coverage_and_bounds(self):
+        study = example_study()
+        for page in study["records"]:
+            page["critical_spans"] = [
+                span for span in page["critical_spans"] if span["expected_present"]
+            ]
+        report = evaluate_local_study(study)["overall"]
+        self.assertEqual(report["reference_negative_controls"], 0)
+        self.assertIsNone(report["false_insertion_rate_on_negative_controls"])
+        self.assertIsNone(report["reference_negative_observation_coverage"])
+        self.assertIsNone(report["false_insertion_rate_all_negative_lower_bound"])
+        self.assertIsNone(report["false_insertion_rate_all_negative_upper_bound"])
+
     def test_zero_reference_positive_has_no_claimed_recall_bounds(self):
         study = example_study()
         page = study["records"][0]
