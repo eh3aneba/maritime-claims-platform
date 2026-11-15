@@ -60,6 +60,17 @@ def _operator_state(document, job, *, processing_release_required: bool = False)
     return "failed", True, True
 
 
+def _pdf_input_signature_state(*, mime_type: str | None, original_filename: str | None) -> str:
+    """Never infer a verified signature from declared PDF input or its hash."""
+    declared_mime = (mime_type or "").split(";", 1)[0].strip().lower()
+    declared_name = (original_filename or "").strip().lower()
+    return (
+        "not_checked"
+        if declared_mime == "application/pdf" or declared_name.endswith(".pdf")
+        else "not_declared_pdf"
+    )
+
+
 @router.get("", response_model=DocumentProcessingSummary)
 def processing_summary(
     claim_id: UUID,
@@ -91,6 +102,10 @@ def processing_summary(
     return DocumentProcessingSummary(
         job=OperatorProcessingJobResponse.model_validate(job) if job else None,
         text_extraction=extraction,
+        pdf_signature_check_state=_pdf_input_signature_state(
+            mime_type=document.mime_type,
+            original_filename=document.original_filename,
+        ),
         operator_status=operator_status,
         can_retry=can_retry,
         retry_recommended=retry_recommended,
