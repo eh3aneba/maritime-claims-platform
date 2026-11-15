@@ -56,6 +56,7 @@ const documentTypes: ReadonlyArray<readonly [string, EvidenceKey]> = [
   ["pms_record", "doc.pms_record"],
   ["maker_recommendation", "doc.maker_recommendation"],
   ["class_report", "doc.class_report"],
+  ["ocr_review_workpaper", "doc.ocr_review_workpaper"],
   ["quotation", "doc.quotation"],
   ["invoice", "doc.invoice"],
   ["final_invoice", "doc.final_invoice"],
@@ -492,7 +493,7 @@ export function ClaimDocuments({ claimId }: { claimId: string }) {
       </div>
 
       <div className="mt-5 grid gap-3 md:grid-cols-[1fr_200px]">
-        <label><span className="label">{ev("documentType")}</span><select value={documentType} onChange={(event) => setDocumentType(event.target.value)} className="field">{documentTypes.map(([value, key]) => <option value={value} key={value}>{ev(key)}</option>)}</select></label>
+        <label><span className="label">{ev("documentType")}</span><select value={documentType} onChange={(event) => setDocumentType(event.target.value)} className="field">{documentTypes.filter(([value]) => value !== "ocr_review_workpaper" || canManageEvidence).map(([value, key]) => <option value={value} key={value}>{ev(key)}</option>)}</select></label>
         <label><span className="label">{ev("confidentiality")}</span><select value={confidentiality} onChange={(event) => setConfidentiality(event.target.value as ConfidentialityLevel)} className="field"><option value="internal">{ev("conf.internal")}</option><option value="confidential">{ev("conf.confidential")}</option><option value="restricted">{ev("conf.restricted")}</option></select></label>
       </div>
 
