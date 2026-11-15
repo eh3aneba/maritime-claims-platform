@@ -193,6 +193,13 @@ def main() -> None:
         page.route(f"**/api/v1/claims/{CLAIM_ID}/documents/*/processing**", route_processing)
         page.goto(f"{BASE_URL}/claims/{CLAIM_ID}", wait_until="networkidle")
 
+        # A global green 'security active' badge would falsely imply that
+        # malware scanning, OCR source fidelity, and PDF signature trust have
+        # all been established regardless of each individual document.
+        # State only that each file has its own checks and limitations.
+        expect(page.get_by_text("Document checks are shown per file", exact=True)).to_be_visible()
+        expect(page.get_by_text("Evidence security active", exact=True)).to_have_count(0)
+
         # Both running and failed PDFs have no extraction summary. A
         # source SHA-256 display must not be mistaken for signer verification.
         for document_id in (FAILED_DOCUMENT_ID, STALE_DOCUMENT_ID):
@@ -242,6 +249,10 @@ def main() -> None:
         expect(page.get_by_test_id(f"ocr-source-review-{FAILED_DOCUMENT_ID}")).to_contain_text(
             "اسکن تصویری نیازمند مقایسه"
         )
+        expect(page.get_by_text(
+            "وضعیت بررسی هر مدرک در ردیف آن نمایش داده می‌شود", exact=True
+        )).to_be_visible()
+        expect(page.get_by_text("امنیت شواهد فعال است", exact=True)).to_have_count(0)
         browser.close()
 
     print("A04 processing actionability browser E2E passed.")
