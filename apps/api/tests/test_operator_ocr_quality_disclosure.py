@@ -201,3 +201,15 @@ def test_processing_response_exposes_pdf_not_checked_without_any_extraction(stat
     assert result["pdf_signature_check_state"] == "not_checked"
     assert "signature_valid" not in result
     assert "signer_verified" not in result
+
+def test_parser_detected_pdf_never_disappears_behind_mislabelled_input():
+    assert _pdf_input_signature_state(
+        mime_type="application/octet-stream",
+        original_filename="evidence.bin",
+        extraction_method="pypdf+selective-tesseract:eng+fas",
+    ) == "not_checked"
+    assert _pdf_input_signature_state(
+        mime_type="application/octet-stream",
+        original_filename="evidence.bin",
+        extraction_method="python-docx",
+    ) == "not_declared_pdf"
