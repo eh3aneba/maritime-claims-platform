@@ -279,6 +279,7 @@ class PilotRCGateTests(unittest.TestCase):
                 with tempfile.TemporaryDirectory() as directory:
                     path = Path(directory) / "candidate.json"
                     path.write_text(malformed, encoding="utf-8")
+                    path.chmod(0o600)
                     stderr = StringIO()
                     with redirect_stderr(stderr):
                         self.assertEqual(
@@ -299,6 +300,7 @@ class PilotRCGateTests(unittest.TestCase):
             path = Path(directory) / "candidate.json"
             for payload in (invalid, " " * 1_048_577):
                 path.write_text(payload, encoding="utf-8")
+                path.chmod(0o600)
                 stderr = StringIO()
                 with redirect_stderr(stderr):
                     self.assertEqual(
@@ -313,6 +315,7 @@ class PilotRCGateTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "candidate.json"
             path.write_text(json.dumps(complete_record()), encoding="utf-8")
+            path.chmod(0o600)
             stdout = StringIO()
             with redirect_stdout(stdout):
                 self.assertEqual(0, main(["check", str(path), "--expected-sha", SHA]))
@@ -356,6 +359,56 @@ class PilotRCGateTests(unittest.TestCase):
             self.assertIn("ERROR: cannot create record:", err.getvalue())
             self.assertNotIn(str(target), err.getvalue())
             self.assertEqual(target.read_text(encoding="utf-8"), "synthetic-owner-record-unchanged")
+
+    @unittest.skipUnless(os.name == "posix", "POSIX private-file mode enforcement")
+    def test_check_rejects_world_or_group_readable_rc_even_when_evidence_is_pass(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "looks-approved.json"
+            path.write_text(json.dumps(complete_record()), encoding="utf-8")
+            for mode in (0o644, 0o640, 0o604):
+                with self.subTest(mode=oct(mode)):
+                    path.chmod(mode)
+                    stderr = StringIO()
+                    with redirect_stderr(stderr), redirect_stdout(StringIO()):
+                        self.assertEqual(1, main(["check", str(path), "--expected-sha", SHA]))
+                    self.assertEqual(
+                        stderr.getvalue().strip(),
+                        "NO-GO: cannot read JSON record (ValueError)",
+                    )
+            path.chmod(0o600)
+            with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
+                self.assertEqual(0, main(["check", str(path), "--expected-sha", SHA]))
+
+    def test_check_rejects_symlinked_release_record_without_contents(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "protected-evidence.json"
+            target.write_text(json.dumps(complete_record()), encoding="utf-8")
+            target.chmod(0o600)
+            link = Path(directory) / "redirected.json"
+            try:
+                link.symlink_to(target)
+            except (NotImplementedError, OSError):
+                self.skipTest("symlinks unavailable on this platform")
+            stderr, stdout = StringIO(), StringIO()
+            with redirect_stderr(stderr), redirect_stdout(stdout):
+                self.assertEqual(1, main(["check", str(link), "--expected-sha", SHA]))
+            self.assertEqual(stdout.getvalue(), "")
+            self.assertEqual(
+                stderr.getvalue().strip(), "NO-GO: cannot read JSON record (ValueError)"
+            )
+            self.assertEqual(json.loads(target.read_text(encoding="utf-8")), complete_record())
+
+    @unittest.skipUnless(os.name == "posix", "FIFO descriptor check on POSIX")
+    def test_check_rejects_fifo_without_waiting_or_leaking_contents(self):
+        with tempfile.TemporaryDirectory() as directory:
+            fifo = Path(directory) / "not-a-json-file"
+            os.mkfifo(fifo, 0o600)
+            stderr = StringIO()
+            with redirect_stderr(stderr), redirect_stdout(StringIO()):
+                self.assertEqual(1, main(["check", str(fifo), "--expected-sha", SHA]))
+            self.assertEqual(
+                stderr.getvalue().strip(), "NO-GO: cannot read JSON record (ValueError)"
+            )
 
     def test_missing_file_fails(self):
         self.assertEqual(1, main(["check", "/no/such/release.json", "--expected-sha", SHA]))
