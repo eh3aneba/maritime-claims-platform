@@ -232,6 +232,12 @@ def main() -> None:
         expect(page.get_by_text("وضعیت بررسی هر مدرک در ردیف آن نمایش داده می‌شود", exact=True)).to_be_visible()
         expect(page.get_by_text("امنیت شواهد فعال است", exact=True)).to_have_count(0)
         expect(page.get_by_label("نوع سند")).to_be_visible()
+        # A Claims Manager can classify the *managed* reviewer workpaper
+        # through governed Evidence intake; a type label is no expert approval.
+        workpaper_option_fa = page.get_by_label("نوع سند").locator(
+            'option[value="ocr_review_workpaper"]'
+        )
+        expect(workpaper_option_fa).to_have_text("کاربرگ بررسی OCR (تأییدنشده)")
         expect(page.get_by_label("سطح محرمانگی")).to_be_visible()
         expect(page.get_by_text("مدارک پرونده را اینجا رها کنید", exact=True)).to_be_visible()
         expect(page.get_by_text("اسکن بدافزار · پاک", exact=True).first).to_be_visible()
@@ -253,6 +259,10 @@ def main() -> None:
         expect(page.locator("html")).to_have_attribute("dir", "ltr")
         expect(page.get_by_text("Claim overview", exact=True)).to_be_visible()
         expect(page.get_by_role("heading", name="Evidence & documents")).to_be_visible()
+        workpaper_option_en = page.get_by_label("Document type").locator(
+            'option[value="ocr_review_workpaper"]'
+        )
+        expect(workpaper_option_en).to_have_text("OCR review workpaper (unverified)")
         expect(page.get_by_text("Document checks are shown per file", exact=True)).to_be_visible()
         expect(page.get_by_text("Evidence security active", exact=True)).to_have_count(0)
         expect(page.get_by_text("Malware scan · Clean", exact=True).first).to_be_visible()
