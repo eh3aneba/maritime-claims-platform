@@ -118,6 +118,75 @@ def test_independent_manager_observation_is_append_only_and_never_clears_source_
         )) == 0
 
 
+def test_historical_review_receipt_remains_readable_after_reprocessing_and_supersession(
+    tmp_path, monkeypatch,
+) -> None:
+    """A new OCR text hash cannot erase a prior review, or authorize a new one."""
+    ids, doc_id, source, url = _setup(tmp_path, monkeypatch)
+    report = client.post(url, json=source)
+    assert report.status_code == 201, report.text
+    review_url = _review_path(url, report.json()["id"])
+
+    _add_manager("alpha", "review-history@example.com")
+    client.cookies.clear()
+    login("alpha", "review-history@example.com")
+    reviewed = client.post(review_url, json=_payload(source))
+    assert reviewed.status_code == 201, reviewed.text
+    previous_receipt = reviewed.json()
+    assert previous_receipt["source_hold_cleared"] is False
+
+    with TestingSessionLocal() as db:
+        extraction = db.scalar(select(DocumentTextExtraction).where(
+            DocumentTextExtraction.document_id == UUID(doc_id),
+        ))
+        assert extraction is not None
+        extraction.text_hash = "e" * 64
+        db.commit()
+    historical = client.get(review_url)
+    assert historical.status_code == 200, historical.text
+    assert historical.headers["cache-control"] == "no-store"
+    assert historical.json()["items"] == [previous_receipt]
+    assert historical.json()["items"][0]["source_hold_cleared"] is False
+
+    # Immutable history remains visible, but a new review of old OCR bytes
+    # must not be accepted against the reprocessed current extraction.
+    new_review = client.post(review_url, json=_payload(source))
+    assert new_review.status_code == 409, new_review.text
+
+    with TestingSessionLocal() as db:
+        doc = db.get(Document, UUID(doc_id))
+        assert doc is not None
+        doc.is_current = False
+        db.commit()
+    after_supersession = client.get(review_url)
+    assert after_supersession.status_code == 200, after_supersession.text
+    assert after_supersession.json()["items"] == [previous_receipt]
+    assert client.post(review_url, json=_payload(source)).status_code == 409
+
+    client.cookies.clear()
+    login("beta", "beta@example.com")
+    assert client.get(review_url).status_code == 404
+
+    client.cookies.clear()
+    login("alpha", "review-history@example.com")
+    with TestingSessionLocal() as db:
+        doc = db.get(Document, UUID(doc_id))
+        doc.file_hash = "f" * 64
+        db.commit()
+    # A changed original file identity is not an authorized historical
+    # readback. No cross-version or cross-file report is relabeled as current.
+    assert client.get(review_url).status_code == 409
+
+    with TestingSessionLocal() as db:
+        independent = list(db.scalars(select(AuditLog).where(
+            AuditLog.organization_id == UUID(ids["alpha_org"]),
+            AuditLog.entity_id == UUID(doc_id),
+            AuditLog.action == "REVIEW_OCR_SOURCE_DISCREPANCY_INDEPENDENT",
+        )))
+        assert len(independent) == 1
+        assert independent[0].new_values["source_hold_cleared"] is False
+
+
 def test_independent_observation_refuses_self_review_mismatches_and_foreign_tenant(
     tmp_path, monkeypatch,
 ) -> None:
