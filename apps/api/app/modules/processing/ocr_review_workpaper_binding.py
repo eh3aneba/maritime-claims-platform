@@ -71,15 +71,25 @@ def _as_receipt(row: AuditLog) -> WorkpaperLinkReceipt:
 def _review_for_current_source(
     db: Session, *, organization_id: UUID, claim_id: UUID, document: Document,
     extraction_text_hash: str, report_id: UUID, review_id: UUID,
+    historical_readback_only: bool = False,
 ) -> AuditLog:
-    if not document.is_current or document.deleted_at is not None:
+    # New POST bindings require the active source. GET may only read the
+    # original immutable record after later OCR reprocessing/supersession.
+    if not historical_readback_only and (
+        not document.is_current or document.deleted_at is not None
+    ):
         raise HTTPException(status_code=409, detail="Original OCR document is no longer current")
-    _original_report(
+    original = _original_report(
         db, organization_id=organization_id, claim_id=claim_id,
         document_id=document.id, report_id=report_id,
         current_version=document.version_number,
         current_file_hash=document.file_hash,
         current_text_hash=extraction_text_hash,
+        historical_readback_only=historical_readback_only,
+    )
+    original_text_hash = (
+        original.new_values["extraction_text_hash"]
+        if historical_readback_only else extraction_text_hash
     )
     review = db.scalar(select(AuditLog).where(
         AuditLog.id == review_id,
@@ -98,7 +108,10 @@ def _review_for_current_source(
         or type(values.get("document_version")) is not int
         or values["document_version"] != document.version_number
         or values.get("source_file_hash") != document.file_hash
-        or values.get("extraction_text_hash") != extraction_text_hash
+        or values.get("extraction_text_hash") != original_text_hash
+        or review.user_id is None
+        or original.user_id is None
+        or review.user_id == original.user_id
         or values.get("review_state") != "independent_observation_no_clearance"
         or values.get("reviewer_compared_original_scan") is not True
         or values.get("source_hold_cleared") is not False
@@ -241,10 +254,11 @@ def read_review_workpaper_binding(
     document, extraction = _source_guard(
         db, claim_id=claim_id, document_id=document_id, user=current_user,
     )
-    _review_for_current_source(
+    review = _review_for_current_source(
         db, organization_id=current_user.organization_id, claim_id=claim_id,
         document=document, extraction_text_hash=extraction.text_hash,
         report_id=report_id, review_id=review_id,
+        historical_readback_only=True,
     )
     row = _existing_binding(
         db, organization_id=current_user.organization_id, claim_id=claim_id,
@@ -252,4 +266,28 @@ def read_review_workpaper_binding(
     )
     if row is None:
         raise HTTPException(status_code=404, detail="No managed workpaper binding recorded")
+    # A historical GET must describe exactly the original report/review and
+    # linked managed-workpaper digest. It never re-attests current custody,
+    # approves the claim, or treats newer OCR bytes as the reviewed source.
+    linked = row.new_values
+    original_review = review.new_values
+    if (
+        type(linked) is not dict
+        or type(original_review) is not dict
+        or linked.get("claim_id") != str(claim_id)
+        or linked.get("report_id") != str(report_id)
+        or linked.get("review_id") != str(review_id)
+        or type(linked.get("source_document_version")) is not int
+        or linked["source_document_version"] != document.version_number
+        or linked.get("source_file_hash") != document.file_hash
+        or linked.get("extraction_text_hash") != original_review.get("extraction_text_hash")
+        or linked.get("workpaper_file_hash") != original_review.get("review_workpaper_sha256")
+        or type(linked.get("workpaper_document_version")) is not int
+        or linked["workpaper_document_version"] < 1
+        or linked.get("custody_state") != "managed_clean_document_record_linked"
+        or linked.get("original_source_hold_cleared") is not False
+        or linked.get("claim_fact_approved") is not False
+        or row.user_id != review.user_id
+    ):
+        raise HTTPException(status_code=409, detail="Historical workpaper receipt source binding mismatch")
     return _as_receipt(row)

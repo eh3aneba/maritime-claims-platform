@@ -10,6 +10,7 @@ from sqlalchemy import func, select
 
 from app.modules.audit.models import AuditLog
 from app.modules.documents.models import Document, DocumentMalwareScanStatus
+from app.modules.processing.models import DocumentTextExtraction
 from tests.db_harness import TestingSessionLocal, client, reset_database
 from tests.test_document_processing import login
 from tests.test_ocr_discrepancy_observations import _setup
@@ -106,6 +107,107 @@ def test_managed_clean_workpaper_link_has_exact_hash_and_never_clears_ocr_disput
         assert entries[0].new_values["original_source_hold_cleared"] is False
         assert entries[0].new_values["source_file_hash"] == source["source_file_hash"]
         assert entries[0].new_values["extraction_text_hash"] == source["extraction_text_hash"]
+
+
+def test_historical_workpaper_receipt_readback_survives_ocr_reprocessing_and_supersession(
+    tmp_path, monkeypatch,
+) -> None:
+    ids, doc_id, source, report_id, review, workpaper, path, payload = _prepare(
+        tmp_path, monkeypatch,
+    )
+    linked = client.post(path, json=payload)
+    assert linked.status_code == 201, linked.text
+    receipt = linked.json()
+
+    with TestingSessionLocal() as db:
+        extraction = db.scalar(select(DocumentTextExtraction).where(
+            DocumentTextExtraction.document_id == UUID(doc_id),
+        ))
+        assert extraction is not None
+        extraction.text_hash = "e" * 64
+        db.commit()
+
+    # GET is an immutable historic receipt, not re-admission against
+    # the currently different OCR transcript. POST must still fail closed.
+    historical = client.get(path)
+    assert historical.status_code == 200, historical.text
+    assert historical.json() == receipt
+    assert historical.headers["cache-control"] == "no-store"
+    assert client.post(path, json=payload).status_code == 409
+
+    with TestingSessionLocal() as db:
+        original = db.get(Document, UUID(doc_id))
+        workpaper_document = db.get(Document, UUID(workpaper["id"]))
+        assert original is not None and workpaper_document is not None
+        original.is_current = False
+        workpaper_document.is_current = False
+        db.commit()
+    after_supersession = client.get(path)
+    assert after_supersession.status_code == 200, after_supersession.text
+    assert after_supersession.json() == receipt
+    assert client.post(path, json=payload).status_code == 409
+
+    # Tenant isolation and original-file identity are not relaxed for GET.
+    client.cookies.clear()
+    login("beta", "beta@example.com")
+    assert client.get(path).status_code == 404
+    client.cookies.clear()
+    login("alpha", "reviewer@example.com")
+    with TestingSessionLocal() as db:
+        original = db.get(Document, UUID(doc_id))
+        original.file_hash = "f" * 64
+        db.commit()
+    assert client.get(path).status_code == 409
+
+    with TestingSessionLocal() as db:
+        original = db.get(Document, UUID(doc_id))
+        original.file_hash = source["source_file_hash"]
+        db.commit()
+        events = list(db.scalars(select(AuditLog).where(
+            AuditLog.action == "BIND_OCR_INDEPENDENT_REVIEW_WORKPAPER",
+        )))
+        assert len(events) == 1
+        assert events[0].new_values["original_source_hold_cleared"] is False
+        assert events[0].new_values["claim_fact_approved"] is False
+    assert client.get(path).json() == receipt
+    pack = client.get(f"/api/v1/claims/{ids['claim_id']}/claim-pack-exports")
+    assert pack.status_code == 200
+    # Supersession may affect *current* discrepancy counters, but it cannot
+    # silently change historical approval or mark this review as verified.
+    assert "current_unverified_ocr_source_report_count" in pack.json()
+
+
+def test_workpaper_historical_get_rejects_cross_linked_or_tampered_metadata(
+    tmp_path, monkeypatch,
+) -> None:
+    _, doc_id, source, _, review, _, path, payload = _prepare(tmp_path, monkeypatch)
+    linked = client.post(path, json=payload)
+    assert linked.status_code == 201, linked.text
+    for key, value in (
+        ("extraction_text_hash", "e" * 64),
+        ("source_file_hash", "f" * 64),
+        ("workpaper_file_hash", "e" * 64),
+        ("report_id", str(uuid4())),
+        ("original_source_hold_cleared", True),
+        ("claim_fact_approved", True),
+    ):
+        with TestingSessionLocal() as db:
+            event = db.scalar(select(AuditLog).where(
+                AuditLog.action == "BIND_OCR_INDEPENDENT_REVIEW_WORKPAPER",
+            ))
+            assert event is not None
+            before = dict(event.new_values)
+            event.new_values = {**before, key: value}
+            db.commit()
+        response = client.get(path)
+        assert response.status_code == 409, (key, response.text)
+        with TestingSessionLocal() as db:
+            event = db.scalar(select(AuditLog).where(
+                AuditLog.action == "BIND_OCR_INDEPENDENT_REVIEW_WORKPAPER",
+            ))
+            event.new_values = before
+            db.commit()
+    assert client.get(path).status_code == 200
 
 
 def test_workpaper_link_refuses_wrong_hash_source_user_role_tenant_and_unclean_evidence(
