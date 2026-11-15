@@ -6,6 +6,8 @@ Tracking: [Pilot P0 operations #653](https://github.com/eh3aneba/maritime-claims
 
 The standard-library `scripts/pilot_rc_gate.py` tool creates a NO-GO draft and validates **record completeness**. It does not check a live host, inspect evidence contents, query GitHub, activate a ruleset, approve customer data or authorize production. Even a structurally complete record is **not** a GO decision. A named authorized operator must independently verify the supporting artifacts and approve the controlled pilot separately.
 
+**JSON record parsing is strict:** the command refuses duplicate keys at any nesting level (including conflicting `pending`/`pass` values for the same proof), nonstandard `NaN`/`Infinity` constants and input larger than 1 MiB. These malformed records return `NO-GO` without echoing raw content or evidence. This is only syntactic protection against ambiguous records: it cannot establish the truth of an otherwise well-formed `pass` attestation.
+
 ## Prepare the release candidate
 
 The operator should first follow the [fresh-host synthetic deployment rehearsal](PILOT_FRESH_HOST_REHEARSAL.md) for the exact released SHA, validated image identity, recovery and monitoring evidence. A linked runbook is **not** proof that the operations actually occurred.
