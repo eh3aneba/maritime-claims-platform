@@ -1,5 +1,8 @@
 """Regression tests for the fail-closed Pilot v1 release-candidate record gate."""
 
+from contextlib import redirect_stderr, redirect_stdout
+from io import StringIO
+import json
 from pathlib import Path
 import sys
 import tempfile
@@ -250,6 +253,69 @@ class PilotRCGateTests(unittest.TestCase):
 
     def test_non_object_fails(self):
         self.assertTrue(validate([], SHA))
+
+    def test_check_rejects_duplicate_keys_at_root_and_in_security_proof(self):
+        valid = json.dumps(complete_record(), sort_keys=True)
+        key = '"historical_secret_findings_disposition": {'
+        start = valid.index(key)
+        result_index = valid.index('"result": "pass"', start)
+        # Last-value-wins parsing would mask an earlier pending proof.
+        conflicting_proof = (
+            valid[:result_index] + '"result": "pending", ' + valid[result_index:]
+        )
+        conflicting_sha = valid.replace(
+            '"release_sha":', '"release_sha": "' + "c" * 40 + '", "release_sha":',
+            1,
+        )
+        repeated_object = valid.replace(
+            key, key + '"result": "pending"}, ' + key, 1,
+        )
+        for index, malformed in enumerate(
+            (conflicting_sha, conflicting_proof, repeated_object)
+        ):
+            with self.subTest(case=index):
+                with tempfile.TemporaryDirectory() as directory:
+                    path = Path(directory) / "candidate.json"
+                    path.write_text(malformed, encoding="utf-8")
+                    stderr = StringIO()
+                    with redirect_stderr(stderr):
+                        self.assertEqual(
+                            1, main(["check", str(path), "--expected-sha", SHA])
+                        )
+                    self.assertIn(
+                        "NO-GO: cannot read JSON record (ValueError)",
+                        stderr.getvalue(),
+                    )
+                    self.assertNotIn("pending", stderr.getvalue())
+
+    def test_check_rejects_nonstandard_numbers_and_large_input(self):
+        valid = json.dumps(complete_record(), sort_keys=True)
+        invalid = valid.replace(
+            '"release_sha": "' + SHA + '"', '"release_sha": NaN', 1
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "candidate.json"
+            for payload in (invalid, " " * 1_048_577):
+                path.write_text(payload, encoding="utf-8")
+                stderr = StringIO()
+                with redirect_stderr(stderr):
+                    self.assertEqual(
+                        1, main(["check", str(path), "--expected-sha", SHA])
+                    )
+                self.assertIn(
+                    "NO-GO: cannot read JSON record (ValueError)",
+                    stderr.getvalue(),
+                )
+
+    def test_check_accepts_unambiguous_valid_synthetic_record(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "candidate.json"
+            path.write_text(json.dumps(complete_record()), encoding="utf-8")
+            stdout = StringIO()
+            with redirect_stdout(stdout):
+                self.assertEqual(0, main(["check", str(path), "--expected-sha", SHA]))
+            self.assertIn("RECORD COMPLETE", stdout.getvalue())
+            self.assertIn("NOT pilot authorization", stdout.getvalue())
 
     def test_init_never_overwrites_and_check_draft_fails(self):
         with tempfile.TemporaryDirectory() as directory:
