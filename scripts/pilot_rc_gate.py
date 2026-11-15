@@ -60,6 +60,25 @@ PROOFS = (
 SHA_RE = re.compile(r"[a-f0-9]{40}\Z")
 MIGRATION_RE = re.compile(r"[0-9]{4}_[a-z0-9_]+\Z")
 DIGEST_RE = re.compile(r"[a-f0-9]{64}\Z")
+# RC evidence metadata should be small; refuse oversized untrusted local JSON.
+MAX_RC_RECORD_BYTES = 1_048_576
+
+
+def _reject_duplicate_record_keys(pairs: list[tuple[str, object]]) -> dict:
+    """Reject ambiguous fields at every nested level, not just the root."""
+    record = {}
+    for key, value in pairs:
+        if key in record:
+            raise ValueError("duplicate_release_record_key")
+        record[key] = value
+    return record
+
+
+def _reject_nonstandard_json_constant(_value: str) -> None:
+    """Python JSON otherwise accepts NaN/Infinity despite the JSON standard."""
+    raise ValueError("nonstandard_release_record_number")
+
+
 
 
 def draft(sha: str) -> dict:
@@ -211,9 +230,15 @@ def main(argv: list[str] | None = None) -> int:
         print("NO-GO draft created. No runtime, security or pilot evidence was verified.")
         return 0
     try:
+        if args.record.stat().st_size > MAX_RC_RECORD_BYTES:
+            raise ValueError("oversized_release_record")
         with args.record.open(encoding="utf-8") as fh:
-            data = json.load(fh)
-    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            data = json.load(
+                fh,
+                object_pairs_hook=_reject_duplicate_record_keys,
+                parse_constant=_reject_nonstandard_json_constant,
+            )
+    except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
         print(f"NO-GO: cannot read JSON record ({type(exc).__name__})", file=sys.stderr)
         return 1
     issues = validate(data, args.expected_sha)
