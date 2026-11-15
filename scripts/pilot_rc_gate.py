@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 from datetime import datetime, timezone
 import json
+import os
 from pathlib import Path
 import re
 import subprocess
@@ -220,8 +221,11 @@ def main(argv: list[str] | None = None) -> int:
             print("ERROR: full lowercase 40-character release SHA required", file=sys.stderr)
             return 2
         try:
-            # 'x' means an old or newly-created record can never be overwritten silently.
-            with args.output.open("x", encoding="utf-8") as fh:
+            # Fail closed on existing files/symlinks, creating a private
+            # operator record even with a permissive process umask.
+            flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+            descriptor = os.open(args.output, flags, 0o600)
+            with os.fdopen(descriptor, "w", encoding="utf-8") as fh:
                 json.dump(draft(sha), fh, indent=2, sort_keys=True)
                 fh.write("\n")
         except OSError as exc:
