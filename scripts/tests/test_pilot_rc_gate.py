@@ -157,6 +157,41 @@ class PilotRCGateTests(unittest.TestCase):
             self.assertTrue(any(required in e for e in validate(record, SHA)))
             record["proofs"][required]["result"] = "pass"
 
+    def test_signed_pdf_inbound_policy_requires_owner_approval_even_with_optional_features_off(self):
+        key = "signed_pdf_inbound_scope_security_disposition"
+        # The PDF signature status is always not_checked in production today.
+        # The release record cannot infer an authenticity decision from CI,
+        # a source SHA, uploaded MIME, or an operator-disabled OCR feature.
+        self.assertEqual(draft(SHA)["proofs"][key]["result"], "pending")
+        self.assertTrue(any(key in issue for issue in validate(draft(SHA), SHA)))
+
+        record = complete_record()
+        for feature, conditional in (
+            ("sftp_ingestion", "real_sftp_governed_lifecycle"),
+            ("ai_inference", "local_ai_independent_acceptance"),
+            ("persian_critical_extraction", "persian_critical_ocr_acceptance"),
+        ):
+            record["features"][feature] = "disabled"
+            record["proofs"][conditional]["result"] = "not_applicable"
+        self.assertEqual([], validate(record, SHA))
+        for result in ("pending", "not_applicable", "failed", "unknown", None, True):
+            with self.subTest(result=result):
+                record["proofs"][key]["result"] = result
+                self.assertTrue(any(key in e for e in validate(record, SHA)))
+        record["proofs"][key]["result"] = "pass"
+        for field, invalid in (
+            ("evidence_ref", ""),
+            ("owner", ""),
+            ("observed_at_utc", "2026-11-15T10:00:00+03:30"),
+        ):
+            with self.subTest(field=field):
+                original = record["proofs"][key][field]
+                record["proofs"][key][field] = invalid
+                self.assertTrue(any(key + "." + field in e for e in validate(record, SHA)))
+                record["proofs"][key][field] = original
+        del record["proofs"][key]
+        self.assertTrue(any("proofs:" in e for e in validate(record, SHA)))
+
     def test_historical_secret_finding_triage_is_mandatory_not_conditional(self):
         key = "historical_secret_findings_disposition"
         # A green PR scan never implicitly clears the older Gitleaks findings.
@@ -187,7 +222,7 @@ class PilotRCGateTests(unittest.TestCase):
 
     def test_old_schema_is_rejected_without_migration(self):
         record = complete_record()
-        for old_schema in ("mcri-pilot-rc-v1", "mcri-pilot-rc-v2", "mcri-pilot-rc-v3"):
+        for old_schema in ("mcri-pilot-rc-v1", "mcri-pilot-rc-v2", "mcri-pilot-rc-v3", "mcri-pilot-rc-v4"):
             record["schema"] = old_schema
             self.assertTrue(any("schema:" in error for error in validate(record, SHA)))
 
