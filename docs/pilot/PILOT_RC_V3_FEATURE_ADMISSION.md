@@ -1,4 +1,6 @@
-# Pilot v1 Release Candidate v3 — Feature and Evidence Admission
+# Pilot v1 Release Candidate v3 — Feature and Evidence Admission (historical)
+
+**Historical v3 note:** Superseded for new release records by [v4 security admission](PILOT_RC_V4_SECURITY_ADMISSION.md) and `mcri-pilot-rc-v4`; v3 records are rejected by the current validator and must not be silently relabeled. The feature-mode rules below still explain v3 design intent.
 
 **Status: documentation and structural check only.** This is not a Pilot GO decision, real-source OCR validation, or local AI authorization. Source: [#653](https://github.com/eh3aneba/maritime-claims-platform/issues/653); Pilot scope [#647](https://github.com/eh3aneba/maritime-claims-platform/issues/647).
 

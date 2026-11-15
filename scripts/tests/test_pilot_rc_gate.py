@@ -152,9 +152,37 @@ class PilotRCGateTests(unittest.TestCase):
             self.assertTrue(any(required in e for e in validate(record, SHA)))
             record["proofs"][required]["result"] = "pass"
 
+    def test_historical_secret_finding_triage_is_mandatory_not_conditional(self):
+        key = "historical_secret_findings_disposition"
+        # A green PR scan never implicitly clears the older Gitleaks findings.
+        self.assertEqual(draft(SHA)["proofs"][key]["result"], "pending")
+        self.assertTrue(any(key in issue for issue in validate(draft(SHA), SHA)))
+
+        record = complete_record()
+        self.assertEqual([], validate(record, SHA))
+        for result in ("pending", "not_applicable", "failed", "unknown", None, True):
+            with self.subTest(result=result):
+                record["proofs"][key]["result"] = result
+                self.assertTrue(any(key in issue for issue in validate(record, SHA)))
+        record["proofs"][key]["result"] = "pass"
+
+        for field, bad in (
+            ("evidence_ref", ""), ("owner", ""),
+            ("observed_at_utc", "2026-11-15T00:00:00+03:30"),
+        ):
+            with self.subTest(field=field):
+                original = record["proofs"][key][field]
+                record["proofs"][key][field] = bad
+                self.assertTrue(any(key + "." + field in issue
+                                    for issue in validate(record, SHA)))
+                record["proofs"][key][field] = original
+
+        del record["proofs"][key]
+        self.assertTrue(validate(record, SHA))
+
     def test_old_schema_is_rejected_without_migration(self):
         record = complete_record()
-        for old_schema in ("mcri-pilot-rc-v1", "mcri-pilot-rc-v2"):
+        for old_schema in ("mcri-pilot-rc-v1", "mcri-pilot-rc-v2", "mcri-pilot-rc-v3"):
             record["schema"] = old_schema
             self.assertTrue(any("schema:" in error for error in validate(record, SHA)))
 
