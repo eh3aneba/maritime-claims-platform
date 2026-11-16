@@ -25,6 +25,8 @@ def test_parallel_worker_stages_are_distinguishable_and_privacy_safe(
     labels = (
         "same_tick_a_barrier", "same_tick_a_execute",
         "same_tick_b_barrier", "same_tick_b_execute",
+        "same_tick_a_binding_lock", "same_tick_b_binding_lock",
+        "same_tick_a_provider_metadata", "same_tick_b_provider_metadata",
         "disable_race_consume_execute", "disable_race_disable_execute",
     )
 
