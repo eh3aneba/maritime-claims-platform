@@ -608,10 +608,16 @@ def test_old_disputed_source_lifecycle_does_not_clear_bound_assessment_hold(
     for preserved in ("id", "value", "version", "approved_by_id", "approved_at", "source_extraction_id"):
         assert fact_after_retirement[preserved] == fact_before_retirement[preserved]
     review_detail = client.get(f"/api/v1/ai-review/{ids['maker_id']}")
-    assert review_detail.status_code == 200, review_detail.text
-    assert review_detail.json()["current_claim_fact"]["source_revalidation_reason"] == (
-        "source_ocr_discrepancy_reported_unverified"
-    )
+    if source_lifecycle == "soft_deleted":
+        # The AI review route deliberately hides soft-deleted evidence. The
+        # canonical claim-facts readback remains available to an authorized
+        # claim user and must still surface the exact historical allegation.
+        assert review_detail.status_code == 404
+    else:
+        assert review_detail.status_code == 200, review_detail.text
+        assert review_detail.json()["current_claim_fact"]["source_revalidation_reason"] == (
+            "source_ocr_discrepancy_reported_unverified"
+        )
 
     historical = client.get(f"{base}/versions/{assessment['id']}")
     assert historical.status_code == 200, historical.text
