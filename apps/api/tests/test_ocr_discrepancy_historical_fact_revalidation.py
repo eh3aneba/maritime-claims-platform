@@ -635,9 +635,12 @@ def test_old_disputed_source_lifecycle_does_not_clear_bound_assessment_hold(
         assert assessment_unverified_ocr_fact_review_hold(
             db, claim=claim, assessment=SimpleNamespace(source_snapshot=snapshot),
         ) is True
+    # The specific historical operator report must remain visible even
+    # after source retirement; generic unusable-source applies only when no
+    # exact-bound report was ever recorded.
     fact = _get_facts(ids)
     assert fact["source_revalidation_required"] is True
-    assert fact["source_revalidation_reason"] == "source_document_unusable"
+    assert fact["source_revalidation_reason"] == "source_ocr_discrepancy_reported_unverified"
 
 
 def test_retired_undisputed_ai_fact_keeps_generic_unusable_source_warning() -> None:
