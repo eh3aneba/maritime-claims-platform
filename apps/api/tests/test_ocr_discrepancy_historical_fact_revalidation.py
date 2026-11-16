@@ -384,7 +384,11 @@ def test_historical_claim_pack_list_and_download_disclose_later_source_report_wi
     assert baseline_list.json()["total"] == 1
     assert baseline_list.json()["current_unverified_ocr_source_report_count"] == 0
     assert baseline_list.json()["approved_ai_fact_unverified_ocr_discrepancy_count"] == 0
-    original_download = client.get(download_url)
+    expected_before = {
+        "expected_current_unverified_ocr_source_report_count": 0,
+        "expected_approved_ai_fact_unverified_ocr_discrepancy_count": 0,
+    }
+    original_download = client.get(download_url, params=expected_before)
     assert original_download.status_code == 200, original_download.text
     header = "X-Claim-Current-Unverified-OCR-Source-Report-Count"
     fact_header = "X-Claim-Approved-AI-Fact-Unverified-OCR-Discrepancy-Count"
@@ -408,7 +412,16 @@ def test_historical_claim_pack_list_and_download_disclose_later_source_report_wi
     assert updated_list.json()["items"] == baseline_list.json()["items"]
     assert updated_list.json()["current_unverified_ocr_source_report_count"] == 1
     assert updated_list.json()["approved_ai_fact_unverified_ocr_discrepancy_count"] == 1
-    original_again = client.get(download_url)
+    # A source report arrived between the UI list GET and the download GET.
+    # Never stream old archive bytes based on the stale 0/0 confirmation.
+    stale = client.get(download_url, params=expected_before)
+    assert stale.status_code == 409, stale.text
+    assert "warning counts changed" in stale.json()["detail"]
+    assert "x-claim-pack-file-sha256" not in stale.headers
+    original_again = client.get(download_url, params={
+        "expected_current_unverified_ocr_source_report_count": 1,
+        "expected_approved_ai_fact_unverified_ocr_discrepancy_count": 1,
+    })
     assert original_again.status_code == 200, original_again.text
     assert original_again.headers[header] == "1"
     assert original_again.headers[fact_header] == "1"
@@ -417,6 +430,34 @@ def test_historical_claim_pack_list_and_download_disclose_later_source_report_wi
     assert original_again.content == saved_bytes
     assert _get_facts(ids)["id"] == original_fact["id"]
     assert _get_facts(ids)["approved_at"] == original_fact["approved_at"]
+
+
+
+
+@pytest.mark.parametrize(
+    "expected",
+    [
+        {"expected_current_unverified_ocr_source_report_count": 0},
+        {"expected_approved_ai_fact_unverified_ocr_discrepancy_count": 0},
+    ],
+)
+def test_claim_pack_conditional_download_rejects_partial_warning_snapshot(
+    expected: dict[str, int],
+) -> None:
+    """One-sided optimistic warning checks must not bypass either count."""
+    ids, _ = _setup_ocr_reviewed_fact()
+    base = f"/api/v1/claims/{ids['claim_id']}/claim-pack-exports"
+    generated = client.post(base, json={
+        "export_format": "xlsx",
+        "acknowledge_review_aid": True,
+    })
+    assert generated.status_code == 201, generated.text
+    response = client.get(
+        f"{base}/{generated.json()['id']}/download", params=expected,
+    )
+    assert response.status_code == 400, response.text
+    assert "Both expected" in response.json()["detail"]
+    assert "x-claim-pack-file-sha256" not in response.headers
 
 
 def test_historical_claim_pack_notice_ignores_wrong_hash_and_foreign_tenant_receipts() -> None:
@@ -495,7 +536,22 @@ def test_archived_pack_retains_live_bound_fact_dispute_after_source_retirement(
     assert listed.json()["current_unverified_ocr_source_report_count"] == 0
     assert listed.json()["approved_ai_fact_unverified_ocr_discrepancy_count"] == 1
 
-    downloaded = client.get(download_url)
+    # The *current document* report count became 0 while the original
+    # approved AI fact's dispute remained. Require both dimensions to match.
+    stale_current = client.get(download_url, params={
+        "expected_current_unverified_ocr_source_report_count": 1,
+        "expected_approved_ai_fact_unverified_ocr_discrepancy_count": 1,
+    })
+    assert stale_current.status_code == 409
+    stale_fact = client.get(download_url, params={
+        "expected_current_unverified_ocr_source_report_count": 0,
+        "expected_approved_ai_fact_unverified_ocr_discrepancy_count": 0,
+    })
+    assert stale_fact.status_code == 409
+    downloaded = client.get(download_url, params={
+        "expected_current_unverified_ocr_source_report_count": 0,
+        "expected_approved_ai_fact_unverified_ocr_discrepancy_count": 1,
+    })
     assert downloaded.status_code == 200, downloaded.text
     assert downloaded.headers["X-Claim-Current-Unverified-OCR-Source-Report-Count"] == "0"
     assert (
