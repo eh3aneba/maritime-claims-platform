@@ -135,7 +135,10 @@ export default function ClaimPackExportPage() {
         ));
         if (!confirmed) return;
       }
-      await downloadClaimPackExport(id, item);
+      await downloadClaimPackExport(id, item, {
+        current_unverified_ocr_source_report_count: liveCount,
+        approved_ai_fact_unverified_ocr_discrepancy_count: boundCount,
+      });
     } catch (caught) {
       setError(
         caught instanceof ApiError

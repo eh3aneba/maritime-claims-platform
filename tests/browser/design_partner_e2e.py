@@ -288,41 +288,74 @@ def main() -> None:
         if not download_info.value.suggested_filename.endswith(".pdf"):
             raise AssertionError("Claim-pack download did not return a PDF filename")
 
-        # A later current-source OCR report is a claim-wide UNVERIFIED
-        # advisory, not an amendment of the previously saved PDF. Simulate
-        # only the API count in this synthetic browser scenario; do not create
-        # a fictitious source verification or mutate real Claim Pack records.
+        # Project a *fictional*, unverified current-source OCR report only
+        # into the browser list response; never write an allegation or fake
+        # independent verification into this demo claim. The server's real
+        # count remains unchanged, so the newer conditional download endpoint
+        # MUST reject the stale browser-only count after confirmation.
         def current_ocr_concern_response(route):
             if route.request.method != "GET":
                 route.continue_()
                 return
             response = route.fetch()
             data = response.json()
-            data["current_unverified_ocr_source_report_count"] = 1
+            data["current_unverified_ocr_source_report_count"] += 1
             route.fulfill(response=response, json=data)
 
-        page.route("**/api/v1/claims/**/claim-pack-exports", current_ocr_concern_response)
+        list_pattern = "**/api/v1/claims/**/claim-pack-exports"
+        page.route(list_pattern, current_ocr_concern_response)
         page.reload(wait_until="networkidle")
         expect(page.get_by_role("heading", name="Current unverified OCR source reports")).to_be_visible()
         expect(page.get_by_text(re.compile(r"Earlier Claim Pack files are immutable"))).to_be_visible()
+
         dialogs = []
+        unexpected_downloads = []
+        page.on("download", lambda download: unexpected_downloads.append(download.suggested_filename))
 
         def cancel_warning(dialog):
             dialogs.append(dialog.message)
             dialog.dismiss()
 
+        # The prompt follows an asynchronous list GET; wait for the actual
+        # Playwright dialog instead of racing the network response.
         page.once("dialog", cancel_warning)
-        page.get_by_role("button", name="Download").first.click()
-        expect(page.get_by_role("button", name="Download").first).to_be_enabled()
-        if len(dialogs) != 1 or "unverified OCR source discrepancy" not in dialogs[0]:
+        with page.expect_event("dialog", timeout=30_000) as canceled_event:
+            page.get_by_role("button", name="Download").first.click()
+        if len(dialogs) != 1 or dialogs[0] != canceled_event.value.message:
+            raise AssertionError("Expected precisely one source warning before canceled download")
+        if "unverified OCR source discrepancy" not in dialogs[0]:
             raise AssertionError("Unverified OCR concern must require explicit download confirmation")
+        expect(page.get_by_role("button", name="Download").first).to_be_enabled()
+        if unexpected_downloads:
+            raise AssertionError("Canceled OCR source warning may not download an archived file")
 
+        # Accepting a *stale* browser-only count is not authorization to
+        # download. Assert the real API returns 409, and no download starts.
         page.once("dialog", lambda dialog: dialog.accept())
-        with page.expect_download() as reviewed_download:
+        with page.expect_response(
+            lambda response: "/claim-pack-exports/" in response.url
+            and "/download?" in response.url
+            and response.status == 409,
+            timeout=30_000,
+        ) as blocked_download:
+            page.get_by_role("button", name="Download").first.click()
+        if "warning counts changed" not in blocked_download.value.json()["detail"]:
+            raise AssertionError("Expected the server's conditional OCR warning conflict")
+        expect(page.get_by_role("alert").filter(
+            has_text="Claim Pack OCR source warning counts changed"
+        )).to_be_visible()
+        if unexpected_downloads:
+            raise AssertionError("Stale OCR source warning may not download an archived file")
+
+        # Retry with *real* server counts after removing the read-only fixture;
+        # a legitimately current confirmation still downloads identical bytes.
+        page.unroute(list_pattern, current_ocr_concern_response)
+        page.reload(wait_until="networkidle")
+        expect(page.get_by_role("heading", name="Current unverified OCR source reports")).to_have_count(0)
+        with page.expect_download(timeout=30_000) as reviewed_download:
             page.get_by_role("button", name="Download").first.click()
         if reviewed_download.value.suggested_filename != download_info.value.suggested_filename:
-            raise AssertionError("Acknowledged historical download must preserve original file identity")
-        page.unroute("**/api/v1/claims/**/claim-pack-exports", current_ocr_concern_response)
+            raise AssertionError("Current confirmed historical download must preserve original file identity")
 
         page.goto(f"{BASE_URL}{claim_href}", wait_until="networkidle")
         with page.expect_response(

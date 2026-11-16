@@ -632,14 +632,31 @@ export function generateClaimPackExport(
 export async function downloadClaimPackExport(
   claimId: string,
   item: import("./types").ClaimPackExport,
+  confirmedSourceCounts: Pick<
+    import("./types").ClaimPackExportListResponse,
+    | "current_unverified_ocr_source_report_count"
+    | "approved_ai_fact_unverified_ocr_discrepancy_count"
+  >,
 ) {
+  // These values are the exact snapshot shown in the user's last source
+  // warning confirmation. The server returns 409 without file bytes when
+  // either advisory changed before the download response was prepared.
+  const expectedCounts = new URLSearchParams({
+    expected_current_unverified_ocr_source_report_count: String(
+      confirmedSourceCounts.current_unverified_ocr_source_report_count,
+    ),
+    expected_approved_ai_fact_unverified_ocr_discrepancy_count: String(
+      confirmedSourceCounts.approved_ai_fact_unverified_ocr_discrepancy_count,
+    ),
+  });
   const response = await fetch(
     API_BASE +
       "/claims/" +
       claimId +
       "/claim-pack-exports/" +
       item.id +
-      "/download",
+      "/download?" +
+      expectedCounts.toString(),
     { credentials: "include" },
   );
   if (!response.ok) {

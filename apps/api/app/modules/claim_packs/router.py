@@ -7,7 +7,7 @@ from tempfile import NamedTemporaryFile, TemporaryDirectory
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from starlette.types import Receive, Scope, Send
@@ -197,6 +197,12 @@ def download_export(
     export_id: UUID,
     current_user: CurrentUser,
     db: Annotated[Session, Depends(get_db)],
+    expected_current_unverified_ocr_source_report_count: Annotated[
+        int | None, Query(ge=0)
+    ] = None,
+    expected_approved_ai_fact_unverified_ocr_discrepancy_count: Annotated[
+        int | None, Query(ge=0)
+    ] = None,
 ) -> FileResponse:
     try:
         item = get_claim_pack_export(
@@ -214,6 +220,17 @@ def download_export(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Claim-pack export not found",
+        )
+    # Browser clients provide both counters read at the confirmation prompt.
+    # Existing API clients with neither parameter retain historical behavior;
+    # supplying just one would silently skip one independent safety dimension.
+    if (
+        (expected_current_unverified_ocr_source_report_count is None)
+        != (expected_approved_ai_fact_unverified_ocr_discrepancy_count is None)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Both expected Claim Pack source warning counts are required together.",
         )
 
     # Both the archived file and its stored source snapshot need an exact
@@ -253,6 +270,24 @@ def download_export(
         disputed_approved_ai_facts = approved_ai_fact_unverified_ocr_discrepancy_count(
             db, claim_id=claim_id, organization_id=current_user.organization_id,
         )
+        # The frontend's pre-download confirmation can become stale between
+        # its list GET and this download GET. Fail closed before file response,
+        # download audit or archive disclosure; never reapprove any source.
+        if (
+            expected_current_unverified_ocr_source_report_count is not None
+            and (
+                current_ocr_reports != expected_current_unverified_ocr_source_report_count
+                or disputed_approved_ai_facts
+                != expected_approved_ai_fact_unverified_ocr_discrepancy_count
+            )
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "Claim Pack OCR source warning counts changed since confirmation. "
+                    "Refresh the export list and review the current warnings before retrying."
+                ),
+            )
         write_audit_log(
             db,
             organization_id=current_user.organization_id,
