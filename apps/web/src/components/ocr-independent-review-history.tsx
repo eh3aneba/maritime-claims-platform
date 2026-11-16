@@ -49,15 +49,18 @@ export function OcrIndependentReviewHistory({ claimId, report, currentSource }: 
   const [items, setItems] = useState<OcrReviewReadback[] | null>(null);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
-    if (!open || !currentSource) return;
+    // The authenticated API allows historical GET of immutable reports after
+    // legitimate OCR reprocessing. Current-source admission is a POST-only
+    // restriction, not a reason to hide prior independent observations.
+    if (!open) return;
     let active = true;
     setItems(null); setFailed(false);
     void listIndependentOcrReviews(claimId, report.document_id, report.id)
       .then((data) => { const rows = parseOcrReviewReadback(data, report); if (active) setItems(rows); })
       .catch(() => { if (active) setFailed(true); });
     return () => { active = false; };
-  }, [open, currentSource, claimId, report]);
-  if (!currentSource) return <p className="mt-2 text-amber-900">{L("Historical source: reload the matching source before inspecting independent reviews.", "منبع تاریخی است؛ برای مشاهدهٔ بازبینی مستقل، منبع منطبق را دوباره بارگذاری کنید.")}</p>;
+  }, [open, claimId, report]);
+
   const outcomes = {
     discrepancy_observed: L("Discrepancy observed", "اختلاف مشاهده شد"),
     not_reproduced: L("Not reproduced", "بازتولید نشد"),
@@ -68,6 +71,14 @@ export function OcrIndependentReviewHistory({ claimId, report, currentSource }: 
       {L("Independent review history", "سوابق بازبینی مستقل")}
     </button>
     {open ? <div className="mt-2">
+      {!currentSource ? (
+        <p role="note" data-testid="ocr-historical-review-notice" className="mb-2 font-semibold text-amber-900">
+          {L(
+            "Historical source: these observations are bound to the original report and OCR hash, not the current transcript. This readback does not reverify the original or clear the source hold.",
+            "منبع تاریخی است؛ این مشاهدات به گزارش و هش OCR اولیه مربوط‌اند، نه متن ماشینی فعلی. این بازخوانی اصل سند را دوباره تأیید نمی‌کند و قفل منبع را رفع نمی‌کند."
+          )}
+        </p>
+      ) : null}
       <p role="note" className="font-semibold text-amber-900">{L("Recorded observations only; no source hold cleared, Claim Fact approved or independent acceptance established by this screen.", "فقط مشاهدات ثبت‌شده است؛ این صفحه قفل منبع را رفع نمی‌کند و واقعیت پرونده یا پذیرش مستقل را تأیید نمی‌کند.")}</p>
       {failed ? <p role="alert">{L("Review history is unavailable or no longer matches this source. Do not interpret this as no reviews.", "سوابق بازبینی در دسترس نیست یا با این منبع منطبق نیست؛ این به معنی نبود بازبینی نیست.")}</p> : items === null ? <p role="status">{L("Loading observations…", "در حال دریافت مشاهدات…")}</p> : items.length === 0 ? <p>{L("No observations in this page; independent acceptance remains unverified.", "در این صفحه مشاهده‌ای ثبت نشده است؛ پذیرش مستقل همچنان تأیید نشده است.")}</p> : <ul className="space-y-3">
         {items.map((review) => <li key={review.id} className="mt-2 border-s-2 border-amber-300 ps-3" data-testid="ocr-independent-observation">

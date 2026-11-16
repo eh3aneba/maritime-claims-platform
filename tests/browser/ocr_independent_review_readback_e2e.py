@@ -75,7 +75,7 @@ def main():
         elif path.endswith("/processing"):
             body = dict(operator_status="completed", processing_release_required=False,
                 text_extraction=dict(source_text_quality_state=source["source_text_quality_state"],
-                    pdf_signature_check_state=source["pdf_signature_check_state"], text_hash="b" * 64))
+                    pdf_signature_check_state=source["pdf_signature_check_state"], text_hash=source["extraction_text_hash"]))
         elif path.endswith("/documents"):
             body = dict(items=[doc], quarantined_items=[])
         elif path.endswith("/facts"):
@@ -135,15 +135,31 @@ def main():
         history.get_by_role("button", name="Independent review history", exact=True).click()
         expect(history.get_by_role("alert")).to_contain_text("Do not interpret this as no reviews")
         state["status"] = 200
-        # Historical reports must not fetch reviews for the current source.
-        report_row["extraction_text_hash"] = "d" * 64
+        # The source was OCR-processed again: current machine text now has a
+        # different hash, but the original report/review/audit hashes remain
+        # frozen. Historic authenticated GET is intentionally permissible;
+        # a new POST against the old text is not.
+        state["reviews"] = [review_row]
+        state["binding"] = binding
+        source["extraction_text_hash"] = "d" * 64
         count = len(review_requests)
         page.goto(f"{base}/claims/{claim}")
         page.get_by_role("button", name="Inspect machine OCR text", exact=True).click()
-        expect(page.get_by_text("Historical source: reload", exact=False)).to_be_visible()
-        expect(page.get_by_test_id("ocr-independent-history")).to_have_count(0)
-        assert len(review_requests) == count
-        report_row["extraction_text_hash"] = "b" * 64
+        history = page.get_by_test_id("ocr-independent-history")
+        expect(history).to_be_visible()
+        history.get_by_role("button", name="Independent review history", exact=True).click()
+        expect(history.get_by_test_id("ocr-historical-review-notice")).to_contain_text(
+            "not the current transcript"
+        )
+        expect(history.get_by_test_id("ocr-independent-observation")).to_have_count(1)
+        history.get_by_role("button", name="Managed workpaper record", exact=True).click()
+        expect(history.get_by_test_id("ocr-workpaper-record")).to_contain_text(
+            "Historical metadata linkage only"
+        )
+        assert len(review_requests) == count + 1
+        # Revert to the original extraction for a separate empty-history test.
+        source["extraction_text_hash"] = "b" * 64
+        state["reviews"] = []
         page.reload()
         history = open_source()
         history.get_by_role("button", name="Independent review history", exact=True).click()

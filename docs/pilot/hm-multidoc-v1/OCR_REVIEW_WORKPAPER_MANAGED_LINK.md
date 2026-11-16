@@ -54,6 +54,17 @@ changing the original file hash is not acceptable. A later-superseded
 workpaper does not erase its historical binding. The readback does **not**
 reverify current workpaper custody or cryptographic signer provenance.
 
+The authenticated Evidence UI may also **show historical independent-review
+observations and their managed workpaper linkage on demand** when the document
+is still accessible but has since been processed into a different OCR text
+hash. The UI compares each review to its **original report** source/hash and
+displays an explicit historical/non-clearance warning rather than pretending
+that its observations certify the currently extracted text. There are **no
+browser mutations or approvals** in this readback; the source must still be
+available through the controlled Evidence preview. Superseded originals
+without an available preview are not silently brought back into the current
+work queue, even though historical API receipts may remain readable.
+
 **POST still requires the active original document, current original OCR
 text hash, independent reviewer identity, and active managed workpaper.**
 Reprocessing, supersession or changed source bytes never authorizes
