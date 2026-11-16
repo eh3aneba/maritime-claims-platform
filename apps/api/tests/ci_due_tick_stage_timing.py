@@ -11,8 +11,16 @@ from time import perf_counter
 _LOG_PATH = "/tmp/mcri_due_tick_stage_timings.jsonl"
 _ALLOWED = frozenset({
     "same_tick_seed", "same_tick_schedule", "same_tick_workers", "same_tick_verify",
+    # Distinct fixed labels per competing test thread make it possible to
+    # correlate a sampled one-way PostgreSQL wait with the still-running worker.
+    # These are CI-only stage names: never SQL, provider payloads or session IDs.
+    "same_tick_a_session", "same_tick_a_barrier", "same_tick_a_execute",
+    "same_tick_b_session", "same_tick_b_barrier", "same_tick_b_execute",
     "disable_race_seed", "disable_race_schedule", "disable_race_workers",
     "disable_race_verify",
+    "disable_race_consume_session", "disable_race_consume_barrier",
+    "disable_race_consume_execute", "disable_race_disable_session",
+    "disable_race_disable_barrier", "disable_race_disable_execute",
     "sftp_phase_s_setup", "sftp_phase_t_admit", "sftp_phase_u_bind",
     "sharepoint_v1_admit", "sharepoint_v1_bind",
     "sftp_phase_r_chain", "sftp_phase_s_claim", "sftp_phase_s_authorize",
