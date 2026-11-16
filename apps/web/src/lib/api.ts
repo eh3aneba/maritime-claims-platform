@@ -612,6 +612,8 @@ export function getEvidenceMatrix(claimId: string) {
 export function listClaimPackExports(claimId: string) {
   return apiFetch<import("./types").ClaimPackExportListResponse>(
     "/claims/" + claimId + "/claim-pack-exports",
+    // Advisory counters are read-time safety state, never an archived snapshot.
+    { cache: "no-store" },
   );
 }
 
