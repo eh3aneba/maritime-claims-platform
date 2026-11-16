@@ -7,7 +7,7 @@ from tempfile import NamedTemporaryFile, TemporaryDirectory
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from starlette.types import Receive, Scope, Send
@@ -127,6 +127,7 @@ class _VerifiedArchiveFileResponse(FileResponse):
 @router.get("", response_model=ClaimPackExportListResponse)
 def list_exports(
     claim_id: UUID,
+    response: Response,
     current_user: CurrentUser,
     db: Annotated[Session, Depends(get_db)],
 ) -> ClaimPackExportListResponse:
@@ -141,6 +142,10 @@ def list_exports(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Claim not found",
         ) from exc
+    # This authenticated list includes two live, unverified OCR source
+    # advisories. Never let intermediary or browser HTTP caches reuse an
+    # earlier 0/0 source-warning count as the current claim disposition.
+    response.headers["Cache-Control"] = "private, no-store"
     return ClaimPackExportListResponse(
         items=[ClaimPackExportResponse.model_validate(item) for item in items],
         total=len(items),

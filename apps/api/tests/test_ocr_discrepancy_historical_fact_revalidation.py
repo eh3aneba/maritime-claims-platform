@@ -381,6 +381,7 @@ def test_historical_claim_pack_list_and_download_disclose_later_source_report_wi
 
     baseline_list = client.get(base_url)
     assert baseline_list.status_code == 200, baseline_list.text
+    assert baseline_list.headers["cache-control"] == "private, no-store"
     assert baseline_list.json()["total"] == 1
     assert baseline_list.json()["current_unverified_ocr_source_report_count"] == 0
     assert baseline_list.json()["approved_ai_fact_unverified_ocr_discrepancy_count"] == 0
@@ -408,6 +409,9 @@ def test_historical_claim_pack_list_and_download_disclose_later_source_report_wi
 
     updated_list = client.get(base_url)
     assert updated_list.status_code == 200, updated_list.text
+    # The status moved from 0/0 to a live reported concern. Neither response
+    # may be reused from HTTP cache by the evidence-review browser.
+    assert updated_list.headers["cache-control"] == "private, no-store"
     assert updated_list.json()["total"] == 1
     assert updated_list.json()["items"] == baseline_list.json()["items"]
     assert updated_list.json()["current_unverified_ocr_source_report_count"] == 1
