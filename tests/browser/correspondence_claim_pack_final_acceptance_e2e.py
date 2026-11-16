@@ -307,11 +307,17 @@ def main() -> None:
             dialog.dismiss()
 
         page.on("request", note_browser_get)
+        # The click triggers an asynchronous GET of live source-warning counts.
+        # Playwright's click does not wait for the later browser confirm dialog.
+        # Await the actual dialog event rather than racing the API response.
         page.once("dialog", dismiss_safety_dialog)
-        page.get_by_role("button", name="Download", exact=True).first.click()
+        with page.expect_event("dialog", timeout=30_000) as dialog_event:
+            page.get_by_role("button", name="Download", exact=True).first.click()
+        safety_dialog = dialog_event.value
         assert len(confirmed_dialogs) == 1
-        assert "0 current, unverified OCR" in confirmed_dialogs[0]
-        assert "1 historically approved AI fact(s)" in confirmed_dialogs[0]
+        assert confirmed_dialogs[0] == safety_dialog.message
+        assert "0 current, unverified OCR" in safety_dialog.message
+        assert "1 historically approved AI fact(s)" in safety_dialog.message
         assert browser_download_requests == [], "Dismissed safety warning must prevent the browser file download"
         assert mutations == [], "Read-only historical source notice unexpectedly mutated claim data"
         page.unroute(list_pattern, simulate_historic_fact_notice)
