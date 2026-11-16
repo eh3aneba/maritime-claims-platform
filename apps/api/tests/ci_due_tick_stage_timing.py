@@ -25,6 +25,10 @@ _ALLOWED = frozenset({
     # These are CI-only stage names: never SQL, provider payloads or session IDs.
     "same_tick_a_session", "same_tick_a_barrier", "same_tick_a_execute",
     "same_tick_b_session", "same_tick_b_barrier", "same_tick_b_execute",
+    # Test-only wrappers around the exact binding-lock acquisition and
+    # bounded provider metadata read. No query, PID or claim value is logged.
+    "same_tick_a_binding_lock", "same_tick_b_binding_lock",
+    "same_tick_a_provider_metadata", "same_tick_b_provider_metadata",
     "disable_race_seed", "disable_race_schedule", "disable_race_workers",
     "disable_race_verify",
     "disable_race_consume_session", "disable_race_consume_barrier",

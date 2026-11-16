@@ -3,7 +3,7 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 import os
-from threading import Barrier
+from threading import Barrier, local
 from uuid import UUID
 
 import pytest
@@ -18,6 +18,7 @@ from app.modules.external_document_sources.change_detection_service import (
 from app.modules.external_document_sources.due_tick_observation_models import (
     ExternalDocumentSourceDueTickObservationExecution,
 )
+from app.modules.external_document_sources import due_tick_observation_service
 from app.modules.external_document_sources.due_tick_observation_service import (
     execute_due_tick_observation,
 )
@@ -134,33 +135,58 @@ def test_same_due_tick_concurrent_consumers_create_one_execution(
                 schedule_id = schedule.id
 
         barrier = Barrier(2)
+        trace_worker = local()
+
+        def trace_phase(operation, phase: str):
+            # Original production service functions remain unmodified.
+            # These wrappers run only in this synthetic PG regression and
+            # bind fixed stage labels to the calling test worker thread.
+            def recorded(*args, **kwargs):
+                worker = getattr(trace_worker, "label", None)
+                if worker is None:
+                    return operation(*args, **kwargs)
+                with ci_due_tick_stage(f"same_tick_{worker}_{phase}"):
+                    return operation(*args, **kwargs)
+            return recorded
+
+        for name, phase in (
+            ("_schedule_binding_for_update", "binding_lock"),
+            ("read_recurring_provider_metadata", "provider_metadata"),
+        ):
+            original = getattr(due_tick_observation_service, name)
+            monkeypatch.setattr(
+                due_tick_observation_service, name,
+                trace_phase(original, phase),
+            )
 
         def consume(label: str):
             assert label in {"a", "b"}
-            # The historic 180s watchdog exit-139 logs only the aggregate
-            # same_tick_workers BEGIN. Record each worker separately, including
-            # barrier time, DB execution/commit, and session teardown; neither
-            # SQL text nor claim/customer values enter the timing file.
-            with ci_due_tick_stage(f"same_tick_{label}_session"):
-                with SessionLocal() as db:
-                    with ci_due_tick_stage(f"same_tick_{label}_barrier"):
-                        barrier.wait(timeout=10)
-                    with ci_due_tick_stage(f"same_tick_{label}_execute"):
-                        try:
-                            row, _ = execute_due_tick_observation(
-                                db,
-                                organization_id=organization_id,
-                                profile_id=UUID(profile_id),
-                                schedule_id=schedule_id,
-                                executed_by_id=actor_id,
-                                request_key=f"phase-ac-pg-consume-{label}",
-                                reason=_EXEC_REASON,
-                                now=due_now,
-                            )
-                            return ("ok", row.id)
-                        except (ExternalDocumentSourceConflictError, IntegrityError):
-                            db.rollback()
-                            return ("conflict", None)
+            # Record each worker session and the service's binding lock and
+            # metadata stages without SQL, source payloads, or session IDs.
+            trace_worker.label = label
+            try:
+                with ci_due_tick_stage(f"same_tick_{label}_session"):
+                    with SessionLocal() as db:
+                        with ci_due_tick_stage(f"same_tick_{label}_barrier"):
+                            barrier.wait(timeout=10)
+                        with ci_due_tick_stage(f"same_tick_{label}_execute"):
+                            try:
+                                row, _ = execute_due_tick_observation(
+                                    db,
+                                    organization_id=organization_id,
+                                    profile_id=UUID(profile_id),
+                                    schedule_id=schedule_id,
+                                    executed_by_id=actor_id,
+                                    request_key=f"phase-ac-pg-consume-{label}",
+                                    reason=_EXEC_REASON,
+                                    now=due_now,
+                                )
+                                return ("ok", row.id)
+                            except (ExternalDocumentSourceConflictError, IntegrityError):
+                                db.rollback()
+                                return ("conflict", None)
+            finally:
+                del trace_worker.label
 
         with ci_due_tick_stage("same_tick_workers"):
             with ThreadPoolExecutor(max_workers=2) as pool:
