@@ -22,7 +22,10 @@ from app.modules.claim_packs.schemas import (
 )
 from app.modules.claim_packs.renderers import UnsupportedClaimPackPDFTextError
 from app.modules.claim_packs.service import _snapshot_hash
-from app.modules.claim_packs.source_report_notice import current_ocr_source_report_count
+from app.modules.claim_packs.source_report_notice import (
+    approved_ai_fact_unverified_ocr_discrepancy_count,
+    current_ocr_source_report_count,
+)
 from app.modules.claim_packs.recovery_service import (
     generate_claim_pack,
     get_claim_pack_export,
@@ -144,6 +147,11 @@ def list_exports(
         current_unverified_ocr_source_report_count=current_ocr_source_report_count(
             db, claim_id=claim_id, organization_id=current_user.organization_id,
         ),
+        approved_ai_fact_unverified_ocr_discrepancy_count=(
+            approved_ai_fact_unverified_ocr_discrepancy_count(
+                db, claim_id=claim_id, organization_id=current_user.organization_id,
+            )
+        ),
     )
 
 
@@ -242,6 +250,9 @@ def download_export(
         current_ocr_reports = current_ocr_source_report_count(
             db, claim_id=claim_id, organization_id=current_user.organization_id,
         )
+        disputed_approved_ai_facts = approved_ai_fact_unverified_ocr_discrepancy_count(
+            db, claim_id=claim_id, organization_id=current_user.organization_id,
+        )
         write_audit_log(
             db,
             organization_id=current_user.organization_id,
@@ -270,6 +281,11 @@ def download_export(
                 "X-Claim-Pack-Snapshot-SHA256": item.snapshot_hash,
                 "X-Claim-Pack-File-SHA256": item.file_hash,
                 "X-Claim-Current-Unverified-OCR-Source-Report-Count": str(current_ocr_reports),
+                # Live read-side notice, not an archived-file annotation or
+                # adjudication; do not touch the original digests/bytes.
+                "X-Claim-Approved-AI-Fact-Unverified-OCR-Discrepancy-Count": (
+                    str(disputed_approved_ai_facts)
+                ),
             },
         )
     except BaseException:
