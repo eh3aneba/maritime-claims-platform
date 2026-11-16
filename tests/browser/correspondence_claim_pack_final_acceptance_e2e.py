@@ -327,7 +327,7 @@ def main() -> None:
         # the backend regression independently tests the real server check.
         conditional_requests: list[str] = []
         archive_pattern = re.compile(
-            r"/claims/[^/]+/claim-pack-exports/[^/?]+/download\\?"
+            r"/claims/[^/]+/claim-pack-exports/[^/?]+/download"
         )
 
         def simulate_changed_warning_at_download(route) -> None:
