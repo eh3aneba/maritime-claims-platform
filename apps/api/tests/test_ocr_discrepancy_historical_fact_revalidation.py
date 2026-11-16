@@ -76,6 +76,10 @@ def test_later_ocr_report_flags_historical_fact_and_stales_assessment_without_re
     before_fact = _get_facts(ids)
     assert before_fact["source_revalidation_required"] is False
     assert before_fact["source_revalidation_reason"] is None
+    review_before = client.get(f"/api/v1/ai-review/{ids['maker_id']}")
+    assert review_before.status_code == 200, review_before.text
+    assert review_before.json()["current_claim_fact"]["source_revalidation_required"] is False
+    assert review_before.json()["current_claim_fact"]["source_revalidation_reason"] is None
     before_assessment = client.post(
         f"/api/v1/claims/{ids['claim_id']}/initial-assessment/generate",
         json={
@@ -102,6 +106,14 @@ def test_later_ocr_report_flags_historical_fact_and_stales_assessment_without_re
     latest_fact = _get_facts(ids)
     assert latest_fact["source_revalidation_required"] is True
     assert latest_fact["source_revalidation_reason"] == "source_ocr_discrepancy_reported_unverified"
+    review_after = client.get(f"/api/v1/ai-review/{ids['maker_id']}")
+    assert review_after.status_code == 200, review_after.text
+    flagged_fact = review_after.json()["current_claim_fact"]
+    assert flagged_fact["source_revalidation_required"] is True
+    assert flagged_fact["source_revalidation_reason"] == latest_fact["source_revalidation_reason"]
+    assert flagged_fact["id"] == before_fact["id"]
+    assert flagged_fact["approved_at"] == before_fact["approved_at"]
+    assert flagged_fact["value"] == before_fact["value"]
     for preserved in ("id", "value", "version", "approved_by_id", "approved_at", "source_extraction_id"):
         assert latest_fact[preserved] == before_fact[preserved]
 
@@ -139,6 +151,9 @@ def test_later_ocr_report_flags_historical_fact_and_stales_assessment_without_re
     after_reprocess = _get_facts(ids)
     assert after_reprocess["source_revalidation_required"] is True
     assert after_reprocess["source_revalidation_reason"] == "source_ocr_discrepancy_reported_unverified"
+    readback_after_reprocess = client.get(f"/api/v1/ai-review/{ids['maker_id']}")
+    assert readback_after_reprocess.status_code == 200, readback_after_reprocess.text
+    assert readback_after_reprocess.json()["current_claim_fact"]["source_revalidation_required"] is True
 
 
 def test_new_assessment_cannot_launder_unverified_ocr_fact_source_dispute() -> None:
@@ -277,6 +292,9 @@ def test_mismatched_or_foreign_tenant_reports_do_not_mark_fact_stale() -> None:
         ))
         db.commit()
     assert _get_facts(ids)["source_revalidation_required"] is False
+    unrelated = client.get(f"/api/v1/ai-review/{ids['maker_id']}")
+    assert unrelated.status_code == 200, unrelated.text
+    assert unrelated.json()["current_claim_fact"]["source_revalidation_required"] is False
     baseline = client.post(
         f"/api/v1/claims/{ids['claim_id']}/initial-assessment/generate",
         json={

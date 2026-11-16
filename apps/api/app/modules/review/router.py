@@ -8,8 +8,9 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.modules.auth.dependencies import CurrentUser
 from app.modules.audit.service import write_audit_log
-from app.modules.claims.facts import ClaimFactRevision
+from app.modules.claims.facts import ClaimFact, ClaimFactRevision
 from app.modules.claims.security import get_claim_for_tenant
+from app.modules.claims.service import approved_ai_fact_source_revalidation_reasons
 from app.modules.documents.models import Document
 from app.modules.intelligence.models import AISemanticKind, AIReviewStatus
 from app.modules.pilot.service import record_active_event
@@ -45,6 +46,28 @@ from app.modules.rules.service import evaluate_claim_rules
 from app.modules.users.models import User
 
 router = APIRouter(prefix="/ai-review", tags=["ai-review"])
+
+
+def _claim_fact_response(db: Session, fact: ClaimFact | None) -> ClaimFactResponse | None:
+    """Match the claim-facts source warnings on AI-review readback.
+
+    This is read-only: the original human approval, immutable revisions and
+    source hashes are not altered. A reported discrepancy is an unverified
+    allegation requiring review, not proof that the fact is incorrect.
+    """
+    if fact is None:
+        return None
+    response = ClaimFactResponse.model_validate(fact)
+    reason = approved_ai_fact_source_revalidation_reasons(
+        db,
+        facts=[fact],
+        claim_id=fact.claim_id,
+        organization_id=fact.organization_id,
+    ).get(fact.id)
+    if reason is not None:
+        response.source_revalidation_required = True
+        response.source_revalidation_reason = reason
+    return response
 
 
 def _feedback_response(db: Session, row) -> FeedbackResponse:
@@ -216,7 +239,7 @@ def review_group(
                 human_status=extraction.human_status,
                 approved_value=extraction.approved_value,
                 promoted=promoted,
-                claim_fact=ClaimFactResponse.model_validate(fact) if fact else None,
+                claim_fact=_claim_fact_response(db, fact),
             ))
         record_active_event(
             db,
@@ -281,7 +304,7 @@ def review_detail(
     return ExtractionReviewDetail(
         item=item,
         feedback=[_feedback_response(db, row) for row in feedback],
-        current_claim_fact=ClaimFactResponse.model_validate(fact) if fact else None,
+        current_claim_fact=_claim_fact_response(db, fact),
         claim_fact_revisions=[ClaimFactRevisionResponse.model_validate(row) for row in revisions],
     )
 
@@ -371,7 +394,7 @@ def review_one(
         human_status=extraction.human_status,
         approved_value=extraction.approved_value,
         promoted=promoted,
-        claim_fact=ClaimFactResponse.model_validate(fact) if fact else None,
+        claim_fact=_claim_fact_response(db, fact),
     )
 
 
@@ -421,7 +444,7 @@ def bulk_approve(
                     human_status=extraction.human_status,
                     approved_value=extraction.approved_value,
                     promoted=promoted,
-                    claim_fact=ClaimFactResponse.model_validate(fact) if fact else None,
+                    claim_fact=_claim_fact_response(db, fact),
                 )
             )
         if extractions:

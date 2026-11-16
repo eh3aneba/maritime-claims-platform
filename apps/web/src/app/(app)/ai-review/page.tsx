@@ -36,6 +36,8 @@ interface ClaimFactView {
   approved_by_id: string | null;
   approved_at: string;
   version: number;
+  source_revalidation_required: boolean;
+  source_revalidation_reason: string | null;
 }
 
 interface ClaimFactRevisionView extends ClaimFactView {
@@ -488,7 +490,31 @@ export default function AIReviewPage() {
               {historyOpen === item.extraction_id ? <div className="border-t border-slate-200 bg-white px-5 py-4">
                 <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">{L("Canonical Claim Fact lineage", "زنجیره منبع واقعیت معتبر پرونده")}</p>
                 {currentHistory ? <div className="mt-3 space-y-4">
-                  {currentHistory.current_claim_fact ? <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-xs text-emerald-900"><div className="flex flex-wrap items-center justify-between gap-2"><span className="font-semibold">{L("Current canonical fact", "واقعیت معتبر فعلی")}</span><span>{provenanceLabel(currentHistory.current_claim_fact.provenance_kind)} · {L("version", "نسخه")} <span dir="ltr">{currentHistory.current_claim_fact.version}</span></span></div><p className="mt-2 text-sm font-semibold" dir="auto">{displayValue(currentHistory.current_claim_fact.value, locale)}</p><p className="mt-2 text-[11px] text-emerald-800" dir="ltr">document {currentHistory.current_claim_fact.source_document_id}</p></div> : <p className="text-sm text-slate-500">{L("No canonical Claim Fact is currently approved for this field.", "در حال حاضر واقعیت معتبر تأییدشده‌ای برای این فیلد وجود ندارد.")}</p>}
+                  {currentHistory.current_claim_fact ? (
+                    <div className={currentHistory.current_claim_fact.source_revalidation_required
+                      ? "rounded-lg border border-amber-300 bg-amber-50 p-4 text-xs text-amber-900"
+                      : "rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-xs text-emerald-900"}>
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="font-semibold">{L("Current canonical fact", "واقعیت معتبر فعلی")}</span>
+                        <span>{provenanceLabel(currentHistory.current_claim_fact.provenance_kind)} · {L("version", "نسخه")} <span dir="ltr">{currentHistory.current_claim_fact.version}</span></span>
+                      </div>
+                      <p className="mt-2 text-sm font-semibold" dir="auto">{displayValue(currentHistory.current_claim_fact.value, locale)}</p>
+                      <p className="mt-2 text-[11px]" dir="ltr">document {currentHistory.current_claim_fact.source_document_id}</p>
+                      {currentHistory.current_claim_fact.source_revalidation_required ? (
+                        <p role="alert" className="mt-3 border-t border-amber-300 pt-3 text-xs font-semibold leading-5" dir="auto">
+                          {currentHistory.current_claim_fact.source_revalidation_reason === "source_ocr_discrepancy_reported_unverified"
+                            ? L(
+                                "An operator reported an unverified OCR source discrepancy. The historical human approval is preserved, but this fact needs original-source revalidation; the report is not proof of an error.",
+                                "یک کاربر اختلاف تأییدنشده‌ای در منبع OCR گزارش کرده است. تأیید انسانی تاریخی حفظ می‌شود، اما این واقعیت نیازمند بازبینی منبع اصلی است؛ گزارش به‌تنهایی اثبات خطا نیست.",
+                              )
+                            : L(
+                                "This approved fact's source is stale, missing or no longer admissible. Historical approval is retained; verify the original source before reuse.",
+                                "منبع این واقعیت تأییدشده قدیمی، ناموجود یا دیگر قابل پذیرش نیست. تأیید تاریخی حفظ می‌شود؛ پیش از استفادهٔ مجدد، منبع اصلی را بررسی کنید.",
+                              )}
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : <p className="text-sm text-slate-500">{L("No canonical Claim Fact is currently approved for this field.", "در حال حاضر واقعیت معتبر تأییدشده‌ای برای این فیلد وجود ندارد.")}</p>}
                   <div><p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">{L("Canonical revisions", "نسخه‌های واقعیت معتبر")}</p>{currentHistory.claim_fact_revisions.length ? <div className="mt-2 space-y-2">{currentHistory.claim_fact_revisions.map((revision) => <div key={revision.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3"><div className="flex flex-wrap items-center justify-between gap-2"><span className="text-xs font-semibold text-slate-700">{L("Version", "نسخه")} <span dir="ltr">{revision.version}</span> · {provenanceLabel(revision.provenance_kind)}</span><span className="text-xs text-slate-400" dir="ltr">{formatDateTime(revision.approved_at, locale)}</span></div><p className="mt-2 text-sm text-slate-700" dir="auto">{displayValue(revision.value, locale)}</p><p className="mt-1 text-[11px] text-slate-400" dir="ltr">document {revision.source_document_id}</p></div>)}</div> : <p className="mt-2 text-sm text-slate-500">{L("No canonical revisions recorded yet.", "هنوز نسخه‌ای از واقعیت معتبر ثبت نشده است.")}</p>}</div>
                   <div><p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">{L("AI review feedback", "بازخورد بازبینی AI")}</p>{currentHistory.feedback.length ? <div className="mt-2 space-y-3">{currentHistory.feedback.map((entry) => <div key={entry.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3"><div className="flex flex-wrap items-center justify-between gap-2"><span className="text-xs font-semibold uppercase tracking-wide text-slate-700">{aiLabel(locale, entry.action)}</span><span className="text-xs text-slate-400" dir="ltr">{formatDateTime(entry.created_at, locale)}</span></div><p className="mt-2 text-sm text-slate-700" dir="auto">{entry.reviewer_name ?? entry.reviewer_email ?? L("Reviewer unavailable", "بازبین مشخص نیست")}</p><p className="mt-1 text-xs text-slate-500" dir="auto">{L("Human value:", "مقدار انسانی:")} {displayValue(entry.human_value, locale)}</p>{entry.reason ? <p className="mt-2 text-xs leading-5 text-slate-600" dir="auto">{L("Reason:", "دلیل:")} {entry.reason}</p> : null}</div>)}</div> : <p className="mt-2 text-sm text-slate-500">{L("No AI review actions recorded yet.", "هنوز اقدام بازبینی AI ثبت نشده است.")}</p>}</div>
                 </div> : <p className="mt-3 text-sm text-slate-500">{L("Loading provenance and history…", "در حال بارگذاری منبع و سابقه…")}</p>}

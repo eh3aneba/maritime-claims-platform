@@ -610,7 +610,7 @@ export interface ClaimFact {
   approved_at: string;
   version: number;
   source_revalidation_required: boolean;
-  source_revalidation_reason: "source_reprocessed" | "source_document_unusable" | "source_candidate_unavailable" | null;
+  source_revalidation_reason: "source_reprocessed" | "source_document_unusable" | "source_candidate_unavailable" | "source_ocr_discrepancy_reported_unverified" | null;
 }
 
 export interface AIReviewResult {
