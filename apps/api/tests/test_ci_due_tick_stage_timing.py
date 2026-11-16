@@ -1,0 +1,74 @@
+"""Offline CI-only regression for bounded, fixed-label due-tick worker timing.
+
+These tests do not connect to PostgreSQL or process Evidence. Stage logs may
+contain only pre-approved labels, bounded durations and fixed event keys.
+"""
+from __future__ import annotations
+
+from concurrent.futures import ThreadPoolExecutor
+import json
+
+import pytest
+
+from tests import ci_due_tick_stage_timing as stage
+
+
+def test_parallel_worker_stages_are_distinguishable_and_privacy_safe(
+    monkeypatch: pytest.MonkeyPatch, tmp_path,
+) -> None:
+    log = tmp_path / "synthetic-stages.jsonl"
+    monkeypatch.setattr(stage, "_LOG_PATH", str(log))
+    monkeypatch.setenv("APP_ENV", "test")
+    monkeypatch.setenv("EXTERNAL_EVIDENCE_DUE_TICK_POSTGRES_TEST", "1")
+    labels = (
+        "same_tick_a_barrier", "same_tick_a_execute",
+        "same_tick_b_barrier", "same_tick_b_execute",
+        "disable_race_consume_execute", "disable_race_disable_execute",
+    )
+
+    def mark(label: str) -> None:
+        with stage.ci_due_tick_stage(label):
+            pass
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        list(pool.map(mark, labels))
+
+    records = [json.loads(line) for line in log.read_text().splitlines()]
+    assert len(records) == len(labels) * 2
+    for label in labels:
+        events = [row for row in records if row["stage"] == label]
+        assert len(events) == 2
+        assert {row["event"] for row in events} == {
+            "ci_due_tick_stage_begin", "ci_due_tick_stage",
+        }
+    for record in records:
+        assert record["stage"] in labels
+        assert set(record) <= {"event", "stage", "elapsed_seconds"}
+        if record["event"] == "ci_due_tick_stage":
+            assert isinstance(record["elapsed_seconds"], float)
+            assert record["elapsed_seconds"] >= 0
+
+
+def test_timing_is_disabled_outside_synthetic_pg_job(
+    monkeypatch: pytest.MonkeyPatch, tmp_path,
+) -> None:
+    log = tmp_path / "must-not-exist.jsonl"
+    monkeypatch.setattr(stage, "_LOG_PATH", str(log))
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("EXTERNAL_EVIDENCE_DUE_TICK_POSTGRES_TEST", "1")
+    with stage.ci_due_tick_stage("same_tick_a_execute"):
+        pass
+    assert not log.exists()
+
+
+def test_unapproved_stage_labels_cannot_be_written(
+    monkeypatch: pytest.MonkeyPatch, tmp_path,
+) -> None:
+    log = tmp_path / "must-not-exist.jsonl"
+    monkeypatch.setattr(stage, "_LOG_PATH", str(log))
+    monkeypatch.setenv("APP_ENV", "test")
+    monkeypatch.setenv("EXTERNAL_EVIDENCE_DUE_TICK_POSTGRES_TEST", "1")
+    with pytest.raises(ValueError, match="Unsupported CI timing stage"):
+        with stage.ci_due_tick_stage("customer-identifier-or-SQL-text"):
+            pass
+    assert not log.exists()
