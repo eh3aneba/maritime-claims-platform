@@ -1,6 +1,99 @@
 # SeeClaims — Execution Roadmap v1 | Status and gates
 
-## Current main checkpoint — 2026-11-14 (source-only merges, Pilot NO-GO)
+## Latest integration checkpoint — 2026-11-16 (source merged, Pilot NO-GO)
+
+**Verified main source baseline (not a deployed release):**
+`9b62f7ca0b0d3f473da3abff9ef96c2b57a2ea97`, the squash merge of
+[#929](https://github.com/eh3aneba/maritime-claims-platform/pull/929).
+Earlier dated checkpoints below remain historical; their stale main SHAs are not
+current observations. No customer deployment, original-scan acceptance, or
+independent security review follows from a GitHub merge.
+
+### Exact-head CI and archived-source warning coverage
+
+- [#926](https://github.com/eh3aneba/maritime-claims-platform/pull/926)
+  merged at `ab6744e903e35a954d69d2d9853f30a8e37fe93b` after exact-head
+  11/11 mandatory checks, 64/64 backend shards and six hosted workflows.
+  Canonical approved AI facts retain source revalidation warnings when an
+  operator files a later unverified OCR discrepancy report.
+- [#927](https://github.com/eh3aneba/maritime-claims-platform/pull/927)
+  merged at `33156c233318e3d9de74fed359216819e629b353` after 11/11
+  required checks, 64/64 backend shards and six workflows. Separate live
+  counts on Claim Pack list and verified archived downloads distinguish
+  current-document OCR reports from historically approved AI facts with a
+  source-bound unverified OCR concern, even after the original source retires.
+- [#928](https://github.com/eh3aneba/maritime-claims-platform/pull/928)
+  merged at `e54220f5bc0ec6f98f77db41c739bbec313964e5` after exact-head
+  11/11 required checks and six workflows, including real browser E2E.
+  The Claim Pack UI presents separate bilingual advisories, refetches both
+  counts before browser download and honors user cancellation.
+- [#929](https://github.com/eh3aneba/maritime-claims-platform/pull/929)
+  exact reviewed head `890d90663da2f474598552a88858bda037ff428f`
+  passed all 11 protected status contexts, **64/64 Full Backend shards**,
+  and all six hosted workflows:
+  [CI/browser #43831375933](https://github.com/eh3aneba/maritime-claims-platform/actions/runs/43831375933),
+  [backend #43831376287](https://github.com/eh3aneba/maritime-claims-platform/actions/runs/43831376287),
+  [PostgreSQL #43831375870](https://github.com/eh3aneba/maritime-claims-platform/actions/runs/43831375870),
+  [performance #43831375883](https://github.com/eh3aneba/maritime-claims-platform/actions/runs/43831375883),
+  [security #43831375930](https://github.com/eh3aneba/maritime-claims-platform/actions/runs/43831375930),
+  [deployment policy #43831375923](https://github.com/eh3aneba/maritime-claims-platform/actions/runs/43831375923).
+  Its API rejects a *stale two-count download confirmation* with HTTP 409,
+  without serving archived bytes; a partial two-count condition is rejected.
+  Legacy clients supplying no optional counts are not automatically treated as
+  having confirmed warnings. This is **optimistic notice consistency**, not a
+  guarantee against new reports after response creation or cryptographic
+  evidence authenticity. It preserves previously approved facts and immutable
+  historical archive bytes/hashes.
+
+**Post-merge exact-`main` evidence as observed at this checkpoint:**
+[Production Deployment Policy #43837895636](https://github.com/eh3aneba/maritime-claims-platform/actions/runs/43837895636)
+**SUCCESS**. [Supply Chain Security #43837895624](https://github.com/eh3aneba/maritime-claims-platform/actions/runs/43837895624)
+**IN PROGRESS** when checked; its completion must be re-read independently
+before any latest-main final-image scanner claim. A passed pre-merge security
+run does not substitute for its distinct post-merge result.
+
+### Open acceptance holds, not solved by the source sequence
+
+- [#810](https://github.com/eh3aneba/maritime-claims-platform/issues/810):
+  synthetic Persian OCR can omit material negation; real full-page source
+  fidelity, unseen H&M examples, and independent bilingual expert review remain
+  unproven. Do not infer that disputed text or critical causation was recovered.
+- [#850](https://github.com/eh3aneba/maritime-claims-platform/issues/850):
+  historical fact/assessment warnings and Claim Pack access disclosure are
+  implemented, but independent original-source validation and authorized
+  resolution/human acceptance are still outstanding. A discrepancy report is
+  only an unverified allegation, not proof of false content.
+- [#894](https://github.com/eh3aneba/maritime-claims-platform/issues/894):
+  incoming signed PDF verification policy, cryptographic capability and
+  independent security/product decision remain open; hashes/OCR are **not**
+  signature validation.
+- [#764](https://github.com/eh3aneba/maritime-claims-platform/issues/764):
+  eight historical Gitleaks findings need private security-owner review;
+  green incremental secret-history CI is not a retroactive human clearance.
+- [#653](https://github.com/eh3aneba/maritime-claims-platform/issues/653),
+  [#647](https://github.com/eh3aneba/maritime-claims-platform/issues/647)
+  and [#752](https://github.com/eh3aneba/maritime-claims-platform/issues/752):
+  named owner, controlled fresh-host deployment, matched-evidence backup/restore
+  and rollback, monitoring/onboarding and synthetic operator rehearsal, and
+  selected-host private local-AI quality/egress acceptance are unproven.
+  [#652](https://github.com/eh3aneba/maritime-claims-platform/issues/652)
+  real-server SFTP acceptance is conditional on future SFTP activation; the
+  selected manual-upload Pilot v1 scope currently excludes that connector.
+
+**Next controlled actions:** (1) independently verify the completed
+post-merge main security run; (2) obtain accountable independent human original
+Persian scan/source review and signed-PDF policy decisions; (3) run and record a
+fresh-host, matched-storage backup/restore and rollback/operator rehearsal on a
+*synthetic-only*, authorized pilot environment with exact image digests and
+dated ownership. None is presently evidenced as complete by this entry.
+
+**Customer-data Pilot / Production release decision: NO-GO.** Source merges
+and synthetic CI evidence are not customer authorization, a security waiver,
+operational SLA or a signed release-candidate decision.
+
+---
+
+## Historical main checkpoint — 2026-11-14 (source-only merges, Pilot NO-GO)
 
 **Current main code baseline:** `5693fc6f72aa8e6ccee2b37b92b9a97b121ae419`.
 This checkpoint supersedes the dated October / earlier November "pending" statements
