@@ -581,6 +581,8 @@ def test_old_disputed_source_lifecycle_does_not_clear_bound_assessment_hold(
     before = client.get(f"{base}/versions/{assessment['id']}")
     assert before.status_code == 200, before.text
     assert before.json()["unverified_ocr_fact_source_review_hold"] is True
+    fact_before_retirement = _get_facts(ids)
+    assert fact_before_retirement["source_revalidation_reason"] == "source_ocr_discrepancy_reported_unverified"
 
     # The original fact and approval remain untouched. Both replacing the
     # source and soft-deleting it must retain the source-bound dispute receipt.
@@ -598,6 +600,25 @@ def test_old_disputed_source_lifecycle_does_not_clear_bound_assessment_hold(
             document.deleted_at = datetime.now(UTC)
         db.commit()
 
+    # The same exact historical OCR report must stay visible on BOTH fact
+    # read surfaces. A retired source is not an independent resolution.
+    fact_after_retirement = _get_facts(ids)
+    assert fact_after_retirement["source_revalidation_required"] is True
+    assert fact_after_retirement["source_revalidation_reason"] == "source_ocr_discrepancy_reported_unverified"
+    for preserved in ("id", "value", "version", "approved_by_id", "approved_at", "source_extraction_id"):
+        assert fact_after_retirement[preserved] == fact_before_retirement[preserved]
+    review_detail = client.get(f"/api/v1/ai-review/{ids['maker_id']}")
+    if source_lifecycle == "soft_deleted":
+        # The AI review route deliberately hides soft-deleted evidence. The
+        # canonical claim-facts readback remains available to an authorized
+        # claim user and must still surface the exact historical allegation.
+        assert review_detail.status_code == 404
+    else:
+        assert review_detail.status_code == 200, review_detail.text
+        assert review_detail.json()["current_claim_fact"]["source_revalidation_reason"] == (
+            "source_ocr_discrepancy_reported_unverified"
+        )
+
     historical = client.get(f"{base}/versions/{assessment['id']}")
     assert historical.status_code == 200, historical.text
     assert historical.json()["source_state"] == "stale"
@@ -614,6 +635,30 @@ def test_old_disputed_source_lifecycle_does_not_clear_bound_assessment_hold(
         assert assessment_unverified_ocr_fact_review_hold(
             db, claim=claim, assessment=SimpleNamespace(source_snapshot=snapshot),
         ) is True
+    # The specific historical operator report must remain visible even
+    # after source retirement; generic unusable-source applies only when no
+    # exact-bound report was ever recorded.
     fact = _get_facts(ids)
     assert fact["source_revalidation_required"] is True
-    assert fact["source_revalidation_reason"] == "source_document_unusable"
+    assert fact["source_revalidation_reason"] == "source_ocr_discrepancy_reported_unverified"
+
+
+def test_retired_undisputed_ai_fact_keeps_generic_unusable_source_warning() -> None:
+    """Do not invent an OCR report just because a source becomes non-current."""
+    ids, _ = _setup_ocr_reviewed_fact()
+    before = _get_facts(ids)
+    assert before["source_revalidation_required"] is False
+    with TestingSessionLocal() as db:
+        original = db.get(Document, UUID(ids["document_id"]))
+        assert original is not None
+        original.is_current = False
+        original.superseded_at = datetime.now(UTC)
+        db.commit()
+    after = _get_facts(ids)
+    assert after["source_revalidation_required"] is True
+    assert after["source_revalidation_reason"] == "source_document_unusable"
+    assert after["id"] == before["id"]
+    assert after["value"] == before["value"]
+    detail = client.get(f"/api/v1/ai-review/{ids['maker_id']}")
+    assert detail.status_code == 200, detail.text
+    assert detail.json()["current_claim_fact"]["source_revalidation_reason"] == "source_document_unusable"
