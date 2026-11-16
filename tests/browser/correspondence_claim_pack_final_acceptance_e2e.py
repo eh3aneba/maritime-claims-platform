@@ -283,6 +283,7 @@ def main() -> None:
             route.fulfill(response=original_response, body=json.dumps(payload))
 
         page.route(list_pattern, simulate_historic_fact_notice)
+        mutations.clear()  # Earlier controlled export POST is already asserted.
         page.reload(wait_until="networkidle")
         expect(page.get_by_role("heading", name=(
             "Historically approved AI facts with unresolved OCR source reports"
