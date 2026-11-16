@@ -1158,8 +1158,11 @@ export interface ClaimPackExport {
 export interface ClaimPackExportListResponse {
   items: ClaimPackExport[];
   total: number;
-  /** Live claim-wide operator reports, not verification of any individual export. */
+  /** Live claim-wide current-document reports, not verification of any export. */
   current_unverified_ocr_source_report_count: number;
+  /** Distinct count of approved AI facts with exact-bound, unverified OCR reports,
+   * including reports on retired source documents; not a verified source error. */
+  approved_ai_fact_unverified_ocr_discrepancy_count: number;
 }
 
 
