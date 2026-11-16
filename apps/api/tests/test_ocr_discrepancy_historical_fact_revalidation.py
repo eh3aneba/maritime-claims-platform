@@ -383,10 +383,13 @@ def test_historical_claim_pack_list_and_download_disclose_later_source_report_wi
     assert baseline_list.status_code == 200, baseline_list.text
     assert baseline_list.json()["total"] == 1
     assert baseline_list.json()["current_unverified_ocr_source_report_count"] == 0
+    assert baseline_list.json()["approved_ai_fact_unverified_ocr_discrepancy_count"] == 0
     original_download = client.get(download_url)
     assert original_download.status_code == 200, original_download.text
     header = "X-Claim-Current-Unverified-OCR-Source-Report-Count"
+    fact_header = "X-Claim-Approved-AI-Fact-Unverified-OCR-Discrepancy-Count"
     assert original_download.headers[header] == "0"
+    assert original_download.headers[fact_header] == "0"
     saved_snapshot_hash = original_download.headers["X-Claim-Pack-Snapshot-SHA256"]
     saved_file_hash = original_download.headers["X-Claim-Pack-File-SHA256"]
     saved_bytes = original_download.content
@@ -404,9 +407,11 @@ def test_historical_claim_pack_list_and_download_disclose_later_source_report_wi
     assert updated_list.json()["total"] == 1
     assert updated_list.json()["items"] == baseline_list.json()["items"]
     assert updated_list.json()["current_unverified_ocr_source_report_count"] == 1
+    assert updated_list.json()["approved_ai_fact_unverified_ocr_discrepancy_count"] == 1
     original_again = client.get(download_url)
     assert original_again.status_code == 200, original_again.text
     assert original_again.headers[header] == "1"
+    assert original_again.headers[fact_header] == "1"
     assert original_again.headers["X-Claim-Pack-Snapshot-SHA256"] == saved_snapshot_hash
     assert original_again.headers["X-Claim-Pack-File-SHA256"] == saved_file_hash
     assert original_again.content == saved_bytes
@@ -446,6 +451,7 @@ def test_historical_claim_pack_notice_ignores_wrong_hash_and_foreign_tenant_rece
     listed = client.get(f"/api/v1/claims/{ids['claim_id']}/claim-pack-exports")
     assert listed.status_code == 200, listed.text
     assert listed.json()["current_unverified_ocr_source_report_count"] == 0
+    assert listed.json()["approved_ai_fact_unverified_ocr_discrepancy_count"] == 0
 
 
 def test_approved_assessment_claim_pack_reports_later_bound_ocr_dispute_without_reapproval() -> None:
