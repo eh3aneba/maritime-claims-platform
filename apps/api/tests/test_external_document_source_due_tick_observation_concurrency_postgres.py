@@ -136,23 +136,31 @@ def test_same_due_tick_concurrent_consumers_create_one_execution(
         barrier = Barrier(2)
 
         def consume(label: str):
-            with SessionLocal() as db:
-                barrier.wait(timeout=10)
-                try:
-                    row, _ = execute_due_tick_observation(
-                        db,
-                        organization_id=organization_id,
-                        profile_id=UUID(profile_id),
-                        schedule_id=schedule_id,
-                        executed_by_id=actor_id,
-                        request_key=f"phase-ac-pg-consume-{label}",
-                        reason=_EXEC_REASON,
-                        now=due_now,
-                    )
-                    return ("ok", row.id)
-                except (ExternalDocumentSourceConflictError, IntegrityError):
-                    db.rollback()
-                    return ("conflict", None)
+            assert label in {"a", "b"}
+            # The historic 180s watchdog exit-139 logs only the aggregate
+            # same_tick_workers BEGIN. Record each worker separately, including
+            # barrier time, DB execution/commit, and session teardown; neither
+            # SQL text nor claim/customer values enter the timing file.
+            with ci_due_tick_stage(f"same_tick_{label}_session"):
+                with SessionLocal() as db:
+                    with ci_due_tick_stage(f"same_tick_{label}_barrier"):
+                        barrier.wait(timeout=10)
+                    with ci_due_tick_stage(f"same_tick_{label}_execute"):
+                        try:
+                            row, _ = execute_due_tick_observation(
+                                db,
+                                organization_id=organization_id,
+                                profile_id=UUID(profile_id),
+                                schedule_id=schedule_id,
+                                executed_by_id=actor_id,
+                                request_key=f"phase-ac-pg-consume-{label}",
+                                reason=_EXEC_REASON,
+                                now=due_now,
+                            )
+                            return ("ok", row.id)
+                        except (ExternalDocumentSourceConflictError, IntegrityError):
+                            db.rollback()
+                            return ("conflict", None)
 
         with ci_due_tick_stage("same_tick_workers"):
             with ThreadPoolExecutor(max_workers=2) as pool:
@@ -223,41 +231,47 @@ def test_disable_vs_consume_is_serialized_and_never_observes_after_disable(
         barrier = Barrier(2)
 
         def consume():
-            with SessionLocal() as db:
-                barrier.wait(timeout=10)
-                try:
-                    row, _ = execute_due_tick_observation(
-                        db,
-                        organization_id=organization_id,
-                        profile_id=UUID(profile_id),
-                        schedule_id=schedule_id,
-                        executed_by_id=actor_id,
-                        request_key="phase-ac-pg-disable-consume",
-                        reason=_EXEC_REASON,
-                        now=due_now,
-                    )
-                    return ("consume", "ok", row.id)
-                except (ExternalDocumentSourceConflictError, IntegrityError):
-                    db.rollback()
-                    return ("consume", "conflict", None)
+            with ci_due_tick_stage("disable_race_consume_session"):
+                with SessionLocal() as db:
+                    with ci_due_tick_stage("disable_race_consume_barrier"):
+                        barrier.wait(timeout=10)
+                    with ci_due_tick_stage("disable_race_consume_execute"):
+                        try:
+                            row, _ = execute_due_tick_observation(
+                                db,
+                                organization_id=organization_id,
+                                profile_id=UUID(profile_id),
+                                schedule_id=schedule_id,
+                                executed_by_id=actor_id,
+                                request_key="phase-ac-pg-disable-consume",
+                                reason=_EXEC_REASON,
+                                now=due_now,
+                            )
+                            return ("consume", "ok", row.id)
+                        except (ExternalDocumentSourceConflictError, IntegrityError):
+                            db.rollback()
+                            return ("consume", "conflict", None)
 
         def disable():
-            with SessionLocal() as db:
-                barrier.wait(timeout=10)
-                try:
-                    row, _ = disable_recurring_observation_schedule(
-                        db,
-                        organization_id=organization_id,
-                        profile_id=UUID(profile_id),
-                        schedule_id=schedule_id,
-                        actor_id=actor_id,
-                        request_key="phase-ac-pg-disable",
-                        reason=_DISABLE_REASON,
-                    )
-                    return ("disable", "ok", row.id)
-                except (ExternalDocumentSourceConflictError, IntegrityError):
-                    db.rollback()
-                    return ("disable", "conflict", None)
+            with ci_due_tick_stage("disable_race_disable_session"):
+                with SessionLocal() as db:
+                    with ci_due_tick_stage("disable_race_disable_barrier"):
+                        barrier.wait(timeout=10)
+                    with ci_due_tick_stage("disable_race_disable_execute"):
+                        try:
+                            row, _ = disable_recurring_observation_schedule(
+                                db,
+                                organization_id=organization_id,
+                                profile_id=UUID(profile_id),
+                                schedule_id=schedule_id,
+                                actor_id=actor_id,
+                                request_key="phase-ac-pg-disable",
+                                reason=_DISABLE_REASON,
+                            )
+                            return ("disable", "ok", row.id)
+                        except (ExternalDocumentSourceConflictError, IntegrityError):
+                            db.rollback()
+                            return ("disable", "conflict", None)
 
         with ci_due_tick_stage("disable_race_workers"):
             with ThreadPoolExecutor(max_workers=2) as pool:
