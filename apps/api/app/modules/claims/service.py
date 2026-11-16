@@ -345,7 +345,7 @@ def approved_ai_fact_source_revalidation_reasons(
     from app.modules.intelligence.models import DocumentExtraction
     from app.modules.processing.models import AI_SOURCE_REPROCESSED_WARNING
     from app.modules.processing.ocr_discrepancy_receipts import (
-        current_source_discrepancy_receipts,
+        bound_fact_source_discrepancy_receipts,
     )
 
     relevant = [
@@ -380,9 +380,15 @@ def approved_ai_fact_source_revalidation_reasons(
         )
     }
 
+    # A previously approved AI fact retains its exact source-document link.
+    # A later supersession or soft deletion does not adjudicate an unresolved
+    # operator report about those original bytes. Current-source receipts are
+    # for claim-wide freshness; fact-bound readback must include historical
+    # source versions while still checking tenant, claim, document ID, version
+    # and original file hash in the shared receipt matcher.
     reported_document_ids = {
         receipt.entity_id
-        for receipt in current_source_discrepancy_receipts(
+        for receipt in bound_fact_source_discrepancy_receipts(
             db, organization_id=organization_id, claim_id=claim_id,
             documents=list(documents.values()),
         )
@@ -391,6 +397,12 @@ def approved_ai_fact_source_revalidation_reasons(
     results: dict[UUID, str] = {}
     for fact in relevant:
         document = documents.get(fact.source_document_id)
+        if document is not None and document.id in reported_document_ids:
+            # Prefer the specific unverified report to a generic retired-source
+            # warning; source revalidation remains mandatory in both cases.
+            # Never change approved values or describe an allegation as fact.
+            results[fact.id] = "source_ocr_discrepancy_reported_unverified"
+            continue
         if (
             document is None
             or document.deleted_at is not None
@@ -402,11 +414,6 @@ def approved_ai_fact_source_revalidation_reasons(
             }
         ):
             results[fact.id] = "source_document_unusable"
-            continue
-        if document.id in reported_document_ids:
-            # Prioritize an unresolved original-source concern over later
-            # machine reprocessing. Neither is a verified material error.
-            results[fact.id] = "source_ocr_discrepancy_reported_unverified"
             continue
         candidate = candidates.get(fact.source_extraction_id)
         if (
