@@ -335,6 +335,13 @@ def main() -> None:
             route.fulfill(
                 status=409,
                 content_type="application/json",
+                # This is a credentialed cross-origin fetch in the real web
+                # client; the synthetic route must preserve the API CORS
+                # contract so the UI can read the authoritative 409 message.
+                headers={
+                    "Access-Control-Allow-Origin": BASE_URL,
+                    "Access-Control-Allow-Credentials": "true",
+                },
                 body=json.dumps({
                     "detail": "Claim Pack OCR source warning counts changed since confirmation. "
                     "Refresh the export list and review the current warnings before retrying.",
