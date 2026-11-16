@@ -70,6 +70,9 @@ class ClaimFactResponse(BaseModel):
     approved_by_id: UUID | None
     approved_at: datetime
     version: int
+    # A read-only source warning; never retracts a historical human approval.
+    source_revalidation_required: bool = False
+    source_revalidation_reason: str | None = None
 
 
 class ClaimFactRevisionResponse(BaseModel):
