@@ -1,14 +1,23 @@
-"""Synthetic PostgreSQL CI-only stage durations for slow due-tick tests.
+"""Synthetic PostgreSQL CI-only stage timing for slow due-tick tests.
 
-Write fixed stage labels and elapsed seconds only. No inputs, SQL, row
-contents, credentials or variable values are ever included.
+Write fixed labels, canonical UTC timestamps and elapsed seconds only.
+No inputs, SQL, row contents, credentials or variable values are included.
+UTC time anchors correlate each worker interval with the separate read-only
+pg_stat_activity wait observer (which records UTC observation timestamps).
 """
 from contextlib import contextmanager
+from datetime import UTC, datetime
 import json
 import os
 from time import perf_counter
 
 _LOG_PATH = "/tmp/mcri_due_tick_stage_timings.jsonl"
+
+
+def _observed_at_utc() -> str:
+    # Stable UTC representation with fixed precision, suitable for comparing
+    # read-only PostgreSQL wait-probe timestamps. No input/user values.
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 _ALLOWED = frozenset({
     "same_tick_seed", "same_tick_schedule", "same_tick_workers", "same_tick_verify",
     # Distinct fixed labels per competing test thread make it possible to
@@ -41,7 +50,11 @@ def ci_due_tick_stage(label: str):
     # On a process crash or timeout, the last unmatched BEGIN identifies
     # the interrupted code-owned stage without logging SQL or source values.
     if enabled:
-        begin = {"event": "ci_due_tick_stage_begin", "stage": label}
+        begin = {
+            "event": "ci_due_tick_stage_begin",
+            "stage": label,
+            "observed_at_utc": _observed_at_utc(),
+        }
         with open(_LOG_PATH, "a", encoding="utf-8") as handle:
             handle.write(json.dumps(begin, sort_keys=True) + "\n")
     started = perf_counter()
@@ -49,7 +62,11 @@ def ci_due_tick_stage(label: str):
         yield
     finally:
         if enabled:
-            record = {"event": "ci_due_tick_stage", "stage": label,
-                      "elapsed_seconds": round(perf_counter() - started, 3)}
+            record = {
+                "event": "ci_due_tick_stage",
+                "stage": label,
+                "observed_at_utc": _observed_at_utc(),
+                "elapsed_seconds": round(perf_counter() - started, 3),
+            }
             with open(_LOG_PATH, "a", encoding="utf-8") as handle:
                 handle.write(json.dumps(record, sort_keys=True) + "\n")
