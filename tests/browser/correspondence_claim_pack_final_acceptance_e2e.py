@@ -5,6 +5,7 @@ from io import BytesIO
 import json
 import os
 import re
+from urllib.parse import parse_qs, urlparse
 import zipfile
 from uuid import uuid4
 
@@ -320,6 +321,43 @@ def main() -> None:
         assert "1 historically approved AI fact(s)" in safety_dialog.message
         assert browser_download_requests == [], "Dismissed safety warning must prevent the browser file download"
         assert mutations == [], "Read-only historical source notice unexpectedly mutated claim data"
+        # The user now explicitly accepts 0 current reports / 1 approved
+        # AI-fact report, but the server detects a newer warning state.
+        # Intercept only this browser GET to emulate the authoritative 409;
+        # the backend regression independently tests the real server check.
+        conditional_requests: list[str] = []
+        archive_pattern = re.compile(
+            r"/claims/[^/]+/claim-pack-exports/[^/?]+/download\\?"
+        )
+
+        def simulate_changed_warning_at_download(route) -> None:
+            conditional_requests.append(route.request.url)
+            route.fulfill(
+                status=409,
+                content_type="application/json",
+                body=json.dumps({
+                    "detail": "Claim Pack OCR source warning counts changed since confirmation. "
+                    "Refresh the export list and review the current warnings before retrying.",
+                }),
+            )
+
+        page.route(archive_pattern, simulate_changed_warning_at_download)
+        page.once("dialog", lambda dialog: dialog.accept())
+        with page.expect_response(
+            lambda response: "/download?" in response.url
+            and response.status == 409,
+            timeout=30_000,
+        ):
+            page.get_by_role("button", name="Download", exact=True).first.click()
+        expect(page.get_by_role("alert").filter(
+            has_text="Claim Pack OCR source warning counts changed"
+        )).to_be_visible()
+        assert len(conditional_requests) == 1
+        expected_query = parse_qs(urlparse(conditional_requests[0]).query)
+        assert expected_query["expected_current_unverified_ocr_source_report_count"] == ["0"]
+        assert expected_query["expected_approved_ai_fact_unverified_ocr_discrepancy_count"] == ["1"]
+        assert mutations == [], "Stale download warnings may not mutate governed claim data"
+        page.unroute(archive_pattern, simulate_changed_warning_at_download)
         page.unroute(list_pattern, simulate_historic_fact_notice)
 
         browser.close()
