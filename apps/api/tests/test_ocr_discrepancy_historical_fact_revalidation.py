@@ -454,6 +454,68 @@ def test_historical_claim_pack_notice_ignores_wrong_hash_and_foreign_tenant_rece
     assert listed.json()["approved_ai_fact_unverified_ocr_discrepancy_count"] == 0
 
 
+@pytest.mark.parametrize("source_lifecycle", ("superseded", "soft_deleted"))
+def test_archived_pack_retains_live_bound_fact_dispute_after_source_retirement(
+    source_lifecycle: str,
+) -> None:
+    """A zero current-document count must not conceal an unresolved fact-bound report."""
+    ids, receipt = _setup_ocr_reviewed_fact()
+    base = f"/api/v1/claims/{ids['claim_id']}/claim-pack-exports"
+    generated = client.post(base, json={
+        "export_format": "xlsx",
+        "acknowledge_review_aid": True,
+        "generation_note": "Synthetic archive before later source allegation.",
+    })
+    assert generated.status_code == 201, generated.text
+    download_url = f"{base}/{generated.json()['id']}/download"
+    original = client.get(download_url)
+    assert original.status_code == 200, original.text
+    before_fact = _get_facts(ids)
+
+    report = client.post(
+        f"/api/v1/claims/{ids['claim_id']}/documents/{ids['document_id']}"
+        "/processing/source-discrepancies",
+        json=receipt,
+    )
+    assert report.status_code == 201, report.text
+
+    with TestingSessionLocal() as db:
+        source = db.get(Document, UUID(ids["document_id"]))
+        assert source is not None
+        if source_lifecycle == "superseded":
+            source.is_current = False
+            source.superseded_at = datetime.now(UTC)
+        else:
+            source.deleted_at = datetime.now(UTC)
+        db.commit()
+
+    listed = client.get(base)
+    assert listed.status_code == 200, listed.text
+    assert listed.json()["total"] == 1
+    assert listed.json()["current_unverified_ocr_source_report_count"] == 0
+    assert listed.json()["approved_ai_fact_unverified_ocr_discrepancy_count"] == 1
+
+    downloaded = client.get(download_url)
+    assert downloaded.status_code == 200, downloaded.text
+    assert downloaded.headers["X-Claim-Current-Unverified-OCR-Source-Report-Count"] == "0"
+    assert (
+        downloaded.headers["X-Claim-Approved-AI-Fact-Unverified-OCR-Discrepancy-Count"]
+        == "1"
+    )
+    assert downloaded.headers["X-Claim-Pack-Snapshot-SHA256"] == original.headers[
+        "X-Claim-Pack-Snapshot-SHA256"
+    ]
+    assert downloaded.headers["X-Claim-Pack-File-SHA256"] == original.headers[
+        "X-Claim-Pack-File-SHA256"
+    ]
+    assert downloaded.content == original.content
+    after_fact = _get_facts(ids)
+    assert after_fact["source_revalidation_reason"] == "source_ocr_discrepancy_reported_unverified"
+    assert after_fact["id"] == before_fact["id"]
+    assert after_fact["value"] == before_fact["value"]
+    assert after_fact["approved_at"] == before_fact["approved_at"]
+
+
 def test_approved_assessment_claim_pack_reports_later_bound_ocr_dispute_without_reapproval() -> None:
     """Preserve a real human approval while disclosing its later unverified source hold."""
     ids, report = _setup_ocr_reviewed_fact()
