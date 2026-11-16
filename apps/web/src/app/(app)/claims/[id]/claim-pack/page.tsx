@@ -28,6 +28,7 @@ export default function ClaimPackExportPage() {
   const [claim, setClaim] = useState<Claim | null>(null);
   const [exports, setExports] = useState<ClaimPackExport[]>([]);
   const [currentOcrSourceReports, setCurrentOcrSourceReports] = useState<number | null>(null);
+  const [disputedApprovedAiFacts, setDisputedApprovedAiFacts] = useState<number | null>(null);
   const [acknowledged, setAcknowledged] = useState(false);
   const [note, setNote] = useState("");
   const [creating, setCreating] = useState<ClaimPackFormat | null>(null);
@@ -45,8 +46,10 @@ export default function ClaimPackExportPage() {
       setClaim(claimRow);
       setExports(history.items);
       setCurrentOcrSourceReports(history.current_unverified_ocr_source_report_count);
+      setDisputedApprovedAiFacts(history.approved_ai_fact_unverified_ocr_discrepancy_count);
     } catch (caught) {
       setCurrentOcrSourceReports(null);
+      setDisputedApprovedAiFacts(null);
       setError(
         caught instanceof ApiError
           ? caught.detail
@@ -112,17 +115,23 @@ export default function ClaimPackExportPage() {
     setDownloading(item.id);
     setError("");
     try {
-      // Re-check the live claim-wide count before each download: the archived
-      // snapshot itself cannot be edited when an OCR report arrives later.
-      // If this live advisory cannot be obtained, fail closed.
+      // Re-check both live, distinct source-warning counts before download.
+      // Archived bytes cannot be edited when a report arrives later. If
+      // either advisory cannot be obtained, fail closed.
       const history = await listClaimPackExports(id);
       setExports(history.items);
       const liveCount = history.current_unverified_ocr_source_report_count;
+      const boundCount = history.approved_ai_fact_unverified_ocr_discrepancy_count;
+      if (!Number.isSafeInteger(liveCount) || liveCount < 0 ||
+          !Number.isSafeInteger(boundCount) || boundCount < 0) {
+        throw new Error("Claim Pack source warning counts unavailable");
+      }
       setCurrentOcrSourceReports(liveCount);
-      if (liveCount > 0) {
+      setDisputedApprovedAiFacts(boundCount);
+      if (liveCount > 0 || boundCount > 0) {
         const confirmed = window.confirm(c(
-          `There are ${liveCount} current, unverified OCR source discrepancy report(s) on this claim. This does not prove that this specific historical export is wrong. Review the original source and arrange an independent human check before relying on critical facts. Download this immutable historical file anyway?`,
-          `برای این پرونده ${liveCount} گزارش جاری و تأییدنشده مغایرت OCR ثبت شده است. این موضوع ثابت نمی‌کند که این خروجی تاریخی مشخص نادرست است. پیش از اتکا به اطلاعات حساس، اصل مدرک را بررسی و بازبینی مستقل انسانی را انجام دهید. با وجود این هشدار، فایل تاریخی تغییرناپذیر دانلود شود؟`,
+          `This claim has ${liveCount} current, unverified OCR source discrepancy report(s) and ${boundCount} historically approved AI fact(s) linked to an unverified OCR source report, including retired original documents. These are different counts, not proof that a particular export or approved fact is wrong. Check the original source with an independent human reviewer before relying on critical facts. Download this immutable historical file anyway?`,
+          `این پرونده ${liveCount} گزارش جاری و تأییدنشده مغایرت منبع OCR و ${boundCount} واقعیت قبلاً تأییدشدهٔ AI مرتبط با گزارش مغایرت تأییدنشدهٔ OCR دارد؛ از جمله اسناد اصلی که بعداً از حالت جاری خارج شده‌اند. این دو تعداد، معناهای متفاوتی دارند و اثبات خطای یک خروجی یا واقعیت مشخص نیستند. پیش از اتکا به اطلاعات حساس، منبع اصلی را با بازبین انسانی مستقل بررسی کنید. با وجود این هشدار، فایل تاریخی تغییرناپذیر دانلود شود؟`,
         ));
         if (!confirmed) return;
       }
@@ -216,6 +225,20 @@ export default function ClaimPackExportPage() {
             {c(
               `${currentOcrSourceReports} current source discrepancy report(s) were recorded for this claim. Earlier Claim Pack files are immutable and may predate these reports. A report is not proof of an error in any particular file or an independent source finding. Compare the original source and obtain human review before relying on critical conclusions.`,
               `برای این پرونده ${currentOcrSourceReports} گزارش جاری مغایرت منبع ثبت شده است. فایل‌های قبلی Claim Pack تغییرناپذیرند و ممکن است پیش از این گزارش‌ها تهیه شده باشند. گزارش مغایرت به‌تنهایی اثبات خطا در هیچ فایل مشخصی یا تأیید مستقل منبع نیست. پیش از اتکا به نتایج حساس، اصل مدرک را مقایسه و بررسی انسانی انجام دهید.`,
+            )}
+          </p>
+        </section>
+      ) : null}
+
+      {disputedApprovedAiFacts !== null && disputedApprovedAiFacts > 0 ? (
+        <section role="alert" aria-live="polite" className="mt-5 rounded-lg border border-amber-300 bg-amber-50 px-5 py-4 text-sm text-amber-950">
+          <h2 className="font-semibold">
+            {c("Historically approved AI facts with unresolved OCR source reports", "واقعیت‌های تأییدشدهٔ تاریخی AI با گزارش اختلاف OCR حل‌نشده")}
+          </h2>
+          <p className="mt-2 leading-6">
+            {c(
+              `${disputedApprovedAiFacts} approved AI fact(s) still refer to exact original source documents with reported, unverified OCR concerns, even where those documents were later retired. This is a fact count, separate from current-document report counts. It does not invalidate past human approvals or establish any factual error. Check the original scan with an independent reviewer before relying on these facts.`,
+              `${disputedApprovedAiFacts} واقعیت قبلاً تأییدشدهٔ AI همچنان به اسناد اولیه‌ای متصل‌اند که برای آن‌ها گزارش اختلاف تأییدنشدهٔ OCR ثبت شده است؛ حتی اگر اسناد بعداً از حالت جاری خارج شده باشند. این تعدادِ واقعیت‌ها مستقل از تعداد گزارش‌های اسناد جاری است. این هشدار تأییدهای انسانی گذشته را باطل نمی‌کند و اثبات خطا نیست. پیش از اتکا به این واقعیت‌ها، تصویر اصل سند را با بازبین مستقل بررسی کنید.`,
             )}
           </p>
         </section>
