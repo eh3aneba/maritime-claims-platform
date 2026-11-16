@@ -335,11 +335,34 @@ def main() -> None:
         }:
             raise AssertionError("Approved AI review queue did not return the replaced candidate")
         _wait_for_review_queue_settled(page)
+        # UI-only synthetic readback injection: the backend's real-source
+        # discrepancy matching is covered separately by API integration tests.
+        # Never create a false reviewer approval or a fake production report.
+        detail_pattern = f"**/api/v1/ai-review/{fixture['candidate_id']}"
+
+        def inject_unverified_source_warning(route):
+            upstream = route.fetch()
+            if not upstream.ok:
+                raise AssertionError(f"AI review readback failed: HTTP {upstream.status}")
+            payload = upstream.json()
+            fact = payload["current_claim_fact"]
+            assert fact is not None and fact["provenance_kind"] == "ai_review"
+            fact["source_revalidation_required"] = True
+            fact["source_revalidation_reason"] = "source_ocr_discrepancy_reported_unverified"
+            route.fulfill(status=200, content_type="application/json", body=json.dumps(payload))
+
+        page.route(detail_pattern, inject_unverified_source_warning)
         approved_candidate = _open_history(
             page,
             fixture["candidate_id"],
             "claim.incident_description",
         )
+        source_warning = approved_candidate.get_by_role("alert")
+        expect(source_warning).to_contain_text("An operator reported an unverified OCR source discrepancy.")
+        expect(source_warning).to_contain_text("historical human approval is preserved")
+        # The source-warning card must no longer use the unconditional success-green style.
+        expect(approved_candidate.locator("div.border-amber-300").first).to_be_visible()
+        page.unroute(detail_pattern, inject_unverified_source_warning)
         expect(approved_candidate).to_contain_text("Human-approved AI review", timeout=15_000)
         expect(approved_candidate).to_contain_text("Version 2", timeout=15_000)
 
