@@ -1,11 +1,13 @@
 """Offline CI-only regression for bounded, fixed-label due-tick worker timing.
 
 These tests do not connect to PostgreSQL or process Evidence. Stage logs may
-contain only pre-approved labels, bounded durations and fixed event keys.
+contain only pre-approved labels, canonical UTC timestamps, bounded durations
+and fixed event keys.
 """
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime
 import json
 
 import pytest
@@ -43,10 +45,22 @@ def test_parallel_worker_stages_are_distinguishable_and_privacy_safe(
         }
     for record in records:
         assert record["stage"] in labels
-        assert set(record) <= {"event", "stage", "elapsed_seconds"}
+        assert set(record) <= {
+            "event", "stage", "elapsed_seconds", "observed_at_utc",
+        }
+        timestamp = record["observed_at_utc"]
+        assert isinstance(timestamp, str)
+        instant = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+        assert instant.tzinfo == UTC
+        assert instant.strftime("%Y-%m-%dT%H:%M:%S.%fZ") == timestamp
         if record["event"] == "ci_due_tick_stage":
             assert isinstance(record["elapsed_seconds"], float)
             assert record["elapsed_seconds"] >= 0
+    for label in labels:
+        marks = [row for row in records if row["stage"] == label]
+        begins = [row for row in marks if row["event"] == "ci_due_tick_stage_begin"]
+        ends = [row for row in marks if row["event"] == "ci_due_tick_stage"]
+        assert begins[0]["observed_at_utc"] <= ends[0]["observed_at_utc"]
 
 
 def test_timing_is_disabled_outside_synthetic_pg_job(
