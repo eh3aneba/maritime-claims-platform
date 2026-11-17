@@ -119,8 +119,8 @@ class PilotRecoveryPairTests(unittest.TestCase):
             with self.assertRaisesRegex(RecoveryEvidenceError, "binding differs"):
                 check_record(record, current, SHA)
 
-    def test_path_replacement_between_evidence_hash_and_tar_parse_is_consistent(self):
-        """A substituted pathname cannot pair one archive hash with other entries."""
+    def test_path_replacement_between_evidence_hash_and_tar_parse_is_rejected(self):
+        """A substituted pathname is not eligible for recovery identity binding."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             dump, archive = fixtures(root)
@@ -145,19 +145,19 @@ class PilotRecoveryPairTests(unittest.TestCase):
                 return original_open(*args, **kwargs)
 
             with patch("pilot_recovery_pair.tarfile.open", side_effect=race_at_tar_parse):
-                bound = observe(
-                    db_dump=dump, evidence_archive=archive, release_sha=SHA,
-                    quiescence_ref="change-001",
-                )
+                with self.assertRaisesRegex(
+                    RecoveryEvidenceError, "Evidence archive changed during verification"
+                ):
+                    observe(
+                        db_dump=dump, evidence_archive=archive, release_sha=SHA,
+                        quiescence_ref="change-001",
+                    )
             self.assertEqual(len(calls), 1)
-            self.assertEqual(bound["evidence"]["archive_sha256"], prior_digest)
-            self.assertEqual(bound["evidence"]["entry_count"], 1)
-            # Later verification against the substituted pathname is NO-GO.
-            with self.assertRaisesRegex(RecoveryEvidenceError, "binding differs"):
-                check_record(bound, observe(
-                    db_dump=dump, evidence_archive=archive, release_sha=SHA,
-                    quiescence_ref="change-001",
-                ), SHA)
+            # The source pathname now resolves to the replacement, but no
+            # recovery manifest was emitted for either mixed file identity.
+            self.assertNotEqual(
+                hashlib.sha256(archive.read_bytes()).hexdigest(), prior_digest,
+            )
 
     def test_inplace_archive_mutation_during_parse_is_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
