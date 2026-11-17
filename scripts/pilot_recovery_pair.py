@@ -104,40 +104,59 @@ def _db_identity(dump: Path, release_sha: str) -> dict:
 
 
 def _evidence_identity(archive: Path) -> dict:
-    digest = _digest(archive)
+    # Hash and inspect the SAME open file description. A renamed pathname
+    # must not make a digest from one Evidence version describe another.
     seen: set[str] = set()
     members = 0
     bytes_declared = 0
     try:
-        with tarfile.open(archive, mode="r:*") as reader:
-            for entry in reader:
-                members += 1
-                if members > MAX_MEMBERS:
-                    raise RecoveryEvidenceError("Evidence archive entry limit exceeded")
-                name = entry.name
-                if (not isinstance(name, str) or not name or
-                    name.startswith("/") or "\\" in name or
-                    any(ord(c) < 32 for c in name)):
-                    raise RecoveryEvidenceError("unsafe Evidence archive entry path")
-                segments = name.rstrip("/").split("/")
-                if ".." in segments:
-                    raise RecoveryEvidenceError("Evidence archive traversal rejected")
-                normalized = str(PurePosixPath(name))
-                if normalized == ".":
-                    if entry.isdir():
-                        continue
-                    raise RecoveryEvidenceError("invalid Evidence archive root entry")
-                if normalized in seen:
-                    raise RecoveryEvidenceError("duplicate Evidence archive path")
-                seen.add(normalized)
-                if not (entry.isfile() or entry.isdir()):
-                    raise RecoveryEvidenceError("Evidence archive contains an unsafe entry type")
-                if entry.isfile():
-                    if entry.size < 0:
-                        raise RecoveryEvidenceError("invalid Evidence archive member size")
-                    bytes_declared += entry.size
-                if bytes_declared > MAX_DECLARED_BYTES:
-                    raise RecoveryEvidenceError("Evidence archive declared size limit exceeded")
+        if archive.is_symlink():
+            raise RecoveryEvidenceError("unsafe Evidence archive file")
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+        descriptor = os.open(archive, flags)
+        with os.fdopen(descriptor, "rb") as stream:
+            before = os.fstat(stream.fileno())
+            if not stat.S_ISREG(before.st_mode):
+                raise RecoveryEvidenceError("unsafe Evidence archive file")
+            digestor = hashlib.sha256()
+            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                digestor.update(chunk)
+            digest = digestor.hexdigest()
+            stream.seek(0)
+            with tarfile.open(fileobj=stream, mode="r:*") as reader:
+                for entry in reader:
+                    members += 1
+                    if members > MAX_MEMBERS:
+                        raise RecoveryEvidenceError("Evidence archive entry limit exceeded")
+                    name = entry.name
+                    if (not isinstance(name, str) or not name or
+                        name.startswith("/") or "\\" in name or
+                        any(ord(c) < 32 for c in name)):
+                        raise RecoveryEvidenceError("unsafe Evidence archive entry path")
+                    segments = name.rstrip("/").split("/")
+                    if ".." in segments:
+                        raise RecoveryEvidenceError("Evidence archive traversal rejected")
+                    normalized = str(PurePosixPath(name))
+                    if normalized == ".":
+                        if entry.isdir():
+                            continue
+                        raise RecoveryEvidenceError("invalid Evidence archive root entry")
+                    if normalized in seen:
+                        raise RecoveryEvidenceError("duplicate Evidence archive path")
+                    seen.add(normalized)
+                    if not (entry.isfile() or entry.isdir()):
+                        raise RecoveryEvidenceError("Evidence archive contains an unsafe entry type")
+                    if entry.isfile():
+                        if entry.size < 0:
+                            raise RecoveryEvidenceError("invalid Evidence archive member size")
+                        bytes_declared += entry.size
+                    if bytes_declared > MAX_DECLARED_BYTES:
+                        raise RecoveryEvidenceError("Evidence archive declared size limit exceeded")
+            after = os.fstat(stream.fileno())
+            if (before.st_size, before.st_mtime_ns, before.st_ctime_ns) != (
+                after.st_size, after.st_mtime_ns, after.st_ctime_ns
+            ):
+                raise RecoveryEvidenceError("Evidence archive changed during verification")
     except (tarfile.TarError, EOFError, OSError):
         raise RecoveryEvidenceError("Evidence archive could not be parsed safely") from None
     if not seen:
