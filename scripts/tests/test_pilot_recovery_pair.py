@@ -236,7 +236,7 @@ class PilotRecoveryPairTests(unittest.TestCase):
             with self.subTest(suffix=suffix), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
                 dump, archive = fixtures(root)
-                Path(str(dump) + suffix).write_bytes(b"\\xff" * 4)
+                Path(str(dump) + suffix).write_bytes(bytes((255,)) * 4)
                 with self.assertRaisesRegex(
                     RecoveryEvidenceError, "PostgreSQL integrity sidecars unavailable"
                 ):
