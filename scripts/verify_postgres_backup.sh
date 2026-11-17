@@ -2,7 +2,7 @@
 set -euo pipefail
 
 DUMP="${1:-}"
-if [[ -z "$DUMP" || ! -f "$DUMP" ]]; then
+if [[ -z "$DUMP" || ! -f "$DUMP" || -L "$DUMP" ]]; then
   echo "Usage: $0 backups/file.dump" >&2
   exit 1
 fi
@@ -10,7 +10,7 @@ fi
 SHA_FILE="${DUMP}.sha256"
 META_FILE="${DUMP}.meta"
 for required in "$SHA_FILE" "$META_FILE"; do
-  if [[ ! -f "$required" ]]; then
+  if [[ ! -f "$required" || -L "$required" ]]; then
     echo "Missing backup integrity artifact: $required" >&2
     exit 1
   fi
@@ -41,16 +41,40 @@ if [[ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]]; then
   exit 1
 fi
 
-meta_value() {
-  local key="$1"
-  sed -n "s/^${key}=//p" "$META_FILE" | head -n 1
-}
+# This verifier is used before a potentially destructive restore. Refuse
+# ambiguous metadata instead of silently trusting the first duplicate key.
+# The backup writer always emits exactly these seven fixed fields.
+declare -A META_FIELDS=()
+while IFS= read -r line || [[ -n "$line" ]]; do
+  if [[ "$line" != *=* ]]; then
+    echo "Malformed backup metadata field." >&2
+    exit 1
+  fi
+  key="${line%%=*}"
+  value="${line#*=}"
+  case "$key" in
+    format|created_at_utc|database|git_sha|alembic_heads|dump_file|dump_sha256) ;;
+    *)
+      echo "Unexpected backup metadata field." >&2
+      exit 1
+      ;;
+  esac
+  if [[ -v "META_FIELDS[$key]" ]]; then
+    echo "Duplicate backup metadata field." >&2
+    exit 1
+  fi
+  META_FIELDS["$key"]="$value"
+done < "$META_FILE"
+if [[ "${#META_FIELDS[@]}" -ne 7 ]]; then
+  echo "Incomplete backup metadata record." >&2
+  exit 1
+fi
 
-FORMAT="$(meta_value format)"
-META_DUMP_FILE="$(meta_value dump_file)"
-META_SHA="$(meta_value dump_sha256)"
-ALEMBIC_HEADS="$(meta_value alembic_heads)"
-META_DB="$(meta_value database)"
+FORMAT="${META_FIELDS[format]}"
+META_DUMP_FILE="${META_FIELDS[dump_file]}"
+META_SHA="${META_FIELDS[dump_sha256]}"
+ALEMBIC_HEADS="${META_FIELDS[alembic_heads]}"
+META_DB="${META_FIELDS[database]}"
 
 # Optional target-db binding, supplied by the destructive restore path.
 # Standalone read-only archive verification does not require a live target.
