@@ -36,6 +36,11 @@ def test_parallel_worker_stages_are_distinguishable_and_privacy_safe(
         "same_tick_a_legacy_generation3_integrity", "same_tick_b_legacy_generation3_integrity",
         "same_tick_a_legacy_checkpoint", "same_tick_b_legacy_checkpoint",
         "same_tick_a_legacy_generation3_lineage", "same_tick_b_legacy_generation3_lineage",
+        "same_tick_a_nested_authorization_integrity", "same_tick_b_nested_authorization_integrity",
+        "same_tick_a_nested_checkpoint_integrity", "same_tick_b_nested_checkpoint_integrity",
+        "same_tick_a_nested_restaging_integrity", "same_tick_b_nested_restaging_integrity",
+        "same_tick_a_nested_change_integrity", "same_tick_b_nested_change_integrity",
+        "same_tick_a_nested_profile_integrity", "same_tick_b_nested_profile_integrity",
         "same_tick_a_integrity", "same_tick_b_integrity",
         "same_tick_a_audit_write", "same_tick_b_audit_write",
         "same_tick_a_commit", "same_tick_b_commit",
@@ -112,8 +117,10 @@ def test_ci_sql_aggregate_records_only_fixed_counts_and_seconds(
     monkeypatch.setenv("EXTERNAL_EVIDENCE_DUE_TICK_POSTGRES_TEST", "1")
     stage.ci_due_tick_sql_aggregate("same_tick_b_legacy_admission_integrity", 27, 0.31415)
     stage.ci_due_tick_sql_aggregate("same_tick_a_legacy_generation3_lineage", 0, 0.0)
+    stage.ci_due_tick_sql_aggregate("same_tick_b_nested_authorization_integrity", 4, 0.122)
+    stage.ci_due_tick_sql_aggregate("same_tick_a_nested_checkpoint_integrity", 18, 0.05)
     records = [json.loads(line) for line in log.read_text().splitlines()]
-    assert len(records) == 2
+    assert len(records) == 4
     for record in records:
         assert set(record) == {
             "event", "stage", "observed_at_utc",
