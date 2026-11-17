@@ -21,6 +21,8 @@ from app.modules.external_document_sources.due_tick_observation_models import (
 )
 from app.modules.external_document_sources import due_tick_observation_service
 from app.modules.external_document_sources import recurring_observation_provider_lineage
+from app.modules.external_document_sources import evidence_admission_execution_service
+from app.modules.external_document_sources import generation_3_change_detection_service
 from app.modules.external_document_sources.due_tick_observation_service import (
     execute_due_tick_observation,
 )
@@ -162,6 +164,11 @@ def test_same_due_tick_concurrent_consumers_create_one_execution(
             "legacy_resolution", "legacy_admission_integrity",
             "legacy_generation3_integrity", "legacy_checkpoint",
             "legacy_generation3_lineage",
+            "nested_authorization_integrity",
+            "nested_checkpoint_integrity",
+            "nested_restaging_integrity",
+            "nested_change_integrity",
+            "nested_profile_integrity",
         }
 
         def trace_phase(operation, phase: str):
@@ -223,6 +230,39 @@ def test_same_due_tick_concurrent_consumers_create_one_execution(
                 recurring_observation_provider_lineage, name,
                 trace_phase(original, phase),
             )
+
+        # Profile deeper internal validation boundaries, keeping the same
+        # unmodified code, arguments and race behavior. These names are fixed
+        # and private; per-stage DBAPI totals include nested SQL calls.
+        for module, name, phase in (
+            (
+                evidence_admission_execution_service,
+                "_ensure_authorization_integrity",
+                "nested_authorization_integrity",
+            ),
+            (
+                generation_3_change_detection_service,
+                "_ensure_checkpoint_generation_3_integrity",
+                "nested_checkpoint_integrity",
+            ),
+            (
+                generation_3_change_detection_service,
+                "_ensure_successor_versioned_restaging_integrity",
+                "nested_restaging_integrity",
+            ),
+            (
+                generation_3_change_detection_service,
+                "_ensure_successor_change_detection_integrity",
+                "nested_change_integrity",
+            ),
+            (
+                generation_3_change_detection_service,
+                "_ensure_profile_integrity",
+                "nested_profile_integrity",
+            ),
+        ):
+            original = getattr(module, name)
+            monkeypatch.setattr(module, name, trace_phase(original, phase))
 
         def consume(label: str):
             assert label in {"a", "b"}
