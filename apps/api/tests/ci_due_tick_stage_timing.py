@@ -35,6 +35,13 @@ _ALLOWED = frozenset({
     "same_tick_a_current_document", "same_tick_b_current_document",
     "same_tick_a_source_state", "same_tick_b_source_state",
     "same_tick_a_provider_lineage", "same_tick_b_provider_lineage",
+    # CI-only, nested breakdown of the legacy SharePoint/Drive lineage resolver.
+    # Identifiers and SQL must never be interpolated into these labels.
+    "same_tick_a_legacy_resolution", "same_tick_b_legacy_resolution",
+    "same_tick_a_legacy_admission_integrity", "same_tick_b_legacy_admission_integrity",
+    "same_tick_a_legacy_generation3_integrity", "same_tick_b_legacy_generation3_integrity",
+    "same_tick_a_legacy_checkpoint", "same_tick_b_legacy_checkpoint",
+    "same_tick_a_legacy_generation3_lineage", "same_tick_b_legacy_generation3_lineage",
     "same_tick_a_integrity", "same_tick_b_integrity",
     "same_tick_a_audit_write", "same_tick_b_audit_write",
     "same_tick_a_commit", "same_tick_b_commit",

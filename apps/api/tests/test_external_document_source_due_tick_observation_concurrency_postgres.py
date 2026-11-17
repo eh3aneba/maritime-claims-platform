@@ -19,6 +19,7 @@ from app.modules.external_document_sources.due_tick_observation_models import (
     ExternalDocumentSourceDueTickObservationExecution,
 )
 from app.modules.external_document_sources import due_tick_observation_service
+from app.modules.external_document_sources import recurring_observation_provider_lineage
 from app.modules.external_document_sources.due_tick_observation_service import (
     execute_due_tick_observation,
 )
@@ -162,6 +163,23 @@ def test_same_due_tick_concurrent_consumers_create_one_execution(
             original = getattr(due_tick_observation_service, name)
             monkeypatch.setattr(
                 due_tick_observation_service, name,
+                trace_phase(original, phase),
+            )
+
+        # Measure the specific security-validation subcalls within the
+        # provider-lineage resolver, not just the outer 12-second interval.
+        # Wrappers delegate to the ORIGINAL functions and only log fixed
+        # test-owned stage labels for the two synthetic PostgreSQL workers.
+        for name, phase in (
+            ("_resolve_legacy", "legacy_resolution"),
+            ("_ensure_legacy_admission_integrity", "legacy_admission_integrity"),
+            ("_ensure_legacy_generation3_integrity", "legacy_generation3_integrity"),
+            ("_checkpoint_generation_3", "legacy_checkpoint"),
+            ("_legacy_generation3_lineage", "legacy_generation3_lineage"),
+        ):
+            original = getattr(recurring_observation_provider_lineage, name)
+            monkeypatch.setattr(
+                recurring_observation_provider_lineage, name,
                 trace_phase(original, phase),
             )
 
