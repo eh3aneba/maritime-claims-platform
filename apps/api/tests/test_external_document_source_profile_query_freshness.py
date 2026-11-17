@@ -5,7 +5,7 @@ import textwrap
 from uuid import UUID
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import event, select
 from sqlalchemy.dialects import postgresql
 
 from app.modules.external_document_sources import service
@@ -34,6 +34,31 @@ def test_alternating_profile_and_tenant_parameters_never_reuse_previous_result()
             assert row.id == pid and row.organization_id == org
             with pytest.raises(service.ExternalDocumentSourceNotFoundError):
                 service.get_external_document_source_profile(db, organization_id=other_org, profile_id=pid)
+
+
+def test_each_profile_lookup_still_executes_a_fresh_tenant_scoped_select() -> None:
+    org, profile_id = _requested_profile("query-no-result-cache")
+    observed = {"count": 0}
+
+    def count_profile_reads(_connection, _cursor, statement, _params, _context, _many):
+        # Test-local statement classification only. No SQL or parameters are
+        # logged or retained; production readers still use their own Sessions.
+        if (
+            statement.lstrip().upper().startswith("SELECT")
+            and "external_document_source_profiles" in statement
+        ):
+            observed["count"] += 1
+
+    with TestingSessionLocal() as db:
+        engine = db.get_bind()
+        event.listen(engine, "before_cursor_execute", count_profile_reads)
+        try:
+            for _ in range(3):
+                row = service._get_profile(db, organization_id=org, profile_id=profile_id)
+                assert row.organization_id == org and row.id == profile_id
+        finally:
+            event.remove(engine, "before_cursor_execute", count_profile_reads)
+    assert observed["count"] == 3, "Profile rows must never be cached by SQL template reuse"
 
 
 def test_valid_read_then_flushed_receipt_drift_rejects_and_rollback_recovers() -> None:
