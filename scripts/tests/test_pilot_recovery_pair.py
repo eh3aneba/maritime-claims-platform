@@ -76,6 +76,29 @@ class PilotRecoveryPairTests(unittest.TestCase):
                 observe(db_dump=dump, evidence_archive=archive,
                         release_sha=OTHER_SHA, quiescence_ref="change-001")
 
+    def test_db_integrity_sidecar_symlink_is_rejected(self):
+        for suffix in (".sha256", ".meta"):
+            with self.subTest(suffix=suffix), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                dump, archive = fixtures(root)
+                sidecar = Path(str(dump) + suffix)
+                target = root / ("external-owned" + suffix)
+                target.write_bytes(sidecar.read_bytes())
+                sidecar.unlink()
+                try:
+                    sidecar.symlink_to(target)
+                except (OSError, NotImplementedError):
+                    self.skipTest("symlinks unavailable")
+                with self.assertRaisesRegex(
+                    RecoveryEvidenceError, "integrity sidecars unavailable"
+                ):
+                    observe(
+                        db_dump=dump, evidence_archive=archive,
+                        release_sha=SHA, quiescence_ref="change-001",
+                    )
+                self.assertTrue(sidecar.is_symlink())
+                self.assertEqual(target.read_bytes(), sidecar.read_bytes())
+
     def test_evidence_file_mutation_rejected_on_verify(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
