@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from io import BytesIO
 import hashlib
+import os
 import json
 import os
 import stat
@@ -14,6 +15,7 @@ import sys
 import tarfile
 import tempfile
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from pilot_recovery_pair import (  # noqa: E402
@@ -116,6 +118,97 @@ class PilotRecoveryPairTests(unittest.TestCase):
                               release_sha=SHA, quiescence_ref="change-001")
             with self.assertRaisesRegex(RecoveryEvidenceError, "binding differs"):
                 check_record(record, current, SHA)
+
+    def test_path_replacement_between_evidence_hash_and_tar_parse_is_rejected(self):
+        """A substituted pathname is not eligible for recovery identity binding."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            dump, archive = fixtures(root)
+            prior_digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+            replacement = root / "replacement.tar"
+            with tarfile.open(replacement, "w") as writer:
+                for name in ("documents/a.pdf", "documents/b.pdf"):
+                    item = tarfile.TarInfo(name)
+                    item.size = 2
+                    writer.addfile(item, BytesIO(b"ok"))
+
+            original_open = tarfile.open
+            calls = []
+
+            def race_at_tar_parse(*args, **kwargs):
+                calls.append(True)
+                self.assertIsNotNone(
+                    kwargs.get("fileobj"),
+                    "Evidence TAR must be parsed from its hashed file descriptor",
+                )
+                os.replace(replacement, archive)
+                return original_open(*args, **kwargs)
+
+            with patch("pilot_recovery_pair.tarfile.open", side_effect=race_at_tar_parse):
+                with self.assertRaisesRegex(
+                    RecoveryEvidenceError, "Evidence archive changed during verification"
+                ):
+                    observe(
+                        db_dump=dump, evidence_archive=archive, release_sha=SHA,
+                        quiescence_ref="change-001",
+                    )
+            self.assertEqual(len(calls), 1)
+            # The source pathname now resolves to the replacement, but no
+            # recovery manifest was emitted for either mixed file identity.
+            self.assertNotEqual(
+                hashlib.sha256(archive.read_bytes()).hexdigest(), prior_digest,
+            )
+
+    def test_inplace_archive_mutation_during_parse_is_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            dump, archive = fixtures(root)
+            replacement = root / "replacement.tar"
+            with tarfile.open(replacement, "w") as writer:
+                data = b"changed"
+                entry = tarfile.TarInfo("documents/changed.pdf")
+                entry.size = len(data)
+                writer.addfile(entry, BytesIO(data))
+            other_bytes = replacement.read_bytes()
+            original_open = tarfile.open
+
+            def overwrite_during_parse(*args, **kwargs):
+                # Same file/inode: the before/after stat guard must also fail.
+                archive.write_bytes(other_bytes)
+                return original_open(*args, **kwargs)
+
+            with patch("pilot_recovery_pair.tarfile.open", side_effect=overwrite_during_parse):
+                with self.assertRaisesRegex(
+                    RecoveryEvidenceError, "Evidence archive changed during verification"
+                ):
+                    observe(
+                        db_dump=dump, evidence_archive=archive, release_sha=SHA,
+                        quiescence_ref="change-001",
+                    )
+
+    def test_outer_evidence_archive_symlink_and_fifo_are_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            dump, archive = fixtures(root)
+            original = root / "original.tar"
+            archive.rename(original)
+            try:
+                archive.symlink_to(original)
+            except (OSError, NotImplementedError):
+                self.skipTest("symlinks unavailable")
+            with self.assertRaisesRegex(RecoveryEvidenceError, "unsafe Evidence archive file"):
+                observe(
+                    db_dump=dump, evidence_archive=archive, release_sha=SHA,
+                    quiescence_ref="change-001",
+                )
+            archive.unlink()
+            if hasattr(os, "mkfifo"):
+                os.mkfifo(archive, 0o600)
+                with self.assertRaisesRegex(RecoveryEvidenceError, "unsafe Evidence archive file"):
+                    observe(
+                        db_dump=dump, evidence_archive=archive, release_sha=SHA,
+                        quiescence_ref="change-001",
+                    )
 
     def test_archive_rejects_traversal_links_duplicates_and_special(self):
         for name, kind in (
