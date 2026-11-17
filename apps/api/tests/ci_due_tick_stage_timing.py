@@ -43,6 +43,11 @@ _ALLOWED = frozenset({
     "same_tick_a_legacy_generation3_integrity", "same_tick_b_legacy_generation3_integrity",
     "same_tick_a_legacy_checkpoint", "same_tick_b_legacy_checkpoint",
     "same_tick_a_legacy_generation3_lineage", "same_tick_b_legacy_generation3_lineage",
+    "same_tick_a_nested_authorization_integrity", "same_tick_b_nested_authorization_integrity",
+    "same_tick_a_nested_checkpoint_integrity", "same_tick_b_nested_checkpoint_integrity",
+    "same_tick_a_nested_restaging_integrity", "same_tick_b_nested_restaging_integrity",
+    "same_tick_a_nested_change_integrity", "same_tick_b_nested_change_integrity",
+    "same_tick_a_nested_profile_integrity", "same_tick_b_nested_profile_integrity",
     "same_tick_a_integrity", "same_tick_b_integrity",
     "same_tick_a_audit_write", "same_tick_b_audit_write",
     "same_tick_a_commit", "same_tick_b_commit",
@@ -104,6 +109,11 @@ _SQL_AGGREGATE_STAGES = frozenset(
         "legacy_generation3_integrity",
         "legacy_checkpoint",
         "legacy_generation3_lineage",
+        "nested_authorization_integrity",
+        "nested_checkpoint_integrity",
+        "nested_restaging_integrity",
+        "nested_change_integrity",
+        "nested_profile_integrity",
     )
 )
 
