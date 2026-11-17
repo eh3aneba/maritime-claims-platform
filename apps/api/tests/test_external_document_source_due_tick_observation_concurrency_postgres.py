@@ -151,7 +151,13 @@ def test_same_due_tick_concurrent_consumers_create_one_execution(
 
         for name, phase in (
             ("_schedule_binding_for_update", "binding_lock"),
+            ("_schedule_for_update", "schedule_verify"),
+            ("_lock_current_family_document", "current_document"),
+            ("_prior_source_state", "source_state"),
+            ("resolve_recurring_provider_lineage", "provider_lineage"),
             ("read_recurring_provider_metadata", "provider_metadata"),
+            ("ensure_due_tick_observation_integrity", "integrity"),
+            ("write_audit_log", "audit_write"),
         ):
             original = getattr(due_tick_observation_service, name)
             monkeypatch.setattr(
@@ -167,6 +173,11 @@ def test_same_due_tick_concurrent_consumers_create_one_execution(
             try:
                 with ci_due_tick_stage(f"same_tick_{label}_session"):
                     with SessionLocal() as db:
+                        # Capture the actual final transaction commit and
+                        # refresh, rather than inferring their durations from
+                        # application stages. The session remains test-local.
+                        db.commit = trace_phase(db.commit, "commit")
+                        db.refresh = trace_phase(db.refresh, "refresh")
                         with ci_due_tick_stage(f"same_tick_{label}_barrier"):
                             barrier.wait(timeout=10)
                         with ci_due_tick_stage(f"same_tick_{label}_execute"):
