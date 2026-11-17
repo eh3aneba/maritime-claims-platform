@@ -14,7 +14,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[3]
 RESTORE_SCRIPT = REPO_ROOT / "scripts" / "restore_postgres.sh"
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
-from pilot_recovery_pair import observe  # noqa: E402
+from pilot_recovery_pair import _write_private_record, observe  # noqa: E402
 
 
 def _fake_docker(tmp_path: Path) -> tuple[Path, Path]:
@@ -71,6 +71,7 @@ def _run_restore(
     running_services: str = "db\nclamav\n",
     app_env: str = "development",
     with_pair: bool = False,
+    public_manifest: bool = False,
     tamper_dump: bool = False,
     tamper_evidence: bool = False,
     missing_metadata: bool = False,
@@ -128,7 +129,11 @@ def _run_restore(
             release_sha="a" * 40, quiescence_ref="test-recovery-001",
         )
         manifest = tmp_path / "pair.json"
-        manifest.write_text(json.dumps(record), encoding="utf-8")
+        # Use the real fail-closed writer (exclusive mode-0600 record), not
+        # Path.write_text, whose default 0644 would invalidate a safe fixture.
+        _write_private_record(manifest, record)
+        if public_manifest:
+            manifest.chmod(0o644)
         env["MCRI_RESTORE_PAIR_MANIFEST"] = str(manifest)
         env["MCRI_RESTORE_EVIDENCE_ARCHIVE"] = str(archive)
         env["MCRI_RESTORE_RELEASE_SHA"] = "a" * 40
@@ -255,6 +260,21 @@ def test_private_pilot_pair_is_verified_before_dropdb(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stderr
     assert "RECOVERY ARTIFACT DIGESTS VERIFIED" in result.stdout
     assert "compose exec -T db dropdb" in log
+
+
+def test_public_recovery_manifest_blocks_destructive_pilot_restore(tmp_path: Path) -> None:
+    # This verifies the protected validator, not just the private writer:
+    # a deliberately non-private record must still refuse before dropdb.
+    if os.name != "posix":
+        return
+    result, log = _run_restore(
+        tmp_path, app_env="pilot", with_pair=True, public_manifest=True,
+    )
+    assert result.returncode != 0
+    assert "recovery record permissions are not private" in result.stderr
+    assert "dropdb" not in log
+    assert "createdb" not in log
+    assert "compose run --rm migrate" not in log
 
 
 def test_mutated_evidence_archive_blocks_destructive_pilot_restore(tmp_path: Path) -> None:
