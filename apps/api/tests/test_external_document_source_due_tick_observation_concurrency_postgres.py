@@ -418,6 +418,20 @@ def test_cross_session_ancestor_receipt_tamper_after_metadata_read_fails_closed(
         )
 
         with SessionLocal() as consumer:
+            # Keep a strong reference to the previously observed receipt:
+            # SQLAlchemy Session identity maps can otherwise weakly evict it,
+            # accidentally making the test pass only because of GC timing.
+            pinned_receipt = consumer.scalar(
+                select(ExternalDocumentSourceEvidenceAdmissionAuthorizationReceipt)
+                .where(
+                    ExternalDocumentSourceEvidenceAdmissionAuthorizationReceipt.authorization_id
+                    == authorization_id,
+                    ExternalDocumentSourceEvidenceAdmissionAuthorizationReceipt.organization_id
+                    == organization_id,
+                )
+            )
+            assert pinned_receipt is not None
+            assert pinned_receipt.reason == original_reason
             try:
                 with pytest.raises(ExternalDocumentSourceConflictError):
                     execute_due_tick_observation(
