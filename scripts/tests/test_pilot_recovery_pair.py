@@ -67,6 +67,46 @@ class PilotRecoveryPairTests(unittest.TestCase):
                 hashlib.sha256(archive.read_bytes()).hexdigest())
             check_record(record, record, SHA)
 
+    def test_record_flags_reject_json_numeric_bool_aliases(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dump, archive = fixtures(Path(tmp))
+            actual = observe(
+                db_dump=dump, evidence_archive=archive,
+                release_sha=SHA, quiescence_ref="change-001",
+            )
+            check_record(actual, actual, SHA)
+            for key in (
+                "artifact_integrity_bound", "same_recovery_point_verified",
+                "restore_drill_verified", "pilot_authorized",
+            ):
+                with self.subTest(key=key):
+                    tampered = json.loads(json.dumps(actual))
+                    tampered[key] = int(actual[key])
+                    with self.assertRaisesRegex(
+                        RecoveryEvidenceError, "recovery binding differs"
+                    ):
+                        check_record(tampered, actual, SHA)
+
+    def test_record_nested_evidence_numeric_types_are_exact(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dump, archive = fixtures(Path(tmp))
+            actual = observe(
+                db_dump=dump, evidence_archive=archive,
+                release_sha=SHA, quiescence_ref="change-001",
+            )
+            for key, wrong in (
+                ("entry_count", True),
+                ("entry_count", 1.0),
+                ("declared_regular_file_bytes", 23.0),
+            ):
+                with self.subTest(key=key, wrong=wrong):
+                    tampered = json.loads(json.dumps(actual))
+                    tampered["evidence"][key] = wrong
+                    with self.assertRaisesRegex(
+                        RecoveryEvidenceError, "recovery binding differs"
+                    ):
+                        check_record(tampered, actual, SHA)
+
     def test_db_sidecar_tamper_and_wrong_release_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
             dump, archive = fixtures(Path(tmp))

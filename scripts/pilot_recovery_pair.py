@@ -229,6 +229,19 @@ def observe(*, db_dump: Path, evidence_archive: Path, release_sha: str,
     }
 
 
+def _exact_json_value(left: object, right: object) -> bool:
+    """Recursive JSON equality with no bool/int or int/float coercion."""
+    if type(left) is not type(right):
+        return False
+    if isinstance(left, dict):
+        return (left.keys() == right.keys() and
+                all(_exact_json_value(left[key], right[key]) for key in left))
+    if isinstance(left, list):
+        return (len(left) == len(right) and
+                all(_exact_json_value(a, b) for a, b in zip(left, right)))
+    return left == right
+
+
 def check_record(record: object, actual: dict, release_sha: str) -> None:
     if not isinstance(record, dict) or set(record) != set(actual):
         raise RecoveryEvidenceError("recovery record structure mismatch")
@@ -236,7 +249,7 @@ def check_record(record: object, actual: dict, release_sha: str) -> None:
                 "operator_quiescence_record_ref", "artifact_integrity_bound",
                 "same_recovery_point_verified", "restore_drill_verified",
                 "pilot_authorized"):
-        if record[key] != actual[key]:
+        if not _exact_json_value(record[key], actual[key]):
             raise RecoveryEvidenceError("recovery binding differs from current artifacts")
     if record["release_sha"] != release_sha:
         raise RecoveryEvidenceError("recovery record release SHA mismatch")
