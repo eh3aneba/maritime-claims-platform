@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 from io import BytesIO
-import json
 import os
 import stat
 import subprocess
