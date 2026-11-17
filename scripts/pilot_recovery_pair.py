@@ -11,9 +11,11 @@ import argparse
 from datetime import datetime, timezone
 import hashlib
 import json
+import os
 from pathlib import Path, PurePosixPath
 import re
 import sys
+import stat
 import tarfile
 
 SCHEMA = "mcri-pilot-recovery-pair-v1"
@@ -22,6 +24,7 @@ COMMIT_RE = re.compile(r"[a-f0-9]{40}\Z")
 ATTESTATION_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{2,79}\Z")
 MAX_MEMBERS = 50_000
 MAX_DECLARED_BYTES = 512 * 1024**3
+MAX_RECORD_BYTES = 1_048_576
 
 
 class RecoveryEvidenceError(ValueError):
@@ -188,6 +191,60 @@ def check_record(record: object, actual: dict, release_sha: str) -> None:
         raise RecoveryEvidenceError("recovery record timestamp must be UTC")
 
 
+def _unique_json_keys(pairs: list[tuple[str, object]]) -> dict:
+    """Reject duplicates at any depth; last-value-wins is unsafe evidence."""
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise RecoveryEvidenceError("duplicate recovery record key")
+        result[key] = value
+    return result
+
+
+def _reject_json_constant(_value: str) -> None:
+    raise RecoveryEvidenceError("invalid recovery record numeric constant")
+
+
+def _write_private_record(path: Path, record: dict) -> None:
+    """Exclusive POSIX mode-0600 creation, independent of process umask."""
+    payload = (json.dumps(record, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    if len(payload) > MAX_RECORD_BYTES:
+        raise RecoveryEvidenceError("oversized recovery record")
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(path, flags, 0o600)
+    with os.fdopen(descriptor, "wb") as stream:
+        stream.write(payload)
+
+
+def _read_private_record(path: Path) -> object:
+    """Bounded one-descriptor read; no symlink/FIFO or public POSIX records."""
+    if path.is_symlink():
+        raise RecoveryEvidenceError("unsafe recovery record")
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    descriptor = os.open(path, flags)
+    try:
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode):
+            raise RecoveryEvidenceError("unsafe recovery record")
+        if os.name == "posix" and stat.S_IMODE(metadata.st_mode) & 0o077:
+            raise RecoveryEvidenceError("recovery record permissions are not private")
+        if metadata.st_size > MAX_RECORD_BYTES:
+            raise RecoveryEvidenceError("oversized recovery record")
+        with os.fdopen(descriptor, "rb") as stream:
+            descriptor = -1
+            payload = stream.read(MAX_RECORD_BYTES + 1)
+        if len(payload) > MAX_RECORD_BYTES:
+            raise RecoveryEvidenceError("oversized recovery record")
+    finally:
+        if descriptor != -1:
+            os.close(descriptor)
+    return json.loads(
+        payload.decode("utf-8"),
+        object_pairs_hook=_unique_json_keys,
+        parse_constant=_reject_json_constant,
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="action", required=True)
@@ -208,13 +265,10 @@ def main(argv: list[str] | None = None) -> int:
                 db_dump=args.db_dump, evidence_archive=args.evidence_archive,
                 release_sha=args.release_sha, quiescence_ref=args.quiescence_ref,
             )
-            with args.output.open("x", encoding="utf-8") as stream:
-                json.dump(observed, stream, indent=2, sort_keys=True)
-                stream.write("\n")
+            _write_private_record(args.output, observed)
             print("RECOVERY ARTIFACTS BOUND — consistency and restore NOT verified.")
             return 0
-        with args.manifest.open(encoding="utf-8") as stream:
-            supplied = json.load(stream)
+        supplied = _read_private_record(args.manifest)
         ref = supplied.get("operator_quiescence_record_ref") if isinstance(supplied, dict) else ""
         observed = observe(
             db_dump=args.db_dump, evidence_archive=args.evidence_archive,
