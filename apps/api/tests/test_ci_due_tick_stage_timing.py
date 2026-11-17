@@ -101,3 +101,63 @@ def test_unapproved_stage_labels_cannot_be_written(
         with stage.ci_due_tick_stage("customer-identifier-or-SQL-text"):
             pass
     assert not log.exists()
+
+
+def test_ci_sql_aggregate_records_only_fixed_counts_and_seconds(
+    monkeypatch: pytest.MonkeyPatch, tmp_path,
+) -> None:
+    log = tmp_path / "sql-summary.jsonl"
+    monkeypatch.setattr(stage, "_LOG_PATH", str(log))
+    monkeypatch.setenv("APP_ENV", "test")
+    monkeypatch.setenv("EXTERNAL_EVIDENCE_DUE_TICK_POSTGRES_TEST", "1")
+    stage.ci_due_tick_sql_aggregate("same_tick_b_legacy_admission_integrity", 27, 0.31415)
+    stage.ci_due_tick_sql_aggregate("same_tick_a_legacy_generation3_lineage", 0, 0.0)
+    records = [json.loads(line) for line in log.read_text().splitlines()]
+    assert len(records) == 2
+    for record in records:
+        assert set(record) == {
+            "event", "stage", "observed_at_utc",
+            "statement_count", "dbapi_execute_seconds",
+        }
+        assert record["event"] == "ci_due_tick_sql_aggregate"
+        assert isinstance(record["statement_count"], int)
+        assert isinstance(record["dbapi_execute_seconds"], float)
+    assert records[0]["statement_count"] == 27
+    assert records[0]["dbapi_execute_seconds"] == 0.314
+    assert records[1]["statement_count"] == 0
+
+
+@pytest.mark.parametrize(
+    ("label", "count", "duration"),
+    [
+        ("claim-sensitive-token", 2, 0.1),
+        ("same_tick_a_execute", 2, 0.1),
+        ("same_tick_b_legacy_resolution", True, 0.1),
+        ("same_tick_b_legacy_resolution", -1, 0.1),
+        ("same_tick_b_legacy_resolution", 1_000_001, 0.1),
+        ("same_tick_b_legacy_resolution", 2, float("nan")),
+        ("same_tick_b_legacy_resolution", 2, float("inf")),
+        ("same_tick_b_legacy_resolution", 2, -1.0),
+    ],
+)
+def test_ci_sql_aggregate_rejects_invalid_inputs_without_writing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path, label, count, duration,
+) -> None:
+    log = tmp_path / "no-sensitive-sql-logging.jsonl"
+    monkeypatch.setattr(stage, "_LOG_PATH", str(log))
+    monkeypatch.setenv("APP_ENV", "test")
+    monkeypatch.setenv("EXTERNAL_EVIDENCE_DUE_TICK_POSTGRES_TEST", "1")
+    with pytest.raises(ValueError):
+        stage.ci_due_tick_sql_aggregate(label, count, duration)
+    assert not log.exists()
+
+
+def test_ci_sql_aggregate_disabled_outside_postgres_ci(
+    monkeypatch: pytest.MonkeyPatch, tmp_path,
+) -> None:
+    log = tmp_path / "must-not-exist.jsonl"
+    monkeypatch.setattr(stage, "_LOG_PATH", str(log))
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("EXTERNAL_EVIDENCE_DUE_TICK_POSTGRES_TEST", "1")
+    stage.ci_due_tick_sql_aggregate("same_tick_a_legacy_resolution", 10, 0.05)
+    assert not log.exists()
