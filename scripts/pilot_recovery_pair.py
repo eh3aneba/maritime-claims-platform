@@ -32,16 +32,31 @@ class RecoveryEvidenceError(ValueError):
 
 
 def _digest(path: Path) -> str:
-    if not path.is_file() or path.is_symlink():
-        raise RecoveryEvidenceError("required artifact is unavailable or not a regular file")
-    hash_obj = hashlib.sha256()
+    """Hash one opened regular dump, rejecting detectable concurrent mutation.
+
+    Do not first check and then separately follow a mutable pathname. The
+    Evidence archive uses its own single-descriptor hash + TAR inspection.
+    """
     try:
-        with path.open("rb") as stream:
+        if path.is_symlink():
+            raise RecoveryEvidenceError("required artifact is unavailable or not a regular file")
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+        descriptor = os.open(path, flags)
+        with os.fdopen(descriptor, "rb") as stream:
+            before = os.fstat(stream.fileno())
+            if not stat.S_ISREG(before.st_mode):
+                raise RecoveryEvidenceError("required artifact is unavailable or not a regular file")
+            digestor = hashlib.sha256()
             for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-                hash_obj.update(chunk)
+                digestor.update(chunk)
+            after = os.fstat(stream.fileno())
+            if (before.st_size, before.st_mtime_ns, before.st_ctime_ns) != (
+                after.st_size, after.st_mtime_ns, after.st_ctime_ns
+            ):
+                raise RecoveryEvidenceError("PostgreSQL dump changed during verification")
+            return digestor.hexdigest()
     except OSError:
         raise RecoveryEvidenceError("artifact could not be hashed") from None
-    return hash_obj.hexdigest()
 
 
 def _db_identity(dump: Path, release_sha: str) -> dict:

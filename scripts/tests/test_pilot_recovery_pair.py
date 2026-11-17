@@ -80,6 +80,66 @@ class PilotRecoveryPairTests(unittest.TestCase):
                 observe(db_dump=dump, evidence_archive=archive,
                         release_sha=OTHER_SHA, quiescence_ref="change-001")
 
+    def test_dump_mutation_during_hash_is_rejected(self):
+        # Deliberately write to the same inode after the first hash chunk.
+        # The verifier must detect that hash input was not stable.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            dump, archive = fixtures(root)
+            sha256_original = hashlib.sha256
+            mutated = []
+
+            class MutatingDigest:
+                def __init__(self):
+                    self._real = sha256_original()
+
+                def update(self, data):
+                    if not mutated:
+                        with dump.open("ab") as target:
+                            target.write(b"synthetic-concurrent-tamper")
+                        mutated.append(True)
+                    self._real.update(data)
+
+                def hexdigest(self):
+                    return self._real.hexdigest()
+
+            with patch(
+                "pilot_recovery_pair.hashlib.sha256",
+                side_effect=lambda *args, **kwargs: MutatingDigest(),
+            ):
+                with self.assertRaisesRegex(
+                    RecoveryEvidenceError, "PostgreSQL dump changed during verification"
+                ):
+                    observe(
+                        db_dump=dump, evidence_archive=archive,
+                        release_sha=SHA, quiescence_ref="change-001",
+                    )
+            self.assertEqual(mutated, [True])
+
+    def test_dump_path_symlink_and_fifo_are_rejected_without_blocking(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            dump, archive = fixtures(root)
+            original = root / "original.dump"
+            dump.rename(original)
+            try:
+                dump.symlink_to(original)
+            except (NotImplementedError, OSError):
+                self.skipTest("symlinks unavailable")
+            with self.assertRaises(RecoveryEvidenceError):
+                observe(
+                    db_dump=dump, evidence_archive=archive,
+                    release_sha=SHA, quiescence_ref="change-001",
+                )
+            dump.unlink()
+            if hasattr(os, "mkfifo"):
+                os.mkfifo(dump, 0o600)
+                with self.assertRaises(RecoveryEvidenceError):
+                    observe(
+                        db_dump=dump, evidence_archive=archive,
+                        release_sha=SHA, quiescence_ref="change-001",
+                    )
+
     def test_db_integrity_sidecar_symlink_is_rejected(self):
         for suffix in (".sha256", ".meta"):
             with self.subTest(suffix=suffix), tempfile.TemporaryDirectory() as tmp:
