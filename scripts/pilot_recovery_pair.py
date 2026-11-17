@@ -47,9 +47,15 @@ def _db_identity(dump: Path, release_sha: str) -> dict:
     digest = _digest(dump)
     if digest == hashlib.sha256(b"").hexdigest():
         raise RecoveryEvidenceError("empty PostgreSQL backup is not eligible")
+    # Require direct regular-file sidecars just as the pre-restore shell
+    # verifier does. This path check is not an atomic no-follow/open guarantee.
+    checksum_path = Path(str(dump) + ".sha256")
+    metadata_path = Path(str(dump) + ".meta")
+    if any(not item.is_file() or item.is_symlink() for item in (checksum_path, metadata_path)):
+        raise RecoveryEvidenceError("PostgreSQL integrity sidecars unavailable")
     try:
-        sidecar = (Path(str(dump) + ".sha256")).read_text(encoding="utf-8")
-        meta_bytes = (Path(str(dump) + ".meta")).read_bytes()
+        sidecar = checksum_path.read_text(encoding="utf-8")
+        meta_bytes = metadata_path.read_bytes()
         metadata = meta_bytes.decode("utf-8")
     except (OSError, UnicodeError):
         raise RecoveryEvidenceError("PostgreSQL integrity sidecars unavailable") from None
