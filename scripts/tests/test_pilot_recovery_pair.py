@@ -7,6 +7,8 @@ from __future__ import annotations
 from io import BytesIO
 import hashlib
 import json
+import os
+import stat
 from pathlib import Path
 import sys
 import tarfile
@@ -15,7 +17,7 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from pilot_recovery_pair import (  # noqa: E402
-    RecoveryEvidenceError, check_record, main, observe,
+    MAX_RECORD_BYTES, RecoveryEvidenceError, check_record, main, observe,
 )
 
 SHA = "a" * 40
@@ -155,6 +157,102 @@ class PilotRecoveryPairTests(unittest.TestCase):
                 with self.subTest(ref=bad), self.assertRaises(RecoveryEvidenceError):
                     observe(db_dump=dump, evidence_archive=archive,
                             release_sha=SHA, quiescence_ref=bad)
+
+    @staticmethod
+    def _commands(dump: Path, archive: Path, output: Path) -> tuple[list[str], list[str]]:
+        shared = ["--db-dump", str(dump), "--evidence-archive", str(archive),
+                  "--release-sha", SHA]
+        return (
+            ["create", *shared, "--quiescence-ref", "change-001",
+             "--output", str(output)],
+            ["verify", *shared, "--manifest", str(output)],
+        )
+
+    @unittest.skipUnless(os.name == "posix", "POSIX private-file permissions")
+    def test_pair_manifest_is_mode_0600_under_permissive_umask(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dump, archive = fixtures(Path(tmp))
+            output = Path(tmp) / "pair.json"
+            create, verify = self._commands(dump, archive, output)
+            previous = os.umask(0)
+            try:
+                self.assertEqual(main(create), 0)
+            finally:
+                os.umask(previous)
+            self.assertEqual(stat.S_IMODE(output.stat().st_mode), 0o600)
+            self.assertEqual(main(verify), 0)
+
+    @unittest.skipUnless(os.name == "posix", "POSIX private-file permissions")
+    def test_public_pair_manifest_fails_closed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dump, archive = fixtures(Path(tmp))
+            output = Path(tmp) / "pair.json"
+            create, verify = self._commands(dump, archive, output)
+            self.assertEqual(main(create), 0)
+            for permissions in (0o644, 0o640):
+                output.chmod(permissions)
+                self.assertEqual(main(verify), 2)
+            output.chmod(0o600)
+            self.assertEqual(main(verify), 0)
+
+    def test_pair_manifest_symlink_and_fifo_fail_closed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            dump, archive = fixtures(root)
+            original = root / "original.json"
+            create, _ = self._commands(dump, archive, original)
+            self.assertEqual(main(create), 0)
+            target = root / "manifest-link.json"
+            try:
+                target.symlink_to(original)
+            except (NotImplementedError, OSError):
+                self.skipTest("symlinks unavailable")
+            _, verify = self._commands(dump, archive, target)
+            self.assertEqual(main(verify), 2)
+            self.assertTrue(original.is_file())
+            if hasattr(os, "mkfifo"):
+                pipe = root / "record.pipe"
+                os.mkfifo(pipe, 0o600)
+                _, verify_pipe = self._commands(dump, archive, pipe)
+                self.assertEqual(main(verify_pipe), 2)
+
+    def test_pair_manifest_duplicate_keys_and_nonstandard_numbers_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            dump, archive = fixtures(root)
+            output = root / "pair.json"
+            create, verify = self._commands(dump, archive, output)
+            self.assertEqual(main(create), 0)
+            original = output.read_text(encoding="utf-8")
+            for altered in (
+                original.replace(
+                    '"pilot_authorized": false,',
+                    '"pilot_authorized": false,\n  "pilot_authorized": false,',
+                    1,
+                ),
+                original.replace(
+                    '"entry_count": 1,',
+                    '"entry_count": 1,\n    "entry_count": 1,',
+                    1,
+                ),
+                original.replace('"entry_count": 1,', '"entry_count": NaN,', 1),
+            ):
+                with self.subTest(altered=altered != original):
+                    self.assertNotEqual(altered, original)
+                    output.write_text(altered, encoding="utf-8")
+                    self.assertEqual(main(verify), 2)
+            output.write_text(original, encoding="utf-8")
+            self.assertEqual(main(verify), 0)
+
+    def test_oversized_pair_manifest_fails_before_json_parse(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            dump, archive = fixtures(root)
+            output = root / "pair.json"
+            create, verify = self._commands(dump, archive, output)
+            self.assertEqual(main(create), 0)
+            output.write_bytes(output.read_bytes() + b" " * (MAX_RECORD_BYTES + 1))
+            self.assertEqual(main(verify), 2)
 
     def test_cli_exclusive_create_and_exact_content_reverify(self):
         with tempfile.TemporaryDirectory() as tmp:
