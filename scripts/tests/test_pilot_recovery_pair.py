@@ -231,8 +231,8 @@ class PilotRecoveryPairTests(unittest.TestCase):
                     1,
                 ),
                 original.replace(
-                    '"entry_count": 1,',
-                    '"entry_count": 1,\n    "entry_count": 1,',
+                    '"entry_count": 1\n',
+                    '"entry_count": 1,\n    "entry_count": 1\n',
                     1,
                 ),
                 original.replace('"entry_count": 1,', '"entry_count": NaN,', 1),
