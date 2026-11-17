@@ -163,6 +163,88 @@ class PilotRecoveryPairTests(unittest.TestCase):
                 self.assertTrue(sidecar.is_symlink())
                 self.assertEqual(target.read_bytes(), sidecar.read_bytes())
 
+    def test_integrity_sidecar_size_limit_is_enforced_before_full_read(self):
+        for suffix, limit in ((".sha256", 256), (".meta", 8192)):
+            with self.subTest(suffix=suffix), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                dump, archive = fixtures(root)
+                sidecar = Path(str(dump) + suffix)
+                sidecar.write_bytes(b"x" * (limit + 1))
+                with self.assertRaisesRegex(
+                    RecoveryEvidenceError, "oversized PostgreSQL metadata sidecar"
+                ):
+                    observe(
+                        db_dump=dump, evidence_archive=archive,
+                        release_sha=SHA, quiescence_ref="change-001",
+                    )
+
+    def test_sidecar_fifo_is_rejected_without_hanging(self):
+        if not hasattr(os, "mkfifo"):
+            self.skipTest("FIFO unavailable")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            dump, archive = fixtures(root)
+            meta = Path(str(dump) + ".meta")
+            meta.unlink()
+            os.mkfifo(meta, 0o600)
+            with self.assertRaisesRegex(
+                RecoveryEvidenceError, "PostgreSQL integrity sidecars unavailable"
+            ):
+                observe(
+                    db_dump=dump, evidence_archive=archive,
+                    release_sha=SHA, quiescence_ref="change-001",
+                )
+
+    @unittest.skipUnless(
+        hasattr(os, "O_NOFOLLOW") and hasattr(os, "symlink"),
+        "atomic no-follow open requires POSIX",
+    )
+    def test_sidecar_symlink_swap_at_open_is_rejected(self):
+        # A sidecar that is regular at the pathname check must not be
+        # replaceable by a symlink immediately before the actual open.
+        for suffix in (".sha256", ".meta"):
+            with self.subTest(suffix=suffix), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                dump, archive = fixtures(root)
+                sidecar = Path(str(dump) + suffix)
+                target = root / ("original" + suffix)
+                sidecar.rename(target)
+                sidecar.write_bytes(target.read_bytes())
+                real_open = os.open
+                swapped = []
+
+                def replace_before_open(path, flags, *args, **kwargs):
+                    if os.fspath(path) == os.fspath(sidecar) and not swapped:
+                        sidecar.unlink()
+                        sidecar.symlink_to(target)
+                        swapped.append(True)
+                    return real_open(path, flags, *args, **kwargs)
+
+                with patch("pilot_recovery_pair.os.open", side_effect=replace_before_open):
+                    with self.assertRaisesRegex(
+                        RecoveryEvidenceError, "PostgreSQL integrity sidecars unavailable"
+                    ):
+                        observe(
+                            db_dump=dump, evidence_archive=archive,
+                            release_sha=SHA, quiescence_ref="change-001",
+                        )
+                self.assertEqual(swapped, [True])
+                self.assertTrue(sidecar.is_symlink())
+
+    def test_non_utf8_integrity_sidecar_fails_closed(self):
+        for suffix in (".sha256", ".meta"):
+            with self.subTest(suffix=suffix), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                dump, archive = fixtures(root)
+                Path(str(dump) + suffix).write_bytes(bytes((255,)) * 4)
+                with self.assertRaisesRegex(
+                    RecoveryEvidenceError, "PostgreSQL integrity sidecars unavailable"
+                ):
+                    observe(
+                        db_dump=dump, evidence_archive=archive,
+                        release_sha=SHA, quiescence_ref="change-001",
+                    )
+
     def test_evidence_file_mutation_rejected_on_verify(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

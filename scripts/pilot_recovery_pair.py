@@ -59,26 +59,51 @@ def _digest(path: Path) -> str:
         raise RecoveryEvidenceError("artifact could not be hashed") from None
 
 
+def _read_integrity_sidecar(path: Path, limit: int) -> bytes:
+    """Open a bounded, regular-file sidecar without following a direct symlink.
+
+    A single descriptor is held for size checks and content read. POSIX
+    O_NOFOLLOW prevents substitution with a direct symlink during open.
+    """
+    try:
+        if path.is_symlink():
+            raise RecoveryEvidenceError("PostgreSQL integrity sidecars unavailable")
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+        descriptor = os.open(path, flags)
+        with os.fdopen(descriptor, "rb") as stream:
+            before = os.fstat(stream.fileno())
+            if not stat.S_ISREG(before.st_mode):
+                raise RecoveryEvidenceError("PostgreSQL integrity sidecars unavailable")
+            if before.st_size > limit:
+                raise RecoveryEvidenceError("oversized PostgreSQL metadata sidecar")
+            payload = stream.read(limit + 1)
+            if len(payload) > limit:
+                raise RecoveryEvidenceError("oversized PostgreSQL metadata sidecar")
+            after = os.fstat(stream.fileno())
+            if (before.st_size, before.st_mtime_ns, before.st_ctime_ns) != (
+                after.st_size, after.st_mtime_ns, after.st_ctime_ns
+            ):
+                raise RecoveryEvidenceError("PostgreSQL integrity sidecar changed during verification")
+            return payload
+    except OSError:
+        raise RecoveryEvidenceError("PostgreSQL integrity sidecars unavailable") from None
+
+
 def _db_identity(dump: Path, release_sha: str) -> dict:
     if not COMMIT_RE.fullmatch(release_sha):
         raise RecoveryEvidenceError("release SHA must be exactly 40 lowercase hex characters")
     digest = _digest(dump)
     if digest == hashlib.sha256(b"").hexdigest():
         raise RecoveryEvidenceError("empty PostgreSQL backup is not eligible")
-    # Require direct regular-file sidecars just as the pre-restore shell
-    # verifier does. This path check is not an atomic no-follow/open guarantee.
     checksum_path = Path(str(dump) + ".sha256")
     metadata_path = Path(str(dump) + ".meta")
-    if any(not item.is_file() or item.is_symlink() for item in (checksum_path, metadata_path)):
-        raise RecoveryEvidenceError("PostgreSQL integrity sidecars unavailable")
+    checksum_bytes = _read_integrity_sidecar(checksum_path, 256)
+    meta_bytes = _read_integrity_sidecar(metadata_path, 8192)
     try:
-        sidecar = checksum_path.read_text(encoding="utf-8")
-        meta_bytes = metadata_path.read_bytes()
+        sidecar = checksum_bytes.decode("utf-8")
         metadata = meta_bytes.decode("utf-8")
-    except (OSError, UnicodeError):
+    except UnicodeError:
         raise RecoveryEvidenceError("PostgreSQL integrity sidecars unavailable") from None
-    if len(sidecar) > 256 or len(meta_bytes) > 8192:
-        raise RecoveryEvidenceError("oversized PostgreSQL metadata sidecar")
     parts = sidecar.strip().split()
     if len(parts) != 2 or not SHA_RE.fullmatch(parts[0]) or parts[1] != dump.name:
         raise RecoveryEvidenceError("PostgreSQL checksum sidecar is malformed")
