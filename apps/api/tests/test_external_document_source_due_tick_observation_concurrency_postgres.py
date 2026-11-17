@@ -29,6 +29,12 @@ from app.modules.external_document_sources.due_tick_observation_service import (
 from app.modules.external_document_sources.evidence_family_binding_models import (
     ExternalDocumentSourceEvidenceFamilyBinding,
 )
+from app.modules.external_document_sources.evidence_admission_execution_models import (
+    ExternalDocumentSourceEvidenceAdmissionExecution,
+)
+from app.modules.external_document_sources.evidence_admission_authorization_models import (
+    ExternalDocumentSourceEvidenceAdmissionAuthorizationReceipt,
+)
 from app.modules.external_document_sources.recurring_observation_schedule_models import (
     ExternalDocumentSourceRecurringObservationSchedule,
 )
@@ -317,6 +323,134 @@ def test_same_due_tick_concurrent_consumers_create_one_execution(
             assert len(rows) == 1
             assert rows[0].due_at == due_now
             assert rows[0].result_status == "unchanged"
+    finally:
+        engine.dispose()
+
+
+def test_cross_session_ancestor_receipt_tamper_after_metadata_read_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Synthetic PostgreSQL READ COMMITTED mutation between lineage checks.
+
+    The second integrity traversal must not silently use a Session identity-map
+    instance read before a separate transaction committed a receipt change.
+    No production code, SQL statement text, IDs, or customer data are logged.
+    """
+    actor_id, profile_id, _claim_id, _initial_execution, binding = _bound_v1(
+        monkeypatch, "ac-pg-receipt-drift",
+    )
+    adapter = _ChangeAdapter()
+    adapter.result = ExactItemMetadataResult(
+        found=True, item=_baseline_projection(),
+    )
+    register_external_document_source_change_detection_adapter(
+        "sharepoint", "graph_drive_item_metadata_read_v1", adapter,
+    )
+    engine, SessionLocal = _session_factory()
+    due_now = datetime.now(UTC)
+    observed = {"tampered": False}
+    try:
+        with SessionLocal() as db:
+            family = db.get(
+                ExternalDocumentSourceEvidenceFamilyBinding, UUID(binding["id"]),
+            )
+            assert family is not None
+            organization_id = family.organization_id
+            assert family.admission_execution_id is not None
+            admission = db.get(
+                ExternalDocumentSourceEvidenceAdmissionExecution,
+                family.admission_execution_id,
+            )
+            assert admission is not None
+            authorization_id = admission.authorization_id
+            receipt = db.scalar(
+                select(ExternalDocumentSourceEvidenceAdmissionAuthorizationReceipt)
+                .where(
+                    ExternalDocumentSourceEvidenceAdmissionAuthorizationReceipt.authorization_id
+                    == authorization_id,
+                    ExternalDocumentSourceEvidenceAdmissionAuthorizationReceipt.organization_id
+                    == organization_id,
+                )
+            )
+            assert receipt is not None
+            original_reason = receipt.reason
+            schedule, _ = authorize_recurring_observation_schedule(
+                db,
+                organization_id=organization_id,
+                profile_id=UUID(profile_id),
+                binding_id=family.id,
+                authorized_by_id=actor_id,
+                request_key="phase-ac-pg-receipt-drift-schedule",
+                reason=_SCHEDULE_REASON,
+                cadence_class="hourly",
+                effective_at=due_now,
+            )
+            schedule_id = schedule.id
+
+        real_read = due_tick_observation_service.read_recurring_provider_metadata
+
+        def mutate_ancestor_after_read(lineage, *, baseline_projection_hash):
+            result = real_read(
+                lineage, baseline_projection_hash=baseline_projection_hash,
+            )
+            assert not observed["tampered"]
+            # Distinct Session/transaction. A non-key receipt field is deliberately
+            # edited after the initial integrity read but before final validation.
+            with SessionLocal() as concurrent:
+                row = concurrent.scalar(
+                    select(ExternalDocumentSourceEvidenceAdmissionAuthorizationReceipt)
+                    .where(
+                        ExternalDocumentSourceEvidenceAdmissionAuthorizationReceipt.authorization_id
+                        == authorization_id,
+                        ExternalDocumentSourceEvidenceAdmissionAuthorizationReceipt.organization_id
+                        == organization_id,
+                    )
+                )
+                assert row is not None and row.reason == original_reason
+                row.reason = "Synthetic committed ancestor authorization receipt drift."
+                concurrent.commit()
+            observed["tampered"] = True
+            return result
+
+        monkeypatch.setattr(
+            due_tick_observation_service, "read_recurring_provider_metadata",
+            mutate_ancestor_after_read,
+        )
+
+        with SessionLocal() as consumer:
+            try:
+                with pytest.raises(ExternalDocumentSourceConflictError):
+                    execute_due_tick_observation(
+                        consumer,
+                        organization_id=organization_id,
+                        profile_id=UUID(profile_id),
+                        schedule_id=schedule_id,
+                        executed_by_id=actor_id,
+                        request_key="phase-ac-pg-receipt-drift-execute",
+                        reason=_EXEC_REASON,
+                        now=due_now,
+                    )
+            finally:
+                consumer.rollback()
+
+        assert observed["tampered"]
+        assert adapter.calls == 1
+        with SessionLocal() as db:
+            persisted = db.scalars(
+                select(ExternalDocumentSourceDueTickObservationExecution).where(
+                    ExternalDocumentSourceDueTickObservationExecution.schedule_id
+                    == schedule_id
+                )
+            ).all()
+            assert persisted == [], "A detected integrity drift cannot persist a due tick"
+            changed = db.scalar(
+                select(ExternalDocumentSourceEvidenceAdmissionAuthorizationReceipt)
+                .where(
+                    ExternalDocumentSourceEvidenceAdmissionAuthorizationReceipt.authorization_id
+                    == authorization_id,
+                )
+            )
+            assert changed is not None and changed.reason != original_reason
     finally:
         engine.dispose()
 
