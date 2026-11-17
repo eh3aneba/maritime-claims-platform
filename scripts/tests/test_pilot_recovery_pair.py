@@ -235,7 +235,7 @@ class PilotRecoveryPairTests(unittest.TestCase):
                     '"entry_count": 1,\n    "entry_count": 1\n',
                     1,
                 ),
-                original.replace('"entry_count": 1,', '"entry_count": NaN,', 1),
+                original.replace('"entry_count": 1\n', '"entry_count": NaN\n', 1),
             ):
                 with self.subTest(altered=altered != original):
                     self.assertNotEqual(altered, original)
