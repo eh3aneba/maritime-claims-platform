@@ -116,6 +116,63 @@ The output is created exclusively, with no overwrite. It records only the suppli
 
 **Release-identity rule:** a passing pull-request head is not automatically a passing subsequent **squash-merged main commit**; the hashes differ. Collect and verify CI evidence for the *exact deployed commit* and its corresponding images. Record the observation as an evidence reference only after a named reviewer independently checks the runs and logs. The tool cannot attest deployment, actual database migration, operational controls, backup, scanner readiness, real SFTP proof, repository protection, or human approval. **CI METADATA COMPLETE is not a Pilot GO.**
 
+## Exact merged-main CI execution for an authorized release candidate (#653)
+
+A successful pull-request run verifies its PR head, **not** the later squash-merge
+SHA on `main`. The four heavyweight workflows below are configured for
+`pull_request` and `workflow_dispatch`, but **not** `push` to `main`:
+`ci.yml`, `backend-premerge.yml`,
+`postgres-concurrency-regressions.yml` and `performance-smoke.yml`.
+In contrast, `supply-chain.yml` and
+`production-deployment-policy.yml` run on `main` pushes. Thus two green
+push workflows do **not** satisfy the six exact-SHA release checks automatically.
+
+For an **authorized, synthetic-only release-candidate validation**, after
+freezing the full protected `main` SHA in the private change record, an
+operator with approved GitHub Actions write rights can explicitly dispatch
+the remaining four workflows. This starts real CI and consumes runner time:
+
+```bash
+# Verify protected main still equals the approved full SHA before dispatch.
+git fetch origin main
+test "$(git rev-parse origin/main)" = "<approved-40-char-main-SHA>" || exit 1
+
+gh workflow run ci.yml --ref main
+gh workflow run backend-premerge.yml --ref main
+gh workflow run postgres-concurrency-regressions.yml --ref main
+gh workflow run performance-smoke.yml --ref main
+
+# If main advanced during dispatch, STOP: do not mix releases or run results.
+git fetch origin main
+test "$(git rev-parse origin/main)" = "<approved-40-char-main-SHA>" || exit 1
+```
+
+The dispatches are **not** executed by this document or by the release gate.
+Use the GitHub Actions UI to verify the run IDs, events, run attempts,
+`head_sha`, every required conclusion, all 64 backend shards, all
+17 PostgreSQL groups, actual browser E2E and live-stack performance. A
+skipped, cancelled, pending, red, or different-SHA run cannot satisfy the
+release gate. Then run the read-only `pilot_ci_evidence.py` command above
+for **all six workflows** and the backend job-level
+`pilot_backend_execution_evidence.py --require-full` check below. If a newer
+`main` SHA is selected, the evidence collection begins again for that SHA.
+
+`Supply Chain Security` and `Production Deployment Policy` also need
+successful exact-SHA observations. The scheduled/dispatch **full-history**
+Gitleaks check is a *different* security boundary: the eight #764 findings
+require restricted, authorized security-owner classification and a successful
+full-history scan before `historical_secret_findings_disposition` can be
+marked as passed. A green push-range secret scan is not a substitute, and
+an operator must not create an ignore/exception or label the findings
+synthetic without evidence. Do not put passwords, secret findings, host
+details, claims, or reviewer identities in GitHub logs/comments.
+
+**No customer pilot, real-data ingestion or production deployment is
+authorized by dispatching workflows or collecting passing CI metadata.**
+The real chosen-host restore/rollback/alerts/onboarding exercises, OCR
+source review, signed-PDF policy, owner signoffs and all independent v5
+proofs remain separate NO-GO gates.
+
 ## Verify whether Full Backend really ran (without triggering it)
 
 A successful `Full Backend Pre-Merge` **workflow** can be a valid, intentional path-scoped result with **zero executed Backend test shards**. Its aggregate `Backend tests` job is green after `Record workflow-only backend bypass`. This is correct for narrow operational/documentation changes but must **never** be described as a 64/64 Backend validation.
