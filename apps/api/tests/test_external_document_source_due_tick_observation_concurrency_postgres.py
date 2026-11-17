@@ -2,12 +2,13 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
+from time import perf_counter
 import os
 from threading import Barrier, local
 from uuid import UUID
 
 import pytest
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, event, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -42,7 +43,7 @@ from tests.test_external_document_source_evidence_family_binding import (
     teardown_function as _phase_y_teardown,
 )
 from tests.test_external_document_source_family_version_admission import _bound_v1
-from tests.ci_due_tick_stage_timing import ci_due_tick_stage
+from tests.ci_due_tick_stage_timing import ci_due_tick_sql_aggregate, ci_due_tick_stage
 from tests.test_external_document_source_generation_3_change_detection import (
     _baseline_projection,
 )
@@ -137,6 +138,31 @@ def test_same_due_tick_concurrent_consumers_create_one_execution(
 
         barrier = Barrier(2)
         trace_worker = local()
+        # Engine-level SQLAlchemy hooks attribute only DBAPI execute duration
+        # and count to the active, fixed-label synthetic test worker stages.
+        # Never inspect/store SQL, bind parameters, DB IDs or cursor results.
+        def on_sql_before(_connection, _cursor, _statement, _parameters, context, _many):
+            context._mcri_due_tick_sql_started = perf_counter()
+
+        def on_sql_after(_connection, _cursor, _statement, _parameters, context, _many):
+            started = getattr(context, "_mcri_due_tick_sql_started", None)
+            if started is None:
+                return
+            duration = max(0.0, perf_counter() - started)
+            # Inclusive counts for nested integrity sub-stages; every active
+            # frame observes the same executed DBAPI statement.
+            for frame in getattr(trace_worker, "sql_frames", ()):
+                frame["count"] += 1
+                frame["seconds"] += duration
+
+        event.listen(engine, "before_cursor_execute", on_sql_before)
+        event.listen(engine, "after_cursor_execute", on_sql_after)
+
+        sql_phases = {
+            "legacy_resolution", "legacy_admission_integrity",
+            "legacy_generation3_integrity", "legacy_checkpoint",
+            "legacy_generation3_lineage",
+        }
 
         def trace_phase(operation, phase: str):
             # Original production service functions remain unmodified.
@@ -146,8 +172,23 @@ def test_same_due_tick_concurrent_consumers_create_one_execution(
                 worker = getattr(trace_worker, "label", None)
                 if worker is None:
                     return operation(*args, **kwargs)
-                with ci_due_tick_stage(f"same_tick_{worker}_{phase}"):
-                    return operation(*args, **kwargs)
+                fixed_stage = f"same_tick_{worker}_{phase}"
+                if phase not in sql_phases:
+                    with ci_due_tick_stage(fixed_stage):
+                        return operation(*args, **kwargs)
+                frame = {"count": 0, "seconds": 0.0}
+                if not hasattr(trace_worker, "sql_frames"):
+                    trace_worker.sql_frames = []
+                trace_worker.sql_frames.append(frame)
+                try:
+                    with ci_due_tick_stage(fixed_stage):
+                        return operation(*args, **kwargs)
+                finally:
+                    popped = trace_worker.sql_frames.pop()
+                    assert popped is frame
+                    ci_due_tick_sql_aggregate(
+                        fixed_stage, frame["count"], float(frame["seconds"]),
+                    )
             return recorded
 
         for name, phase in (
