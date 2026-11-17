@@ -29,6 +29,16 @@ _ALLOWED = frozenset({
     # bounded provider metadata read. No query, PID or claim value is logged.
     "same_tick_a_binding_lock", "same_tick_b_binding_lock",
     "same_tick_a_provider_metadata", "same_tick_b_provider_metadata",
+    # Only within the synthetic two-worker PG test: isolate the main stages
+    # following the binding lock. Fixed labels preserve the privacy boundary.
+    "same_tick_a_schedule_verify", "same_tick_b_schedule_verify",
+    "same_tick_a_current_document", "same_tick_b_current_document",
+    "same_tick_a_source_state", "same_tick_b_source_state",
+    "same_tick_a_provider_lineage", "same_tick_b_provider_lineage",
+    "same_tick_a_integrity", "same_tick_b_integrity",
+    "same_tick_a_audit_write", "same_tick_b_audit_write",
+    "same_tick_a_commit", "same_tick_b_commit",
+    "same_tick_a_refresh", "same_tick_b_refresh",
     "disable_race_seed", "disable_race_schedule", "disable_race_workers",
     "disable_race_verify",
     "disable_race_consume_session", "disable_race_consume_barrier",
