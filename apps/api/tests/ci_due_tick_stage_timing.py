@@ -8,6 +8,7 @@ pg_stat_activity wait observer (which records UTC observation timestamps).
 from contextlib import contextmanager
 from datetime import UTC, datetime
 import json
+import math
 import os
 from time import perf_counter
 
@@ -91,3 +92,42 @@ def ci_due_tick_stage(label: str):
             }
             with open(_LOG_PATH, "a", encoding="utf-8") as handle:
                 handle.write(json.dumps(record, sort_keys=True) + "\n")
+
+# Exact allowlist: aggregate counts only within the synthetic legacy lineage
+# profiler. Never use SQL text, query parameter values, DB IDs or user labels.
+_SQL_AGGREGATE_STAGES = frozenset(
+    f"same_tick_{worker}_{phase}"
+    for worker in ("a", "b")
+    for phase in (
+        "legacy_resolution",
+        "legacy_admission_integrity",
+        "legacy_generation3_integrity",
+        "legacy_checkpoint",
+        "legacy_generation3_lineage",
+    )
+)
+
+
+def ci_due_tick_sql_aggregate(stage: str, count: int, dbapi_seconds: float) -> None:
+    """Write bounded counts and DBAPI-execute time, never statement content."""
+    if stage not in _SQL_AGGREGATE_STAGES:
+        raise ValueError("Unsupported CI SQL-aggregate stage")
+    if type(count) is not int or not 0 <= count <= 1_000_000:
+        raise ValueError("Invalid CI SQL statement count")
+    if type(dbapi_seconds) is not float or not math.isfinite(dbapi_seconds) or not 0 <= dbapi_seconds <= 86_400:
+        raise ValueError("Invalid CI DBAPI timing duration")
+    enabled = (
+        os.environ.get("APP_ENV") == "test"
+        and os.environ.get("EXTERNAL_EVIDENCE_DUE_TICK_POSTGRES_TEST") == "1"
+    )
+    if not enabled:
+        return
+    record = {
+        "event": "ci_due_tick_sql_aggregate",
+        "stage": stage,
+        "observed_at_utc": _observed_at_utc(),
+        "statement_count": count,
+        "dbapi_execute_seconds": round(dbapi_seconds, 3),
+    }
+    with open(_LOG_PATH, "a", encoding="utf-8") as handle:
+        handle.write(json.dumps(record, sort_keys=True) + "\n")
