@@ -89,6 +89,77 @@ class EmptyComposeSafetyTests(unittest.TestCase):
                 self.assertNotIn("customer-claim-private", str(e.exception))
                 self.assertNotIn("host-private-token", str(e.exception))
 
+    def test_strict_host_inventory_checks_all_containers_and_volumes_twice(self):
+        responses = [
+            CompletedProcess([], 0, "", ""),  # First global docker ps
+            CompletedProcess([], 0, "", ""),  # First global docker volume ls
+            CompletedProcess([], 0, "[]", ""),  # Compose project ps
+            CompletedProcess([], 0, "", ""),  # Compose target volumes
+            CompletedProcess([], 0, "", ""),  # Second global docker ps
+            CompletedProcess([], 0, "", ""),  # Second global docker volume ls
+        ]
+        with patch.object(gate, "render_compose", return_value=config()), \
+             patch.object(gate.subprocess, "run", side_effect=responses) as proc:
+            gate.observe(
+                env_file=Path(".env.ci"),
+                strict_empty_docker_host=True,
+            )
+        commands = [call.args[0] for call in proc.call_args_list]
+        self.assertEqual(commands, [
+            ["docker", "ps", "--all", "--quiet"],
+            ["docker", "volume", "ls", "--quiet"],
+            ["docker", "compose", "--env-file", ".env.ci",
+             "-f", "docker-compose.yml", "ps", "--all", "--format", "json"],
+            ["docker", "volume", "ls", "--format", "{{.Name}}"],
+            ["docker", "ps", "--all", "--quiet"],
+            ["docker", "volume", "ls", "--quiet"],
+        ])
+        for call in proc.call_args_list:
+            self.assertTrue(call.kwargs["capture_output"])
+            self.assertFalse(call.kwargs["check"])
+            self.assertNotIn("up", call.args[0])
+            self.assertNotIn("rm", call.args[0])
+
+    def test_strict_host_rejects_foreign_docker_objects_before_and_after(self):
+        clean = CompletedProcess([], 0, "", "")
+        cases = (
+            (0, "private-container-id", "pre-existing containers"),
+            (1, "private-volume-name", "pre-existing volumes"),
+            (4, "new-private-container", "pre-existing containers"),
+            (5, "new-private-volume", "pre-existing volumes"),
+        )
+        for index, private, category in cases:
+            responses = [
+                clean, clean,
+                CompletedProcess([], 0, "[]", ""),
+                clean,
+                clean, clean,
+            ]
+            responses[index] = CompletedProcess([], 0, private + "\n", "")
+            with self.subTest(index=index), \
+                 patch.object(gate, "render_compose", return_value=config()), \
+                 patch.object(gate.subprocess, "run", side_effect=responses):
+                with self.assertRaises(gate.ExistingStackError) as caught:
+                    gate.observe(
+                        env_file=Path(".env.ci"), strict_empty_docker_host=True
+                    )
+                self.assertIn(category, str(caught.exception))
+                self.assertNotIn(private, str(caught.exception))
+
+    def test_strict_cli_reports_only_inventory_state_and_limits(self):
+        out = io.StringIO()
+        with patch.object(gate, "observe", return_value=None) as observe:
+            with contextlib.redirect_stdout(out):
+                self.assertEqual(gate.main([
+                    "--env-file", ".env.ci", "--strict-empty-docker-host",
+                ]), 0)
+            observe.assert_called_once_with(
+                env_file=Path(".env.ci"), strict_empty_docker_host=True
+            )
+        self.assertIn("STRICT DOCKER INVENTORY EMPTY", out.getvalue())
+        self.assertIn("UNVERIFIED", out.getvalue())
+        self.assertNotIn("private-container-id", out.getvalue())
+
     def test_timeout_and_invalid_config_fail_closed(self):
         with patch.object(gate.subprocess, "run", side_effect=TimeoutExpired([], 1)):
             with self.assertRaises(gate.ExistingStackError):
