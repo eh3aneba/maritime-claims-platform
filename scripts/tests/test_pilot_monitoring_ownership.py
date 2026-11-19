@@ -137,7 +137,7 @@ class MonitoringCoverageTests(unittest.TestCase):
             mutated = [
                 # A shadowed last-key override must never select a false PASS.
                 baseline[:-1] + ', "release_sha": "' + SHA + '"}',
-                baseline.replace('"verified"', '"verified", "status": "verified"', 1),
+                baseline.replace('"status": "verified"', '"status": "verified", "status": "pending"', 1),
                 baseline.replace('"cadence_minutes": 5', '"cadence_minutes": NaN', 1),
                 baseline.replace('"response_minutes": 30', '"response_minutes": Infinity', 1),
             ]
