@@ -35,6 +35,9 @@ from app.modules.external_document_sources.evidence_admission_execution_models i
 from app.modules.external_document_sources.evidence_admission_authorization_models import (
     ExternalDocumentSourceEvidenceAdmissionAuthorizationReceipt,
 )
+from app.modules.external_document_sources.generation_3_change_detection_models import (
+    ExternalDocumentSourceGeneration3ChangeDetectionReceipt,
+)
 from app.modules.external_document_sources.recurring_observation_schedule_models import (
     ExternalDocumentSourceRecurringObservationSchedule,
 )
@@ -327,8 +330,10 @@ def test_same_due_tick_concurrent_consumers_create_one_execution(
         engine.dispose()
 
 
+@pytest.mark.parametrize("target_kind", ["authorization", "generation3"])
 def test_cross_session_ancestor_receipt_tamper_after_metadata_read_fails_closed(
     monkeypatch: pytest.MonkeyPatch,
+    target_kind: str,
 ) -> None:
     """Synthetic PostgreSQL READ COMMITTED mutation between lineage checks.
 
@@ -337,7 +342,7 @@ def test_cross_session_ancestor_receipt_tamper_after_metadata_read_fails_closed(
     No production code, SQL statement text, IDs, or customer data are logged.
     """
     actor_id, profile_id, _claim_id, _initial_execution, binding = _bound_v1(
-        monkeypatch, "ac-pg-receipt-drift",
+        monkeypatch, f"ac-pg-receipt-drift-{target_kind}",
     )
     adapter = _ChangeAdapter()
     adapter.result = ExactItemMetadataResult(
@@ -363,13 +368,23 @@ def test_cross_session_ancestor_receipt_tamper_after_metadata_read_fails_closed(
             )
             assert admission is not None
             authorization_id = admission.authorization_id
+            generation3_id = admission.generation_3_change_detection_execution_id
+            assert generation3_id is not None
+            receipt_model = (
+                ExternalDocumentSourceEvidenceAdmissionAuthorizationReceipt
+                if target_kind == "authorization"
+                else ExternalDocumentSourceGeneration3ChangeDetectionReceipt
+            )
+            receipt_identity = (
+                receipt_model.authorization_id == authorization_id
+                if target_kind == "authorization"
+                else receipt_model.execution_id == generation3_id
+            )
             receipt = db.scalar(
-                select(ExternalDocumentSourceEvidenceAdmissionAuthorizationReceipt)
+                select(receipt_model)
                 .where(
-                    ExternalDocumentSourceEvidenceAdmissionAuthorizationReceipt.authorization_id
-                    == authorization_id,
-                    ExternalDocumentSourceEvidenceAdmissionAuthorizationReceipt.organization_id
-                    == organization_id,
+                    receipt_identity,
+                    receipt_model.organization_id == organization_id,
                 )
             )
             assert receipt is not None
@@ -398,16 +413,14 @@ def test_cross_session_ancestor_receipt_tamper_after_metadata_read_fails_closed(
             # edited after the initial integrity read but before final validation.
             with SessionLocal() as concurrent:
                 row = concurrent.scalar(
-                    select(ExternalDocumentSourceEvidenceAdmissionAuthorizationReceipt)
+                    select(receipt_model)
                     .where(
-                        ExternalDocumentSourceEvidenceAdmissionAuthorizationReceipt.authorization_id
-                        == authorization_id,
-                        ExternalDocumentSourceEvidenceAdmissionAuthorizationReceipt.organization_id
-                        == organization_id,
+                        receipt_identity,
+                        receipt_model.organization_id == organization_id,
                     )
                 )
                 assert row is not None and row.reason == original_reason
-                row.reason = "Synthetic committed ancestor authorization receipt drift."
+                row.reason = "Synthetic committed ancestor lineage receipt drift."
                 concurrent.commit()
             observed["tampered"] = True
             return result
@@ -422,12 +435,10 @@ def test_cross_session_ancestor_receipt_tamper_after_metadata_read_fails_closed(
             # SQLAlchemy Session identity maps can otherwise weakly evict it,
             # accidentally making the test pass only because of GC timing.
             pinned_receipt = consumer.scalar(
-                select(ExternalDocumentSourceEvidenceAdmissionAuthorizationReceipt)
+                select(receipt_model)
                 .where(
-                    ExternalDocumentSourceEvidenceAdmissionAuthorizationReceipt.authorization_id
-                    == authorization_id,
-                    ExternalDocumentSourceEvidenceAdmissionAuthorizationReceipt.organization_id
-                    == organization_id,
+                    receipt_identity,
+                    receipt_model.organization_id == organization_id,
                 )
             )
             assert pinned_receipt is not None
@@ -458,10 +469,10 @@ def test_cross_session_ancestor_receipt_tamper_after_metadata_read_fails_closed(
             ).all()
             assert persisted == [], "A detected integrity drift cannot persist a due tick"
             changed = db.scalar(
-                select(ExternalDocumentSourceEvidenceAdmissionAuthorizationReceipt)
+                select(receipt_model)
                 .where(
-                    ExternalDocumentSourceEvidenceAdmissionAuthorizationReceipt.authorization_id
-                    == authorization_id,
+                    receipt_identity,
+                    receipt_model.organization_id == organization_id,
                 )
             )
             assert changed is not None and changed.reason != original_reason
