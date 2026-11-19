@@ -24,6 +24,8 @@ from scripts.persian_ocr_local_validation_metrics import (
     KINDS, _reject_duplicate_json_keys,
 )
 
+from scripts.persian_ocr_private_study_input import read_private_study_json
+
 _MAX_JSON_BYTES = 2_000_000
 _MAX_FILES = 2000
 _MAX_FILE_BYTES = 256 * 1024 * 1024
@@ -229,9 +231,11 @@ def verify_source_bytes(
 
 
 def _read_json(path: Path) -> Any:
-    _require(path.stat().st_size <= _MAX_JSON_BYTES)
-    with path.open("r", encoding="utf-8") as src:
-        return json.load(src, object_pairs_hook=_reject_duplicate_json_keys)
+    return read_private_study_json(
+        path,
+        object_pairs_hook=_reject_duplicate_json_keys,
+        max_bytes=_MAX_JSON_BYTES,
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
