@@ -134,13 +134,86 @@ def observe_once() -> dict:
             return safe_summary(cursor.fetchall())
 
 
+# Kernel-owned counters and statvfs for fixed runner mounts only. Never read
+# /proc/<pid>, command lines, environment, SQL or private Evidence paths.
+_MAX_RESOURCE_VALUE = (1 << 63) - 1
+
+
+def _bounded_kernel_integer(path: str) -> int | None:
+    try:
+        with open(path, "r", encoding="ascii") as handle:
+            raw = handle.read(64)
+    except (OSError, UnicodeError):
+        return None
+    value = raw.strip()
+    if not value or not value.isascii() or not value.isdecimal():
+        return None
+    number = int(value)
+    return number if 0 <= number <= _MAX_RESOURCE_VALUE else None
+
+
+def _cgroup_memory_events() -> dict[str, int | None]:
+    result = {"oom": None, "oom_kill": None}
+    try:
+        with open("/sys/fs/cgroup/memory.events", "r", encoding="ascii") as handle:
+            raw = handle.read(1024)
+    except (OSError, UnicodeError):
+        return result
+    if len(raw) >= 1024:
+        return result
+    for line in raw.splitlines():
+        parts = line.split()
+        if len(parts) != 2 or parts[0] not in result:
+            continue
+        if parts[1].isascii() and parts[1].isdecimal():
+            value = int(parts[1])
+            if 0 <= value <= _MAX_RESOURCE_VALUE:
+                result[parts[0]] = value
+    return result
+
+
+def _fixed_mount_available(path: str) -> int | None:
+    try:
+        info = os.statvfs(path)
+    except OSError:
+        return None
+    value = info.f_bavail * info.f_frsize
+    return value if 0 <= value <= _MAX_RESOURCE_VALUE else None
+
+
+def safe_ci_runner_resources() -> dict[str, int | None]:
+    """Aggregate CI runner resource counters, never identities or paths.
+
+    Missing cgroup-v2 or mount support stays null. These observations cannot
+    diagnose the root cause of SIGBUS without independent reproduction.
+    """
+    _ci_database_url()  # Same strict synthetic local-only guard as PG observer.
+    events = _cgroup_memory_events()
+    return {
+        "cgroup_memory_current_bytes": _bounded_kernel_integer(
+            "/sys/fs/cgroup/memory.current"
+        ),
+        "cgroup_memory_peak_bytes": _bounded_kernel_integer(
+            "/sys/fs/cgroup/memory.peak"
+        ),
+        "cgroup_memory_limit_bytes": _bounded_kernel_integer(
+            "/sys/fs/cgroup/memory.max"
+        ),
+        "cgroup_oom_events": events["oom"],
+        "cgroup_oom_kill_events": events["oom_kill"],
+        "tmp_available_bytes": _fixed_mount_available("/tmp"),
+        "shm_available_bytes": _fixed_mount_available("/dev/shm"),
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Bounded CI-only PostgreSQL wait telemetry")
     parser.add_argument("--interval-seconds", type=int, default=60)
     parser.add_argument("--max-samples", type=int, default=20)
     args = parser.parse_args(argv)
-    if not (15 <= args.interval_seconds <= 300 and 1 <= args.max_samples <= 25):
-        parser.error("interval must be 15..300s and samples 1..25")
+    if not (15 <= args.interval_seconds <= 300 and 1 <= args.max_samples <= 45
+            and args.interval_seconds * args.max_samples <= 1440):
+        parser.error("bounded probe requires 15..300s, 1..45 samples, max 24m")
 
     try:
         _ci_database_url()
@@ -162,6 +235,12 @@ def main(argv: list[str] | None = None) -> int:
             # Do not interpolate exception text: it may include URI/credentials.
             report = {"event": "pg_wait_probe_error", "sample": n,
                       "exception_type": type(exc).__name__}
+        # Sample independently of SQL success; capture resource pressure at
+        # the last interval before a native crash without logging process data.
+        try:
+            report["runner_resources"] = safe_ci_runner_resources()
+        except Exception:
+            report["runner_resources"] = None
         print(json.dumps(report, sort_keys=True), flush=True)
     return 0
 
