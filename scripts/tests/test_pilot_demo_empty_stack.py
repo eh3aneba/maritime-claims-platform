@@ -160,6 +160,21 @@ class EmptyComposeSafetyTests(unittest.TestCase):
         self.assertIn("UNVERIFIED", out.getvalue())
         self.assertNotIn("private-container-id", out.getvalue())
 
+    def test_live_ci_strict_host_check_precedes_any_synthetic_stack_start(self):
+        workflow = (
+            Path(__file__).resolve().parents[2]
+            / ".github" / "workflows" / "performance-smoke.yml"
+        ).read_text(encoding="utf-8")
+        strict = "python scripts/pilot_demo_empty_stack.py \\\n            --env-file .env.performance --strict-empty-docker-host"
+        startup = "bash scripts/design_partner_preflight.sh .env.performance"
+        self.assertEqual(workflow.count("--strict-empty-docker-host"), 1)
+        self.assertIn(strict, workflow)
+        self.assertIn(startup, workflow)
+        self.assertLess(workflow.index("Prepare isolated performance environment"),
+                        workflow.index(strict))
+        self.assertLess(workflow.index(strict), workflow.index(startup))
+        self.assertIn("python scripts/pilot_demo_docker_target.py", workflow)
+
     def test_timeout_and_invalid_config_fail_closed(self):
         with patch.object(gate.subprocess, "run", side_effect=TimeoutExpired([], 1)):
             with self.assertRaises(gate.ExistingStackError):
