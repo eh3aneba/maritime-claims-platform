@@ -22,6 +22,7 @@ def read_private_study_json(
     path: Path,
     *,
     object_pairs_hook: Callable[[list[tuple[str, Any]]], dict[str, Any]],
+    max_bytes: int = MAX_STUDY_BYTES,
 ) -> Any:
     """Read one bounded, private regular FD and reject observable write races.
 
@@ -29,6 +30,8 @@ def read_private_study_json(
     owner-only permissions are mandatory. On Windows, ACL custody is external
     and must be independently verified by the operator.
     """
+    if type(max_bytes) is not int or not 1 <= max_bytes <= MAX_STUDY_BYTES:
+        raise ValueError("invalid_private_ocr_size_limit")
     if path.is_symlink():
         raise ValueError("unsafe_private_ocr_input")
     flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
@@ -39,13 +42,13 @@ def read_private_study_json(
             raise ValueError("unsafe_private_ocr_input")
         if os.name == "posix" and stat.S_IMODE(before.st_mode) & 0o077:
             raise ValueError("private_ocr_input_permissions_required")
-        if before.st_size > MAX_STUDY_BYTES:
+        if before.st_size > max_bytes:
             raise ValueError("private_ocr_input_oversized")
         with os.fdopen(descriptor, "rb") as stream:
             descriptor = -1
-            payload = stream.read(MAX_STUDY_BYTES + 1)
+            payload = stream.read(max_bytes + 1)
             after = os.fstat(stream.fileno())
-        if len(payload) > MAX_STUDY_BYTES or len(payload) != before.st_size:
+        if len(payload) > max_bytes or len(payload) != before.st_size:
             raise ValueError("private_ocr_input_size_mismatch")
         if (
             before.st_size,
