@@ -2,12 +2,14 @@
 
 ## Latest verified checkpoint — 2026-11-20 after protected #969 merge (customer Pilot NO-GO)
 
-**Current protected `main` source SHA:** `5b84441686fbf24f47c75379506bcb7c06b021b2`,
+**Protected `main` source SHA observed at this dated checkpoint:** `5b84441686fbf24f47c75379506bcb7c06b021b2`,
 the protected squash merge of [PR #969](https://github.com/eh3aneba/maritime-claims-platform/pull/969).
 This is a **verified repository/CI checkpoint** — not a deployed release, customer
 host attestation, signed human approval, or authorization to process customer
 claims. All older dated sections below are historical and their SHAs are
-**not** the current branch head.
+**not** the head observed at this checkpoint. Because subsequent PR merges
+advance `main`, always re-read GitHub before using any documented SHA as a
+current deployment candidate; this immutable dated note cannot self-update.
 
 ### Latest-main automated gate evidence — exact scope
 
