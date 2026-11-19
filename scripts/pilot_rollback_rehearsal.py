@@ -10,8 +10,10 @@ from __future__ import annotations
 import argparse
 from datetime import datetime, timezone
 import json
+import os
 from pathlib import Path
 import re
+import stat
 import sys
 
 SCHEMA = "mcri-pilot-rollback-rehearsal-v1"
@@ -22,6 +24,8 @@ ROLE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/-]{2,79}\Z")
 IMAGE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/:-]{2,200}@sha256:[a-f0-9]{64}\Z")
 SERVICES = ("api", "web", "worker")
 MODES = ("application_only", "recover_paired_backup")
+# A rollback record is private operator metadata, not a public CI artifact.
+MAX_ROLLBACK_RECORD_BYTES = 1_048_576
 BASE_EVIDENCE = (
     "approved_change_ref",
     "operator_rehearsal_ref",
@@ -41,6 +45,58 @@ DB_RESTORE_EVIDENCE = (
 
 class RollbackEvidenceError(ValueError):
     """Fixed operator-safe error messages, no values from the record."""
+
+
+def _reject_duplicate_json_keys(pairs: list[tuple[str, object]]) -> dict:
+    result: dict = {}
+    for key, value in pairs:
+        if key in result:
+            raise RollbackEvidenceError("duplicate rollback record key")
+        result[key] = value
+    return result
+
+
+def _reject_json_constant(_value: str) -> None:
+    raise RollbackEvidenceError("nonstandard rollback JSON constant")
+
+
+def _read_private_record(path: Path) -> object:
+    """Read one bounded regular record, rejecting direct symlinks and FIFOs.
+
+    Inspect and read the same file descriptor. The POSIX private-mode check
+    is necessary for operator metadata; Windows ACLs must be verified by
+    the deployment operator separately.
+    """
+    if path.is_symlink():
+        raise RollbackEvidenceError("rollback record is not a private regular file")
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    descriptor = os.open(path, flags)
+    try:
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode):
+            raise RollbackEvidenceError("rollback record is not a private regular file")
+        if os.name == "posix" and stat.S_IMODE(before.st_mode) & 0o077:
+            raise RollbackEvidenceError("rollback record permissions are not private")
+        if before.st_size > MAX_ROLLBACK_RECORD_BYTES:
+            raise RollbackEvidenceError("rollback record exceeds size limit")
+        with os.fdopen(descriptor, "rb") as stream:
+            descriptor = -1
+            data = stream.read(MAX_ROLLBACK_RECORD_BYTES + 1)
+            after = os.fstat(stream.fileno())
+        if len(data) > MAX_ROLLBACK_RECORD_BYTES:
+            raise RollbackEvidenceError("rollback record exceeds size limit")
+        if (before.st_size, before.st_mtime_ns, before.st_ctime_ns) != (
+            after.st_size, after.st_mtime_ns, after.st_ctime_ns
+        ):
+            raise RollbackEvidenceError("rollback record changed during verification")
+    finally:
+        if descriptor != -1:
+            os.close(descriptor)
+    return json.loads(
+        data.decode("utf-8"),
+        object_pairs_hook=_reject_duplicate_json_keys,
+        parse_constant=_reject_json_constant,
+    )
 
 
 def draft(from_sha: str, to_sha: str) -> dict:
@@ -180,7 +236,9 @@ def main(argv: list[str] | None = None) -> int:
             # Validate before opening the exclusive destination: a bad release
             # pair must not leave a zero-byte "record" behind.
             record = draft(args.from_sha, args.to_sha)
-            with args.output.open("x", encoding="utf-8") as stream:
+            flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+            descriptor = os.open(args.output, flags, 0o600)
+            with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
                 json.dump(record, stream, indent=2, sort_keys=True)
                 stream.write("\n")
         except RollbackEvidenceError as exc:
@@ -192,9 +250,8 @@ def main(argv: list[str] | None = None) -> int:
         print("NO-GO rollback rehearsal draft created; no rollback executed.")
         return 0
     try:
-        with args.record.open(encoding="utf-8") as stream:
-            record = json.load(stream)
-        result = check(record, from_sha=args.from_sha, to_sha=args.to_sha)
+        record = _read_private_record(args.record)
+        check(record, from_sha=args.from_sha, to_sha=args.to_sha)
     except RollbackEvidenceError as exc:
         print("NO-GO: " + str(exc), file=sys.stderr)
         return 1
