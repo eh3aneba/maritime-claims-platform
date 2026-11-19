@@ -88,10 +88,13 @@ def _read_private_manifest(path: Path) -> object:
             after = os.fstat(stream.fileno())
         if len(payload) > MAX_MANIFEST_BYTES:
             raise ImageIdentityError("approved manifest exceeds size limit")
-        identity = lambda st: (
-            st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns, st.st_ctime_ns
+        before_identity = (
+            before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns, before.st_ctime_ns
         )
-        if identity(before) != identity(after):
+        after_identity = (
+            after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns
+        )
+        if before_identity != after_identity:
             raise ImageIdentityError("approved manifest changed during verification")
         return json.loads(
             payload.decode("utf-8"),
