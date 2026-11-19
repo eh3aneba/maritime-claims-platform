@@ -86,3 +86,24 @@ and fixed timing/lock markers against the next successful same-head
 attempt. Only then consider an isolated native/runner investigation;
 never label a native crash `flaky` or disable the test without evidence.
 Issue #766 stays OPEN; customer Pilot remains NO-GO.
+
+## 2026-11-19 — non-cgroup-v2 memory observability on GitHub-hosted runners
+
+In the passing PR #959 PostgreSQL due-tick run, cgroup v2 memory/OOM
+observations were all `null` (runner kernel interfaces unavailable), so
+they were **not evidence of healthy memory**. CI /tmp and /dev/shm availability
+was recorded, but could not classify an unexpected native SIGBUS. The
+observer now reads exactly `MemAvailable` and `MemTotal` from the
+fixed host `/proc/meminfo` file as bounded integers in bytes, serialized
+with explicit `host_mem_*` labels. The host-wide counters do **not**
+measure the test process's own limit and cannot establish memory
+pressure in a container or prove the root cause of a native crash.
+They are supplemental only; if /proc/meminfo cannot be read, is too
+large, malformed, or out of range, both fields stay null.
+
+The same strict synthetic-only PostgreSQL and CI guards still apply.
+Only fixed kernel counters are read; no process paths, query contents,
+PID memory maps, SQL, app data or environment variables are logged.
+The existing 25-minute job timeout, 180-second faulthandler threshold,
+test assertions, matrix selection, observer cadence and protected
+merge gate remain unchanged. Root cause remains open in #766.
