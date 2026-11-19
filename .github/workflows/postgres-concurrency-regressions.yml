@@ -255,8 +255,8 @@ jobs:
           # Observe only whitelisted pg_stat_activity metadata from the
           # ephemeral synthetic CI DB. Kill observer on success/failure/cancel.
           # Thirty-second samples cover short waits missed by the prior
-          # 60s interval while remaining bounded to 25 read-only samples.
-          python -u ../../scripts/pilot_pg_wait_probe.py --interval-seconds 30 --max-samples 25 &
+          # 60s interval, with up to 45 bounded samples (22.5 minutes)\n           # to cover the existing 25-minute job while preserving its deadline.\n           # Include only fixed runner memory/shm/tmp pressure counters; no SQL.
+          python -u ../../scripts/pilot_pg_wait_probe.py --interval-seconds 30 --max-samples 45 &
           probe_pid=$!
           cleanup_probe() {
             kill "$probe_pid" 2>/dev/null || true
