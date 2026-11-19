@@ -34,6 +34,27 @@ class PrivateOcrStudyInputTests(unittest.TestCase):
             private_json(path)
             self.assertEqual(read(path), {"synthetic": True})
 
+    def test_stricter_inventory_cap_does_not_increase_global_limit(self):
+        from scripts.persian_ocr_local_source_integrity import _read_json
+
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "inventory.json"
+            private_json(path)
+            self.assertEqual(_read_json(path), {"synthetic": True})
+            with self.assertRaises(ValueError):
+                read_private_study_json(
+                    path,
+                    object_pairs_hook=_reject_duplicate_json_keys,
+                    max_bytes=4,
+                )
+            for invalid_limit in (True, 0, -1, MAX_STUDY_BYTES + 1):
+                with self.subTest(limit=invalid_limit), self.assertRaises(ValueError):
+                    read_private_study_json(
+                        path,
+                        object_pairs_hook=_reject_duplicate_json_keys,
+                        max_bytes=invalid_limit,
+                    )
+
     @unittest.skipUnless(os.name == "posix", "POSIX permission enforcement")
     def test_group_and_world_access_rejected(self):
         with tempfile.TemporaryDirectory() as folder:
