@@ -256,8 +256,22 @@ def main(argv: list[str] | None = None) -> int:
             with os.fdopen(descriptor, "rb") as fh:
                 descriptor = -1  # fdopen owns/always closes this descriptor.
                 raw = fh.read(MAX_RC_RECORD_BYTES + 1)
+                after = os.fstat(fh.fileno())
             if len(raw) > MAX_RC_RECORD_BYTES:
                 raise ValueError("oversized_release_record")
+            # The RC file may be edited in place while this bounded read is
+            # underway. Do not accept a potentially mixed version of human
+            # attestations merely because the JSON still parses and validates.
+            before_identity = (
+                metadata.st_dev, metadata.st_ino, metadata.st_size,
+                metadata.st_mtime_ns, metadata.st_ctime_ns,
+            )
+            after_identity = (
+                after.st_dev, after.st_ino, after.st_size,
+                after.st_mtime_ns, after.st_ctime_ns,
+            )
+            if before_identity != after_identity or len(raw) != metadata.st_size:
+                raise ValueError("release_record_changed_during_read")
         finally:
             if descriptor != -1:
                 os.close(descriptor)
