@@ -286,6 +286,7 @@ def _receipts(db: Session, execution: ExternalDocumentSourceSuccessorVersionedRe
                 ExternalDocumentSourceSuccessorVersionedRestagingReceipt.execution_id == execution.id,
             )
             .order_by(ExternalDocumentSourceSuccessorVersionedRestagingReceipt.sequence_number.asc())
+            .execution_options(populate_existing=True)
         ).all()
     )
 
