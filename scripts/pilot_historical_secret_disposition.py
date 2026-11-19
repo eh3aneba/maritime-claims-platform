@@ -93,8 +93,15 @@ def _read_private(path: Path) -> object:
             after = os.fstat(stream.fileno())
         if len(payload) > MAX_RECORD_BYTES:
             raise DispositionError("evidence record too large")
-        if (before.st_size, before.st_mtime_ns, before.st_ctime_ns) != (
-            after.st_size, after.st_mtime_ns, after.st_ctime_ns
+        # Even valid JSON is unsafe if its evidence file changed or the
+        # bounded read did not match the originally inspected byte count.
+        if (
+            (before.st_dev, before.st_ino, before.st_mode, before.st_size,
+             before.st_mtime_ns, before.st_ctime_ns)
+            !=
+            (after.st_dev, after.st_ino, after.st_mode, after.st_size,
+             after.st_mtime_ns, after.st_ctime_ns)
+            or len(payload) != before.st_size
         ):
             raise DispositionError("evidence record changed during read")
     finally:

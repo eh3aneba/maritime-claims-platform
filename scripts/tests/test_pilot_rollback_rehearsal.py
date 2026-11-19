@@ -1,6 +1,7 @@
 """Offline regression checks for rollback rehearsal record gate."""
 from copy import deepcopy
 from pathlib import Path
+from types import SimpleNamespace
 import contextlib
 import io
 import json
@@ -9,6 +10,7 @@ import stat
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import pilot_rollback_rehearsal as p  # noqa: E402
@@ -212,6 +214,63 @@ class RollbackRehearsalTests(unittest.TestCase):
                 with self.subTest(case=index), contextlib.redirect_stderr(io.StringIO()):
                     self.assertNotEqual(p.main(["check", str(path), "--from-sha",
                         FROM_SHA, "--to-sha", TO_SHA]), 0)
+
+    def test_private_rollback_record_rejects_changed_file_identity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "rollback.json"
+            path.write_text(json.dumps(ready()), encoding="utf-8")
+            path.chmod(0o600)
+            original = os.fstat
+            for field in ("st_dev", "st_ino", "st_mode", "st_mtime_ns", "st_ctime_ns"):
+                with self.subTest(field=field):
+                    count = [0]
+
+                    def mutate_after_read(fd):
+                        info = original(fd)
+                        count[0] += 1
+                        if count[0] != 2:
+                            return info
+                        fields = {
+                            key: getattr(info, key)
+                            for key in ("st_dev", "st_ino", "st_mode", "st_size",
+                                        "st_mtime_ns", "st_ctime_ns")
+                        }
+                        fields[field] += 1
+                        return SimpleNamespace(**fields)
+
+                    with patch.object(p.os, "fstat", side_effect=mutate_after_read):
+                        with self.assertRaises(p.RollbackEvidenceError) as caught:
+                            p._read_private_record(path)
+                    self.assertEqual(count[0], 2)
+                    self.assertEqual(str(caught.exception),
+                                     "rollback record changed during verification")
+
+    def test_private_rollback_record_rejects_short_read_and_masks_evidence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "rollback.json"
+            path.write_text(json.dumps(ready()), encoding="utf-8")
+            path.chmod(0o600)
+            original = os.fstat
+
+            def same_inflated_length(fd):
+                info = original(fd)
+                fields = {
+                    key: getattr(info, key)
+                    for key in ("st_dev", "st_ino", "st_mode", "st_size",
+                                "st_mtime_ns", "st_ctime_ns")
+                }
+                fields["st_size"] += 1
+                return SimpleNamespace(**fields)
+
+            output = io.StringIO()
+            with patch.object(p.os, "fstat", side_effect=same_inflated_length):
+                with contextlib.redirect_stderr(output), contextlib.redirect_stdout(io.StringIO()):
+                    status = p.main(["check", str(path), "--from-sha",
+                                     FROM_SHA, "--to-sha", TO_SHA])
+            self.assertEqual(status, 1)
+            self.assertEqual(output.getvalue().strip(),
+                             "NO-GO: rollback record changed during verification")
+            self.assertNotIn("synthetic-", output.getvalue())
 
     def test_symlink_fifo_directory_and_oversized_record_fail_without_blocking(self):
         with tempfile.TemporaryDirectory() as d:
