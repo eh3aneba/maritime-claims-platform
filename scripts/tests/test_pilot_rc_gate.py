@@ -5,10 +5,12 @@ from io import StringIO
 import json
 import os
 from pathlib import Path
+from types import SimpleNamespace
 import stat
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from pilot_rc_gate import FEATURE_MODES, IMAGES, PROOFS, SCHEMA, draft, main, validate  # noqa: E402
@@ -386,6 +388,73 @@ class PilotRCGateTests(unittest.TestCase):
                 self.assertEqual(0, main(["check", str(path), "--expected-sha", SHA]))
             self.assertIn("RECORD COMPLETE", stdout.getvalue())
             self.assertIn("NOT pilot authorization", stdout.getvalue())
+
+    def test_check_rejects_in_place_mutation_even_if_json_is_valid(self):
+        """A syntactically complete RC must not pass if the same inode changes."""
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "private-rc.json"
+            path.write_text(json.dumps(complete_record()), encoding="utf-8")
+            path.chmod(0o600)
+            native_fstat = os.fstat
+            for changed_field in ("st_mtime_ns", "st_ctime_ns", "st_ino", "st_size"):
+                with self.subTest(changed_field=changed_field):
+                    seen = [0]
+
+                    def mutated_fstat(fd):
+                        observed = native_fstat(fd)
+                        seen[0] += 1
+                        if seen[0] != 2:
+                            return observed
+                        attributes = {
+                            key: getattr(observed, key)
+                            for key in (
+                                "st_dev", "st_ino", "st_mode", "st_size",
+                                "st_mtime_ns", "st_ctime_ns",
+                            )
+                        }
+                        attributes[changed_field] += 1
+                        return SimpleNamespace(**attributes)
+
+                    stderr, stdout = StringIO(), StringIO()
+                    with patch("pilot_rc_gate.os.fstat", side_effect=mutated_fstat):
+                        with redirect_stdout(stdout), redirect_stderr(stderr):
+                            code = main(["check", str(path), "--expected-sha", SHA])
+                    self.assertEqual(code, 1)
+                    self.assertEqual(seen[0], 2)
+                    self.assertEqual(stdout.getvalue(), "")
+                    self.assertEqual(
+                        stderr.getvalue().strip(),
+                        "NO-GO: cannot read JSON record (ValueError)",
+                    )
+                    self.assertNotIn("reviewed-artifact-", stderr.getvalue())
+
+    def test_check_rejects_incomplete_read_even_without_metadata_drift(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "private-rc.json"
+            path.write_text(json.dumps(complete_record()), encoding="utf-8")
+            path.chmod(0o600)
+            native_fstat = os.fstat
+
+            def inflated_size(fd):
+                observed = native_fstat(fd)
+                fields = {
+                    key: getattr(observed, key)
+                    for key in (
+                        "st_dev", "st_ino", "st_mode", "st_size",
+                        "st_mtime_ns", "st_ctime_ns",
+                    )
+                }
+                fields["st_size"] += 1
+                return SimpleNamespace(**fields)
+
+            with patch("pilot_rc_gate.os.fstat", side_effect=inflated_size):
+                with redirect_stderr(StringIO()) as stderr, redirect_stdout(StringIO()):
+                    code = main(["check", str(path), "--expected-sha", SHA])
+            self.assertEqual(code, 1)
+            self.assertEqual(
+                stderr.getvalue().strip(),
+                "NO-GO: cannot read JSON record (ValueError)",
+            )
 
     def test_init_never_overwrites_and_check_draft_fails(self):
         with tempfile.TemporaryDirectory() as directory:
