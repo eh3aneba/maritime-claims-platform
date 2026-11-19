@@ -75,6 +75,13 @@ jobs:
                 postgres_required=true
                 add_group scheduling
                 ;;
+              scripts/pilot_pg_wait_probe.py|scripts/tests/test_pilot_pg_wait_probe.py)
+                # The read-only observer runs in the actual due-tick leg.
+                # A change to its parser or privacy guard must not produce a
+                # green gate with the observation job skipped.
+                postgres_required=true
+                add_group observation-due-tick
+                ;;
               apps/api/tests/test_external_document_source_due_tick_observation_concurrency_postgres.py|apps/api/tests/test_external_document_source_sftp_recurring_provider_lineage.py)
                 postgres_required=true
                 add_group observation-due-tick
