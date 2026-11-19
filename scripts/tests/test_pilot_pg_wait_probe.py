@@ -6,7 +6,7 @@ import json
 import os
 import sys
 import unittest
-from unittest.mock import patch
+from unittest.mock import mock_open, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import pilot_pg_wait_probe as probe  # noqa: E402
@@ -162,7 +162,10 @@ class PilotPgWaitProbeTests(unittest.TestCase):
               patch.object(probe, "_cgroup_memory_events",
                            return_value={"oom": 2, "oom_kill": 0}),
               patch.object(probe, "_fixed_mount_available",
-                           side_effect=lambda path: safe_mounts[path])):
+                           side_effect=lambda path: safe_mounts[path]),
+              patch.object(probe, "_fixed_host_meminfo_bytes",
+                           return_value={"host_mem_available_bytes": 16384,
+                                         "host_mem_total_bytes": 32768})):
             report = probe.safe_ci_runner_resources()
         self.assertEqual(report["cgroup_memory_current_bytes"], 1024)
         self.assertEqual(report["cgroup_memory_peak_bytes"], 2048)
@@ -171,7 +174,9 @@ class PilotPgWaitProbeTests(unittest.TestCase):
         self.assertEqual(report["cgroup_oom_kill_events"], 0)
         self.assertEqual(report["tmp_available_bytes"], 4096)
         self.assertEqual(report["shm_available_bytes"], 512)
-        self.assertEqual(len(report), 7)
+        self.assertEqual(report["host_mem_available_bytes"], 16384)
+        self.assertEqual(report["host_mem_total_bytes"], 32768)
+        self.assertEqual(len(report), 9)
         self.assertTrue(all(value is None or type(value) is int
                             for value in report.values()))
         for secret in ("password", "secret", "connection", "claim", "path"):
@@ -194,9 +199,43 @@ class PilotPgWaitProbeTests(unittest.TestCase):
             with patch.object(probe, "_bounded_kernel_integer", return_value=None), \
                  patch.object(probe, "_cgroup_memory_events",
                               return_value={"oom": None, "oom_kill": None}), \
-                 patch.object(probe, "_fixed_mount_available", return_value=None):
+                 patch.object(probe, "_fixed_mount_available", return_value=None), \
+                 patch.object(probe, "_fixed_host_meminfo_bytes",
+                              return_value={"host_mem_available_bytes": None,
+                                            "host_mem_total_bytes": None}):
                 report = probe.safe_ci_runner_resources()
         self.assertTrue(all(value is None for value in report.values()))
+
+    def test_host_meminfo_fixed_fields_are_bounded_and_numeric(self):
+        content = (
+            "MemTotal:       8192 kB\\n"
+            "MemAvailable:   4096 kB\\n"
+            "SecretCustomerKey: 9999 kB\\n"
+            "MemFree:        1 kB\\n"
+        )
+        with patch("builtins.open", mock_open(read_data=content)) as opened:
+            report = probe._fixed_host_meminfo_bytes()
+        opened.assert_called_once_with("/proc/meminfo", "r", encoding="ascii")
+        self.assertEqual(report, {
+            "host_mem_available_bytes": 4096 * 1024,
+            "host_mem_total_bytes": 8192 * 1024,
+        })
+        self.assertNotIn("customer", json.dumps(report).lower())
+
+    def test_host_meminfo_rejects_invalid_values_and_missing_proc(self):
+        for payload in ("MemAvailable: -12 kB\\nMemTotal: 30 MB\\n",
+                        "MemAvailable: 10\tMB\\nMemTotal: nope kB\\n",
+                        "X" * 4096):
+            with patch("builtins.open", mock_open(read_data=payload)):
+                self.assertEqual(probe._fixed_host_meminfo_bytes(), {
+                    "host_mem_available_bytes": None,
+                    "host_mem_total_bytes": None,
+                })
+        with patch("builtins.open", side_effect=OSError):
+            self.assertEqual(probe._fixed_host_meminfo_bytes(), {
+                "host_mem_available_bytes": None,
+                "host_mem_total_bytes": None,
+            })
 
     def test_observer_interval_is_bounded_below_existing_job_deadline(self):
         with (patch.dict(os.environ, _CI_ENV, clear=True),
