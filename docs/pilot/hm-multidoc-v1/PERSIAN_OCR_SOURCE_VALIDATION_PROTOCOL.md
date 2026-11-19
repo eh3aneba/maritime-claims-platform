@@ -151,6 +151,17 @@ returns up to 25 receipts and is not an exhaustive audit export.
 runs entirely on the operator's machine. Keep private permission-cleared study
 JSON **outside the repository**, public CI, terminal histories and connected
 cloud folders. Never commit real reference scans or extracted text.
+The three offline intake CLIs (literal metrics, blind-cohort preflight and
+review-disagreement metrics) now use a common bounded (30 MB), single-descriptor
+private JSON read. On POSIX, study inputs must be regular, non-symlink files
+with no group/other read/write/execute bits (for example `chmod 600`).
+Direct symlinks, FIFOs, oversized files, observable size/mtime/ctime/mode
+changes during reading, duplicate JSON keys and NaN/Infinity fail closed.
+Create study files inside an access-controlled directory; on Windows, the
+operator must independently verify NTFS ACLs, which Python's POSIX-mode check
+does not establish. The tools do not copy or report the private source text,
+nor do these file checks prove correct OCR, source authenticity or expert
+approval.
 The instrument reads reference/recognized full-page strings in process memory
 but emits **only aggregate JSON counts**, with no original text, identifiers,
 raw spans or paths in stdout/stderr. It does not contact any external AI,
