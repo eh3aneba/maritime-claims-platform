@@ -63,6 +63,9 @@ python scripts/pilot_running_image_identity.py \
 
 # An independent operator must first populate the manifest from approved
 # image build records; do not copy values from the running host as "expected".
+# Keep the edited input manifest in the private operator directory as a regular
+# file with POSIX mode 0600; do not use a symlink or a shared file. Editors
+# that replace files may reset modes; verify them before invoking --verify.
 python scripts/pilot_running_image_identity.py \
   --verify \
   --release-sha "<frozen-40-char-main-SHA>" \
