@@ -5,6 +5,7 @@ from copy import deepcopy
 import contextlib
 import io
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -123,6 +124,78 @@ class ImageIdentityReadbackTests(unittest.TestCase):
             with self.assertRaises(probe.ImageIdentityError) as err:
                 probe._inspect_one(cid)
         self.assertNotIn("secret", str(err.exception))
+
+    def test_direct_file_and_module_cli_work_without_pythonpath(self):
+        root = Path(__file__).resolve().parents[2]
+        entry = root / "scripts" / "pilot_running_image_identity.py"
+        env = os.environ.copy()
+        env.pop("PYTHONPATH", None)
+        for command in (
+            [sys.executable, str(entry), "--help"],
+            [sys.executable, "-m", "scripts.pilot_running_image_identity", "--help"],
+        ):
+            with self.subTest(command=command[1:]):
+                result = subprocess.run(
+                    command, cwd=root, env=env,
+                    capture_output=True, text=True, timeout=15, check=False,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr[:400])
+                self.assertIn("--manifest", result.stdout)
+                self.assertNotIn("Traceback", result.stderr)
+
+    def test_duplicate_or_nonstandard_manifest_fails_before_docker_read(self):
+        expected = json.dumps({name: IMAGE for name in readiness.EXPECTED})
+        # Both duplicate root keys and duplicate nested service IDs are
+        # forbidden even if a last-value-wins decoder would accept them.
+        inputs = (
+            '{"schema": "' + probe.SCHEMA + '", "candidate_release_sha": "'
+            + SHA + '", "candidate_release_sha": "' + SHA
+            + '", "expected_image_ids": ' + expected + '}',
+            '{"schema": "' + probe.SCHEMA + '", "candidate_release_sha": "'
+            + SHA + '", "expected_image_ids": {"api": "' + IMAGE
+            + '", "api": "' + WRONG_IMAGE + '"}}',
+            '{"schema": "' + probe.SCHEMA + '", "candidate_release_sha": "'
+            + SHA + '", "expected_image_ids": ' + expected + ', "unsafe": NaN}',
+        )
+        with tempfile.TemporaryDirectory() as td:
+            for index, raw in enumerate(inputs):
+                path = Path(td) / f"manifest-{index}.json"
+                output = Path(td) / f"must-not-exist-{index}.json"
+                path.write_text(raw, encoding="utf-8")
+                with self.subTest(index=index), \
+                     patch.object(probe, "observe", side_effect=AssertionError("no Docker")):
+                    with contextlib.redirect_stderr(io.StringIO()) as errors:
+                        self.assertEqual(2, probe.main([
+                            "--verify", "--release-sha", SHA,
+                            "--manifest", str(path), "--output", str(output),
+                        ]))
+                    self.assertFalse(output.exists())
+                    self.assertNotIn("Traceback", errors.getvalue())
+                    self.assertNotIn(IMAGE, errors.getvalue())
+
+    def test_exclusive_output_is_private_and_symlink_safe(self):
+        with tempfile.TemporaryDirectory() as td:
+            output = Path(td) / "private-identity.json"
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(0, probe.main([
+                    "--init", "--release-sha", SHA, "--output", str(output),
+                ]))
+            if os.name == "posix":
+                self.assertEqual(0o600, output.stat().st_mode & 0o777)
+            self.assertEqual(probe.SCHEMA, json.loads(output.read_text())["schema"])
+            protected_target = Path(td) / "protected.txt"
+            protected_target.write_text("original-not-overwritten", encoding="utf-8")
+            symlink = Path(td) / "alias.json"
+            try:
+                symlink.symlink_to(protected_target)
+            except (OSError, NotImplementedError):
+                self.skipTest("symlink unavailable on this runner")
+            with contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(2, probe.main([
+                    "--init", "--release-sha", SHA, "--output", str(symlink),
+                ]))
+            self.assertEqual("original-not-overwritten", protected_target.read_text())
+            self.assertTrue(symlink.is_symlink())
 
     def test_exclusive_draft_does_not_inspect_and_run_checks_private_manifest(self):
         with tempfile.TemporaryDirectory() as td:
