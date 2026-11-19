@@ -208,10 +208,10 @@ class PilotPgWaitProbeTests(unittest.TestCase):
 
     def test_host_meminfo_fixed_fields_are_bounded_and_numeric(self):
         content = (
-            "MemTotal:       8192 kB\\n"
-            "MemAvailable:   4096 kB\\n"
-            "SecretCustomerKey: 9999 kB\\n"
-            "MemFree:        1 kB\\n"
+            "MemTotal:       8192 kB\n"
+            "MemAvailable:   4096 kB\n"
+            "SecretCustomerKey: 9999 kB\n"
+            "MemFree:        1 kB\n"
         )
         with patch("builtins.open", mock_open(read_data=content)) as opened:
             report = probe._fixed_host_meminfo_bytes()
@@ -223,8 +223,8 @@ class PilotPgWaitProbeTests(unittest.TestCase):
         self.assertNotIn("customer", json.dumps(report).lower())
 
     def test_host_meminfo_rejects_invalid_values_and_missing_proc(self):
-        for payload in ("MemAvailable: -12 kB\\nMemTotal: 30 MB\\n",
-                        "MemAvailable: 10\tMB\\nMemTotal: nope kB\\n",
+        for payload in ("MemAvailable: -12 kB\nMemTotal: 30 MB\n",
+                        "MemAvailable: 10\tMB\nMemTotal: nope kB\n",
                         "X" * 4096):
             with patch("builtins.open", mock_open(read_data=payload)):
                 self.assertEqual(probe._fixed_host_meminfo_bytes(), {
