@@ -179,6 +179,9 @@ def test_same_due_tick_concurrent_consumers_create_one_execution(
 
         barrier = Barrier(2)
         trace_worker = local()
+        # CI-only fixed synthetic baseline after the scoped one-read #962 change.
+        # Collect numbers, never SQL, bind parameters, tenant IDs or source data.
+        legacy_resolution_dbapi_counts: list[int] = []
         # Engine-level SQLAlchemy hooks attribute only DBAPI execute duration
         # and count to the active, fixed-label synthetic test worker stages.
         # Never inspect/store SQL, bind parameters, DB IDs or cursor results.
@@ -235,6 +238,8 @@ def test_same_due_tick_concurrent_consumers_create_one_execution(
                     ci_due_tick_sql_aggregate(
                         fixed_stage, frame["count"], float(frame["seconds"]),
                     )
+                    if phase == "legacy_resolution" and frame["count"]:
+                        legacy_resolution_dbapi_counts.append(frame["count"])
             return recorded
 
         for name, phase in (
@@ -342,6 +347,14 @@ def test_same_due_tick_concurrent_consumers_create_one_execution(
                 results = list(pool.map(consume, ("a", "b")))
 
         assert sorted(result[0] for result in results) == ["conflict", "ok"]
+        # This enforces only the repeatable synthetic PostgreSQL fixture's
+        # DBAPI call-count ceiling, NOT a production latency or memory SLO.
+        # A higher count requires explicit review of the new validation path;
+        # do not evade this by skipping an integrity check or race assertion.
+        assert legacy_resolution_dbapi_counts, "Missing real legacy SQL measurement"
+        assert max(legacy_resolution_dbapi_counts) <= 33_328, (
+            "Legacy ancestry query fan-out regressed above exact-main #962 baseline"
+        )
         assert adapter.calls == 1
 
         with SessionLocal() as db:
