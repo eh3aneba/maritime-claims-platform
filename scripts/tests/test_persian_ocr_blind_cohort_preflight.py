@@ -128,6 +128,8 @@ class BlindStudyPreflightTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as dir_name:
             m = Path(dir_name) / "private_manifest.json"
             s = Path(dir_name) / "private_measurements.json"
+            m.touch(mode=0o600, exist_ok=False)
+            s.touch(mode=0o600, exist_ok=False)
             m.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
             s.write_text(json.dumps(study, ensure_ascii=False), encoding="utf-8")
             out, err = StringIO(), StringIO()
