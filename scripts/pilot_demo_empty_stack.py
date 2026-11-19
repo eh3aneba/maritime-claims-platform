@@ -87,12 +87,29 @@ def _command(args: list[str]) -> str:
     return p.stdout
 
 
-def observe(*, env_file: Path) -> None:
+def _verify_strict_host_inventory() -> None:
+    """Read-only fail-closed inventory for a dedicated synthetic Docker Engine.
+
+    Never record or print container/volume identifiers. This does NOT prove
+    empty host filesystems, hidden mounts, non-Docker stores, Docker daemon
+    ownership, or that no new resources appear after the inventory.
+    """
+    containers = _command(["docker", "ps", "--all", "--quiet"])
+    if containers.strip():
+        raise ExistingStackError("Docker Engine has pre-existing containers")
+    volumes = _command(["docker", "volume", "ls", "--quiet"])
+    if volumes.strip():
+        raise ExistingStackError("Docker Engine has pre-existing volumes")
+
+
+def observe(*, env_file: Path, strict_empty_docker_host: bool = False) -> None:
     # Rendered config may include expanded private secrets. Never print it.
     try:
         config = render_compose(env_file=env_file, compose_file=Path("docker-compose.yml"))
     except RuntimeError:
         raise ExistingStackError("rendered Compose configuration unavailable") from None
+    if strict_empty_docker_host:
+        _verify_strict_host_inventory()
     raw_ps = _command([
         "docker", "compose", "--env-file", str(env_file),
         "-f", "docker-compose.yml", "ps", "--all", "--format", "json",
@@ -101,19 +118,33 @@ def observe(*, env_file: Path) -> None:
     raw_volumes = _command(["docker", "volume", "ls", "--format", "{{.Name}}"])
     volumes = [line.strip() for line in raw_volumes.splitlines() if line.strip()]
     verify(config, containers, volumes)
+    if strict_empty_docker_host:
+        # A second bounded observation detects resources created while the
+        # Compose-specific inventory was collected, not all later races.
+        _verify_strict_host_inventory()
 
 
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--env-file", required=True, type=Path)
+    p.add_argument(
+        "--strict-empty-docker-host",
+        action="store_true",
+        help="Require no containers or volumes anywhere on this Docker Engine",
+    )
     args = p.parse_args(argv)
     try:
-        observe(env_file=args.env_file)
+        observe(
+            env_file=args.env_file,
+            strict_empty_docker_host=args.strict_empty_docker_host,
+        )
     except ExistingStackError as exc:
         print("NO-GO: " + str(exc), file=sys.stderr)
         return 2
     print("SYNTHETIC COMPOSE PROJECT EMPTY: no existing target containers or named volumes.")
-    print("Host/foreign volumes, custody and Pilot GO remain UNVERIFIED.")
+    if args.strict_empty_docker_host:
+        print("STRICT DOCKER INVENTORY EMPTY: no containers or volumes on this daemon at observation.")
+    print("Host filesystem, external stores, Docker ownership, custody and Pilot GO remain UNVERIFIED.")
     return 0
 
 
