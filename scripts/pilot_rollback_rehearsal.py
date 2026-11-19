@@ -85,8 +85,15 @@ def _read_private_record(path: Path) -> object:
             after = os.fstat(stream.fileno())
         if len(data) > MAX_ROLLBACK_RECORD_BYTES:
             raise RollbackEvidenceError("rollback record exceeds size limit")
-        if (before.st_size, before.st_mtime_ns, before.st_ctime_ns) != (
-            after.st_size, after.st_mtime_ns, after.st_ctime_ns
+        # Compare one opened descriptor across the bounded read. A shorter
+        # parseable record is not necessarily the original operator snapshot.
+        if (
+            (before.st_dev, before.st_ino, before.st_mode, before.st_size,
+             before.st_mtime_ns, before.st_ctime_ns)
+            !=
+            (after.st_dev, after.st_ino, after.st_mode, after.st_size,
+             after.st_mtime_ns, after.st_ctime_ns)
+            or len(data) != before.st_size
         ):
             raise RollbackEvidenceError("rollback record changed during verification")
     finally:
