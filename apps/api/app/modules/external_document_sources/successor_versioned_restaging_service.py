@@ -6,7 +6,7 @@ import re
 from datetime import datetime, timezone
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import Uuid, bindparam, select
 from sqlalchemy.orm import Session
 
 from app.modules.documents.object_storage import (
@@ -277,19 +277,32 @@ def _receipt_hash(receipt: ExternalDocumentSourceSuccessorVersionedRestagingRece
     )
 
 
+# SQL shape only: no rows, identity-map contents, or integrity verdicts cached.
+# Each call binds its own tenant/execution UUIDs and performs a real refresh.
+_SUCCESSORVERSIONEDRESTAGING_RECEIPTS_SELECT = (
+    select(ExternalDocumentSourceSuccessorVersionedRestagingReceipt)
+    .where(
+        ExternalDocumentSourceSuccessorVersionedRestagingReceipt.organization_id
+        == bindparam("receipt_organization_id", type_=Uuid(as_uuid=True)),
+        ExternalDocumentSourceSuccessorVersionedRestagingReceipt.execution_id
+        == bindparam("receipt_execution_id", type_=Uuid(as_uuid=True)),
+    )
+    .order_by(ExternalDocumentSourceSuccessorVersionedRestagingReceipt.sequence_number.asc())
+    .execution_options(populate_existing=True)
+)
+
+
 def _receipts(db: Session, execution: ExternalDocumentSourceSuccessorVersionedRestagingExecution):
+
     return list(
         db.scalars(
-            select(ExternalDocumentSourceSuccessorVersionedRestagingReceipt)
-            .where(
-                ExternalDocumentSourceSuccessorVersionedRestagingReceipt.organization_id == execution.organization_id,
-                ExternalDocumentSourceSuccessorVersionedRestagingReceipt.execution_id == execution.id,
-            )
-            .order_by(ExternalDocumentSourceSuccessorVersionedRestagingReceipt.sequence_number.asc())
-            .execution_options(populate_existing=True)
+            _SUCCESSORVERSIONEDRESTAGING_RECEIPTS_SELECT,
+            {
+                "receipt_organization_id": execution.organization_id,
+                "receipt_execution_id": execution.id,
+            },
         ).all()
     )
-
 
 def _append_receipt(
     db: Session,
