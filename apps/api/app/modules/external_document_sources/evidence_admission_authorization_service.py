@@ -252,6 +252,11 @@ def _receipts(
                 == authorization.id,
             )
             .order_by(ExternalDocumentSourceEvidenceAdmissionAuthorizationReceipt.sequence_number.asc())
+            # Security-critical historical receipt checks must inspect the
+            # currently committed row, not a previously loaded ORM instance
+            # kept alive in this Session's identity map. Under PostgreSQL
+            # READ COMMITTED a concurrent transaction may have amended it.
+            .execution_options(populate_existing=True)
         ).all()
     )
 
