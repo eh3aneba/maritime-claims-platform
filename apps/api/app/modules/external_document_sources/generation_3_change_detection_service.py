@@ -298,6 +298,10 @@ def _receipts(db: Session, execution: ExternalDocumentSourceGeneration3ChangeDet
                 ExternalDocumentSourceGeneration3ChangeDetectionReceipt.execution_id == execution.id,
             )
             .order_by(ExternalDocumentSourceGeneration3ChangeDetectionReceipt.sequence_number.asc())
+            # A second independent lineage check must observe a committed
+            # change in another PostgreSQL transaction even when the caller's
+            # SQLAlchemy Session already holds the receipt in its identity map.
+            .execution_options(populate_existing=True)
         ).all()
     )
 
