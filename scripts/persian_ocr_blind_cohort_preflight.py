@@ -16,6 +16,7 @@ from typing import Any
 from scripts.persian_ocr_local_validation_metrics import (
     KINDS, _reject_duplicate_json_keys, evaluate_local_study,
 )
+from scripts.persian_ocr_private_study_input import read_private_study_json
 
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _SOURCE_TYPES = {"native_scan", "photograph", "scanned_pdf", "born_digital"}
@@ -145,10 +146,9 @@ def check_blind_cohort(manifest: Any, measurements: Any) -> dict[str, Any]:
 
 
 def _read_private_json(path: Path) -> Any:
-    if path.stat().st_size > 30_000_000:
-        raise ValueError("too_large")
-    with path.open("r", encoding="utf-8") as src:
-        return json.load(src, object_pairs_hook=_reject_duplicate_json_keys)
+    return read_private_study_json(
+        path, object_pairs_hook=_reject_duplicate_json_keys,
+    )
 
 
 def main(argv: list[str] | None = None) -> int:

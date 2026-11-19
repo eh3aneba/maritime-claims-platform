@@ -15,6 +15,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from scripts.persian_ocr_private_study_input import read_private_study_json
+
 KINDS = (
     "negation",
     "uncertainty",
@@ -262,11 +264,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--input", required=True, type=Path, help="Local JSON; permission-cleared input only")
     args = parser.parse_args(argv)
     try:
-        # Read locally without logging the file path or the source content.
-        if args.input.stat().st_size > 30_000_000:
-            raise ValueError("oversized")
-        with args.input.open("r", encoding="utf-8") as stream:
-            obj = json.load(stream, object_pairs_hook=_reject_duplicate_json_keys)
+        # Read bounded private source text through a single no-follow FD.
+        obj = read_private_study_json(
+            args.input, object_pairs_hook=_reject_duplicate_json_keys,
+        )
         report = evaluate_local_study(obj)
     except (OSError, UnicodeError, ValueError, TypeError, KeyError, json.JSONDecodeError):
         print("ocr_validation_input_rejected", file=sys.stderr)

@@ -145,6 +145,7 @@ class LocalReviewDisagreementMetricsTests(unittest.TestCase):
                 (measurement, example_study()),
                 (reviews, fake_reviews()),
             ):
+                path.touch(mode=0o600, exist_ok=False)
                 path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
             cmd = [
                 "--manifest", str(manifest),

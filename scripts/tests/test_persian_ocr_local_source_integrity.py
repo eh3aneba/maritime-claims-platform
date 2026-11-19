@@ -279,6 +279,8 @@ class LocalSourceByteIntegrityTests(unittest.TestCase):
             manifest, inventory = small_study(root)
             a = root / "local_manifest.json"
             b = root / "local_file_inventory.json"
+            a.touch(mode=0o600, exist_ok=False)
+            b.touch(mode=0o600, exist_ok=False)
             a.write_text(json.dumps(manifest), encoding="utf-8")
             b.write_text(json.dumps(inventory), encoding="utf-8")
             for tamper in (False, True):

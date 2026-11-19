@@ -290,6 +290,7 @@ class PairedOcrHoldoutComparisonTests(unittest.TestCase):
             ]
             paths = [root / name for name in names]
             for path, obj in zip(paths, (manifest, inventory, baseline, candidate)):
+                path.touch(mode=0o600, exist_ok=False)
                 path.write_text(json.dumps(obj, ensure_ascii=False), encoding="utf-8")
             args = [
                 "--manifest", str(paths[0]),

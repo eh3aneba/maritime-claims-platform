@@ -194,6 +194,7 @@ class LocalPersianOcrValidationTests(unittest.TestCase):
         study["records"].append(alias)
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "private_study_input.json"
+            path.touch(mode=0o600, exist_ok=False)
             path.write_text(json.dumps(study, ensure_ascii=False), encoding="utf-8")
             stdout, stderr = StringIO(), StringIO()
             with redirect_stdout(stdout), redirect_stderr(stderr):
@@ -402,6 +403,7 @@ class LocalPersianOcrValidationTests(unittest.TestCase):
         study = example_study()
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "private_study_input.json"
+            path.touch(mode=0o600, exist_ok=False)
             path.write_text(json.dumps(study, ensure_ascii=False), encoding="utf-8")
             stdout, stderr = StringIO(), StringIO()
             with redirect_stdout(stdout), redirect_stderr(stderr):
@@ -429,6 +431,7 @@ class LocalPersianOcrValidationTests(unittest.TestCase):
         study = example_study()
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "sensitive.json"
+            path.touch(mode=0o600, exist_ok=False)
             encoded = json.dumps(study, ensure_ascii=False)
             # The second key could otherwise silently override the first.
             encoded = encoded.replace(
