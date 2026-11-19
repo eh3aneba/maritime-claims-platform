@@ -85,7 +85,7 @@ class StableOpenSSLFinalImagePolicyTests(unittest.TestCase):
             _require_stable_openssl_floor(
                 original.replace(
                     "'libcrypto3>=3.5.9-r1'",
-                    "# 'libcrypto3>=3.5.9-r1'",
+                    "",
                 )
             )
 
