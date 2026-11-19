@@ -151,9 +151,12 @@ returns up to 25 receipts and is not an exhaustive audit export.
 runs entirely on the operator's machine. Keep private permission-cleared study
 JSON **outside the repository**, public CI, terminal histories and connected
 cloud folders. Never commit real reference scans or extracted text.
-The three offline intake CLIs (literal metrics, blind-cohort preflight and
-review-disagreement metrics) now use a common bounded (30 MB), single-descriptor
-private JSON read. On POSIX, study inputs must be regular, non-symlink files
+The offline intake CLIs (literal metrics, blind-cohort preflight,
+source-file inventory integrity and reviewer-disagreement metrics, including
+the composed/paired study runners) now use one common bounded,
+single-descriptor private JSON read. The reference/measurement/review input
+limit remains 30 MB; the source-file inventory/manifest reader retains its
+separate stricter 2 MB cap. On POSIX, study inputs must be regular, non-symlink files
 with no group/other read/write/execute bits (for example `chmod 600`).
 Direct symlinks, FIFOs, oversized files, observable size/mtime/ctime/mode
 changes during reading, duplicate JSON keys and NaN/Infinity fail closed.
