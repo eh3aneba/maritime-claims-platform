@@ -73,8 +73,21 @@ def _read_private_record(path: Path) -> object:
         with os.fdopen(descriptor, "rb") as stream:
             descriptor = -1
             data = stream.read(MAX_MONITORING_RECORD_BYTES + 1)
+            after = os.fstat(stream.fileno())
         if len(data) > MAX_MONITORING_RECORD_BYTES:
             raise MonitoringRecordError("monitoring record exceeds size limit")
+        # An editor or concurrent writer can replace bytes on the same inode
+        # during a bounded read. A parseable mix is not an attested snapshot.
+        before_identity = (
+            info.st_dev, info.st_ino, info.st_size,
+            info.st_mtime_ns, info.st_ctime_ns,
+        )
+        after_identity = (
+            after.st_dev, after.st_ino, after.st_size,
+            after.st_mtime_ns, after.st_ctime_ns,
+        )
+        if before_identity != after_identity or len(data) != info.st_size:
+            raise MonitoringRecordError("monitoring record changed during read")
     finally:
         if descriptor != -1:
             os.close(descriptor)
