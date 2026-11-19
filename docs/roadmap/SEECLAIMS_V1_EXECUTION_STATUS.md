@@ -1,101 +1,131 @@
 # SeeClaims — Execution Roadmap v1 | Status and gates
 
-## Latest verified checkpoint — 2026-11-19 after protected #963 merge (Pilot NO-GO)
+## Latest verified checkpoint — 2026-11-20 after protected #969 merge (customer Pilot NO-GO)
 
-**Current protected `main` source SHA:** `500d6468723dece7b3c8277c77de9119d0741deb`,
-squash merge of [#963](https://github.com/eh3aneba/maritime-claims-platform/pull/963).
-This is a **source checkpoint**, not a selected-host deployment, an approved
-release candidate, or authorization to process customer claims. The 2026-11-16
-checkpoint and older material below remain historical only.
+**Current protected `main` source SHA:** `5b84441686fbf24f47c75379506bcb7c06b021b2`,
+the protected squash merge of [PR #969](https://github.com/eh3aneba/maritime-claims-platform/pull/969).
+This is a **verified repository/CI checkpoint** — not a deployed release, customer
+host attestation, signed human approval, or authorization to process customer
+claims. All older dated sections below are historical and their SHAs are
+**not** the current branch head.
 
-### Real CI evidence: distinguish ran / classified-out / still pending
+### Latest-main automated gate evidence — exact scope
 
-- **#963 exact source head** `4746eb7f13a136ec025f127f9cf3bd3abafa3c9e`:
-  all six workflows completed SUCCESS, with no unresolved review threads;
-  normal protected squash merge. Its selected **real PostgreSQL
-  `observation-due-tick` group** completed **8 passed** in **1229.21 s**,
-  [run #44551368816](https://github.com/eh3aneba/maritime-claims-platform/actions/runs/44551368816),
-  including a new positive-measurement and at-most-**33,328** DBAPI-execution
-  regression guard for the synthetic legacy resolver. The guard does not
-  change production behavior, database locking, timeout or integrity checks.
-- **Scope clarity:** #963 changed only a PostgreSQL regression test and
-  documentation. Its Full Backend workflow/gate was SUCCESS but the
-  64-shard test matrix was classified out; its source-PR Security workflow
-  was SUCCESS but the three production-image build/scan steps were **SKIPPED**
-  under the existing audited path classifier. Neither classified-out
-  workflow proves a fresh #963-image scan. Do not say the 64 shards or
-  images ran on that head.
-- **Previous actual production-image evidence:** the distinct post-merge
-  `main@21663ee5100ec32afdbf0f2dd21945915f499eb6`
-  [Supply Chain run #44550313754](https://github.com/eh3aneba/maritime-claims-platform/actions/runs/44550313754)
-  completed SUCCESS **with all three API, Web and Worker image builds,
-  Grype High scans, and final all-three enforcement executed and passed**;
-  the scan-bypass step was skipped. Its Production Deployment Policy
-  [#44550313783](https://github.com/eh3aneba/maritime-claims-platform/actions/runs/44550313783)
-  also completed SUCCESS.
-- **New #963 post-merge `main` checks at this observation:**
-  [Production Policy #44557043227](https://github.com/eh3aneba/maritime-claims-platform/actions/runs/44557043227)
-  completed SUCCESS. [Supply Chain #44557042990](https://github.com/eh3aneba/maritime-claims-platform/actions/runs/44557042990)
-  was **IN PROGRESS** with the actual image build still running. Its
-  dependency/SBOM and incremental secret-history jobs had succeeded.
-  **Re-read** the complete image job, all three scan steps and terminal
-  enforcement at this exact SHA before treating current main as scanned.
+- **PR #969 source head** `dd53777ecca8df0be5458aa559e704c828897897`:
+  **6/6 workflow categories SUCCESS**, **11/11 protected required checks SUCCESS**,
+  protected base unchanged, no unresolved review threads. The real
+  [Operational Performance Smoke #44610842535](https://github.com/eh3aneba/maritime-claims-platform/actions/runs/44610842535)
+  passed an ephemeral CI Docker Engine **negative admission** with one
+  disposable foreign volume, confirmed cleanup, then a **positive strict
+  empty-host check**, synthetic stack startup/readiness, and the fresh-runner
+  synthetic recovery gate. This does **not** establish the state or custody
+  of a separately selected operator/customer host.
+- **PRs #964–#969:** the subsequent source hardening and rehearsal tests
+  culminated in [#966](https://github.com/eh3aneba/maritime-claims-platform/pull/966)
+  (private/exclusive image-identity evidence), [#967](https://github.com/eh3aneba/maritime-claims-platform/pull/967)
+  (private/bounded expected-image manifest), [#968](https://github.com/eh3aneba/maritime-claims-platform/pull/968)
+  (opt-in strict Docker Engine inventory) and [#969](https://github.com/eh3aneba/maritime-claims-platform/pull/969)
+  (real CI negative + positive Docker admission). The existing default
+  Compose-project-only check remains in place for shared CI runners; strict
+  engine-wide admission is for separately approved **dedicated** synthetic
+  rehearsal hosts, never for a customer host with live data.
+- **Actual new-main production security:** [Supply Chain Security #44613831216](https://github.com/eh3aneba/maritime-claims-platform/actions/runs/44613831216)
+  completed **SUCCESS** on exact `main@5b844416...`. The production API,
+  Web and Worker images were each **built** and individually Grype-scanned;
+  all three scan steps and terminal `Enforce image scan results` were
+  **SUCCESS**, the bypass step was **SKIPPED**, and dependency/SBOM plus
+  Secret History jobs were **SUCCESS**. New-main
+  [Production Deployment Policy #44613831205](https://github.com/eh3aneba/maritime-claims-platform/actions/runs/44613831205)
+  also completed **SUCCESS**.
+- **Do not misreport classified-out jobs:** on #969's **source PR**
+  the 64 Backend shards, actual PostgreSQL 17-group matrix and three
+  production-image builds/scans were **scope-SKIPPED**, although their
+  mandatory aggregate gate contexts returned SUCCESS. The actual
+  three-image scan evidence above comes from the separate **post-merge
+  push** run. The CI synthetic recovery is not an independent real-host
+  matched PostgreSQL/Evidence restore, nor a schema-safe rollback rehearsal.
 
-### Actual blocking work (no false closure)
+### Remaining blockers: operational evidence and independent decisions
 
-1. [#653](https://github.com/eh3aneba/maritime-claims-platform/issues/653):
-   execute a *named, authorized, synthetic-only* fresh-host deployment;
-   freeze registry digests and deployed Alembic head; independently prove
-   matched PostgreSQL-plus-Evidence off-host restore, application/schema-safe
-   rollback, alert delivery/acknowledgement and tenant onboarding; complete
-   the H&M machinery operator walkthrough and the v5 release-candidate
-   record. Existing scripts/runbooks are preparation, **not** such evidence.
-2. [#764](https://github.com/eh3aneba/maritime-claims-platform/issues/764):
-   eight historical full-history Gitleaks matches require **private
-   per-finding security-owner classification**, any needed rotation/audit,
-   and a scheduled-equivalent full-history rerun. A green PR secret scan
-   cannot substitute.
-3. [#952](https://github.com/eh3aneba/maritime-claims-platform/issues/952):
-   newer fully executed Alpine/OpenSSL image scans have passed, unlike
-   earlier failures; independent package provenance, Grype feed/matching
-   disposition and accountable security approval remain open. No Edge,
-   CVE ignore, unapproved waiver or weakened high-severity gate.
-4. [#810](https://github.com/eh3aneba/maritime-claims-platform/issues/810)
-   and [#850](https://github.com/eh3aneba/maritime-claims-platform/issues/850):
-   material Persian H&M negation/time/engine-OCR fidelity, original-source
-   discrepancy decisions and independent bilingual claim-handler review
-   remain unproved. A review hold is not clearance or human adjudication.
-5. [#894](https://github.com/eh3aneba/maritime-claims-platform/issues/894):
-   decide and independently sign the signed-incoming-PDF handling scope;
-   `not_checked` and file/extraction hashes are **not cryptographic
-   signature verification**.
-6. [#766](https://github.com/eh3aneba/maritime-claims-platform/issues/766):
-   the small #962 reduction (33,331 to 33,328 calls on one synthetic
-   legacy traversal) and #963 regression ceiling do **not** remove
-   33k-query ancestry fan-out or explain earlier native SIGBUS/135/139.
-   Keep actual workload latency and concurrency evidence distinct from
-   an incidental passing CI job.
+1. **[#653](https://github.com/eh3aneba/maritime-claims-platform/issues/653)
+   — selected-host operator rehearsal (P0):** name and authorize one
+   independently controlled, empty, *synthetic-only* host and responsible
+   operator; privately verify OS, Docker ownership, firewall/TLS, approved
+   immutable builder/registry manifest digests and deployed image-config IDs,
+   11-service health, actual Alembic migration/preflight, and H&M machinery
+   operator acceptance. The strict CI Docker test is not a host attestation.
+2. **[#653](https://github.com/eh3aneba/maritime-claims-platform/issues/653)
+   — recovery, rollback and alerts (P0):** perform and record a real
+   **matched off-host PostgreSQL + Evidence** backup/restore in a controlled
+   maintenance/quiescence window, compare hashes and document receipts, prove
+   a known-good compatible rollback, and deliver/acknowledge actual alerts
+   with a named on-call and escalation owner. Synthetic CI scripts validate
+   only bounded simulations and record structure.
+3. **[#764](https://github.com/eh3aneba/maritime-claims-platform/issues/764)
+   — 8 historical possible secrets:** independent security owner must
+   privately classify each historical finding, rotate/revoke any real
+   credentials, review relevant access, and obtain a successful
+   scheduled-equivalent **full-history** Gitleaks check. Success of a push/PR
+   Secret History job does not automatically close this requirement.
+4. **[#952](https://github.com/eh3aneba/maritime-claims-platform/issues/952)
+   — OpenSSL vendor provenance:** latest actual production-image High scans
+   passed **without bypass**; the independent security-owner decision on
+   signed Alpine/OpenSSL package provenance, Grype/advisory match sources and
+   residual security acceptability remains **unrecorded**. Do not claim a
+   false positive, insert a CVE ignore or lower the gate.
+5. **[#810](https://github.com/eh3aneba/maritime-claims-platform/issues/810)
+   / [#850](https://github.com/eh3aneba/maritime-claims-platform/issues/850)
+   — Persian H&M OCR:** a synthetic scan has silently lost a material
+   negation. Previously approved AI facts/assessments have source-warning
+   and review-hold mechanisms, not independent correctness proof or a
+   completed discrepancy adjudication. Either obtain a bilingual
+   original-scan/unseen-H&M quality review and authorized resolution, or
+   formally de-scope/enforce critical Persian extraction as disabled for
+   the bounded pilot with independent sign-off.
+6. **[#894](https://github.com/eh3aneba/maritime-claims-platform/issues/894)
+   — incoming signed PDFs:** secure a dated product/security decision on
+   accepted/unverified versus rejected signed-PDF inputs, with applicable
+   runtime enforcement and transparent `not_checked` disclosure, or prove
+   an independently reviewed cryptographic verification capability. Hashing,
+   successful OCR and unchanged PDF bytes do **not** authenticate signatures.
+7. **[#766](https://github.com/eh3aneba/maritime-claims-platform/issues/766)
+   — PostgreSQL due-tick latency:** the earlier synthetic 33k-query fan-out
+   and intermittent runner failures still warrant a separately measured,
+   concurrency-preserving performance investigation; a passing scoped
+   aggregate PG gate on #969 does not demonstrate the full matrix executed.
 
-[#461](https://github.com/eh3aneba/maritime-claims-platform/issues/461)
-(repository branch-governance proof) is closed. Pilot v1 has a selected
-manual-upload scope; [#652](https://github.com/eh3aneba/maritime-claims-platform/issues/652)
-real SFTP is conditional on any separately approved SFTP activation.
-External AI, unapproved local inference, critical Persian auto-extraction
-and unreviewed signed-PDF authenticity claims must not silently enter a
-customer pilot.
+### Next authorized sequence — no implied sign-offs
 
-**Human assignments and actual host admission remain prerequisites:**
-security/operations owner, independent bilingual H&M reviewer, signed-PDF
-product/security scope decision, selected authorized operator/host,
-and explicit customer-specific release authorization. Never pre-fill
-a `pass` evidence record on behalf of an absent reviewer.
+1. **Assign accountable people privately:** deployment/operations owner,
+   independent security owner, bilingual H&M machinery-claims reviewer,
+   PDF scope product owner and recovery/monitoring on-call. Record their
+   authority and approved private evidence locations; do not put identities,
+   secrets, review workpapers or customer documents into GitHub.
+2. **Freeze a candidate and pick a clean host:** use
+   [PILOT_FRESH_HOST_REHEARSAL.md](../operations/PILOT_FRESH_HOST_REHEARSAL.md)
+   and the [deployment checklist](../operations/DEPLOYMENT_CHECKLIST.md).
+   On the approved dedicated synthetic host, run the local Docker-target,
+   optional strict-global empty-host and port/configuration guards **before**
+   any side-effecting synthetic stack startup. Never run seed/cleanup against
+   an existing customer/production Docker Engine.
+3. **Perform actual bounded drills:** run the independently controlled
+   synthetic H&M workflow, record exact image-digest identity and release
+   SHA, off-host matched DB/Evidence restore, safe rollback, on-call alert
+   receipt/acknowledgement, and governed tenant onboarding/offboarding.
+   Track failures and measured RPO/RTO; do not invent passed outcomes.
+4. **Obtain separate independent dispositions:** historical secret findings,
+   security package provenance, original-scan/OCR quality and discrepancy
+   handling, signed-PDF admission and customer-specific feature limits.
+   Local AI and real SFTP remain disabled unless specifically authorized.
+5. **Create only a pending v5 release record** using
+   [PILOT_RELEASE_CANDIDATE.md](../operations/PILOT_RELEASE_CANDIDATE.md)
+   and `scripts/pilot_rc_gate.py`. Independently verify attached evidence;
+   record the human GO/NO-GO decision separately. Drafts and structurally
+   valid records are never self-authorizing.
 
-**Current decision: customer-data Pilot / production = NO-GO.**
-Next executable order: verify completed #963 post-merge image scan;
-deliver private owner/host/reviewer decision packet; execute #653's
-synthetic-only selected-host deployment and matched recovery/rollback/alert
-drills; obtain independent source/security dispositions; then form a
-real v5 release candidate and separately decide GO/NO-GO.
+**Current decision: Customer-data Pilot / production = NO-GO.**
+No real customer file ingestion, production rollout, or independent host
+sign-off is asserted by the completed source merges or synthetic CI.
 
 ---
 
