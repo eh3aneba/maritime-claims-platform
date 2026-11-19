@@ -5,7 +5,7 @@ import json
 from datetime import datetime, timezone
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import and_, select
 from sqlalchemy.orm import Session
 
 from app.modules.external_document_sources.change_detection_service import (
@@ -365,6 +365,48 @@ def _checkpoint_generation_3(
     return row
 
 
+def _read_listing_and_exact_item(
+    db: Session,
+    checkpoint: ExternalDocumentSourceCheckpointGeneration3Execution,
+) -> tuple[
+    ExternalDocumentSourceRemoteMetadataListingExecution,
+    ExternalDocumentSourceRemoteMetadataListingItem,
+]:
+    """Load one exact tenant-scoped listing + item from one READ COMMITTED snapshot.
+
+    This saves one database round trip on each real historical lineage traversal,
+    not a receipt, integrity check, or any result cached across statements.
+    A LEFT JOIN retains the distinct fail-closed errors for a missing listing
+    versus a missing item; the exact-item restriction stays in the JOIN ON.
+    """
+    listed = ExternalDocumentSourceRemoteMetadataListingExecution
+    item_model = ExternalDocumentSourceRemoteMetadataListingItem
+    row = db.execute(
+        select(listed, item_model)
+        .outerjoin(
+            item_model,
+            and_(
+                item_model.id == checkpoint.metadata_item_id,
+                item_model.organization_id == checkpoint.organization_id,
+                item_model.execution_id == listed.id,
+            ),
+        )
+        .where(
+            listed.id == checkpoint.listing_execution_id,
+            listed.organization_id == checkpoint.organization_id,
+            listed.profile_id == checkpoint.profile_id,
+        )
+    ).one_or_none()
+    if row is None:
+        raise ExternalDocumentSourceConflictError("Phase L metadata-listing lineage is missing")
+    listing, item = row
+    if item is None or item.item_kind != "file":
+        raise ExternalDocumentSourceConflictError(
+            "Generation-3 exact metadata-item lineage is missing or not a file"
+        )
+    return listing, item
+
+
 def _lineage(
     db: Session,
     checkpoint: ExternalDocumentSourceCheckpointGeneration3Execution,
@@ -447,24 +489,7 @@ def _lineage(
     if baseline["mime_type_class"] is not None and checkpoint.media_type_class != baseline["mime_type_class"]:
         raise ExternalDocumentSourceConflictError("Generation-3 checkpoint media type does not reconcile to the Phase S baseline")
 
-    listing = db.scalar(
-        select(ExternalDocumentSourceRemoteMetadataListingExecution).where(
-            ExternalDocumentSourceRemoteMetadataListingExecution.id == checkpoint.listing_execution_id,
-            ExternalDocumentSourceRemoteMetadataListingExecution.organization_id == checkpoint.organization_id,
-            ExternalDocumentSourceRemoteMetadataListingExecution.profile_id == checkpoint.profile_id,
-        )
-    )
-    if listing is None:
-        raise ExternalDocumentSourceConflictError("Phase L metadata-listing lineage is missing")
-    item = db.scalar(
-        select(ExternalDocumentSourceRemoteMetadataListingItem).where(
-            ExternalDocumentSourceRemoteMetadataListingItem.id == checkpoint.metadata_item_id,
-            ExternalDocumentSourceRemoteMetadataListingItem.organization_id == checkpoint.organization_id,
-            ExternalDocumentSourceRemoteMetadataListingItem.execution_id == listing.id,
-        )
-    )
-    if item is None or item.item_kind != "file":
-        raise ExternalDocumentSourceConflictError("Generation-3 exact metadata-item lineage is missing or not a file")
+    listing, item = _read_listing_and_exact_item(db, checkpoint)
     if hashlib.sha256(item.provider_item_id.encode("utf-8")).hexdigest() != baseline["provider_item_id_hash"]:
         raise ExternalDocumentSourceConflictError("Generation-3 exact provider-item identity drifted")
 
