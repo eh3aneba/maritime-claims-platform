@@ -167,7 +167,16 @@ class EmptyComposeSafetyTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         strict = "python scripts/pilot_demo_empty_stack.py \\\n            --env-file .env.performance --strict-empty-docker-host"
         startup = "bash scripts/design_partner_preflight.sh .env.performance"
-        self.assertEqual(workflow.count("--strict-empty-docker-host"), 1)
+        self.assertEqual(workflow.count("--strict-empty-docker-host"), 2)
+        negative = "Prove strict Docker host admission refuses a disposable foreign volume"
+        positive = "Reject pre-existing CI Docker objects before synthetic startup"
+        self.assertIn(negative, workflow)
+        self.assertIn(positive, workflow)
+        self.assertIn('docker volume create "$name" >/dev/null', workflow)
+        self.assertIn('docker volume rm "$name" >/dev/null', workflow)
+        self.assertIn('NO-GO: Docker Engine has pre-existing volumes', workflow)
+        self.assertLess(workflow.index(negative), workflow.index(positive))
+        self.assertLess(workflow.index(positive), workflow.index(startup))
         self.assertIn(strict, workflow)
         self.assertIn(startup, workflow)
         self.assertLess(workflow.index("Prepare isolated performance environment"),
