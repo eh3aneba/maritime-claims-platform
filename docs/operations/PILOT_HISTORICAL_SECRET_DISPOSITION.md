@@ -15,7 +15,7 @@ From a restricted workstation with Python 3.13 and a separately controlled priva
     umask 077
     python scripts/pilot_historical_secret_disposition.py init --release-sha "<reviewed-40-character-release-sha>" --output /secure/pilot-releases/historical-secrets-v1.json
 
-This creates a NO-GO draft with all eight classifications unresolved. It does not run a scanner. Creation uses exclusive O_EXCL and POSIX mode 0600. The checker rejects direct symlinks, nonregular files/FIFOs, group/other-accessible POSIX files, records larger than 1 MiB, duplicate JSON keys at any nesting and NaN/Infinity. Windows NTFS ACLs and the private directory require separate verification.
+This creates a NO-GO draft with all eight classifications unresolved. It does not run a scanner. Creation uses exclusive O_EXCL and POSIX mode 0600. The checker rejects direct symlinks, nonregular files/FIFOs, group/other-accessible POSIX files, records larger than 1 MiB, duplicate JSON keys at any nesting and NaN/Infinity. A same-descriptor identity, mode, timestamp and exact-length comparison also fails closed if an in-place edit or short read is observed; this bounded read check is not a digital signature, does not prevent later file changes and cannot validate the underlying eight private security decisions. Windows NTFS ACLs and the private directory require separate verification.
 
 ## Independent owner decision for each F01–F08
 
