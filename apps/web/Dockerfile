@@ -15,7 +15,7 @@ FROM node:22-alpine3.24@sha256:1314fb30ec37592d5845e5a160d522c0e680972aa53454994
 WORKDIR /app
 ENV NODE_ENV=production
 RUN /sbin/apk upgrade --no-cache libssl3 libcrypto3 zlib \
-    && /sbin/apk add --no-cache 'zlib>=1.3.2-r1' \
+    && /sbin/apk add --no-cache 'libssl3>=3.5.9-r1' 'libcrypto3>=3.5.9-r1' 'zlib>=1.3.2-r1' \
     && /sbin/apk info -v libssl3 libcrypto3 zlib \
     && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
     && rm -f /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack \
