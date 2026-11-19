@@ -59,8 +59,13 @@ python scripts/pilot_running_image_identity.py \
 ```
 
 An authorized operator populates the template **only after independently
-correlating the approved build records and intended release images**. Then
-verify the existing Compose stack without changing any container:
+correlating the approved build records and intended release images**. Keep
+the edited expected-image manifest a private regular file (POSIX `0600`,
+without symlinks; independently check ACLs on Windows). Some editors replace
+the file and reset permissions. The verifier now rejects loose permissions,
+symlinks, non-regular/oversized/changing inputs and ambiguous JSON **before
+Docker readback**; this does not authenticate who originally approved it.
+Then verify the existing Compose stack without changing any container:
 
 ```bash
 python scripts/pilot_running_image_identity.py \

@@ -15,6 +15,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import stat
 import sys
 
 # Operator CLI supports both direct-file and repository module invocation.
@@ -27,6 +28,7 @@ SHA = re.compile(r"[a-f0-9]{40}\Z")
 IMAGE_ID = re.compile(r"sha256:[a-f0-9]{64}\Z")
 CONTAINER_ID = re.compile(r"[a-f0-9]{12,64}\Z")
 SCHEMA = "mcri-pilot-running-images-v1"
+MAX_MANIFEST_BYTES = 16_384
 
 
 class ImageIdentityError(ValueError):
@@ -57,6 +59,56 @@ def _write_private_record(path: Path, record: dict) -> None:
     with os.fdopen(fd, "w", encoding="utf-8") as stream:
         json.dump(record, stream, indent=2, sort_keys=True)
         stream.write("\n")
+
+
+
+def _read_private_manifest(path: Path) -> object:
+    """Read one bounded operator-owned manifest using the same file descriptor.
+
+    Direct symlinks, non-regular files, permissive POSIX modes, oversized
+    records and in-place changes fail before any Docker read. Windows ACL and
+    parent-directory security remain independent operator responsibilities.
+    """
+    if path.is_symlink():
+        raise ImageIdentityError("approved manifest is not a private regular file")
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    descriptor = -1
+    try:
+        descriptor = os.open(path, flags)
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode):
+            raise ImageIdentityError("approved manifest is not a private regular file")
+        if os.name == "posix" and stat.S_IMODE(before.st_mode) & 0o077:
+            raise ImageIdentityError("approved manifest permissions are not private")
+        if before.st_size > MAX_MANIFEST_BYTES:
+            raise ImageIdentityError("approved manifest exceeds size limit")
+        with os.fdopen(descriptor, "rb") as stream:
+            descriptor = -1
+            payload = stream.read(MAX_MANIFEST_BYTES + 1)
+            after = os.fstat(stream.fileno())
+        if len(payload) > MAX_MANIFEST_BYTES:
+            raise ImageIdentityError("approved manifest exceeds size limit")
+        before_identity = (
+            before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns, before.st_ctime_ns
+        )
+        after_identity = (
+            after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns
+        )
+        if before_identity != after_identity:
+            raise ImageIdentityError("approved manifest changed during verification")
+        return json.loads(
+            payload.decode("utf-8"),
+            object_pairs_hook=_unique_manifest_keys,
+            parse_constant=_reject_nonstandard_constant,
+        )
+    except ImageIdentityError:
+        raise
+    except (OSError, UnicodeError, ValueError):
+        # Never include OS exception text, path, user content or raw JSON.
+        raise ImageIdentityError("approved local manifest unavailable or invalid") from None
+    finally:
+        if descriptor != -1:
+            os.close(descriptor)
 
 
 def manifest_template(release_sha: str) -> dict:
@@ -197,16 +249,9 @@ def main(argv: list[str] | None = None) -> int:
         if args.init:
             result = manifest_template(args.release_sha)
         else:
-            if not args.manifest or not args.manifest.is_file():
+            if args.manifest is None:
                 raise ImageIdentityError("approved local manifest unavailable")
-            if args.manifest.stat().st_size > 16384:
-                raise ImageIdentityError("oversized local image manifest")
-            with args.manifest.open(encoding="utf-8") as stream:
-                manifest = json.load(
-                    stream,
-                    object_pairs_hook=_unique_manifest_keys,
-                    parse_constant=_reject_nonstandard_constant,
-                )
+            manifest = _read_private_manifest(args.manifest)
             expected = read_manifest(manifest, release_sha=args.release_sha)
             before = observe(env_file=args.env_file)
             observed = inspect_image_ids(before)

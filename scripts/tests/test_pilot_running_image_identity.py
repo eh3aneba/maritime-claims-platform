@@ -162,6 +162,10 @@ class ImageIdentityReadbackTests(unittest.TestCase):
                 path = Path(td) / f"manifest-{index}.json"
                 output = Path(td) / f"must-not-exist-{index}.json"
                 path.write_text(raw, encoding="utf-8")
+                path.chmod(0o600)
+                with self.subTest(index=index):
+                    with self.assertRaises(probe.ImageIdentityError):
+                        probe._read_private_manifest(path)
                 with self.subTest(index=index), \
                      patch.object(probe, "observe", side_effect=AssertionError("no Docker")):
                     with contextlib.redirect_stderr(io.StringIO()) as errors:
@@ -172,6 +176,90 @@ class ImageIdentityReadbackTests(unittest.TestCase):
                     self.assertFalse(output.exists())
                     self.assertNotIn("Traceback", errors.getvalue())
                     self.assertNotIn(IMAGE, errors.getvalue())
+
+    def test_approved_manifest_input_is_private_regular_and_bounded(self):
+        good = probe.manifest_template(SHA)
+        good["expected_image_ids"] = {name: IMAGE for name in readiness.EXPECTED}
+        with tempfile.TemporaryDirectory() as td:
+            folder = Path(td)
+            manifest = folder / "approved.json"
+            manifest.write_text(json.dumps(good), encoding="utf-8")
+            manifest.chmod(0o600)
+            self.assertEqual(probe._read_private_manifest(manifest), good)
+
+            def must_reject(path: Path) -> None:
+                # Refuse invalid manifests before any Docker read, and never
+                # create an output record or interpolate private values.
+                output = folder / "not-written.json"
+                with patch.object(
+                    probe, "observe", side_effect=AssertionError("unexpected Docker access")
+                ), contextlib.redirect_stderr(io.StringIO()) as errors:
+                    self.assertEqual(
+                        2,
+                        probe.main([
+                            "--verify", "--release-sha", SHA,
+                            "--manifest", str(path), "--output", str(output),
+                        ]),
+                    )
+                self.assertFalse(output.exists())
+                self.assertNotIn(IMAGE, errors.getvalue())
+                self.assertNotIn(str(path), errors.getvalue())
+
+            if os.name == "posix":
+                manifest.chmod(0o644)
+                must_reject(manifest)
+                manifest.chmod(0o600)
+
+            link = folder / "manifest-symlink.json"
+            try:
+                link.symlink_to(manifest)
+            except (OSError, NotImplementedError):
+                pass
+            else:
+                must_reject(link)
+            must_reject(folder)
+            oversized = folder / "oversized.json"
+            oversized.write_bytes(b"x" * (probe.MAX_MANIFEST_BYTES + 1))
+            oversized.chmod(0o600)
+            must_reject(oversized)
+            if hasattr(os, "mkfifo"):
+                fifo = folder / "manifest-fifo"
+                os.mkfifo(fifo, 0o600)
+                must_reject(fifo)
+
+    def test_modified_manifest_fails_closed_between_file_stat_reads(self):
+        good = probe.manifest_template(SHA)
+        good["expected_image_ids"] = {name: IMAGE for name in readiness.EXPECTED}
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "approved.json"
+            path.write_text(json.dumps(good), encoding="utf-8")
+            path.chmod(0o600)
+            actual_fstat = os.fstat
+            seen = []
+
+            def changed_stat(fd: int):
+                value = actual_fstat(fd)
+                seen.append(value)
+                if len(seen) == 2:
+                    # Synthetic metadata modification with no file contents
+                    # or identifiers revealed. The underlying read is genuine.
+                    from types import SimpleNamespace
+                    return SimpleNamespace(
+                        st_dev=value.st_dev,
+                        st_ino=value.st_ino,
+                        st_size=value.st_size,
+                        st_mode=value.st_mode,
+                        st_mtime_ns=value.st_mtime_ns + 1,
+                        st_ctime_ns=value.st_ctime_ns,
+                    )
+                return value
+
+            with patch.object(probe.os, "fstat", side_effect=changed_stat):
+                with self.assertRaisesRegex(
+                    probe.ImageIdentityError, "changed during verification"
+                ):
+                    probe._read_private_manifest(path)
+            self.assertEqual(len(seen), 2)
 
     def test_exclusive_output_is_private_and_symlink_safe(self):
         with tempfile.TemporaryDirectory() as td:
