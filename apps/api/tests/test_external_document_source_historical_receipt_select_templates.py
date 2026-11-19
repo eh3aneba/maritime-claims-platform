@@ -50,8 +50,8 @@ def test_nested_receipt_select_binds_each_tenant_and_execution_on_every_call(ser
         assert set(params) == {"receipt_organization_id", "receipt_execution_id"}
         assert statement.get_execution_options()["populate_existing"] is True
         query = str(statement.compile(dialect=postgresql.dialect()))
-        assert ":receipt_organization_id" in query
-        assert ":receipt_execution_id" in query
+        assert "%(receipt_organization_id)s" in query
+        assert "%(receipt_execution_id)s" in query
         assert "ORDER BY" in query and "sequence_number ASC" in query
 
 
