@@ -6,7 +6,7 @@ import re
 from datetime import datetime, timezone
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import Uuid, bindparam, select
 from sqlalchemy.orm import Session
 
 from app.modules.external_document_sources.checkpoint_generation_3_models import (
@@ -245,19 +245,32 @@ def _receipt_hash(receipt: ExternalDocumentSourceCheckpointGeneration3Receipt) -
     )
 
 
+# SQL shape only: no rows, identity-map contents, or integrity verdicts cached.
+# Each call binds its own tenant/execution UUIDs and performs a real refresh.
+_CHECKPOINTGENERATION3_RECEIPTS_SELECT = (
+    select(ExternalDocumentSourceCheckpointGeneration3Receipt)
+    .where(
+        ExternalDocumentSourceCheckpointGeneration3Receipt.organization_id
+        == bindparam("receipt_organization_id", type_=Uuid(as_uuid=True)),
+        ExternalDocumentSourceCheckpointGeneration3Receipt.execution_id
+        == bindparam("receipt_execution_id", type_=Uuid(as_uuid=True)),
+    )
+    .order_by(ExternalDocumentSourceCheckpointGeneration3Receipt.sequence_number.asc())
+    .execution_options(populate_existing=True)
+)
+
+
 def _receipts(db: Session, execution: ExternalDocumentSourceCheckpointGeneration3Execution):
+
     return list(
         db.scalars(
-            select(ExternalDocumentSourceCheckpointGeneration3Receipt)
-            .where(
-                ExternalDocumentSourceCheckpointGeneration3Receipt.organization_id == execution.organization_id,
-                ExternalDocumentSourceCheckpointGeneration3Receipt.execution_id == execution.id,
-            )
-            .order_by(ExternalDocumentSourceCheckpointGeneration3Receipt.sequence_number.asc())
-            .execution_options(populate_existing=True)
+            _CHECKPOINTGENERATION3_RECEIPTS_SELECT,
+            {
+                "receipt_organization_id": execution.organization_id,
+                "receipt_execution_id": execution.id,
+            },
         ).all()
     )
-
 
 def _append_receipt(
     db: Session,
