@@ -470,6 +470,48 @@ class PilotRecoveryPairTests(unittest.TestCase):
             output.chmod(0o600)
             self.assertEqual(main(verify), 0)
 
+    def test_private_pair_manifest_changes_during_read_fail_closed(self):
+        # Exercise the second fstat on the SAME opened descriptor. A writer
+        # changing bytes or permissions between read and parse is not a
+        # trustworthy operator evidence snapshot.
+        with tempfile.TemporaryDirectory() as tmp:
+            dump, archive = fixtures(Path(tmp))
+            path = Path(tmp) / "recovery-record.json"
+            create, _ = self._commands(dump, archive, path)
+            self.assertEqual(main(create), 0)
+
+            original_fstat = os.fstat
+            for change in ("append", "permissions"):
+                with self.subTest(change=change):
+                    path.chmod(0o600)
+                    calls = []
+
+                    def mutate_before_post_read_fstat(fd):
+                        calls.append(1)
+                        if len(calls) == 2:
+                            if change == "append":
+                                write_fd = os.open(path, os.O_WRONLY | os.O_APPEND)
+                                try:
+                                    os.write(write_fd, b"synthetic-change")
+                                finally:
+                                    os.close(write_fd)
+                            else:
+                                path.chmod(0o644)
+                        return original_fstat(fd)
+
+                    with patch(
+                        "pilot_recovery_pair.os.fstat",
+                        side_effect=mutate_before_post_read_fstat,
+                    ):
+                        with self.assertRaisesRegex(
+                            RecoveryEvidenceError,
+                            "recovery record changed during verification",
+                        ):
+                            from pilot_recovery_pair import _read_private_record
+                            _read_private_record(path)
+                    self.assertEqual(len(calls), 2)
+                    path.chmod(0o600)
+
     def test_pair_manifest_symlink_and_fifo_fail_closed(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
