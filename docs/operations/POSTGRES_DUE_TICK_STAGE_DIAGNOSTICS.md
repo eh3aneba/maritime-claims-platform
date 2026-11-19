@@ -107,3 +107,31 @@ PID memory maps, SQL, app data or environment variables are logged.
 The existing 25-minute job timeout, 180-second faulthandler threshold,
 test assertions, matrix selection, observer cadence and protected
 merge gate remain unchanged. Root cause remains open in #766.
+
+
+## 2026-11-19 — exact synthetic ancestry DBAPI budget after #962
+
+The protected #962 source-head PostgreSQL due-tick job #135625737967 passed
+8/8 tests and showed `same_tick_a_legacy_resolution` at exactly **33,328**
+DBAPI execute calls on each of two traversals; #961 was **33,331** on
+each traversal before the single-query Phase-L listing/item join. This is
+a reduction of **3 calls per synthetic traversal**, not a causal wall-time
+or production p95 improvement. Nested stage counters include their descendants,
+so do not add their counts.
+
+The CI-only `test_same_due_tick_concurrent_consumers_create_one_execution`
+now retains only positive legacy resolver query-count integers in a local test
+list, asserts that a real measurement occurred, and fails if any measured
+resolver invocation exceeds **33,328** calls. The test's original real PostgreSQL
+two-consumer, receipt-freshness, missing-resource, lock-order and integrity
+assertions remain in place. The fixed ceiling is a **review trigger**, not
+permission to remove validations or to relax concurrent-tamper defense.
+A future legitimate expansion of verified lineage must explicitly review
+and, if justified, update the ceiling with actual exact-head SQL evidence
+and security tests. This guard does not set a timeout, memory limit,
+latency SLA, release criterion or bypass any protected workflow.
+No SQL text, parameters, tenant IDs, or customer Evidence are recorded.
+
+Issue #766 remains OPEN: the **33k+ nested ancestry query fan-out**
+and intermittent native SIGBUS/135 or 139 are not explained or resolved.
+Customer pilot #653 remains NO-GO.
