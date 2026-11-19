@@ -116,6 +116,17 @@ jobs:
           MCRI_DEMO_PASSWORD=$PERF_DEMO_PASSWORD
           EOF
 
+      # The target is the dedicated ephemeral CI Docker Engine, observed
+      # BEFORE any synthetic service or persistent volume is created.
+      # This is a live read-only check, NOT independent operator-host proof.
+      - name: Reject pre-existing CI Docker objects before synthetic startup
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/pilot_demo_docker_target.py
+          python scripts/pilot_demo_empty_stack.py \
+            --env-file .env.performance --strict-empty-docker-host
+
       - name: Start and validate design-partner stack
         run: |
           set -o pipefail

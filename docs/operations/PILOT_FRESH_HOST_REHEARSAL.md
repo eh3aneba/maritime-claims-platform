@@ -24,6 +24,9 @@ python scripts/pilot_demo_docker_target.py
 docker compose --env-file .env config >/dev/null
 python scripts/pilot_compose_port_policy.py --env-file .env
 python scripts/pilot_demo_empty_stack.py --env-file .env
+# Dedicated fresh-host rehearsal only: reject ANY existing Docker container
+# or volume on this Engine. Do not use this mode on a shared Docker host.
+python scripts/pilot_demo_empty_stack.py --env-file .env --strict-empty-docker-host
 # Read-only, sanitized AI/connector configuration readback; the rendered
 # Compose JSON is kept private and never echoed to logs.
 python scripts/pilot_rc_compose_feature_observation.py \\
@@ -32,7 +35,7 @@ python scripts/pilot_rc_compose_feature_observation.py \\
   --output /secure/pilot-releases/rc-001-compose-flags.json
 ```
 
-The read-only `pilot_demo_empty_stack.py` guard aborts if the **selected Compose project** already has any container (even stopped) or any of its three named persistent volumes (PostgreSQL, ClamAV, Evidence). The Operational Performance Smoke workflow now includes a **real GitHub-runner negative admission test**: after the synthetic stack is started, it must show an exact refusal (`NO-GO: Compose project already contains containers`) without invoking the side-effecting demo seed again. A successful workflow proves only this bounded behavior on its ephemeral runner, not a real external operator-host check. It deliberately **does not clean up** state and does not certify that the entire host, external storage or a differently named Compose project is empty. An authorized operator must still independently verify that the entire controlled host is fresh and synthetic-only.
+The read-only `pilot_demo_empty_stack.py` guard aborts if the **selected Compose project** already has any container (even stopped) or any of its three named persistent volumes (PostgreSQL, ClamAV, Evidence). The Operational Performance Smoke workflow now includes a **real GitHub-runner negative admission test**: after the synthetic stack is started, it must show an exact refusal (`NO-GO: Compose project already contains containers`) without invoking the side-effecting demo seed again. A successful workflow proves only this bounded behavior on its ephemeral runner, not a real external operator-host check. The standard project-only mode deliberately **does not clean up** state and does not certify that the entire host, external storage or a differently named Compose project is empty. The explicit strict mode checks all Docker Engine containers and volumes twice, rejecting unrelated or newly observed ones, but still cannot prove host filesystem/external storage cleanliness or prevent changes after observation. An authorized operator must still independently verify that the entire controlled host is fresh and synthetic-only.
 
 The rendered Compose ports 5432, 8000 and 3000 must remain loopback-only, and ClamAV port 3310 must not be published. Verify host firewall/proxy/TLS separately: passing the port-policy script does **not** prove network isolation. Never publish `.env`, `docker compose config` output, authentication tokens, container inspection output or raw claims in a GitHub comment/artifact.
 
