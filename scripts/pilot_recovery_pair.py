@@ -289,7 +289,7 @@ def _write_private_record(path: Path, record: dict) -> None:
 
 
 def _read_private_record(path: Path) -> object:
-    """Bounded one-descriptor read; no symlink/FIFO or public POSIX records."""
+    """Bounded one-descriptor read with pre/post metadata checks; no unsafe records."""
     if path.is_symlink():
         raise RecoveryEvidenceError("unsafe recovery record")
     flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
@@ -305,8 +305,13 @@ def _read_private_record(path: Path) -> object:
         with os.fdopen(descriptor, "rb") as stream:
             descriptor = -1
             payload = stream.read(MAX_RECORD_BYTES + 1)
+            after = os.fstat(stream.fileno())
         if len(payload) > MAX_RECORD_BYTES:
             raise RecoveryEvidenceError("oversized recovery record")
+        if (metadata.st_size, metadata.st_mtime_ns, metadata.st_ctime_ns, metadata.st_mode) != (
+            after.st_size, after.st_mtime_ns, after.st_ctime_ns, after.st_mode
+        ):
+            raise RecoveryEvidenceError("recovery record changed during verification")
     finally:
         if descriptor != -1:
             os.close(descriptor)
