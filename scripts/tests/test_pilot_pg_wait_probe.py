@@ -149,6 +149,63 @@ class PilotPgWaitProbeTests(unittest.TestCase):
         self.assertNotIn("secret", out.getvalue())
         self.assertNotIn("db.invalid", out.getvalue())
 
+    def test_runner_resources_use_only_fixed_kernel_counters_and_mounts(self):
+        safe_ints = {
+            "/sys/fs/cgroup/memory.current": 1024,
+            "/sys/fs/cgroup/memory.peak": 2048,
+            "/sys/fs/cgroup/memory.max": None,
+        }
+        safe_mounts = {"/tmp": 4096, "/dev/shm": 512}
+        with (patch.dict(os.environ, _CI_ENV, clear=True),
+              patch.object(probe, "_bounded_kernel_integer",
+                           side_effect=lambda path: safe_ints[path]),
+              patch.object(probe, "_cgroup_memory_events",
+                           return_value={"oom": 2, "oom_kill": 0}),
+              patch.object(probe, "_fixed_mount_available",
+                           side_effect=lambda path: safe_mounts[path])):
+            report = probe.safe_ci_runner_resources()
+        self.assertEqual(report["cgroup_memory_current_bytes"], 1024)
+        self.assertEqual(report["cgroup_memory_peak_bytes"], 2048)
+        self.assertIsNone(report["cgroup_memory_limit_bytes"])
+        self.assertEqual(report["cgroup_oom_events"], 2)
+        self.assertEqual(report["cgroup_oom_kill_events"], 0)
+        self.assertEqual(report["tmp_available_bytes"], 4096)
+        self.assertEqual(report["shm_available_bytes"], 512)
+        self.assertEqual(len(report), 7)
+        self.assertTrue(all(value is None or type(value) is int
+                            for value in report.values()))
+        for secret in ("password", "secret", "connection", "claim", "path"):
+            self.assertNotIn(secret, json.dumps(report).lower())
+
+    def test_resource_snapshot_rejects_non_ci_or_remote_database(self):
+        with patch.dict(os.environ, {**_CI_ENV, "APP_ENV": "production"},
+                        clear=True):
+            with self.assertRaises(ValueError):
+                probe.safe_ci_runner_resources()
+        with patch.dict(os.environ, {
+            **_CI_ENV,
+            "MCRI_TEST_DATABASE_URL": "postgresql://ci:secret@prod.invalid/customer",
+        }, clear=True):
+            with self.assertRaises(ValueError):
+                probe.safe_ci_runner_resources()
+
+    def test_resource_probe_uses_null_when_kernel_counters_unavailable(self):
+        with patch.dict(os.environ, _CI_ENV, clear=True):
+            with patch.object(probe, "_bounded_kernel_integer", return_value=None), \
+                 patch.object(probe, "_cgroup_memory_events",
+                              return_value={"oom": None, "oom_kill": None}), \
+                 patch.object(probe, "_fixed_mount_available", return_value=None):
+                report = probe.safe_ci_runner_resources()
+        self.assertTrue(all(value is None for value in report.values()))
+
+    def test_observer_interval_is_bounded_below_existing_job_deadline(self):
+        with (patch.dict(os.environ, _CI_ENV, clear=True),
+              contextlib.redirect_stderr(io.StringIO())):
+            with self.assertRaises(SystemExit):
+                probe.main(["--interval-seconds", "300", "--max-samples", "45"])
+            with self.assertRaises(SystemExit):
+                probe.main(["--interval-seconds", "30", "--max-samples", "46"])
+
     def test_due_tick_workflow_uses_bounded_finer_probe_not_relaxed_tests(self):
         workflow = (
             Path(__file__).resolve().parents[2]
@@ -156,7 +213,7 @@ class PilotPgWaitProbeTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertIn(
             "python -u ../../scripts/pilot_pg_wait_probe.py "
-            "--interval-seconds 30 --max-samples 25 &",
+            "--interval-seconds 30 --max-samples 45 &",
             workflow,
         )
         self.assertIn("trap cleanup_probe EXIT", workflow)
