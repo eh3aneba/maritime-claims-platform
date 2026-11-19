@@ -207,6 +207,9 @@ class MonitoringCoverageTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             path = Path(d) / "bad.json"
             path.write_text("PRIVATE-CLAIM-SECRET")
+            # This test exercises malformed JSON, not public-file permissions.
+            # A separate adversarial test asserts the latter fails closed.
+            path.chmod(0o600)
             captured = io.StringIO()
             with contextlib.redirect_stderr(captured):
                 self.assertEqual(m.main(["check", str(path), "--expected-sha", SHA]), 2)
