@@ -260,6 +260,14 @@ class PilotPgWaitProbeTests(unittest.TestCase):
         self.assertIn("pytest_exit=$?", workflow)
         self.assertIn('exit "$pytest_exit"', workflow)
         self.assertIn("name: PostgreSQL concurrency gate", workflow)
+        # Probe-only changes must run the real due-tick job, not just the
+        # successfully classified/skipped PostgreSQL gate.
+        self.assertIn(
+            "scripts/pilot_pg_wait_probe.py|"
+            "scripts/tests/test_pilot_pg_wait_probe.py)",
+            workflow,
+        )
+        self.assertIn("add_group observation-due-tick", workflow)
 
     def test_guard_failure_does_not_display_uri(self):
         out = io.StringIO()
