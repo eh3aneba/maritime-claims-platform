@@ -11,12 +11,17 @@ from __future__ import annotations
 import argparse
 from datetime import datetime, timezone
 import json
+import os
 from pathlib import Path
 import re
 import subprocess
 import sys
 
-from pilot_compose_readiness import EXPECTED, ReadinessError, evaluate, observe
+# Operator CLI supports both direct-file and repository module invocation.
+if __package__:
+    from .pilot_compose_readiness import EXPECTED, ReadinessError, evaluate, observe
+else:
+    from pilot_compose_readiness import EXPECTED, ReadinessError, evaluate, observe
 
 SHA = re.compile(r"[a-f0-9]{40}\Z")
 IMAGE_ID = re.compile(r"sha256:[a-f0-9]{64}\Z")
@@ -26,6 +31,32 @@ SCHEMA = "mcri-pilot-running-images-v1"
 
 class ImageIdentityError(ValueError):
     """Sanitized failure with no raw host/container/image strings."""
+
+
+def _unique_manifest_keys(pairs: list[tuple[str, object]]) -> dict:
+    """JSON duplicate keys can conceal a conflicting release or image identity."""
+    record = {}
+    for key, value in pairs:
+        if key in record:
+            raise ImageIdentityError("ambiguous local image manifest")
+        record[key] = value
+    return record
+
+
+def _reject_nonstandard_constant(_value: str) -> None:
+    """Fail closed on NaN and Infinity, which are not valid JSON values."""
+    raise ImageIdentityError("nonstandard local image manifest")
+
+
+def _write_private_record(path: Path, record: dict) -> None:
+    """Create only a private, new local proof file; never follow an output symlink."""
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    fd = os.open(path, flags, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as stream:
+        json.dump(record, stream, indent=2, sort_keys=True)
+        stream.write("\n")
 
 
 def manifest_template(release_sha: str) -> dict:
@@ -171,7 +202,11 @@ def main(argv: list[str] | None = None) -> int:
             if args.manifest.stat().st_size > 16384:
                 raise ImageIdentityError("oversized local image manifest")
             with args.manifest.open(encoding="utf-8") as stream:
-                manifest = json.load(stream)
+                manifest = json.load(
+                    stream,
+                    object_pairs_hook=_unique_manifest_keys,
+                    parse_constant=_reject_nonstandard_constant,
+                )
             expected = read_manifest(manifest, release_sha=args.release_sha)
             before = observe(env_file=args.env_file)
             observed = inspect_image_ids(before)
@@ -180,9 +215,7 @@ def main(argv: list[str] | None = None) -> int:
                 before=before, after=after, observed_image_ids=observed,
                 expected=expected, release_sha=args.release_sha,
             )
-        with args.output.open("x", encoding="utf-8") as stream:
-            json.dump(result, stream, indent=2, sort_keys=True)
-            stream.write("\n")
+        _write_private_record(args.output, result)
     except (ImageIdentityError, ReadinessError):
         print("NO-GO: running image identity verification unavailable or failed", file=sys.stderr)
         return 2
