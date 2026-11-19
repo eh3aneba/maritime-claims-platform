@@ -172,6 +172,37 @@ def _cgroup_memory_events() -> dict[str, int | None]:
     return result
 
 
+def _fixed_host_meminfo_bytes() -> dict[str, int | None]:
+    """Bounded host-only counters when the runner exposes no cgroup v2.
+
+    The host-wide values do NOT establish the job's memory limit. Only two
+    fixed keys are parsed. No process IDs, environment or arbitrary paths.
+    """
+    values = {"MemAvailable": None, "MemTotal": None}
+    try:
+        with open("/proc/meminfo", "r", encoding="ascii") as handle:
+            raw = handle.read(4096)
+    except (OSError, UnicodeError):
+        return {"host_mem_available_bytes": None, "host_mem_total_bytes": None}
+    if len(raw) >= 4096:
+        return {"host_mem_available_bytes": None, "host_mem_total_bytes": None}
+    for line in raw.splitlines():
+        name, sep, payload = line.partition(":")
+        if not sep or name not in values:
+            continue
+        parts = payload.strip().split()
+        if (len(parts) != 2 or parts[1] != "kB" or
+                not parts[0].isascii() or not parts[0].isdecimal()):
+            continue
+        kilobytes = int(parts[0])
+        if 0 <= kilobytes <= _MAX_RESOURCE_VALUE // 1024:
+            values[name] = kilobytes * 1024
+    return {
+        "host_mem_available_bytes": values["MemAvailable"],
+        "host_mem_total_bytes": values["MemTotal"],
+    }
+
+
 def _fixed_mount_available(path: str) -> int | None:
     try:
         info = os.statvfs(path)
@@ -189,7 +220,9 @@ def safe_ci_runner_resources() -> dict[str, int | None]:
     """
     _ci_database_url()  # Same strict synthetic local-only guard as PG observer.
     events = _cgroup_memory_events()
+    host_memory = _fixed_host_meminfo_bytes()
     return {
+        **host_memory,
         "cgroup_memory_current_bytes": _bounded_kernel_integer(
             "/sys/fs/cgroup/memory.current"
         ),
