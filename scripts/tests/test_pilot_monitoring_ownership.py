@@ -3,6 +3,8 @@ from copy import deepcopy
 import contextlib
 import io
 import json
+import os
+import stat
 from pathlib import Path
 import sys
 import tempfile
@@ -109,16 +111,105 @@ class MonitoringCoverageTests(unittest.TestCase):
                                          "--expected-sha", SHA]), 1)
             valid = Path(d) / "valid.json"
             valid.write_text(json.dumps(complete()))
+            valid.chmod(0o600)
             output = io.StringIO()
             with contextlib.redirect_stdout(output):
                 self.assertEqual(m.main(["check", str(valid),
                                          "--expected-sha", SHA]), 0)
             self.assertIn("NOT established", output.getvalue())
 
+    @unittest.skipUnless(os.name == "posix", "POSIX private-record permissions")
+    def test_draft_is_private_even_with_permissive_umask(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "draft.json"
+            previous = os.umask(0)
+            try:
+                with contextlib.redirect_stdout(io.StringIO()):
+                    self.assertEqual(m.main(["init", "--sha", SHA, "--output", str(target)]), 0)
+            finally:
+                os.umask(previous)
+            self.assertEqual(stat.S_IMODE(target.stat().st_mode), 0o600)
+
+    def test_duplicate_keys_and_nonstandard_json_never_pass(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "record.json"
+            baseline = json.dumps(complete())
+            mutated = [
+                # A shadowed last-key override must never select a false PASS.
+                baseline[:-1] + ', "release_sha": "' + SHA + '"}',
+                baseline.replace('"status": "verified"', '"status": "verified", "status": "pending"', 1),
+                baseline.replace('"cadence_minutes": 5', '"cadence_minutes": NaN', 1),
+                baseline.replace('"response_minutes": 30', '"response_minutes": Infinity', 1),
+            ]
+            for payload in mutated:
+                target.write_text(payload)
+                target.chmod(0o600)
+                with self.subTest(payload_kind=mutated.index(payload)):
+                    stderr = io.StringIO()
+                    with contextlib.redirect_stderr(stderr):
+                        self.assertNotEqual(
+                            m.main(["check", str(target), "--expected-sha", SHA]), 0,
+                        )
+                    self.assertNotIn("ops-primary", stderr.getvalue())
+
+    @unittest.skipUnless(os.name == "posix", "POSIX private-record permissions")
+    def test_world_or_group_readable_records_are_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "record.json"
+            target.write_text(json.dumps(complete()))
+            for mode in (0o644, 0o640, 0o604):
+                target.chmod(mode)
+                with self.subTest(mode=oct(mode)):
+                    with contextlib.redirect_stderr(io.StringIO()):
+                        self.assertNotEqual(
+                            m.main(["check", str(target), "--expected-sha", SHA]), 0,
+                        )
+
+    def test_symlink_nonregular_and_oversized_records_fail_closed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "record.json"
+            target.write_text(json.dumps(complete()))
+            target.chmod(0o600)
+            link = root / "link.json"
+            try:
+                link.symlink_to(target)
+            except (OSError, NotImplementedError):
+                pass
+            else:
+                with contextlib.redirect_stderr(io.StringIO()):
+                    self.assertNotEqual(
+                        m.main(["check", str(link), "--expected-sha", SHA]), 0,
+                    )
+                    self.assertEqual(
+                        m.main(["init", "--sha", SHA, "--output", str(link)]), 2,
+                    )
+                self.assertEqual(json.loads(target.read_text())["release_sha"], SHA)
+            huge = root / "huge.json"
+            huge.write_bytes(b" " * (m.MAX_MONITORING_RECORD_BYTES + 1))
+            huge.chmod(0o600)
+            with contextlib.redirect_stderr(io.StringIO()):
+                self.assertNotEqual(
+                    m.main(["check", str(huge), "--expected-sha", SHA]), 0,
+                )
+                self.assertNotEqual(
+                    m.main(["check", str(root), "--expected-sha", SHA]), 0,
+                )
+            if hasattr(os, "mkfifo"):
+                fifo = root / "pipe"
+                os.mkfifo(fifo, 0o600)
+                with contextlib.redirect_stderr(io.StringIO()):
+                    self.assertNotEqual(
+                        m.main(["check", str(fifo), "--expected-sha", SHA]), 0,
+                    )
+
     def test_malformed_data_is_rejected_without_raw_echo(self):
         with tempfile.TemporaryDirectory() as d:
             path = Path(d) / "bad.json"
             path.write_text("PRIVATE-CLAIM-SECRET")
+            # This test exercises malformed JSON, not public-file permissions.
+            # A separate adversarial test asserts the latter fails closed.
+            path.chmod(0o600)
             captured = io.StringIO()
             with contextlib.redirect_stderr(captured):
                 self.assertEqual(m.main(["check", str(path), "--expected-sha", SHA]), 2)
