@@ -144,6 +144,7 @@ class ComposedPersianOcrStudyTests(unittest.TestCase):
                 )
             ]
             for path, obj in zip(paths, (manifest, inventory, study, reviews)):
+                path.touch(mode=0o600, exist_ok=False)
                 path.write_text(json.dumps(obj, ensure_ascii=False), encoding="utf-8")
             args = [
                 "--manifest", str(paths[0]), "--inventory", str(paths[1]),
@@ -184,6 +185,7 @@ class ComposedPersianOcrStudyTests(unittest.TestCase):
             manifest, inventory, study = bundled_study(root)
             paths = [root / x for x in ("private_manifest.json", "private_inventory.json", "private_study.json")]
             for path, obj in zip(paths, (manifest, inventory, study)):
+                path.touch(mode=0o600, exist_ok=False)
                 path.write_text(json.dumps(obj, ensure_ascii=False), encoding="utf-8")
             argv = [
                 "--manifest", str(paths[0]),
