@@ -116,6 +116,45 @@ jobs:
           MCRI_DEMO_PASSWORD=$PERF_DEMO_PASSWORD
           EOF
 
+      # This negative control lives only on GitHub-hosted ephemeral CI. Never
+      # create a probe volume on a selected customer or pilot operator host.
+      - name: Prove strict Docker host admission refuses a disposable foreign volume
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "${GITHUB_ACTIONS:-}" = "true" ]
+          [ -n "${RUNNER_TEMP:-}" ]
+          name="mcri-ci-strict-negative-$(python -c 'import secrets; print(secrets.token_hex(8))')"
+          # Do not remove an unrelated volume if a collision ever occurs.
+          if docker volume inspect "$name" >/dev/null 2>&1; then
+            echo "::error::Synthetic negative-control volume already exists"
+            exit 1
+          fi
+          created=0
+          cleanup() {
+            if [ "$created" -eq 1 ]; then
+              docker volume rm "$name" >/dev/null || {
+                echo "::error::Synthetic negative-control volume cleanup failed"
+                return 1
+              }
+            fi
+          }
+          trap cleanup EXIT
+          docker volume create "$name" >/dev/null
+          created=1
+          if observed="$(python scripts/pilot_demo_empty_stack.py \
+              --env-file .env.performance --strict-empty-docker-host 2>&1)"; then
+            echo "::error::Strict Docker host admission accepted a foreign volume"
+            exit 1
+          else
+            status=$?
+          fi
+          if [ "$status" -ne 2 ] || \
+              [ "$observed" != "NO-GO: Docker Engine has pre-existing volumes" ]; then
+            echo "::error::Strict Docker host negative admission result invalid"
+            exit 1
+          fi
+
       # The target is the dedicated ephemeral CI Docker Engine, observed
       # BEFORE any synthetic service or persistent volume is created.
       # This is a live read-only check, NOT independent operator-host proof.
