@@ -6,9 +6,11 @@ import json
 import os
 import stat
 from pathlib import Path
+from types import SimpleNamespace
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import pilot_monitoring_ownership as m  # noqa: E402
@@ -202,6 +204,69 @@ class MonitoringCoverageTests(unittest.TestCase):
                     self.assertNotEqual(
                         m.main(["check", str(fifo), "--expected-sha", SHA]), 0,
                     )
+
+    def test_monitoring_gate_rejects_file_change_even_if_evidence_json_is_complete(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "private-monitoring.json"
+            path.write_text(json.dumps(complete()), encoding="utf-8")
+            path.chmod(0o600)
+            native_fstat = os.fstat
+            for changed in ("st_mtime_ns", "st_ctime_ns", "st_ino", "st_size"):
+                with self.subTest(field=changed):
+                    count = [0]
+
+                    def simulated_mutation(fd):
+                        info = native_fstat(fd)
+                        count[0] += 1
+                        if count[0] == 1:
+                            return info
+                        values = {
+                            key: getattr(info, key)
+                            for key in (
+                                "st_dev", "st_ino", "st_mode", "st_size",
+                                "st_mtime_ns", "st_ctime_ns",
+                            )
+                        }
+                        values[changed] += 1
+                        return SimpleNamespace(**values)
+
+                    stdout, stderr = io.StringIO(), io.StringIO()
+                    with patch.object(m.os, "fstat", side_effect=simulated_mutation):
+                        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                            outcome = m.main(["check", str(path), "--expected-sha", SHA])
+                    self.assertEqual(outcome, 1)
+                    self.assertEqual(count[0], 2)
+                    self.assertEqual(stdout.getvalue(), "")
+                    self.assertEqual(
+                        stderr.getvalue().strip(), "NO-GO: monitoring ownership record invalid",
+                    )
+                    self.assertNotIn("ops-primary", stderr.getvalue())
+
+    def test_monitoring_gate_rejects_short_read_even_if_metadata_is_stable(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "private-monitoring.json"
+            path.write_text(json.dumps(complete()), encoding="utf-8")
+            path.chmod(0o600)
+            native_fstat = os.fstat
+
+            def inflated_length(fd):
+                info = native_fstat(fd)
+                values = {
+                    key: getattr(info, key)
+                    for key in (
+                        "st_dev", "st_ino", "st_mode", "st_size",
+                        "st_mtime_ns", "st_ctime_ns",
+                    )
+                }
+                values["st_size"] += 1
+                return SimpleNamespace(**values)
+
+            err = io.StringIO()
+            with patch.object(m.os, "fstat", side_effect=inflated_length):
+                with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+                    outcome = m.main(["check", str(path), "--expected-sha", SHA])
+            self.assertEqual(outcome, 1)
+            self.assertEqual(err.getvalue().strip(), "NO-GO: monitoring ownership record invalid")
 
     def test_malformed_data_is_rejected_without_raw_echo(self):
         with tempfile.TemporaryDirectory() as d:
