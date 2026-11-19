@@ -10,8 +10,10 @@ from __future__ import annotations
 import argparse
 from datetime import datetime, timezone
 import json
+import os
 from pathlib import Path
 import re
+import stat
 import sys
 
 SCHEMA = "mcri-pilot-monitoring-ownership-v1"
@@ -32,10 +34,55 @@ SIGNALS = (
     "bounded_pilot_error_and_latency",
 )
 ALERT_SEVERITIES = frozenset(("p0", "p1", "p2", "p3"))
+# Private operator metadata; cap input before any UTF-8 or JSON parsing.
+MAX_MONITORING_RECORD_BYTES = 1_048_576
 
 
 class MonitoringRecordError(ValueError):
     """No raw operator-controlled content is included in validation errors."""
+
+
+def _reject_duplicate_json_keys(pairs: list[tuple[str, object]]) -> dict:
+    values: dict = {}
+    for key, value in pairs:
+        if key in values:
+            raise MonitoringRecordError("duplicate monitoring record key")
+        values[key] = value
+    return values
+
+
+def _reject_json_constant(_value: str) -> None:
+    raise MonitoringRecordError("nonstandard monitoring JSON constant")
+
+
+def _read_private_record(path: Path) -> object:
+    # Use one inspected descriptor to avoid stat/open substitution races.
+    # O_NONBLOCK prevents a FIFO from hanging the operator gate.
+    if path.is_symlink():
+        raise MonitoringRecordError("monitoring file is not a private regular record")
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    descriptor = os.open(path, flags)
+    try:
+        info = os.fstat(descriptor)
+        if not stat.S_ISREG(info.st_mode):
+            raise MonitoringRecordError("monitoring file is not a private regular record")
+        if os.name == "posix" and stat.S_IMODE(info.st_mode) & 0o077:
+            raise MonitoringRecordError("monitoring file permissions are not private")
+        if info.st_size > MAX_MONITORING_RECORD_BYTES:
+            raise MonitoringRecordError("monitoring record exceeds size limit")
+        with os.fdopen(descriptor, "rb") as stream:
+            descriptor = -1
+            data = stream.read(MAX_MONITORING_RECORD_BYTES + 1)
+        if len(data) > MAX_MONITORING_RECORD_BYTES:
+            raise MonitoringRecordError("monitoring record exceeds size limit")
+    finally:
+        if descriptor != -1:
+            os.close(descriptor)
+    return json.loads(
+        data.decode("utf-8"),
+        object_pairs_hook=_reject_duplicate_json_keys,
+        parse_constant=_reject_json_constant,
+    )
 
 
 def draft(sha: str) -> dict:
@@ -138,7 +185,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.mode == "init":
         try:
             record = draft(args.sha)
-            with args.output.open("x", encoding="utf-8") as stream:
+            # Exclusive owner-only draft; never follow an existing symlink.
+            flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+            descriptor = os.open(args.output, flags, 0o600)
+            with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
                 json.dump(record, stream, indent=2, sort_keys=True)
                 stream.write("\n")
         except MonitoringRecordError as exc:
@@ -150,11 +200,10 @@ def main(argv: list[str] | None = None) -> int:
         print("NO-GO monitoring ownership draft created; no alerts tested.")
         return 0
     try:
-        with args.record.open(encoding="utf-8") as stream:
-            raw = json.load(stream)
+        raw = _read_private_record(args.record)
         result = check(raw, expected_sha=args.expected_sha)
-    except MonitoringRecordError as exc:
-        print(f"NO-GO: {exc}", file=sys.stderr)
+    except MonitoringRecordError:
+        print("NO-GO: monitoring ownership record invalid", file=sys.stderr)
         return 1
     except (OSError, UnicodeError, json.JSONDecodeError):
         print("NO-GO: monitoring ownership record unreadable", file=sys.stderr)
