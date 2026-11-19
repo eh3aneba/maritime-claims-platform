@@ -58,6 +58,11 @@ _ALLOWED = frozenset({
     "disable_race_consume_execute", "disable_race_disable_session",
     "disable_race_disable_barrier", "disable_race_disable_execute",
     "sftp_phase_s_setup", "sftp_phase_t_admit", "sftp_phase_u_bind",
+    # Fixed labels for three synthetic cross-Session historical Receipt
+    # tamper challenges; never derive labels from database or customer data.
+    "nested_receipt_freshness_checkpoint3",
+    "nested_receipt_freshness_restaging",
+    "nested_receipt_freshness_successor_change",
     "sharepoint_v1_admit", "sharepoint_v1_bind",
     "sftp_phase_r_chain", "sftp_phase_s_claim", "sftp_phase_s_authorize",
     "sharepoint_v_prior_chain", "sharepoint_v_claim", "sharepoint_v_authorize",

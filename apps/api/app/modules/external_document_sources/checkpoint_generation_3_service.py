@@ -254,6 +254,7 @@ def _receipts(db: Session, execution: ExternalDocumentSourceCheckpointGeneration
                 ExternalDocumentSourceCheckpointGeneration3Receipt.execution_id == execution.id,
             )
             .order_by(ExternalDocumentSourceCheckpointGeneration3Receipt.sequence_number.asc())
+            .execution_options(populate_existing=True)
         ).all()
     )
 

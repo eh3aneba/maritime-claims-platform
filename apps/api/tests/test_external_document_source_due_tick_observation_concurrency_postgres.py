@@ -38,6 +38,36 @@ from app.modules.external_document_sources.evidence_admission_authorization_mode
 from app.modules.external_document_sources.generation_3_change_detection_models import (
     ExternalDocumentSourceGeneration3ChangeDetectionReceipt,
 )
+from app.modules.external_document_sources.generation_3_change_detection_models import (
+    ExternalDocumentSourceGeneration3ChangeDetectionExecution,
+)
+from app.modules.external_document_sources.checkpoint_generation_3_models import (
+    ExternalDocumentSourceCheckpointGeneration3Execution,
+    ExternalDocumentSourceCheckpointGeneration3Receipt,
+)
+from app.modules.external_document_sources.checkpoint_generation_3_service import (
+    _ensure_integrity as _checkpoint3_integrity,
+    _receipts as _checkpoint3_receipts,
+    _receipt_hash as _checkpoint3_receipt_hash,
+)
+from app.modules.external_document_sources.successor_versioned_restaging_models import (
+    ExternalDocumentSourceSuccessorVersionedRestagingExecution,
+    ExternalDocumentSourceSuccessorVersionedRestagingReceipt,
+)
+from app.modules.external_document_sources.successor_versioned_restaging_service import (
+    _ensure_integrity as _restaging_integrity,
+    _receipts as _restaging_receipts,
+    _receipt_hash as _restaging_receipt_hash,
+)
+from app.modules.external_document_sources.successor_change_detection_models import (
+    ExternalDocumentSourceSuccessorChangeDetectionExecution,
+    ExternalDocumentSourceSuccessorChangeDetectionReceipt,
+)
+from app.modules.external_document_sources.successor_change_detection_service import (
+    _ensure_integrity as _change_integrity,
+    _receipts as _change_receipts,
+    _receipt_hash as _change_receipt_hash,
+)
 from app.modules.external_document_sources.recurring_observation_schedule_models import (
     ExternalDocumentSourceRecurringObservationSchedule,
 )
@@ -326,6 +356,116 @@ def test_same_due_tick_concurrent_consumers_create_one_execution(
             assert len(rows) == 1
             assert rows[0].due_at == due_now
             assert rows[0].result_status == "unchanged"
+    finally:
+        engine.dispose()
+
+
+def test_nested_historical_receipt_reads_detect_cross_session_tamper_without_caching(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """One synthetic PostgreSQL lineage; three separate READ COMMITTED tamper cases.
+
+    Each consuming Session pins its originally read receipt, then another
+    committed Session changes one historical field with the original hash
+    unchanged. Every scoped _receipts re-read MUST observe the committed
+    bytes, and the corresponding full integrity verifier MUST fail closed.
+    Revert only after rollback, so each case starts from an intact lineage.
+    """
+    actor_id, profile_id, _claim_id, _initial_execution, binding = _bound_v1(
+        monkeypatch, "ac-pg-nested-history-freshness",
+    )
+    engine, SessionLocal = _session_factory()
+    try:
+        with SessionLocal() as db:
+            family = db.get(
+                ExternalDocumentSourceEvidenceFamilyBinding, UUID(binding["id"]),
+            )
+            assert family is not None and family.admission_execution_id is not None
+            org_id = family.organization_id
+            admission = db.get(
+                ExternalDocumentSourceEvidenceAdmissionExecution,
+                family.admission_execution_id,
+            )
+            assert admission is not None and admission.organization_id == org_id
+            generation3 = db.get(
+                ExternalDocumentSourceGeneration3ChangeDetectionExecution,
+                admission.generation_3_change_detection_execution_id,
+            )
+            assert generation3 is not None and generation3.organization_id == org_id
+            targets = (
+                (
+                    "checkpoint3",
+                    ExternalDocumentSourceCheckpointGeneration3Execution,
+                    ExternalDocumentSourceCheckpointGeneration3Receipt,
+                    admission.checkpoint_generation_3_execution_id,
+                    _checkpoint3_receipts, _checkpoint3_receipt_hash,
+                    _checkpoint3_integrity,
+                ),
+                (
+                    "restaging",
+                    ExternalDocumentSourceSuccessorVersionedRestagingExecution,
+                    ExternalDocumentSourceSuccessorVersionedRestagingReceipt,
+                    admission.successor_versioned_restaging_execution_id,
+                    _restaging_receipts, _restaging_receipt_hash,
+                    _restaging_integrity,
+                ),
+                (
+                    "successor_change",
+                    ExternalDocumentSourceSuccessorChangeDetectionExecution,
+                    ExternalDocumentSourceSuccessorChangeDetectionReceipt,
+                    generation3.successor_change_detection_execution_id,
+                    _change_receipts, _change_receipt_hash,
+                    _change_integrity,
+                ),
+            )
+
+        for (
+            kind, execution_model, receipt_model, execution_id, read_receipts,
+            receipt_hash, check_integrity,
+        ) in targets:
+            assert execution_id is not None
+            with ci_due_tick_stage("nested_receipt_freshness_" + kind):
+                with SessionLocal() as consumer:
+                    execution = consumer.get(execution_model, execution_id)
+                    assert execution is not None and execution.organization_id == org_id
+                    pinned = consumer.scalar(
+                        select(receipt_model).where(
+                            receipt_model.organization_id == org_id,
+                            receipt_model.execution_id == execution_id,
+                        ).order_by(receipt_model.sequence_number.asc())
+                    )
+                    assert pinned is not None
+                    original_reason = pinned.reason
+                    original_hash = pinned.receipt_hash
+                    changed_reason = "Synthetic second-session historical change: " + kind
+                    with SessionLocal() as concurrent:
+                        changed = concurrent.get(receipt_model, pinned.id)
+                        assert changed is not None
+                        assert changed.organization_id == org_id
+                        assert changed.reason == original_reason
+                        changed.reason = changed_reason
+                        concurrent.commit()
+                    try:
+                        reread = read_receipts(consumer, execution)
+                        assert any(row is pinned for row in reread)
+                        assert pinned.reason == changed_reason, (
+                            "Historical receipt re-read must refresh a pinned ORM object"
+                        )
+                        assert pinned.receipt_hash == original_hash
+                        assert receipt_hash(pinned) != original_hash
+                        if kind == "restaging":
+                            with pytest.raises(ExternalDocumentSourceConflictError):
+                                check_integrity(consumer, execution, verify_storage=False)
+                        else:
+                            with pytest.raises(ExternalDocumentSourceConflictError):
+                                check_integrity(consumer, execution)
+                    finally:
+                        consumer.rollback()
+                        with SessionLocal() as restore:
+                            row = restore.get(receipt_model, pinned.id)
+                            assert row is not None and row.reason == changed_reason
+                            row.reason = original_reason
+                            restore.commit()
     finally:
         engine.dispose()
 

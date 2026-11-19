@@ -285,6 +285,7 @@ def _receipts(
                 ExternalDocumentSourceSuccessorChangeDetectionReceipt.execution_id == execution.id,
             )
             .order_by(ExternalDocumentSourceSuccessorChangeDetectionReceipt.sequence_number.asc())
+            .execution_options(populate_existing=True)
         ).all()
     )
 

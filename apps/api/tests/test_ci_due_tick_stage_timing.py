@@ -46,6 +46,10 @@ def test_parallel_worker_stages_are_distinguishable_and_privacy_safe(
         "same_tick_a_commit", "same_tick_b_commit",
         "same_tick_a_refresh", "same_tick_b_refresh",
         "disable_race_consume_execute", "disable_race_disable_execute",
+        # Controlled cross-Session nested receipt test stages.
+        "nested_receipt_freshness_checkpoint3",
+        "nested_receipt_freshness_restaging",
+        "nested_receipt_freshness_successor_change",
     )
 
     def mark(label: str) -> None:
