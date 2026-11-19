@@ -7,10 +7,12 @@ import io
 import json
 import os
 from pathlib import Path
+from types import SimpleNamespace
 import stat
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import pilot_historical_secret_disposition as p  # noqa: E402
@@ -212,6 +214,60 @@ class HistoricalSecretDispositionTests(unittest.TestCase):
                 os.mkfifo(fifo, 0o600)
                 with contextlib.redirect_stderr(io.StringIO()):
                     self.assertNotEqual(p.main(["check", str(fifo), "--expected-sha", SHA]), 0)
+
+    def test_private_secret_disposition_rejects_changed_file_identity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "disposition.json"
+            path.write_text(json.dumps(complete()), encoding="utf-8")
+            path.chmod(0o600)
+            original = os.fstat
+            for field in ("st_dev", "st_ino", "st_mode", "st_mtime_ns", "st_ctime_ns"):
+                with self.subTest(field=field):
+                    calls = [0]
+
+                    def swapped_metadata(fd):
+                        info = original(fd)
+                        calls[0] += 1
+                        if calls[0] != 2:
+                            return info
+                        fields = {
+                            key: getattr(info, key)
+                            for key in ("st_dev", "st_ino", "st_mode", "st_size",
+                                        "st_mtime_ns", "st_ctime_ns")
+                        }
+                        fields[field] += 1
+                        return SimpleNamespace(**fields)
+
+                    with patch.object(p.os, "fstat", side_effect=swapped_metadata):
+                        with self.assertRaises(p.DispositionError) as caught:
+                            p._read_private(path)
+                    self.assertEqual(calls[0], 2)
+                    self.assertEqual(str(caught.exception),
+                                     "evidence record changed during read")
+
+    def test_private_secret_disposition_rejects_inconsistent_read_length(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "disposition.json"
+            path.write_text(json.dumps(complete()), encoding="utf-8")
+            path.chmod(0o600)
+            original = os.fstat
+
+            def inflated_length(fd):
+                info = original(fd)
+                fields = {
+                    key: getattr(info, key)
+                    for key in ("st_dev", "st_ino", "st_mode", "st_size",
+                                "st_mtime_ns", "st_ctime_ns")
+                }
+                fields["st_size"] += 1
+                return SimpleNamespace(**fields)
+
+            with patch.object(p.os, "fstat", side_effect=inflated_length):
+                with self.assertRaises(p.DispositionError) as caught:
+                    p._read_private(path)
+            self.assertEqual(str(caught.exception),
+                             "evidence record changed during read")
+            self.assertNotIn("synthetic-", str(caught.exception))
 
     def test_bad_record_does_not_echo_operator_values(self):
         with tempfile.TemporaryDirectory() as folder:
