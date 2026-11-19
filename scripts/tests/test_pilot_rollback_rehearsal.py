@@ -4,6 +4,8 @@ from pathlib import Path
 import contextlib
 import io
 import json
+import os
+import stat
 import sys
 import tempfile
 import unittest
@@ -140,6 +142,7 @@ class RollbackRehearsalTests(unittest.TestCase):
                     FROM_SHA, "--to-sha", TO_SHA]), 1)
             valid = Path(d) / "valid.json"
             valid.write_text(json.dumps(ready()))
+            valid.chmod(0o600)
             out = io.StringIO()
             with contextlib.redirect_stdout(out):
                 self.assertEqual(p.main(["check", str(valid), "--from-sha",
@@ -158,11 +161,89 @@ class RollbackRehearsalTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             path = Path(d) / "invalid.json"
             path.write_text("synthetic-private-text")
+            path.chmod(0o600)
             output = io.StringIO()
             with contextlib.redirect_stderr(output):
                 self.assertEqual(p.main(["check", str(path), "--from-sha",
                     FROM_SHA, "--to-sha", TO_SHA]), 2)
             self.assertNotIn("synthetic-private-text", output.getvalue())
+
+    @unittest.skipUnless(os.name == "posix", "POSIX private rollback evidence modes")
+    def test_init_creates_private_draft_even_under_permissive_umask(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "draft.json"
+            old_umask = os.umask(0)
+            try:
+                with contextlib.redirect_stdout(io.StringIO()):
+                    self.assertEqual(p.main(["init", "--from-sha", FROM_SHA,
+                        "--to-sha", TO_SHA, "--output", str(path)]), 0)
+            finally:
+                os.umask(old_umask)
+            self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
+
+    @unittest.skipUnless(os.name == "posix", "POSIX private rollback evidence modes")
+    def test_public_or_group_access_blocks_record(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "rollback.json"
+            path.write_text(json.dumps(ready()))
+            for mode in (0o644, 0o640, 0o604, 0o660):
+                path.chmod(mode)
+                with self.subTest(mode=oct(mode)), contextlib.redirect_stderr(io.StringIO()):
+                    self.assertNotEqual(p.main(["check", str(path), "--from-sha",
+                        FROM_SHA, "--to-sha", TO_SHA]), 0)
+
+    def test_nested_and_top_level_duplicate_keys_and_nonfinite_json_rejected(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "rollback.json"
+            valid = json.dumps(ready())
+            mutations = (
+                valid[:-1] + ', "explicit_human_authorized": true}',
+                valid.replace('"operator_review_ref": "artifact://synthetic-operator_review_ref"',
+                              '"operator_review_ref": "artifact://synthetic-operator_review_ref", '
+                              '"operator_review_ref": "artifact://synthetic-operator_review_ref"', 1),
+                valid.replace('"live_database_restored": false',
+                              '"live_database_restored": NaN', 1),
+                valid.replace('"unsafe_database_downgrade_performed": false',
+                              '"unsafe_database_downgrade_performed": Infinity', 1),
+            )
+            for index, payload in enumerate(mutations):
+                path.write_text(payload)
+                path.chmod(0o600)
+                with self.subTest(case=index), contextlib.redirect_stderr(io.StringIO()):
+                    self.assertNotEqual(p.main(["check", str(path), "--from-sha",
+                        FROM_SHA, "--to-sha", TO_SHA]), 0)
+
+    def test_symlink_fifo_directory_and_oversized_record_fail_without_blocking(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            target = root / "valid.json"
+            target.write_text(json.dumps(ready()))
+            target.chmod(0o600)
+            symlink = root / "linked.json"
+            try:
+                symlink.symlink_to(target)
+            except (OSError, NotImplementedError):
+                pass
+            else:
+                with contextlib.redirect_stderr(io.StringIO()):
+                    self.assertNotEqual(p.main(["check", str(symlink), "--from-sha",
+                        FROM_SHA, "--to-sha", TO_SHA]), 0)
+                    self.assertEqual(p.main(["init", "--from-sha", FROM_SHA,
+                        "--to-sha", TO_SHA, "--output", str(symlink)]), 2)
+                self.assertEqual(json.loads(target.read_text())["from_release_sha"], FROM_SHA)
+            huge = root / "huge.json"
+            huge.write_bytes(b" " * (p.MAX_ROLLBACK_RECORD_BYTES + 1))
+            huge.chmod(0o600)
+            with contextlib.redirect_stderr(io.StringIO()):
+                for path in (huge, root):
+                    self.assertNotEqual(p.main(["check", str(path), "--from-sha",
+                        FROM_SHA, "--to-sha", TO_SHA]), 0)
+            if hasattr(os, "mkfifo"):
+                fifo = root / "pipe"
+                os.mkfifo(fifo, 0o600)
+                with contextlib.redirect_stderr(io.StringIO()):
+                    self.assertNotEqual(p.main(["check", str(fifo), "--from-sha",
+                        FROM_SHA, "--to-sha", TO_SHA]), 0)
 
 
 if __name__ == "__main__":
