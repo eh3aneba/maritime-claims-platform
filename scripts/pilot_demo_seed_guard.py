@@ -40,7 +40,10 @@ def check(env: dict[str, str]) -> None:
         ):
             if env.get(flag) != "false":
                 raise DemoSeedGuardError("manual H&M pilot requires disabled AI and live integration flags")
-        if env.get("AI_MODEL") != "" or env.get("OPENAI_API_KEY") != "":
+        if (
+            "AI_MODEL" not in env or "OPENAI_API_KEY" not in env
+            or env["AI_MODEL"] != "" or env["OPENAI_API_KEY"] != ""
+        ):
             raise DemoSeedGuardError("manual H&M pilot forbids configured AI model or key")
         if env.get("OCR_ENABLED") != "false":
             raise DemoSeedGuardError("manual H&M pilot requires OCR_ENABLED=false")
