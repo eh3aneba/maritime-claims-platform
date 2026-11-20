@@ -17,6 +17,12 @@ DISCLAIMER = (
     "recoverability determination."
 )
 
+PDF_SIGNATURE_NOTICE = (
+    "INCOMING PDF SIGNATURES NOT CHECKED. SeeClaims does not cryptographically verify "
+    "source-PDF signatures, signed revisions or signer identities. Text extraction, "
+    "OCR and SHA-256 hashes are not signature validation."
+)
+
 
 def _display(value: Any) -> str:
     if value is None:
@@ -106,6 +112,7 @@ def _pdf_lines(snapshot: dict[str, Any]) -> list[str]:
     lines = [
         "MARITIME CLAIM FILE PACK",
         DISCLAIMER,
+        PDF_SIGNATURE_NOTICE,
         "",
         f"Claim reference: {claim['claim_reference']}",
         f"Vessel: {claim['vessel_name']}",
@@ -346,6 +353,7 @@ def render_xlsx(snapshot: dict[str, Any]) -> bytes:
     summary = snapshot["summary"]
     summary_rows = [
         ("Control notice", DISCLAIMER),
+        ("Incoming PDF signature validation", PDF_SIGNATURE_NOTICE),
         ("Claim reference", claim["claim_reference"]),
         ("Vessel", claim["vessel_name"]),
         ("IMO", claim.get("imo_number") or "Not recorded"),
