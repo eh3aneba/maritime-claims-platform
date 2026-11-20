@@ -11,6 +11,7 @@ import json
 import os
 import stat
 from pathlib import Path
+from types import SimpleNamespace
 import sys
 import tarfile
 import tempfile
@@ -20,6 +21,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from pilot_recovery_pair import (  # noqa: E402
     MAX_RECORD_BYTES, RecoveryEvidenceError, check_record, main, observe,
+    _digest, _evidence_identity, _read_integrity_sidecar, _read_private_record,
 )
 
 SHA = "a" * 40
@@ -511,6 +513,101 @@ class PilotRecoveryPairTests(unittest.TestCase):
                             _read_private_record(path)
                     self.assertEqual(len(calls), 2)
                     path.chmod(0o600)
+
+    def test_artifact_readers_reject_incomplete_bytes_with_stable_metadata(self):
+        """An intact-looking JSON or TAR must not pass a truncated read."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            dump, archive = fixtures(root)
+            manifest = root / "pair.json"
+            create, _ = self._commands(dump, archive, manifest)
+            self.assertEqual(main(create), 0)
+            checks = (
+                ("dump", lambda: _digest(dump),
+                 "PostgreSQL dump changed during verification"),
+                ("checksum", lambda: _read_integrity_sidecar(
+                    Path(str(dump) + ".sha256"), 1024),
+                 "PostgreSQL integrity sidecar changed during verification"),
+                ("metadata", lambda: _read_integrity_sidecar(
+                    Path(str(dump) + ".meta"), 4096),
+                 "PostgreSQL integrity sidecar changed during verification"),
+                ("archive", lambda: _evidence_identity(archive),
+                 "Evidence archive changed during verification"),
+                ("manifest", lambda: _read_private_record(manifest),
+                 "recovery record changed during verification"),
+            )
+            native_fstat = os.fstat
+            for label, reader, message in checks:
+                with self.subTest(reader=label):
+                    seen = [0]
+
+                    def stable_but_inflated_file_length(fd):
+                        metadata = native_fstat(fd)
+                        seen[0] += 1
+                        fields = {
+                            name: getattr(metadata, name)
+                            for name in (
+                                "st_dev", "st_ino", "st_mode", "st_size",
+                                "st_mtime_ns", "st_ctime_ns",
+                            )
+                        }
+                        fields["st_size"] += 1
+                        return SimpleNamespace(**fields)
+
+                    with patch("pilot_recovery_pair.os.fstat",
+                               side_effect=stable_but_inflated_file_length):
+                        with self.assertRaises(RecoveryEvidenceError) as error:
+                            reader()
+                    self.assertEqual(str(error.exception), message)
+                    self.assertEqual(seen[0], 2)
+                    self.assertNotIn(str(root), str(error.exception))
+
+    def test_recovery_artifact_readers_reject_postread_identity_drift(self):
+        """Metadata substitution on a descriptor fails before record admission."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            dump, archive = fixtures(root)
+            manifest = root / "pair.json"
+            create, _ = self._commands(dump, archive, manifest)
+            self.assertEqual(main(create), 0)
+            readers = (
+                ("dump", lambda: _digest(dump),
+                 "PostgreSQL dump changed during verification"),
+                ("sidecar", lambda: _read_integrity_sidecar(
+                    Path(str(dump) + ".meta"), 4096),
+                 "PostgreSQL integrity sidecar changed during verification"),
+                ("archive", lambda: _evidence_identity(archive),
+                 "Evidence archive changed during verification"),
+                ("manifest", lambda: _read_private_record(manifest),
+                 "recovery record changed during verification"),
+            )
+            native_fstat = os.fstat
+            for label, reader, message in readers:
+                for field in ("st_dev", "st_ino", "st_mode"):
+                    with self.subTest(reader=label, changed=field):
+                        seen = [0]
+
+                        def changed_after_read(fd):
+                            metadata = native_fstat(fd)
+                            seen[0] += 1
+                            if seen[0] != 2:
+                                return metadata
+                            fields = {
+                                name: getattr(metadata, name)
+                                for name in (
+                                    "st_dev", "st_ino", "st_mode", "st_size",
+                                    "st_mtime_ns", "st_ctime_ns",
+                                )
+                            }
+                            fields[field] += 1
+                            return SimpleNamespace(**fields)
+
+                        with patch("pilot_recovery_pair.os.fstat",
+                                   side_effect=changed_after_read):
+                            with self.assertRaises(RecoveryEvidenceError) as error:
+                                reader()
+                        self.assertEqual(str(error.exception), message)
+                        self.assertEqual(seen[0], 2)
 
     def test_pair_manifest_symlink_and_fifo_fail_closed(self):
         with tempfile.TemporaryDirectory() as tmp:
