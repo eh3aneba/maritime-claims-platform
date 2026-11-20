@@ -2,12 +2,14 @@
 from copy import deepcopy
 from io import BytesIO
 
+from openpyxl import load_workbook
+
 import pytest
 from pypdf import PdfReader
 from pypdf.generic._font import Font
 
 from app.modules.claim_packs import renderers as base
-from app.modules.claim_packs.recovery_renderers import render_pdf
+from app.modules.claim_packs.recovery_renderers import render_pdf, render_xlsx
 from tests.test_claim_pack_recovery_reporting import _export_snapshot
 
 
@@ -56,6 +58,39 @@ def test_repeated_wide_multiline_appendix_survives_pagination():
     assert len(reader.pages) > 2
     body = assert_body_fits_and_collect(reader)
     assert ''.join(body.split()).count(''.join(SOURCE.split())) == 90
+    assert snapshot == before
+
+
+@pytest.mark.parametrize("kind", ["base", "full"], ids=["base-pack", "governed-pack"])
+def test_pdf_and_xlsx_exports_disclose_unchecked_incoming_signatures(kind):
+    """Export recipients receive the same limitation shown to claim handlers.
+
+    No signature detection, cryptographic verification or signer assertion is
+    implied by the warning. Source evidence and the snapshot stay unchanged.
+    """
+    snapshot = _export_snapshot()
+    before = deepcopy(snapshot)
+    pdf_renderer = base.render_pdf if kind == "base" else render_pdf
+    xlsx_renderer = base.render_xlsx if kind == "base" else render_xlsx
+
+    reader = PdfReader(BytesIO(pdf_renderer(snapshot)))
+    pdf_text = " ".join(
+        " ".join(page.extract_text() or "" for page in reader.pages).split()
+    )
+    assert "INCOMING PDF SIGNATURES NOT CHECKED" in pdf_text
+    assert "source-PDF signatures" in pdf_text
+    assert "OCR and SHA-256 hashes are not signature validation" in pdf_text
+
+    workbook = load_workbook(BytesIO(xlsx_renderer(snapshot)), read_only=True)
+    try:
+        fields = dict(list(workbook["Pack Summary"].values)[1:])
+        notice = fields["Incoming PDF signature validation"]
+        assert notice == base.PDF_SIGNATURE_NOTICE
+        assert "does not cryptographically verify" in notice
+        assert "signed revisions" in notice
+        assert "signer identities" in notice
+    finally:
+        workbook.close()
     assert snapshot == before
 
 

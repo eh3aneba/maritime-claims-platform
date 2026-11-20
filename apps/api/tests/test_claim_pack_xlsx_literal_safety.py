@@ -13,6 +13,16 @@ from tests.test_claim_pack_recovery_reporting import _export_snapshot
 SOURCE_LITERAL = '=HYPERLINK("https://example.invalid", "fake document link")'
 
 
+def _summary_value_cell(book, label: str):
+    """Find a semantically named row; adding disclosures must not shift the test."""
+    matches = [
+        row[1] for row in book["Pack Summary"].iter_rows(min_row=2, min_col=1, max_col=2)
+        if row[0].value == label
+    ]
+    assert len(matches) == 1, f"Expected exactly one Pack Summary row for {label}"
+    return matches[0]
+
+
 def _snapshot() -> dict:
     snapshot = _export_snapshot()
     snapshot["generation_note"] = SOURCE_LITERAL
@@ -52,8 +62,12 @@ def _assert_static_literals(data: bytes, *, extended: bool) -> None:
                     assert cell.data_type != "f", (
                         f"Executable formula in controlled sheet {sheet.title}!{cell.coordinate}"
                     )
-        assert book["Pack Summary"]["B4"].value == SOURCE_LITERAL  # Vessel
-        assert book["Pack Summary"]["B4"].data_type == "s"
+        vessel = _summary_value_cell(book, "Vessel")
+        assert vessel.value == SOURCE_LITERAL
+        assert vessel.data_type == "s"
+        disclosure = _summary_value_cell(book, "Incoming PDF signature validation")
+        assert "INCOMING PDF SIGNATURES NOT CHECKED" in disclosure.value
+        assert disclosure.data_type == "s"
         evidence = book["Evidence Matrix"]
         assert evidence["B2"].value == SOURCE_LITERAL
         assert evidence["B2"].data_type == "s"
@@ -97,7 +111,7 @@ def test_source_error_tokens_remain_literal_text(source, renderer) -> None:
     before = deepcopy(snapshot)
     book = load_workbook(BytesIO(renderer(snapshot)), data_only=False)
     try:
-        cells = [book["Pack Summary"]["B4"], book["Evidence Matrix"]["H2"]]
+        cells = [_summary_value_cell(book, "Vessel"), book["Evidence Matrix"]["H2"]]
         if renderer is render_xlsx:
             cells.extend(row[3] for row in book["Recovery Review"].iter_rows() if row[0].value == "human decision")
         for cell in cells:
