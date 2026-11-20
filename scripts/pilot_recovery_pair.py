@@ -31,6 +31,24 @@ class RecoveryEvidenceError(ValueError):
     """Bounded error labels: no internal paths or file contents."""
 
 
+def _matches_open_file_read(before: os.stat_result, after: os.stat_result, bytes_read: int) -> bool:
+    """Accept only a complete, unchanged snapshot from one opened file descriptor.
+
+    Bounded metadata/race detection is not a digital signature and cannot
+    guarantee that a file will remain unchanged after the read.
+    """
+    return (
+        bytes_read == before.st_size
+        and (
+            before.st_dev, before.st_ino, before.st_mode, before.st_size,
+            before.st_mtime_ns, before.st_ctime_ns,
+        ) == (
+            after.st_dev, after.st_ino, after.st_mode, after.st_size,
+            after.st_mtime_ns, after.st_ctime_ns,
+        )
+    )
+
+
 def _digest(path: Path) -> str:
     """Hash one opened regular dump, rejecting detectable concurrent mutation.
 
@@ -47,12 +65,12 @@ def _digest(path: Path) -> str:
             if not stat.S_ISREG(before.st_mode):
                 raise RecoveryEvidenceError("required artifact is unavailable or not a regular file")
             digestor = hashlib.sha256()
+            total_read = 0
             for chunk in iter(lambda: stream.read(1024 * 1024), b""):
                 digestor.update(chunk)
+                total_read += len(chunk)
             after = os.fstat(stream.fileno())
-            if (before.st_size, before.st_mtime_ns, before.st_ctime_ns) != (
-                after.st_size, after.st_mtime_ns, after.st_ctime_ns
-            ):
+            if not _matches_open_file_read(before, after, total_read):
                 raise RecoveryEvidenceError("PostgreSQL dump changed during verification")
             return digestor.hexdigest()
     except OSError:
@@ -80,9 +98,7 @@ def _read_integrity_sidecar(path: Path, limit: int) -> bytes:
             if len(payload) > limit:
                 raise RecoveryEvidenceError("oversized PostgreSQL metadata sidecar")
             after = os.fstat(stream.fileno())
-            if (before.st_size, before.st_mtime_ns, before.st_ctime_ns) != (
-                after.st_size, after.st_mtime_ns, after.st_ctime_ns
-            ):
+            if not _matches_open_file_read(before, after, len(payload)):
                 raise RecoveryEvidenceError("PostgreSQL integrity sidecar changed during verification")
             return payload
     except OSError:
@@ -159,8 +175,10 @@ def _evidence_identity(archive: Path) -> dict:
             if not stat.S_ISREG(before.st_mode):
                 raise RecoveryEvidenceError("unsafe Evidence archive file")
             digestor = hashlib.sha256()
+            total_read = 0
             for chunk in iter(lambda: stream.read(1024 * 1024), b""):
                 digestor.update(chunk)
+                total_read += len(chunk)
             digest = digestor.hexdigest()
             stream.seek(0)
             with tarfile.open(fileobj=stream, mode="r:*") as reader:
@@ -193,9 +211,7 @@ def _evidence_identity(archive: Path) -> dict:
                     if bytes_declared > MAX_DECLARED_BYTES:
                         raise RecoveryEvidenceError("Evidence archive declared size limit exceeded")
             after = os.fstat(stream.fileno())
-            if (before.st_size, before.st_mtime_ns, before.st_ctime_ns) != (
-                after.st_size, after.st_mtime_ns, after.st_ctime_ns
-            ):
+            if not _matches_open_file_read(before, after, total_read):
                 raise RecoveryEvidenceError("Evidence archive changed during verification")
     except (tarfile.TarError, EOFError, OSError):
         raise RecoveryEvidenceError("Evidence archive could not be parsed safely") from None
@@ -308,9 +324,7 @@ def _read_private_record(path: Path) -> object:
             after = os.fstat(stream.fileno())
         if len(payload) > MAX_RECORD_BYTES:
             raise RecoveryEvidenceError("oversized recovery record")
-        if (metadata.st_size, metadata.st_mtime_ns, metadata.st_ctime_ns, metadata.st_mode) != (
-            after.st_size, after.st_mtime_ns, after.st_ctime_ns, after.st_mode
-        ):
+        if not _matches_open_file_read(metadata, after, len(payload)):
             raise RecoveryEvidenceError("recovery record changed during verification")
     finally:
         if descriptor != -1:
