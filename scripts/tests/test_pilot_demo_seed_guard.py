@@ -79,11 +79,6 @@ class SyntheticDemoSeedGateTests(unittest.TestCase):
             with self.subTest(missing=key):
                 sample = first_manual_pilot_fixture()
                 del sample[key]
-                if key in ("AI_MODEL", "OPENAI_API_KEY"):
-                    # Missing empty-valued flags are treated as absent by the
-                    # original seed helper; the app preflight still requires
-                    # all typed Settings safety fields and Compose checks.
-                    continue
                 with self.assertRaises(guard.DemoSeedGuardError):
                     guard.check(sample)
 
