@@ -97,6 +97,29 @@ def inspect_config(config: object, *, release_sha: str) -> dict:
         if name not in AI_SERVICES and name != "demo-seed":
             if "AI_MODEL" in env and env["AI_MODEL"] != "":
                 errors.add("other_service_ai_model_configured")
+    # The selected FIRST manual H&M pilot forbids OCR and external ingestion.
+    # Enforce the worker/preflight values in *rendered Compose*, not merely
+    # the operator's potentially stale .env. This is not a runtime readback.
+    startup = ("preflight", "api", "worker")
+    startup_envs = [
+        services.get(name, {}).get("environment", {})
+        for name in startup
+        if type(services.get(name)) is dict
+    ]
+    if any(type(env) is dict and env.get("APP_ENV") == "pilot"
+           for env in startup_envs):
+        if (
+            len(startup_envs) != len(startup)
+            or any(type(env) is not dict or env.get("APP_ENV") != "pilot"
+                   for env in startup_envs)
+        ):
+            errors.add("manual_pilot_environment_mismatch")
+        for name in ("preflight", "worker"):
+            entry = services.get(name)
+            env = entry.get("environment") if type(entry) is dict else None
+            if type(env) is not dict or env.get("OCR_ENABLED") != "false":
+                errors.add("manual_pilot_ocr_not_disabled")
+
     ai_scope_safe = not errors
     return {
         "schema": SAFE_SCHEMA,
