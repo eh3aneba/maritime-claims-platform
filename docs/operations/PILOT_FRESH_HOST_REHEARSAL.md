@@ -14,7 +14,7 @@ Freeze one **full 40-character Git SHA** from protected `main` and retrieve its 
 
 ## 2. Synthetic-only configuration and non-public network
 
-Use a new environment file in restricted operator storage based on `.env.pilot.example`; replace every `REPLACE_WITH_*` value with private approved test secrets. This is **not** a customer tenant bootstrap. Set `AI_PROVIDER=disabled`, retain ClamAV and local `eng+fas` OCR, allow only a synthetic fixture set, and leave all external evidence integrations/SFTP disabled unless separately authorized and qualified. Review database/storage persistence, rotation, retention/legal holds and off-host recovery custody before admitting data.
+Use a new environment file in restricted operator storage based on `.env.pilot.example`; replace every `REPLACE_WITH_*` value with private approved test secrets. This is **not** a customer tenant bootstrap. For the selected FIRST manual-only H&M sub-scope, set `AI_PROVIDER=disabled`, `OCR_ENABLED=false` (no automatic scanned-page transcription) and retain ClamAV. Only synthetic fixtures and authenticated manual Evidence admission are allowed; live provider/SFTP integrations remain disabled. The stricter pilot preflight rejects AI/model/credential, external integration or OCR enablement on `APP_ENV=pilot`. See [first-scope contract](../pilot/FIRST_MANUAL_HM_PILOT_SCOPE.md). A later OCR/SFTP scope needs a separately reviewed configuration and independent acceptance, not an operator toggle. Review database/storage persistence, rotation, retention/legal holds and off-host recovery custody before admitting data.
 
 From the *exact frozen checkout*, run checks that do not start the stack:
 
