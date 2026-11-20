@@ -2,7 +2,9 @@
 
 ## Current authorization boundary — 31 October 2026
 
-**Pilot v1 with real customer claim evidence: NO-GO.** This protocol permits
+**Pilot v1 with real customer claim evidence: NO-GO.** The first selected
+[manual-only H&M machinery sub-scope](FIRST_MANUAL_HM_PILOT_SCOPE.md) turns
+AI, live remote evidence ingestion and OCR OFF at startup, and permits
 *discovery and usability rehearsal with fictional/synthetic H&M machinery
 claims*, not permission to onboard real case files or claimants. Historical
 engineering CI results are not independent OCR accuracy, local-model, security
