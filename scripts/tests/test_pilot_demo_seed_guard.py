@@ -30,12 +30,62 @@ def fixture() -> dict[str, str]:
     }
 
 
+def first_manual_pilot_fixture() -> dict[str, str]:
+    env = fixture()
+    env.update({
+        "APP_ENV": "pilot",
+        "AI_MODEL": "",
+        "OPENAI_API_KEY": "",
+        "ALLOW_EXTERNAL_AI_RESTRICTED": "false",
+        "AI_LOCAL_EXPERIMENTAL_ENABLED": "false",
+        "AI_PRODUCTION_CONTROL_PLANE_ENABLED": "false",
+        "EXTERNAL_EVIDENCE_LIVE_PROVIDER_ADAPTERS_ENABLED": "false",
+        "EXTERNAL_EVIDENCE_LIVE_SFTP_ADAPTERS_ENABLED": "false",
+        "OCR_ENABLED": "false",
+    })
+    return env
+
+
 class SyntheticDemoSeedGateTests(unittest.TestCase):
     def test_explicit_test_and_pilot_accept_without_proving_host(self):
         sample = fixture()
         self.assertIsNone(guard.check(sample))
-        sample["APP_ENV"] = "pilot"
-        self.assertIsNone(guard.check(sample))
+        self.assertIsNone(guard.check(first_manual_pilot_fixture()))
+
+    def test_first_manual_pilot_blocks_all_unreviewed_capabilities_before_docker(self):
+        for key, value in (
+            ("AI_MODEL", "unreviewed-model"),
+            ("OPENAI_API_KEY", "private-secret-marker"),
+            ("ALLOW_EXTERNAL_AI_RESTRICTED", "true"),
+            ("AI_LOCAL_EXPERIMENTAL_ENABLED", "true"),
+            ("AI_PRODUCTION_CONTROL_PLANE_ENABLED", "true"),
+            ("EXTERNAL_EVIDENCE_LIVE_PROVIDER_ADAPTERS_ENABLED", "true"),
+            ("EXTERNAL_EVIDENCE_LIVE_SFTP_ADAPTERS_ENABLED", "true"),
+            ("OCR_ENABLED", "true"),
+        ):
+            with self.subTest(field=key):
+                sample = first_manual_pilot_fixture()
+                sample[key] = value
+                with self.assertRaises(guard.DemoSeedGuardError) as caught:
+                    guard.check(sample)
+                self.assertNotIn("private-secret-marker", str(caught.exception))
+        for key in (
+            "AI_MODEL", "OPENAI_API_KEY", "ALLOW_EXTERNAL_AI_RESTRICTED",
+            "AI_LOCAL_EXPERIMENTAL_ENABLED",
+            "AI_PRODUCTION_CONTROL_PLANE_ENABLED",
+            "EXTERNAL_EVIDENCE_LIVE_PROVIDER_ADAPTERS_ENABLED",
+            "EXTERNAL_EVIDENCE_LIVE_SFTP_ADAPTERS_ENABLED", "OCR_ENABLED",
+        ):
+            with self.subTest(missing=key):
+                sample = first_manual_pilot_fixture()
+                del sample[key]
+                if key in ("AI_MODEL", "OPENAI_API_KEY"):
+                    # Missing empty-valued flags are treated as absent by the
+                    # original seed helper; the app preflight still requires
+                    # all typed Settings safety fields and Compose checks.
+                    continue
+                with self.assertRaises(guard.DemoSeedGuardError):
+                    guard.check(sample)
 
     def test_missing_or_incorrect_confirmation_fails(self):
         for value in ("", "yes", "TRUE", "NO"):
