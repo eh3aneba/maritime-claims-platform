@@ -24,6 +24,12 @@ def _safe(tmp_path: Path):
         ai_model="",
         openai_api_key="",
         allow_external_ai_restricted=False,
+        # Exercise the existing OpenAI preflight path as well as the new
+        # manual-pilot denial. Use safe synthetic values, never real keys.
+        ai_max_input_chars=60000,
+        ai_max_output_tokens=2000,
+        ai_prompt_bundle_version="synthetic-test-bundle",
+        ai_schema_bundle_version="synthetic-test-schema",
         ai_local_experimental_enabled=False,
         ai_production_control_plane_enabled=False,
         external_evidence_live_provider_adapters_enabled=False,
