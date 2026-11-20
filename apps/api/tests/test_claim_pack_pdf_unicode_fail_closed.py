@@ -41,7 +41,12 @@ def test_authenticated_xlsx_preserves_error_like_vessel_name_as_text() -> None:
     assert downloaded.status_code == 200
     book = load_workbook(BytesIO(downloaded.content), data_only=False)
     try:
-        cell = book["Pack Summary"]["B4"]
+        matches = [
+            row[1] for row in book["Pack Summary"].iter_rows(min_row=2, min_col=1, max_col=2)
+            if row[0].value == "Vessel"
+        ]
+        assert len(matches) == 1
+        cell = matches[0]
         assert cell.value == original
         assert cell.data_type == "s"
     finally:
