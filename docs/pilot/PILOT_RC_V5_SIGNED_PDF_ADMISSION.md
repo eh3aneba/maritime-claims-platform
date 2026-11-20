@@ -31,6 +31,23 @@ The authorized product/security owner must explicitly approve that incoming PDF 
 
 **Until the scoped exclusion is signed and independently checked, the proof remains pending.** Do not treat this guide, a green synthetic CI run or an issue closure as authorization.
 
+## Downstream Claim Pack export disclosure — warning, not verification
+
+The Claim Pack **PDF and XLSX** exports display an explicit notice that SeeClaims
+does **not cryptographically verify incoming source-PDF signatures**, the
+signed revision or signer identity. Text extraction/OCR and SHA-256 hashes do
+not establish PDF-signature authenticity. The notice applies even when the
+underlying claim has no PDF: it describes a **missing verification capability**,
+not a claim that a signature was found, was valid, or was tampered with.
+The same warning is visible in the claim-handler Evidence screen.
+
+This protects downstream human recipients from treating a generated pack as
+signed-original verification. It does **not** enforce a ban on incoming signed
+PDFs, add a cryptographic verifier, decide the allowed pilot scope, replace
+original evidence, or satisfy the independent product/security approval required
+by Issue #894. The unconditional RC v5 disposition remains pending until
+actual independently reviewed evidence is recorded.
+
 ## Separate release gates are never waived
 
 Historical secret disposition [#764](https://github.com/eh3aneba/maritime-claims-platform/issues/764), bilingual original-scan OCR reliability [#810](https://github.com/eh3aneba/maritime-claims-platform/issues/810) when in scope, source discrepancy resolution [#850](https://github.com/eh3aneba/maritime-claims-platform/issues/850), and full chosen-host/recovery/operator acceptance [#653](https://github.com/eh3aneba/maritime-claims-platform/issues/653) remain independent. No application signature validation or trust implementation is introduced by the v5 record gate. No real customer deployment or Pilot GO is implied.
