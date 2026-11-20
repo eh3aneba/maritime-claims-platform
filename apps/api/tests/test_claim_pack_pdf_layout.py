@@ -74,7 +74,9 @@ def test_pdf_and_xlsx_exports_disclose_unchecked_incoming_signatures(kind):
     xlsx_renderer = base.render_xlsx if kind == "base" else render_xlsx
 
     reader = PdfReader(BytesIO(pdf_renderer(snapshot)))
-    pdf_text = "\n".join(page.extract_text() or "" for page in reader.pages)
+    pdf_text = " ".join(
+        " ".join(page.extract_text() or "" for page in reader.pages).split()
+    )
     assert "INCOMING PDF SIGNATURES NOT CHECKED" in pdf_text
     assert "source-PDF signatures" in pdf_text
     assert "OCR and SHA-256 hashes are not signature validation" in pdf_text
