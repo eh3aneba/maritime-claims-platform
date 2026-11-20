@@ -27,6 +27,27 @@ def check(env: dict[str, str]) -> None:
         raise DemoSeedGuardError("demo seed requires enabled malware scanning")
     if env.get("STORAGE_BACKEND") != "local":
         raise DemoSeedGuardError("demo seed requires isolated local evidence storage")
+    # The first PILOT is manual H&M only. Refuse unsafe scopes before ANY
+    # side-effecting Docker build, seed or migration, not just at API preflight.
+    # APP_ENV=test retains the existing broader synthetic CI experiment scope.
+    if env.get("APP_ENV") == "pilot":
+        for flag in (
+            "ALLOW_EXTERNAL_AI_RESTRICTED",
+            "AI_LOCAL_EXPERIMENTAL_ENABLED",
+            "AI_PRODUCTION_CONTROL_PLANE_ENABLED",
+            "EXTERNAL_EVIDENCE_LIVE_PROVIDER_ADAPTERS_ENABLED",
+            "EXTERNAL_EVIDENCE_LIVE_SFTP_ADAPTERS_ENABLED",
+        ):
+            if env.get(flag) != "false":
+                raise DemoSeedGuardError("manual H&M pilot requires disabled AI and live integration flags")
+        if (
+            "AI_MODEL" not in env or "OPENAI_API_KEY" not in env
+            or env["AI_MODEL"] != "" or env["OPENAI_API_KEY"] != ""
+        ):
+            raise DemoSeedGuardError("manual H&M pilot forbids configured AI model or key")
+        if env.get("OCR_ENABLED") != "false":
+            raise DemoSeedGuardError("manual H&M pilot requires OCR_ENABLED=false")
+
     try:
         database = urlsplit(env.get("DATABASE_URL", ""))
         expected_db = env.get("POSTGRES_DB", "")

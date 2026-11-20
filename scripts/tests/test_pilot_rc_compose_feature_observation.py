@@ -75,6 +75,33 @@ class PilotRCComposeFeatureObservationTests(unittest.TestCase):
             self.assertIs(result[key], False)
         self.assertNotIn("private-secret", json.dumps(result))
 
+    def test_first_manual_pilot_requires_consistent_startup_scope_and_ocr_off(self):
+        configuration = safe_compose()
+        for service in ("api", "worker", "preflight"):
+            configuration["services"][service]["environment"]["APP_ENV"] = "pilot"
+        configuration["services"]["preflight"]["environment"]["OCR_ENABLED"] = "false"
+        configuration["services"]["worker"]["environment"]["OCR_ENABLED"] = "false"
+        clean = inspect_config(configuration, release_sha=SHA)
+        self.assertTrue(clean["compose_ai_and_adapter_config_safe"])
+        self.assertFalse(clean["persian_critical_extraction_disabled_attested"])
+
+        for service, flag, value, expected in (
+            ("worker", "OCR_ENABLED", "true", "manual_pilot_ocr_not_disabled"),
+            ("preflight", "OCR_ENABLED", "true", "manual_pilot_ocr_not_disabled"),
+            ("api", "APP_ENV", "test", "manual_pilot_environment_mismatch"),
+        ):
+            with self.subTest(service=service, flag=flag):
+                case = safe_compose()
+                for name in ("api", "worker", "preflight"):
+                    case["services"][name]["environment"]["APP_ENV"] = "pilot"
+                case["services"]["preflight"]["environment"]["OCR_ENABLED"] = "false"
+                case["services"]["worker"]["environment"]["OCR_ENABLED"] = "false"
+                case["services"][service]["environment"][flag] = value
+                got = inspect_config(case, release_sha=SHA)
+                self.assertFalse(got["compose_ai_and_adapter_config_safe"])
+                self.assertIn(expected, got["check_failures"])
+                self.assertFalse(got["pilot_accepted"])
+
     def test_local_and_external_ai_paths_fail_closed(self):
         for name, key, value in (
             ("api", "AI_PROVIDER", "openai"),
