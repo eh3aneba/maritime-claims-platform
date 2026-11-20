@@ -2,7 +2,7 @@
 
 Tracking: [Pilot operations #653](https://github.com/eh3aneba/maritime-claims-platform/issues/653), [Pilot scope #647](https://github.com/eh3aneba/maritime-claims-platform/issues/647). Dependencies: [Protect main #461](https://github.com/eh3aneba/maritime-claims-platform/issues/461), [real SFTP #652](https://github.com/eh3aneba/maritime-claims-platform/issues/652).
 
-**Status: operator procedure only. No actual tenant has been enrolled or removed by this document.** A green CI or completed worksheet is not permission to ingest customer claims. Keep the Pilot NO-GO until the independent #653 release criteria are met and an accountable release owner approves one bounded environment and data class.
+**Status: operator procedure only. No actual tenant has been enrolled or removed by this document.** The [selected first manual-only synthetic H&M sub-scope](../pilot/FIRST_MANUAL_HM_PILOT_SCOPE.md) additionally disables AI, live ingestion and all OCR; this checklist does not grant permission to enable them. A green CI or completed worksheet is not permission to ingest customer claims. Keep the Pilot NO-GO until the independent #653 release criteria are met and an accountable release owner approves one bounded environment and data class.
 
 ## 0. Authority, scope and safety
 
