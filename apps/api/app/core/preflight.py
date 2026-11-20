@@ -11,6 +11,7 @@ from sqlalchemy import text
 
 from app.core.config import get_settings
 from app.core.deployment_policy import DEFAULT_SECRET, validate_production_deployment
+from app.core.first_manual_hm_pilot import first_manual_hm_pilot_errors
 from app.db.session import create_session
 from app.modules.documents.malware import MalwareScannerError, ping_clamd
 from app.modules.documents.object_storage import (
@@ -101,6 +102,12 @@ def run_preflight(*, require_db: bool = True) -> tuple[list[str], list[str]]:
             insecure = [origin for origin in settings.cors_origins if not origin.startswith("https://")]
             if insecure:
                 _fail(errors, "Staging/production CORS origins must use HTTPS")
+
+    # Bound first H&M machinery pilot: no AI inference, external ingestion or
+    # machine OCR of unverified Persian negation. Checked before starting the
+    # Compose stack. This is not independent real-host or customer approval.
+    if env == "pilot":
+        errors.extend(first_manual_hm_pilot_errors(settings))
 
     if settings.ai_provider.lower() != "disabled":
         if not settings.ai_model.strip():
