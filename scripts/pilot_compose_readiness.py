@@ -16,6 +16,9 @@ import re
 import subprocess
 import sys
 
+ROOT = Path(__file__).resolve().parents[1]
+COMPOSE = ROOT / "docker-compose.yml"
+
 SHA = re.compile(r"[a-f0-9]{40}\Z")
 HEALTHY = frozenset(("db", "clamav", "api", "web"))
 RUNNING = frozenset((
@@ -134,12 +137,24 @@ def evaluate(items: list[dict], *, release_sha: str) -> dict:
 
 
 def observe(*, env_file: str, timeout: int = 20) -> list[dict]:
+    # Anchor the runtime snapshot to the same tracked Compose project used
+    # by rendered-config review. A different current working directory must
+    # never cause the read-only observer to inspect an unrelated stack.
+    # Resolve the caller-supplied env path before Docker changes its project
+    # context; do not log this private path, environment, or Docker output.
     try:
+        private_env = Path(env_file).resolve()
         result = subprocess.run(
-            ["docker", "compose", "--env-file", env_file, "ps", "--all", "--format", "json"],
+            [
+                "docker", "compose",
+                "--project-directory", str(ROOT),
+                "--env-file", str(private_env),
+                "-f", str(COMPOSE),
+                "ps", "--all", "--format", "json",
+            ],
             capture_output=True, text=True, timeout=timeout, check=False,
         )
-    except (OSError, subprocess.TimeoutExpired):
+    except (OSError, subprocess.TimeoutExpired, ValueError):
         raise ReadinessError("Docker Compose status observation unavailable") from None
     if result.returncode != 0:
         # Raw Docker output may contain sensitive configuration, never include.
