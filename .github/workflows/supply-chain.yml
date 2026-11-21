@@ -207,6 +207,7 @@ jobs:
         with:
           image: maritime-claims-api:ci
           config: .grype.yaml
+          grype-version: v0.122.1
           fail-build: true
           severity-cutoff: high
           output-format: table
@@ -220,6 +221,7 @@ jobs:
         with:
           image: maritime-claims-web:ci
           config: .grype.yaml
+          grype-version: v0.122.1
           fail-build: true
           severity-cutoff: high
           output-format: table
@@ -233,6 +235,7 @@ jobs:
         with:
           image: maritime-claims-worker:ci
           config: .grype.yaml
+          grype-version: v0.122.1
           fail-build: true
           severity-cutoff: high
           output-format: table
