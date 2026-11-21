@@ -161,6 +161,26 @@ class RunningAIReadbackTests(unittest.TestCase):
                 self.assertIn("manual_hm_runtime_environment_mismatch",
                               missing["check_failures"])
 
+    def test_side_worker_alone_in_pilot_mode_activates_strict_readback(self):
+        # A test/development core must not cause an already-pilot side worker
+        # to be silently treated as an unrestricted AI-only stack.
+        for name in probe.PILOT_APP_ENV_SERVICES - {
+            "api", "preflight", "worker",
+        }:
+            with self.subTest(service=name):
+                candidate = safe_envs()
+                candidate[name].append("APP_ENV=pilot")
+                result = probe.summarize(
+                    before=compose_items(), after=compose_items(),
+                    environment_by_service=candidate, release_sha=SHA,
+                )
+                self.assertTrue(result["manual_hm_runtime_scope_checked"])
+                self.assertFalse(result["manual_hm_runtime_scope_safe_observed"])
+                self.assertIn("manual_hm_runtime_environment_mismatch",
+                              result["check_failures"])
+                self.assertFalse(result["pilot_accepted"])
+                self.assertNotIn("secret", json.dumps(result))
+
     def test_manual_pilot_auto_detects_partial_startup_drift_and_missing_flags(self):
         for service, removed, failure in (
             ("preflight", "OCR_ENABLED=false", "manual_hm_runtime_ocr_not_disabled"),
@@ -179,9 +199,9 @@ class RunningAIReadbackTests(unittest.TestCase):
                 self.assertFalse(result["manual_hm_runtime_scope_safe_observed"])
                 self.assertIn(failure, result["check_failures"])
 
-    def test_strict_manual_mode_rejects_all_core_app_env_drift(self):
+    def test_strict_manual_mode_rejects_all_app_env_drift(self):
         env = manual_hm_envs()
-        for name in ("api", "preflight", "worker"):
+        for name in probe.PILOT_APP_ENV_SERVICES:
             env[name] = [
                 "APP_ENV=test" if x == "APP_ENV=pilot" else x
                 for x in env[name]
