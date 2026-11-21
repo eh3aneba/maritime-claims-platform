@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import io
 from pathlib import Path
+import re
 import sys
 import tempfile
 import unittest
@@ -144,6 +145,40 @@ class SafeDemoEnvImportTests(unittest.TestCase):
             with self.subTest(bad=bad.split("=")[0]):
                 with self.assertRaises(loader.SyntheticEnvError):
                     loader.parse_env(valid_lines() + bad + "\n")
+
+    def test_allowlist_matches_documented_template_and_compose_contract(self):
+        root = Path(__file__).resolve().parents[2]
+        template = (root / ".env.pilot.example").read_text(encoding="utf-8")
+        compose = (root / "docker-compose.yml").read_text(encoding="utf-8")
+        expected = set(re.findall(r"^([A-Z][A-Z0-9_]*)=", template, re.M))
+        expected.update(re.findall(r"\$\{([A-Z][A-Z0-9_]*)", compose))
+        expected.add("MCRI_SYNTHETIC_ONLY_CONFIRM")
+        self.assertEqual(loader.ALLOWED_KEYS, expected)
+
+    def test_shell_control_and_unreviewed_keys_rejected_before_export(self):
+        for key in (
+            "MCRI_PRIVATE_TMP", "ENV_FILE", "BASH_XTRACEFD", "SHELLOPTS",
+            "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY",
+            "SSL_CERT_FILE", "SSL_CERT_DIR", "CURL_CA_BUNDLE",
+            "GITHUB_ENV", "GITHUB_PATH", "UNREVIEWED_FEATURE",
+        ):
+            with self.subTest(key=key), tempfile.TemporaryDirectory() as directory:
+                source = Path(directory) / "source.env"
+                frozen = Path(directory) / "frozen.env"
+                source.write_text(valid_lines() + key + "=private-marker\n")
+                out = io.BytesIO()
+                writer = io.TextIOWrapper(out, encoding="utf-8")
+                errors = io.StringIO()
+                with patch.object(loader.sys, "stdout", writer), patch.object(
+                    loader.sys, "stderr", errors
+                ):
+                    self.assertEqual(
+                        loader.main([str(source), "--snapshot", str(frozen)]), 2
+                    )
+                writer.flush()
+                self.assertEqual(out.getvalue(), b"")
+                self.assertFalse(frozen.exists())
+                self.assertNotIn("private-marker", errors.getvalue())
 
     def test_validation_is_from_file_not_ambient_environment(self):
         with tempfile.TemporaryDirectory() as directory:
