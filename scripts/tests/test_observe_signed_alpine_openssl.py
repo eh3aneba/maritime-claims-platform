@@ -95,7 +95,8 @@ class SignedOpenSSLObservationTests(unittest.TestCase):
 
     def test_fetch_and_signature_verify_never_install_or_bypass_trust(self):
         self.assertIn(probe.REPOSITORY, probe.SHELL)
-        self.assertIn("apk --no-cache --repositories-file /tmp/repos fetch", probe.SHELL)
+        self.assertIn('wget -T 30 -O "$file" "$repo/$OBSERVE_ARCH/$file"', probe.SHELL)
+        self.assertNotIn("--no-check-certificate", probe.SHELL)
         self.assertIn("apk verify", probe.SHELL)
         self.assertIn("sha256sum", probe.SHELL)
         for forbidden in (
