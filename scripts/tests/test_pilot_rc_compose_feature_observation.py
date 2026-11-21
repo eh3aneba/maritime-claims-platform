@@ -130,6 +130,19 @@ class PilotRCComposeFeatureObservationTests(unittest.TestCase):
                     self.assertFalse(record["pilot_accepted"])
                     self.assertNotIn("private-secret", json.dumps(record))
 
+    def test_isolated_database_worker_pilot_setting_activates_strict_scope(self):
+        # With only one side worker switched to pilot, the observer must not
+        # treat the remaining test/development app services as a safe pilot.
+        for name in PILOT_APP_ENV_SERVICES | {"demo-seed"}:
+            with self.subTest(service=name):
+                candidate = safe_compose()
+                candidate["services"][name]["environment"]["APP_ENV"] = "pilot"
+                record = inspect_config(candidate, release_sha=SHA)
+                self.assertFalse(record["compose_ai_and_adapter_config_safe"])
+                self.assertIn("manual_pilot_environment_mismatch",
+                              record["check_failures"])
+                self.assertFalse(record["pilot_accepted"])
+
     def test_local_and_external_ai_paths_fail_closed(self):
         for name, key, value in (
             ("api", "AI_PROVIDER", "openai"),
