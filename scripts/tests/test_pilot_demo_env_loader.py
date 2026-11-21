@@ -2,8 +2,12 @@
 from __future__ import annotations
 
 import io
+import os
 from pathlib import Path
 import re
+import shlex
+import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -179,6 +183,59 @@ class SafeDemoEnvImportTests(unittest.TestCase):
                 self.assertEqual(out.getvalue(), b"")
                 self.assertFalse(frozen.exists())
                 self.assertNotIn("private-marker", errors.getvalue())
+
+    @unittest.skipUnless(os.name == "posix" and shutil.which("bash"), "Bash operator path")
+    def test_preflight_checks_whole_engine_for_pilot_before_any_start(self):
+        root = Path(__file__).resolve().parents[2]
+        # Stubs run only in this private temp directory, never connect to
+        # Docker. The Python loader and seed guard are the real implementations.
+        for mode in ("test", "pilot"):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as directory:
+                d = Path(directory)
+                source = d / "operator.env"
+                source.write_text(valid_lines().replace("APP_ENV=test", "APP_ENV=" + mode))
+                log = d / "calls"
+                fake_python = d / "python"
+                fake_docker = d / "docker"
+                fake_python.write_text(
+                    "#!/bin/sh\n"
+                    "case \"$1\" in\n"
+                    "  scripts/pilot_demo_env_loader.py|scripts/pilot_demo_seed_guard.py)\n"
+                    "    exec " + shlex.quote(sys.executable) + " \"$@\" ;;\n"
+                    "  scripts/pilot_demo_docker_target.py|scripts/pilot_compose_port_policy.py)\n"
+                    "    exit 0 ;;\n"
+                    "  scripts/pilot_demo_empty_stack.py)\n"
+                    "    printf '%s\\n' \"$@\" > " + shlex.quote(str(log)) + "\n"
+                    "    exit 87 ;;\n"
+                    "esac\nexit 91\n"
+                )
+                fake_docker.write_text(
+                    "#!/bin/sh\n"
+                    "case \"$*\" in\n"
+                    "  'compose version'|*'config') exit 0 ;;\n"
+                    "  *) exit 92 ;;\n"
+                    "esac\n"
+                )
+                fake_python.chmod(0o700)
+                fake_docker.chmod(0o700)
+                env = {"PATH": str(d) + os.pathsep + os.defpath,
+                       "HOME": str(d), "TMPDIR": str(d)}
+                proc = subprocess.run(
+                    [shutil.which("bash"), str(root / "scripts/design_partner_preflight.sh"),
+                     str(source)],
+                    cwd=root, env=env, capture_output=True, text=True,
+                    check=False, timeout=20,
+                )
+                # Our empty-host stub refuses immediately: no build, seed,
+                # health request or execution against any actual Engine.
+                self.assertEqual(proc.returncode, 87, msg=proc.stderr)
+                args = log.read_text().splitlines()
+                self.assertEqual(args[0:2], ["scripts/pilot_demo_empty_stack.py", "--env-file"])
+                snapshot = Path(args[2])
+                self.assertEqual(snapshot.name, "frozen.env")
+                self.assertEqual(snapshot.parent.parent, d)
+                self.assertFalse(snapshot.exists())
+                self.assertEqual(args[3:], ["--strict-empty-docker-host"] if mode == "pilot" else [])
 
     def test_validation_is_from_file_not_ambient_environment(self):
         with tempfile.TemporaryDirectory() as directory:
