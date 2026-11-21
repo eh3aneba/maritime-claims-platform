@@ -174,12 +174,15 @@ def summarize(*, before: list[dict], after: list[dict],
         raise RuntimeScopeError("container_ids_changed_during_readback")
     if type(environment_by_service) is not dict or set(environment_by_service) != set(before_ids):
         raise RuntimeScopeError("incomplete_runtime_environment_census")
-    # Auto-detect a real pilot on any core service; explicit opt-in additionally
-    # fails closed if *all* core APP_ENV values have silently drifted away.
+    # Auto-detect a partial first-pilot rollout on ANY DB-connected app
+    # service (plus optional demo seed). A scheduler/observer in pilot mode
+    # must not pass an AI-only generic observation just because the API,
+    # document worker and preflight all drifted to test/production.
+    # Explicit --require-manual-hm-pilot also fails closed when all drift.
     manual_hm_pilot = require_manual_hm_pilot or any(
         type(environment_by_service.get(name)) is list
         and "APP_ENV=pilot" in environment_by_service[name]
-        for name in AI_SERVICES
+        for name in PILOT_APP_ENV_SERVICES | {"demo-seed"}
     )
     faults = set()
     for service, entries in environment_by_service.items():
