@@ -3,6 +3,7 @@ from pathlib import Path
 import contextlib
 import io
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -90,8 +91,11 @@ class PilotComposeReadinessTests(unittest.TestCase):
         with patch.object(probe.subprocess, "run", return_value=returned) as run:
             self.assertEqual(probe.observe(env_file=".env"), good)
         self.assertEqual(run.call_args.args[0], [
-            "docker", "compose", "--env-file", ".env", "ps", "--all",
-            "--format", "json",
+            "docker", "compose",
+            "--project-directory", str(probe.ROOT),
+            "--env-file", str(Path(".env").resolve()),
+            "-f", str(probe.COMPOSE),
+            "ps", "--all", "--format", "json",
         ])
         with patch.object(probe.subprocess, "run", return_value=subprocess.CompletedProcess(
             args=[], returncode=1, stdout="", stderr="password: leaked-synthetic")
@@ -99,6 +103,38 @@ class PilotComposeReadinessTests(unittest.TestCase):
             with self.assertRaises(probe.ReadinessError) as ctx:
                 probe.observe(env_file=".env")
             self.assertNotIn("leaked-synthetic", str(ctx.exception))
+
+    def test_observe_binds_project_when_invoked_from_unrelated_directory(self):
+        """A private operator cwd must not redirect our running-container census."""
+        good = good_containers()
+        returned = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout=json.dumps(good),
+            stderr="some-private-credential")
+        with tempfile.TemporaryDirectory() as directory:
+            original = Path.cwd()
+            try:
+                os.chdir(directory)
+                # An unrelated cwd can contain a deceptive compose.yaml.
+                Path("compose.yaml").write_text(
+                    "services:\\n  malicious:\\n    image: busybox\\n",
+                    encoding="utf-8",
+                )
+                Path(".env").write_text("PRIVATE_FAKE_KEY=not-for-log\\n", encoding="utf-8")
+                with patch.object(probe.subprocess, "run", return_value=returned) as run:
+                    self.assertEqual(probe.observe(env_file=".env"), good)
+                argv = run.call_args.args[0]
+                self.assertEqual(argv[:4], [
+                    "docker", "compose", "--project-directory", str(probe.ROOT),
+                ])
+                self.assertEqual(argv[4:8], [
+                    "--env-file", str(Path(directory) / ".env"),
+                    "-f", str(probe.COMPOSE),
+                ])
+                self.assertEqual(argv[-4:], ["ps", "--all", "--format", "json"])
+                self.assertNotIn(str(Path(directory) / "compose.yaml"), argv)
+                self.assertNotIn("not-for-log", repr(argv))
+            finally:
+                os.chdir(original)
 
     def test_new_output_is_exclusive_and_incomplete_is_no_go(self):
         with tempfile.TemporaryDirectory() as d:
