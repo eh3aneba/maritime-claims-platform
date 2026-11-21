@@ -25,21 +25,28 @@ HASH_LINE = re.compile(r"([a-f0-9]{64})  (libcrypto3|libssl3)-3\.5\.9-r1\.apk\Z"
 # no package installation, no --allow-untrusted or certificate exceptions.
 SHELL = r"""
 set -eu
+printf '%s\n' 'OBS_STAGE:architecture' >&2
 test "$(uname -m)" = "$OBSERVE_ARCH"
 test "$(apk --print-arch)" = "$OBSERVE_ARCH"
+printf '%s\n' 'OBS_STAGE:trust-keys' >&2
 test -d /etc/apk/keys
 test "$(find /etc/apk/keys -type f | wc -l)" -gt 0
+printf '%s\n' 'OBS_STAGE:scratch' >&2
 mkdir /tmp/packages
 printf '%s\n' 'https://dl-cdn.alpinelinux.org/alpine/v3.24/main' > /tmp/repos
+printf '%s\n' 'OBS_STAGE:fetch' >&2
 apk --no-cache --repositories-file /tmp/repos fetch --output /tmp/packages \
     'libcrypto3=3.5.9-r1' 'libssl3=3.5.9-r1' >&2
+printf '%s\n' 'OBS_STAGE:package-files' >&2
 cd /tmp/packages
 test "$(find . -type f | wc -l)" -eq 2
 for file in libcrypto3-3.5.9-r1.apk libssl3-3.5.9-r1.apk; do
     test -f "$file"
     test ! -L "$file"
     test -s "$file"
+    printf '%s\n' 'OBS_STAGE:signature-verify' >&2
     apk verify "$file" >&2
+    printf '%s\n' 'OBS_STAGE:package-hash' >&2
     sha256sum "$file"
 done
 """
@@ -57,7 +64,26 @@ def run(args: list[str], timeout: int, *, check_diagnostics: bool = False) -> st
     except (OSError, subprocess.TimeoutExpired, UnicodeError):
         raise ObservationError("bounded_docker_command_unavailable") from None
     if result.returncode != 0:
-        raise ObservationError("docker_or_apk_rejected")
+        # Emit only a fixed stage and a code-owned diagnostic category.
+        # The Alpine container has no mounts or private application state,
+        # but raw subprocess output intentionally remains unprinted.
+        stages = re.findall(
+            r"(?m)^OBS_STAGE:(architecture|trust-keys|scratch|fetch|package-files|signature-verify|package-hash)$",
+            result.stderr[:64_000],
+        )
+        category = "command_rejected"
+        if re.search(r"(?i)untrusted|bad signature|invalid signature", result.stderr):
+            category = "signature_rejected"
+        elif re.search(r"(?i)no such package|unable to select packages|not found", result.stderr):
+            category = "requested_package_unavailable"
+        elif re.search(r"(?i)read.only file system|permission denied", result.stderr):
+            category = "filesystem_rejected"
+        elif re.search(r"(?i)network|temporary error|connection|certificate", result.stderr):
+            category = "network_or_tls_rejected"
+        elif re.search(r"(?i)unrecognized option|unknown option|usage:", result.stderr):
+            category = "command_option_rejected"
+        stage = stages[-1] if stages else "docker-before-container"
+        raise ObservationError("docker_or_apk_rejected:" + stage + ":" + category)
     if len(result.stdout) > 16_384 or len(result.stderr) > 64_000:
         raise ObservationError("oversized_observation_output")
     if check_diagnostics and re.search(
