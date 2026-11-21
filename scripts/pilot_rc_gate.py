@@ -127,8 +127,15 @@ def _timestamp(value: str) -> bool:
     )
 
 
-def validate(record: object, expected_sha: str) -> list[str]:
+def validate(record: object, expected_sha: str, *,
+             require_first_manual_hm: bool = False) -> list[str]:
+    """Check evidence record shape; optionally enforce FIRST manual H&M scope.
+
+    This never verifies underlying attestations or grants release approval.
+    """
     errors: list[str] = []
+    if type(require_first_manual_hm) is not bool:
+        return ["first_manual_hm: boolean scope requirement expected"]
     if not isinstance(record, dict):
         return ["record: JSON object required"]
     expected_keys = {
@@ -162,6 +169,15 @@ def validate(record: object, expected_sha: str) -> list[str]:
             errors.append(f"features.{key}: explicitly enabled or disabled required")
         else:
             selected_modes[key] = mode
+    # The general RC v5 supports later, separately authorized integrations.
+    # The owner's FIRST manual H&M machinery rehearsal does not: no AI,
+    # SFTP ingestion or Persian-critical automated extraction is admitted.
+    # Require an explicit CLI scope selection rather than silently changing
+    # semantics for existing future-pilot RC records.
+    if require_first_manual_hm:
+        for key in FEATURE_MODES:
+            if selected_modes.get(key) != "disabled":
+                errors.append(f"features.{key}: must be disabled for first manual H&M pilot")
 
     images = record.get("images")
     if not isinstance(images, dict) or set(images) != set(IMAGES):
@@ -212,6 +228,11 @@ def main(argv: list[str] | None = None) -> int:
     check = subs.add_parser("check", help="Fail unless *all* evidence fields are complete")
     check.add_argument("record", type=Path)
     check.add_argument("--expected-sha", required=True, help="Externally established exact release SHA")
+    check.add_argument(
+        "--require-first-manual-hm", action="store_true",
+        help="Reject release candidates with SFTP, AI or Persian-critical extraction "
+             "enabled; required for the first manual MT ORION rehearsal",
+    )
     args = parser.parse_args(argv)
     if args.command == "init":
         if args.release_sha:
@@ -283,7 +304,8 @@ def main(argv: list[str] | None = None) -> int:
     except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
         print(f"NO-GO: cannot read JSON record ({type(exc).__name__})", file=sys.stderr)
         return 1
-    issues = validate(data, args.expected_sha)
+    issues = validate(data, args.expected_sha,
+                      require_first_manual_hm=args.require_first_manual_hm)
     if issues:
         for issue in issues:
             print(f"NO-GO: {issue}", file=sys.stderr)

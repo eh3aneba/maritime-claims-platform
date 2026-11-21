@@ -76,6 +76,97 @@ class PilotRCGateTests(unittest.TestCase):
     def test_complete_record_is_structurally_valid_only(self):
         self.assertEqual([], validate(complete_record(), SHA))
 
+    def test_first_manual_hm_only_accepts_all_three_features_disabled(self):
+        record = complete_record()
+        # The general v5 gate permits later, separately approved feature-enabled
+        # pilots; the FIRST manual MT ORION rehearsal never permits them.
+        self.assertEqual([], validate(record, SHA))
+        self.assertEqual(
+            3,
+            len([issue for issue in validate(
+                record, SHA, require_first_manual_hm=True,
+            ) if "must be disabled for first manual H&M pilot" in issue]),
+        )
+        conditional = {
+            "sftp_ingestion": "real_sftp_governed_lifecycle",
+            "ai_inference": "local_ai_independent_acceptance",
+            "persian_critical_extraction": "persian_critical_ocr_acceptance",
+        }
+        for feature, proof in conditional.items():
+            record["features"][feature] = "disabled"
+            record["proofs"][proof]["result"] = "not_applicable"
+            record["proofs"][proof]["evidence_ref"] = (
+                "synthetic-observed-off-" + feature
+            )
+        self.assertEqual([], validate(record, SHA, require_first_manual_hm=True))
+        self.assertEqual("pass", record["proofs"]["actual_feature_flag_enforcement"]["result"])
+        # A generic pass still never means actual independent proof or Pilot GO.
+        self.assertEqual([], validate(record, SHA))
+        for feature, proof in conditional.items():
+            with self.subTest(feature=feature):
+                record["features"][feature] = "enabled"
+                record["proofs"][proof]["result"] = "pass"
+                self.assertEqual([], validate(record, SHA))
+                issues = validate(record, SHA, require_first_manual_hm=True)
+                self.assertTrue(any(
+                    f"features.{feature}: must be disabled for first manual H&M pilot"
+                    in issue for issue in issues
+                ))
+                record["features"][feature] = "disabled"
+                record["proofs"][proof]["result"] = "not_applicable"
+        self.assertEqual([], validate(record, SHA, require_first_manual_hm=True))
+
+    def test_first_manual_hm_scope_flag_type_and_missing_modes_fail_closed(self):
+        record = complete_record()
+        for value in ("true", 1, None, [], {}):
+            with self.subTest(value=value):
+                issues = validate(record, SHA, require_first_manual_hm=value)
+                self.assertTrue(any("first_manual_hm:" in issue for issue in issues))
+        for invalid in ("pending", "", None):
+            with self.subTest(mode=invalid):
+                record["features"]["ai_inference"] = invalid
+                issues = validate(record, SHA, require_first_manual_hm=True)
+                self.assertTrue(any("features.ai_inference" in issue for issue in issues))
+        record["features"].pop("persian_critical_extraction")
+        self.assertTrue(validate(record, SHA, require_first_manual_hm=True))
+
+    def test_first_manual_hm_cli_rejects_enabled_ai_sftp_or_extraction(self):
+        conditional = {
+            "sftp_ingestion": "real_sftp_governed_lifecycle",
+            "ai_inference": "local_ai_independent_acceptance",
+            "persian_critical_extraction": "persian_critical_ocr_acceptance",
+        }
+        record = complete_record()
+        for feature, proof in conditional.items():
+            record["features"][feature] = "disabled"
+            record["proofs"][proof]["result"] = "not_applicable"
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "synthetic-private-first-manual-hm.json"
+            path.write_text(json.dumps(record), encoding="utf-8")
+            path.chmod(0o600)
+            args = ["check", str(path), "--expected-sha", SHA,
+                    "--require-first-manual-hm"]
+            with redirect_stdout(StringIO()) as ok, redirect_stderr(StringIO()) as error:
+                self.assertEqual(main(args), 0)
+            self.assertIn("RECORD COMPLETE", ok.getvalue())
+            self.assertIn("NOT pilot authorization", ok.getvalue())
+            self.assertEqual("", error.getvalue())
+            for feature, proof in conditional.items():
+                with self.subTest(feature=feature):
+                    altered = json.loads(json.dumps(record))
+                    altered["features"][feature] = "enabled"
+                    altered["proofs"][proof]["result"] = "pass"
+                    path.write_text(json.dumps(altered), encoding="utf-8")
+                    with redirect_stdout(StringIO()) as output, redirect_stderr(StringIO()) as err:
+                        self.assertEqual(main(args), 1)
+                    self.assertEqual("", output.getvalue())
+                    self.assertIn(f"features.{feature}", err.getvalue())
+                    self.assertNotIn("synthetic-private-first", err.getvalue())
+            # Flag is deliberately scoped to the first manual pilot: keep
+            # the general v5 gate compatible with future authorized studies.
+            with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
+                self.assertEqual(main(args[:-1]), 0)
+
     def test_sftp_disabled_requires_explicit_checked_disablement_record(self):
         record = complete_record()
         record["features"]["sftp_ingestion"] = "disabled"
