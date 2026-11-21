@@ -44,6 +44,25 @@ def safe_envs():
     return out
 
 
+def manual_hm_envs():
+    """Synthetic effective environment of the first manual H&M pilot."""
+    env = safe_envs()
+    for name in ("api", "preflight", "worker"):
+        env[name].append("APP_ENV=pilot")
+    env["worker"] = [
+        "OCR_ENABLED=false" if x == "OCR_ENABLED=true" else x
+        for x in env["worker"]
+    ]
+    env["preflight"].append("OCR_ENABLED=false")
+    env["preflight"] += [
+        "AI_LOCAL_EXPERIMENTAL_ENABLED=false",
+        "AI_PRODUCTION_CONTROL_PLANE_ENABLED=false",
+        "EXTERNAL_EVIDENCE_LIVE_PROVIDER_ADAPTERS_ENABLED=false",
+        "EXTERNAL_EVIDENCE_LIVE_SFTP_ADAPTERS_ENABLED=false",
+    ]
+    return env
+
+
 class RunningAIReadbackTests(unittest.TestCase):
     def test_safe_runtime_readback_is_bounded_and_never_pilot_authorization(self):
         a = compose_items()
@@ -67,6 +86,144 @@ class RunningAIReadbackTests(unittest.TestCase):
             self.assertIs(result[key], False)
         self.assertNotIn("secret", json.dumps(result))
         self.assertNotIn("postgres://", json.dumps(result))
+
+    def test_manual_hm_pilot_runtime_scope_requires_actual_ocr_off(self):
+        env = manual_hm_envs()
+        ok = probe.summarize(
+            before=compose_items(), after=compose_items(),
+            environment_by_service=env, release_sha=SHA,
+            require_manual_hm_pilot=True,
+        )
+        self.assertTrue(ok["manual_hm_runtime_scope_checked"])
+        self.assertTrue(ok["manual_hm_runtime_scope_safe_observed"])
+        self.assertTrue(ok["runtime_ai_config_disabled_observed"])
+        self.assertFalse(ok["pilot_accepted"])
+        self.assertNotIn("secret", json.dumps(ok))
+
+        for service, before, after, failure in (
+            ("worker", "OCR_ENABLED=false", "OCR_ENABLED=true",
+             "manual_hm_runtime_ocr_not_disabled"),
+            ("preflight", "OCR_ENABLED=false", "OCR_ENABLED=true",
+             "manual_hm_runtime_ocr_not_disabled"),
+            ("worker", "APP_ENV=pilot", "APP_ENV=test",
+             "manual_hm_runtime_environment_mismatch"),
+            ("api", "APP_ENV=pilot", "APP_ENV=test",
+             "manual_hm_runtime_environment_mismatch"),
+            ("preflight", "EXTERNAL_EVIDENCE_LIVE_SFTP_ADAPTERS_ENABLED=false",
+             "EXTERNAL_EVIDENCE_LIVE_SFTP_ADAPTERS_ENABLED=true",
+             "runtime_external_or_ai_adapter_enabled"),
+        ):
+            with self.subTest(service=service, before=before):
+                changed = manual_hm_envs()
+                changed[service] = [
+                    after if entry == before else entry
+                    for entry in changed[service]
+                ]
+                result = probe.summarize(
+                    before=compose_items(), after=compose_items(),
+                    environment_by_service=changed, release_sha=SHA,
+                    require_manual_hm_pilot=True,
+                )
+                self.assertFalse(result["manual_hm_runtime_scope_safe_observed"])
+                self.assertFalse(result["runtime_ai_config_disabled_observed"])
+                self.assertIn(failure, result["check_failures"])
+                self.assertNotIn("postgres://", json.dumps(result))
+
+    def test_manual_pilot_auto_detects_partial_startup_drift_and_missing_flags(self):
+        for service, removed, failure in (
+            ("preflight", "OCR_ENABLED=false", "manual_hm_runtime_ocr_not_disabled"),
+            ("preflight", "AI_LOCAL_EXPERIMENTAL_ENABLED=false",
+             "manual_hm_runtime_preflight_controls_incomplete"),
+            ("preflight", "APP_ENV=pilot", "manual_hm_runtime_environment_mismatch"),
+        ):
+            with self.subTest(service=service, removed=removed):
+                env = manual_hm_envs()
+                env[service].remove(removed)
+                result = probe.summarize(
+                    before=compose_items(), after=compose_items(),
+                    environment_by_service=env, release_sha=SHA,
+                )
+                self.assertTrue(result["manual_hm_runtime_scope_checked"])
+                self.assertFalse(result["manual_hm_runtime_scope_safe_observed"])
+                self.assertIn(failure, result["check_failures"])
+
+    def test_strict_manual_mode_rejects_all_core_app_env_drift(self):
+        env = manual_hm_envs()
+        for name in ("api", "preflight", "worker"):
+            env[name] = [
+                "APP_ENV=test" if x == "APP_ENV=pilot" else x
+                for x in env[name]
+            ]
+        unrestricted = probe.summarize(
+            before=compose_items(), after=compose_items(),
+            environment_by_service=env, release_sha=SHA,
+        )
+        self.assertFalse(unrestricted["manual_hm_runtime_scope_checked"])
+        self.assertFalse(unrestricted["manual_hm_runtime_scope_safe_observed"])
+        required = probe.summarize(
+            before=compose_items(), after=compose_items(),
+            environment_by_service=env, release_sha=SHA,
+            require_manual_hm_pilot=True,
+        )
+        self.assertFalse(required["manual_hm_runtime_scope_safe_observed"])
+        self.assertIn("manual_hm_runtime_environment_mismatch",
+                      required["check_failures"])
+        with self.assertRaises(probe.RuntimeScopeError):
+            probe.summarize(
+                before=compose_items(), after=compose_items(),
+                environment_by_service=env, release_sha=SHA,
+                require_manual_hm_pilot="true",
+            )
+
+    def test_strict_manual_cli_accepts_safe_synthetic_runtime_flags_only(self):
+        a = compose_items()
+        ids = probe._observed_ids(a)
+        env = manual_hm_envs()
+        by_id = {cid: env[service] for service, cid in ids.items()}
+        with tempfile.TemporaryDirectory() as tmp:
+            dest = Path(tmp) / "private-runtime.json"
+            with patch.object(probe, "observe", side_effect=[a, deepcopy(a)]), \
+                 patch.object(probe, "_read_config_env", side_effect=lambda x: by_id[x]):
+                with redirect_stdout(StringIO()) as output:
+                    code = probe.main([
+                        "--env-file", "private.env", "--release-sha", SHA,
+                        "--output", str(dest), "--require-manual-hm-pilot",
+                    ])
+            self.assertEqual(code, 0)
+            self.assertIn("MANUAL H&M RUNTIME FLAG SCOPE PASS",
+                          output.getvalue())
+            self.assertIn("NOT egress", output.getvalue())
+            saved = json.loads(dest.read_text(encoding="utf-8"))
+            self.assertTrue(saved["manual_hm_runtime_scope_checked"])
+            self.assertTrue(saved["manual_hm_runtime_scope_safe_observed"])
+            self.assertFalse(saved["pilot_accepted"])
+            self.assertNotIn("private:", json.dumps(saved))
+            self.assertNotIn("postgres://", json.dumps(saved))
+
+    def test_strict_manual_cli_fails_on_live_ocr_without_leaking_private_data(self):
+        a = compose_items()
+        ids = probe._observed_ids(a)
+        env = manual_hm_envs()
+        env["worker"] = [
+            "OCR_ENABLED=true" if x == "OCR_ENABLED=false" else x
+            for x in env["worker"]
+        ]
+        by_id = {cid: env[service] for service, cid in ids.items()}
+        with tempfile.TemporaryDirectory() as tmp:
+            dest = Path(tmp) / "private-runtime.json"
+            with patch.object(probe, "observe", side_effect=[a, deepcopy(a)]), \
+                 patch.object(probe, "_read_config_env", side_effect=lambda x: by_id[x]):
+                with redirect_stdout(StringIO()) as output:
+                    code = probe.main([
+                        "--env-file", "private.env", "--release-sha", SHA,
+                        "--output", str(dest), "--require-manual-hm-pilot",
+                    ])
+            self.assertEqual(code, 1)
+            self.assertIn("NO-GO", output.getvalue())
+            saved = json.loads(dest.read_text(encoding="utf-8"))
+            self.assertFalse(saved["manual_hm_runtime_scope_safe_observed"])
+            self.assertNotIn("private:", json.dumps(saved))
+            self.assertNotIn("postgres://", json.dumps(saved))
 
     def test_enabled_ai_secret_adapters_or_model_fail_without_disclosing_values(self):
         cases = (

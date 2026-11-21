@@ -89,7 +89,8 @@ of the expected 11 containers (and optional demo-seed container), and
 python scripts/pilot_rc_running_ai_env_readback.py \\
   --env-file .env \\
   --release-sha "<frozen-40-char-main-SHA>" \\
-  --output /secure/pilot-releases/rc-001-running-ai-flags.json
+  --output /secure/pilot-releases/rc-001-running-ai-flags.json \
+  --require-manual-hm-pilot
 ```
 
 The private output includes only code-owned error categories and counts.
@@ -98,16 +99,26 @@ may expose database passwords, identity secrets or customer credentials.
 The observer requires disabled provider/model/API credentials for API,
 document worker and preflight, rejects explicit enablement of local/external
 AI adapters in any container, and refuses changed container identities,
-missing environment readings or unhealthy required services. Its exact
-release SHA is supplied by the operator and **not** independently attested.
+missing environment readings or unhealthy required services. For the
+**FIRST manual H&M rehearsal**, `--require-manual-hm-pilot` is mandatory:
+API, preflight and worker must each report `APP_ENV=pilot`; worker and
+preflight must each report `OCR_ENABLED=false`, and preflight must explicitly
+disable all local-AI/production-AI and live-provider/SFTP adapter switches.
+A partial rollout or absent flag is a **NO-GO**, even if the AI provider alone
+is disabled. Check the private record has both
+`manual_hm_runtime_scope_checked=true` and
+`manual_hm_runtime_scope_safe_observed=true`. Without the strict option,
+a legacy experimental/test deployment can pass basic AI checks but does
+**not** establish first-pilot scope. Its exact release SHA is supplied by the
+operator and **not** independently attested.
 
 **Do not count this alone as `actual_feature_flag_enforcement=pass`.**
 A stable observed `Config.Env` list does not prove the effective in-process
 feature state, database-controlled external integrations, outbound firewall,
 registry digest, unmodified runtime image, human reviewer permission or
-Persian critical negation fidelity. This also cannot switch critical OCR off:
-`OCR_ENABLED=true` is processing availability, **not** human-verified source
-semantics. Require separately observed runtime/network/DB controls and
+Persian critical negation fidelity. This readback observes OCR flags but cannot switch OCR off, establish source
+semantics or prove OCR is disabled inside an untrusted running binary.
+Require separately observed runtime/network/DB controls and
 independently signed resolution or approved de-scope before real claim admission.
 
 An image **config ID** is not the registry `name@sha256:manifest-digest`; review both identities. Verify the deployed Alembic revision, API/Web readiness, healthy ClamAV/worker/queue and OCR with genuine bounded test probes. Have a real designated claims handler perform the exact [Pilot v1](../pilot/DESIGN_PARTNER_PILOT_PROTOCOL.md) synthetic H&M machinery path: intake, evidence quarantine, missing/conflicting documents, chronology, technical/financial review, immutable versioned assessment, human approval and correspondence/export. Record *observed* outcome and blockers, not a pre-filled pass.

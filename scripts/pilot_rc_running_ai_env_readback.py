@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Read-only, privacy-safe observation of effective Docker container AI flags.
+"""Read-only, privacy-safe observation of effective Docker container scope.
 
 This inspects actual container Config.Env arrays for the *selected* Compose
 project and never emits or persists their values. A green observation is a
@@ -96,7 +96,7 @@ def _read_config_env(container_id: str) -> list[str]:
     return config["Env"]
 
 
-def _check_service(service: str, entries: object) -> set[str]:
+def _check_service(service: str, entries: object, *, manual_hm_pilot: bool = False) -> set[str]:
     """Evaluate exact expected runtime flags without returning any raw values."""
     if type(entries) is not list or len(entries) > 512:
         return {"invalid_runtime_environment"}
@@ -134,13 +134,28 @@ def _check_service(service: str, entries: object) -> set[str]:
             failures.add("runtime_worker_ocr_mode_unclassified")
         if not env.get("OCR_LANGUAGES"):
             failures.add("runtime_worker_ocr_languages_unclassified")
+    # The first manual H&M pilot must be verified against the *effective*
+    # container environment, not only the rendered Compose file or preflight.
+    # A partial APP_ENV=pilot rollout may not silently be treated as safe.
+    if manual_hm_pilot:
+        if service in AI_SERVICES and env.get("APP_ENV") != "pilot":
+            failures.add("manual_hm_runtime_environment_mismatch")
+        if service in ("worker", "preflight") and env.get("OCR_ENABLED") != "false":
+            failures.add("manual_hm_runtime_ocr_not_disabled")
+        if service == "preflight":
+            for key in OPTIONAL_DISABLED_FLAGS:
+                if env.get(key) != "false":
+                    failures.add("manual_hm_runtime_preflight_controls_incomplete")
     return failures
 
 
 def summarize(*, before: list[dict], after: list[dict],
-              environment_by_service: dict[str, list[str]], release_sha: str) -> dict:
+              environment_by_service: dict[str, list[str]], release_sha: str,
+              require_manual_hm_pilot: bool = False) -> dict:
     if type(release_sha) is not str or SHA.fullmatch(release_sha) is None:
         raise RuntimeScopeError("invalid_release_sha")
+    if type(require_manual_hm_pilot) is not bool:
+        raise RuntimeScopeError("invalid_manual_pilot_requirement")
     try:
         b = evaluate(before, release_sha=release_sha)
         a = evaluate(after, release_sha=release_sha)
@@ -154,9 +169,18 @@ def summarize(*, before: list[dict], after: list[dict],
         raise RuntimeScopeError("container_ids_changed_during_readback")
     if type(environment_by_service) is not dict or set(environment_by_service) != set(before_ids):
         raise RuntimeScopeError("incomplete_runtime_environment_census")
+    # Auto-detect a real pilot on any core service; explicit opt-in additionally
+    # fails closed if *all* core APP_ENV values have silently drifted away.
+    manual_hm_pilot = require_manual_hm_pilot or any(
+        type(environment_by_service.get(name)) is list
+        and "APP_ENV=pilot" in environment_by_service[name]
+        for name in AI_SERVICES
+    )
     faults = set()
     for service, entries in environment_by_service.items():
-        faults.update(_check_service(service, entries))
+        faults.update(_check_service(
+            service, entries, manual_hm_pilot=manual_hm_pilot,
+        ))
     return {
         "schema": _SCHEMA,
         "operator_supplied_release_sha": release_sha,
@@ -166,6 +190,8 @@ def summarize(*, before: list[dict], after: list[dict],
         "inspected_service_count": len(before_ids),
         "container_identity_stable": True,
         "runtime_ai_config_disabled_observed": not faults,
+        "manual_hm_runtime_scope_checked": manual_hm_pilot,
+        "manual_hm_runtime_scope_safe_observed": manual_hm_pilot and not faults,
         "check_failures": sorted(faults),
         # This check does not authenticate provider binaries, block egress
         # or validate database-stored integrations or critical Persian claims.
@@ -185,6 +211,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--env-file", required=True)
     parser.add_argument("--release-sha", required=True)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument(
+        "--require-manual-hm-pilot", action="store_true",
+        help="Fail closed unless actual core containers have APP_ENV=pilot, "
+             "OCR off and preflight AI/live adapter controls explicitly off",
+    )
     args = parser.parse_args(argv)
     try:
         if SHA.fullmatch(args.release_sha) is None:
@@ -198,6 +229,7 @@ def main(argv: list[str] | None = None) -> int:
         result = summarize(
             before=before, after=after, environment_by_service=environment,
             release_sha=args.release_sha,
+            require_manual_hm_pilot=args.require_manual_hm_pilot,
         )
         flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
         if hasattr(os, "O_NOFOLLOW"):
@@ -216,6 +248,10 @@ def main(argv: list[str] | None = None) -> int:
         print("NO-GO: effective container AI configuration unsafe")
         return 1
     print("RUNNING-CONTAINER AI FLAG OBSERVATION PASS (bounded flags only).")
+    if result["manual_hm_runtime_scope_safe_observed"]:
+        print("MANUAL H&M RUNTIME FLAG SCOPE PASS (bounded flags only).")
+    else:
+        print("MANUAL H&M PILOT RUNTIME SCOPE NOT VERIFIED.")
     print("NOT egress, DB connector, Persian OCR fidelity or Pilot GO.")
     return 0
 
