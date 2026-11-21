@@ -110,14 +110,18 @@ def inspect_config(config: object, *, release_sha: str) -> dict:
     # The selected FIRST manual H&M pilot forbids OCR and external ingestion.
     # Enforce the worker/preflight values in *rendered Compose*, not merely
     # the operator's potentially stale .env. This is not a runtime readback.
-    startup = ("preflight", "api", "worker")
-    startup_envs = [
-        services.get(name, {}).get("environment", {})
-        for name in startup
-        if type(services.get(name)) is dict
-    ]
-    if any(type(env) is dict and env.get("APP_ENV") == "pilot"
-           for env in startup_envs):
+    # Detect a partial pilot rollout on ANY DB-backed app service, not just
+    # API/preflight/document worker; the remaining workers could otherwise be
+    # in pilot mode while all three core services silently stay in test mode.
+    candidate_pilot = PILOT_APP_ENV_SERVICES | (
+        frozenset(("demo-seed",)) if "demo-seed" in services else frozenset()
+    )
+    if any(
+        type(services.get(name)) is dict
+        and type(services[name].get("environment")) is dict
+        and services[name]["environment"].get("APP_ENV") == "pilot"
+        for name in candidate_pilot
+    ):
         # Require APP_ENV=pilot for ALL DB-connected application workers,
         # including optional demo seed when it exists. A properly scoped
         # API/worker/preflight is insufficient if scheduler/observer/projector
