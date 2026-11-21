@@ -47,7 +47,7 @@ def safe_envs():
 def manual_hm_envs():
     """Synthetic effective environment of the first manual H&M pilot."""
     env = safe_envs()
-    for name in ("api", "preflight", "worker"):
+    for name in probe.PILOT_APP_ENV_SERVICES:
         env[name].append("APP_ENV=pilot")
     env["worker"] = [
         "OCR_ENABLED=false" if x == "OCR_ENABLED=true" else x
@@ -128,6 +128,38 @@ class RunningAIReadbackTests(unittest.TestCase):
                 self.assertFalse(result["runtime_ai_config_disabled_observed"])
                 self.assertIn(failure, result["check_failures"])
                 self.assertNotIn("postgres://", json.dumps(result))
+
+    def test_first_manual_pilot_rejects_every_db_worker_env_drift(self):
+        clean = manual_hm_envs()
+        for name in probe.PILOT_APP_ENV_SERVICES:
+            with self.subTest(service=name):
+                candidate = deepcopy(clean)
+                candidate[name] = [
+                    "APP_ENV=production" if value == "APP_ENV=pilot" else value
+                    for value in candidate[name]
+                ]
+                observed = probe.summarize(
+                    before=compose_items(), after=compose_items(),
+                    environment_by_service=candidate, release_sha=SHA,
+                    require_manual_hm_pilot=True,
+                )
+                self.assertFalse(observed["manual_hm_runtime_scope_safe_observed"])
+                self.assertIn("manual_hm_runtime_environment_mismatch",
+                              observed["check_failures"])
+                self.assertFalse(observed["pilot_accepted"])
+                self.assertNotIn("secret", json.dumps(observed))
+
+                candidate[name] = [
+                    value for value in clean[name] if value != "APP_ENV=pilot"
+                ]
+                missing = probe.summarize(
+                    before=compose_items(), after=compose_items(),
+                    environment_by_service=candidate, release_sha=SHA,
+                    require_manual_hm_pilot=True,
+                )
+                self.assertFalse(missing["manual_hm_runtime_scope_safe_observed"])
+                self.assertIn("manual_hm_runtime_environment_mismatch",
+                              missing["check_failures"])
 
     def test_manual_pilot_auto_detects_partial_startup_drift_and_missing_flags(self):
         for service, removed, failure in (
