@@ -93,6 +93,15 @@ python scripts/pilot_rc_running_ai_env_readback.py \\
   --require-manual-hm-pilot
 ```
 
+The shared Compose status observer now explicitly binds `--project-directory`
+and `-f` to this repository's tracked `docker-compose.yml`, matching the
+rendered-config observer, rather than choosing any unrelated Compose file
+from the operator's current working directory. Its `--env-file` is resolved
+from the **caller's** working directory before invocation: pass the intended
+private absolute env-file path to avoid ambiguity. This is only a project-path
+binding, **not** independent proof of the selected host, container ownership
+or a clean isolation boundary.
+
 The private output includes only code-owned error categories and counts.
 Never publish `docker inspect` output or expanded environment values: these
 may expose database passwords, identity secrets or customer credentials.
