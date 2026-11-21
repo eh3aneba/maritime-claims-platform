@@ -61,7 +61,7 @@ def run(args: list[str], timeout: int, *, check_diagnostics: bool = False) -> st
     if len(result.stdout) > 16_384 or len(result.stderr) > 64_000:
         raise ObservationError("oversized_observation_output")
     if check_diagnostics and re.search(
-        r"(?i)\b(?:untrusted|bad signature|warning:|error:|failed|invalid signature)\b",
+        r"(?i)\buntrusted\b|\bbad signature\b|warning:|error:|\bfailed\b|\binvalid signature\b",
         result.stderr,
     ):
         raise ObservationError("apk_signature_or_source_inconclusive")
