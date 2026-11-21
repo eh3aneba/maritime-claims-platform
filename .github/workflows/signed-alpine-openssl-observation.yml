@@ -1,0 +1,39 @@
+name: Signed Alpine OpenSSL Package Observation
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'scripts/observe_signed_alpine_openssl.py'
+      - 'scripts/tests/test_observe_signed_alpine_openssl.py'
+      - '.github/workflows/signed-alpine-openssl-observation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  signed-openssl-packages:
+    name: Signed stable OpenSSL APKs (native ${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - name: Verify offline fail-closed observation contract
+        run: python -m unittest scripts.tests.test_observe_signed_alpine_openssl -v
+      - name: Fetch and verify exact official stable signed APKs using bundled trust keys
+        env:
+          OBSERVE_ARCH: ${{ matrix.arch }}
+        run: python -m scripts.observe_signed_alpine_openssl
