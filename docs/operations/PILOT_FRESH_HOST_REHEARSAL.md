@@ -110,7 +110,7 @@ document worker and preflight, rejects explicit enablement of local/external
 AI adapters in any container, and refuses changed container identities,
 missing environment readings or unhealthy required services. For the
 **FIRST manual H&M rehearsal**, `--require-manual-hm-pilot` is mandatory:
-API, preflight and worker must each report `APP_ENV=pilot`; worker and
+All eight DB-connected application services (API, Preflight, Worker, Migration, Governance Webhook Worker, External Evidence Scheduler/Observer/Review Projector, and optional demo-seed if present) must report `APP_ENV=pilot`; worker and
 preflight must each report `OCR_ENABLED=false`, and preflight must explicitly
 disable all local-AI/production-AI and live-provider/SFTP adapter switches.
 A partial rollout or absent flag is a **NO-GO**, even if the AI provider alone

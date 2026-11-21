@@ -21,12 +21,14 @@ import sys
 if __package__:
     from .pilot_compose_readiness import EXPECTED, ReadinessError, evaluate, observe
     from .pilot_rc_compose_feature_observation import (
-        AI_SERVICES, REQUIRED_AI, OPTIONAL_DISABLED_FLAGS, ALLOWED_DISABLED,
+        AI_SERVICES, PILOT_APP_ENV_SERVICES, REQUIRED_AI,
+        OPTIONAL_DISABLED_FLAGS, ALLOWED_DISABLED,
     )
 else:
     from pilot_compose_readiness import EXPECTED, ReadinessError, evaluate, observe
     from pilot_rc_compose_feature_observation import (
-        AI_SERVICES, REQUIRED_AI, OPTIONAL_DISABLED_FLAGS, ALLOWED_DISABLED,
+        AI_SERVICES, PILOT_APP_ENV_SERVICES, REQUIRED_AI,
+        OPTIONAL_DISABLED_FLAGS, ALLOWED_DISABLED,
     )
 
 SHA = re.compile(r"[0-9a-f]{40}\Z")
@@ -138,7 +140,10 @@ def _check_service(service: str, entries: object, *, manual_hm_pilot: bool = Fal
     # container environment, not only the rendered Compose file or preflight.
     # A partial APP_ENV=pilot rollout may not silently be treated as safe.
     if manual_hm_pilot:
-        if service in AI_SERVICES and env.get("APP_ENV") != "pilot":
+        # Every DB-backed application container (and optional demo seed)
+        # shares the first pilot's APP_ENV. The three core AI services alone
+        # cannot establish a consistent scheduler/observer/governance scope.
+        if (service in PILOT_APP_ENV_SERVICES or service == "demo-seed") and env.get("APP_ENV") != "pilot":
             failures.add("manual_hm_runtime_environment_mismatch")
         if service in ("worker", "preflight") and env.get("OCR_ENABLED") != "false":
             failures.add("manual_hm_runtime_ocr_not_disabled")
@@ -169,12 +174,15 @@ def summarize(*, before: list[dict], after: list[dict],
         raise RuntimeScopeError("container_ids_changed_during_readback")
     if type(environment_by_service) is not dict or set(environment_by_service) != set(before_ids):
         raise RuntimeScopeError("incomplete_runtime_environment_census")
-    # Auto-detect a real pilot on any core service; explicit opt-in additionally
-    # fails closed if *all* core APP_ENV values have silently drifted away.
+    # Auto-detect a partial first-pilot rollout on ANY DB-connected app
+    # service (plus optional demo seed). A scheduler/observer in pilot mode
+    # must not pass an AI-only generic observation just because the API,
+    # document worker and preflight all drifted to test/production.
+    # Explicit --require-manual-hm-pilot also fails closed when all drift.
     manual_hm_pilot = require_manual_hm_pilot or any(
         type(environment_by_service.get(name)) is list
         and "APP_ENV=pilot" in environment_by_service[name]
-        for name in AI_SERVICES
+        for name in PILOT_APP_ENV_SERVICES | {"demo-seed"}
     )
     faults = set()
     for service, entries in environment_by_service.items():

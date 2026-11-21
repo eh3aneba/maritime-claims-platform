@@ -22,9 +22,10 @@ SHA = "a" * 40
 
 def compose_config():
     services = {name: {"environment": {}} for name in readiness.EXPECTED}
+    for name in probe.rendered.PILOT_APP_ENV_SERVICES:
+        services[name]["environment"]["APP_ENV"] = "pilot"
     for name in ("api", "preflight", "worker"):
         services[name]["environment"].update({
-            "APP_ENV": "pilot",
             "AI_PROVIDER": "disabled",
             "AI_MODEL": "",
             "OPENAI_API_KEY": "",
@@ -59,9 +60,11 @@ def containers():
 def runtime_envs():
     env = {name: ["PATH=/usr/bin", "DATABASE_URL=postgresql://private:password@db"]
            for name in readiness.EXPECTED}
+    for name in probe.rendered.PILOT_APP_ENV_SERVICES:
+        env[name].append("APP_ENV=pilot")
     for name in ("api", "preflight", "worker"):
         env[name] += [
-            "APP_ENV=pilot", "AI_PROVIDER=disabled", "AI_MODEL=",
+            "AI_PROVIDER=disabled", "AI_MODEL=",
             "OPENAI_API_KEY=", "ALLOW_EXTERNAL_AI_RESTRICTED=false",
         ]
     for name in ("worker", "preflight"):
@@ -145,6 +148,36 @@ class FirstManualHMCensusTests(unittest.TestCase):
                 self.assertFalse(result["bounded_same_census_passed"])
                 self.assertFalse(result["pilot_authorized"])
                 self.assertNotIn("password", json.dumps(result))
+
+    def test_same_census_rejects_db_worker_mixed_app_env_without_authorization(self):
+        # Synthetic MT ORION can only be considered within the bounded pilot
+        # environment if all live DB-connected worker processes share APP_ENV.
+        for name in probe.rendered.PILOT_APP_ENV_SERVICES - {
+            "api", "preflight", "worker",
+        }:
+            with self.subTest(service=name):
+                env = runtime_envs()
+                env[name] = ["APP_ENV=production" if x == "APP_ENV=pilot" else x
+                             for x in env[name]]
+                result = probe.assess(
+                    config=compose_config(), before=containers(), after=containers(),
+                    environment_by_service=env,
+                    observed_images=image_ids(), expected_images=image_ids(),
+                    release_sha=SHA,
+                )
+                self.assertFalse(result["bounded_same_census_passed"])
+                self.assertFalse(result["checks"]["effective_manual_hm_ai_ocr_adapters_off"])
+                self.assertFalse(result["pilot_authorized"])
+                self.assertNotIn("password", json.dumps(result))
+                config = compose_config()
+                config["services"][name]["environment"].pop("APP_ENV")
+                with self.assertRaises(probe.SnapshotError):
+                    probe.assess(
+                        config=config, before=containers(), after=containers(),
+                        environment_by_service=runtime_envs(),
+                        observed_images=image_ids(), expected_images=image_ids(),
+                        release_sha=SHA,
+                    )
 
     def test_different_container_ids_or_unhealthy_and_unexpected_service_rejected(self):
         before = containers()
