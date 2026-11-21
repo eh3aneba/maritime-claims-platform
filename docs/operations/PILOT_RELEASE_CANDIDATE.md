@@ -95,8 +95,22 @@ successful config observation alone **must not** populate
 ## Fail-closed completeness check
 
 ```bash
-python scripts/pilot_rc_gate.py check /secure/pilot-releases/rc-001.json --expected-sha "<independently-verified-full-release-SHA>"
+python scripts/pilot_rc_gate.py check /secure/pilot-releases/rc-001.json --expected-sha "<independently-verified-full-release-SHA>" \
+  --require-first-manual-hm
 ```
+
+For the **first manual MT ORION H&M rehearsal**, always include
+`--require-first-manual-hm` in the command above. It requires *all three*
+v5 modes to be explicitly `disabled`:
+`features.sftp_ingestion`, `features.ai_inference` and
+`features.persian_critical_extraction`. Any enabled, pending or missing
+mode returns **NO-GO**, even when the generic v5 record could be valid for a
+different, independently approved pilot. Each disabled conditional feature
+still requires its corresponding `not_applicable` proof with an independently
+checked disablement record. The check is **structural**; separately read the
+actual running-container flags with `--require-manual-hm-pilot` and obtain
+the independent host/security/H&M evidence before any customer-data decision.
+Do not omit the dedicated RC scope flag for the selected first rehearsal.
 
 A missing/mismatched commit, unpinned image, missing recovery evidence, pending proof or malformed record returns a **nonzero** exit code and `NO-GO`. A complete record prints `RECORD COMPLETE` and explicitly warns that this is not release authorization. Cross-check the supplied SHA against the deployed artifact and linked CI run head; operator-supplied strings alone are not trustworthy evidence.
 
