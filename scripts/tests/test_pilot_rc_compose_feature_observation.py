@@ -14,7 +14,7 @@ from unittest.mock import patch
 
 from scripts.pilot_compose_readiness import EXPECTED
 from scripts.pilot_rc_compose_feature_observation import (
-    COMPOSE, ComposeScopeError, inspect_config, main, observe_config,
+    COMPOSE, ComposeScopeError, PILOT_APP_ENV_SERVICES, inspect_config, main, observe_config,
 )
 
 SHA = "a" * 40
@@ -77,7 +77,7 @@ class PilotRCComposeFeatureObservationTests(unittest.TestCase):
 
     def test_first_manual_pilot_requires_consistent_startup_scope_and_ocr_off(self):
         configuration = safe_compose()
-        for service in ("api", "worker", "preflight"):
+        for service in PILOT_APP_ENV_SERVICES | {"demo-seed"}:
             configuration["services"][service]["environment"]["APP_ENV"] = "pilot"
         configuration["services"]["preflight"]["environment"]["OCR_ENABLED"] = "false"
         configuration["services"]["worker"]["environment"]["OCR_ENABLED"] = "false"
@@ -92,7 +92,7 @@ class PilotRCComposeFeatureObservationTests(unittest.TestCase):
         ):
             with self.subTest(service=service, flag=flag):
                 case = safe_compose()
-                for name in ("api", "worker", "preflight"):
+                for name in PILOT_APP_ENV_SERVICES | {"demo-seed"}:
                     case["services"][name]["environment"]["APP_ENV"] = "pilot"
                 case["services"]["preflight"]["environment"]["OCR_ENABLED"] = "false"
                 case["services"]["worker"]["environment"]["OCR_ENABLED"] = "false"
@@ -101,6 +101,34 @@ class PilotRCComposeFeatureObservationTests(unittest.TestCase):
                 self.assertFalse(got["compose_ai_and_adapter_config_safe"])
                 self.assertIn(expected, got["check_failures"])
                 self.assertFalse(got["pilot_accepted"])
+
+    def test_manual_pilot_rejects_partial_db_worker_and_demo_scope(self):
+        configuration = safe_compose()
+        for service in PILOT_APP_ENV_SERVICES | {"demo-seed"}:
+            configuration["services"][service]["environment"]["APP_ENV"] = "pilot"
+        for service in ("worker", "preflight"):
+            configuration["services"][service]["environment"]["OCR_ENABLED"] = "false"
+        self.assertTrue(inspect_config(configuration, release_sha=SHA)[
+            "compose_ai_and_adapter_config_safe"
+        ])
+
+        # All DB-connected workers are live in the same Compose project;
+        # a mixed env allows one of them to use a different adapter policy.
+        for service in PILOT_APP_ENV_SERVICES | {"demo-seed"}:
+            for mode in ("test", None):
+                with self.subTest(service=service, mode=mode):
+                    candidate = json.loads(json.dumps(configuration))
+                    env = candidate["services"][service]["environment"]
+                    if mode is None:
+                        env.pop("APP_ENV")
+                    else:
+                        env["APP_ENV"] = mode
+                    record = inspect_config(candidate, release_sha=SHA)
+                    self.assertFalse(record["compose_ai_and_adapter_config_safe"])
+                    self.assertIn("manual_pilot_environment_mismatch",
+                                  record["check_failures"])
+                    self.assertFalse(record["pilot_accepted"])
+                    self.assertNotIn("private-secret", json.dumps(record))
 
     def test_local_and_external_ai_paths_fail_closed(self):
         for name, key, value in (
