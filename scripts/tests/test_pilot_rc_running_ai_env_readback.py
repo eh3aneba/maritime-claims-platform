@@ -175,6 +175,31 @@ class RunningAIReadbackTests(unittest.TestCase):
                 require_manual_hm_pilot="true",
             )
 
+    def test_strict_manual_cli_accepts_safe_synthetic_runtime_flags_only(self):
+        a = compose_items()
+        ids = probe._observed_ids(a)
+        env = manual_hm_envs()
+        by_id = {cid: env[service] for service, cid in ids.items()}
+        with tempfile.TemporaryDirectory() as tmp:
+            dest = Path(tmp) / "private-runtime.json"
+            with patch.object(probe, "observe", side_effect=[a, deepcopy(a)]), \
+                 patch.object(probe, "_read_config_env", side_effect=lambda x: by_id[x]):
+                with redirect_stdout(StringIO()) as output:
+                    code = probe.main([
+                        "--env-file", "private.env", "--release-sha", SHA,
+                        "--output", str(dest), "--require-manual-hm-pilot",
+                    ])
+            self.assertEqual(code, 0)
+            self.assertIn("MANUAL H&M RUNTIME FLAG SCOPE PASS",
+                          output.getvalue())
+            self.assertIn("NOT egress", output.getvalue())
+            saved = json.loads(dest.read_text(encoding="utf-8"))
+            self.assertTrue(saved["manual_hm_runtime_scope_checked"])
+            self.assertTrue(saved["manual_hm_runtime_scope_safe_observed"])
+            self.assertFalse(saved["pilot_accepted"])
+            self.assertNotIn("private:", json.dumps(saved))
+            self.assertNotIn("postgres://", json.dumps(saved))
+
     def test_strict_manual_cli_fails_on_live_ocr_without_leaking_private_data(self):
         a = compose_items()
         ids = probe._observed_ids(a)
