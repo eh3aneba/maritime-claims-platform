@@ -1,6 +1,6 @@
 """Observe official Alpine stable signed OpenSSL APK bytes without installing.
 
-Issue #952 evidence only. Repository/package signature validation using the
+Issue #952 evidence only. Package-file signature validation using the
 pulled image's bundled trust keys does not authenticate the binary installed
 in a production image, establish source-to-binary reproducibility, or grant
 security approval. Never changes a production image or a required scan.
@@ -33,12 +33,16 @@ test -d /etc/apk/keys
 test "$(find /etc/apk/keys -type f | wc -l)" -gt 0
 printf '%s\n' 'OBS_STAGE:scratch' >&2
 mkdir /tmp/packages
-printf '%s\n' 'https://dl-cdn.alpinelinux.org/alpine/v3.24/main' > /tmp/repos
-printf '%s\n' 'OBS_STAGE:fetch' >&2
-apk --no-cache --repositories-file /tmp/repos fetch --output /tmp/packages \
-    'libcrypto3=3.5.9-r1' 'libssl3=3.5.9-r1' >&2
-printf '%s\n' 'OBS_STAGE:package-files' >&2
 cd /tmp/packages
+# Exact public stable package paths, not apk's version-solver output.
+# HTTPS is certificate-checked; apk verify below separately authenticates
+# each package's signature with bundled trusted keys.
+printf '%s\n' 'OBS_STAGE:fetch' >&2
+repo='https://dl-cdn.alpinelinux.org/alpine/v3.24/main'
+for file in libcrypto3-3.5.9-r1.apk libssl3-3.5.9-r1.apk; do
+    wget -T 30 -O "$file" "$repo/$OBSERVE_ARCH/$file" >&2
+done
+printf '%s\n' 'OBS_STAGE:package-files' >&2
 test "$(find . -type f | wc -l)" -eq 2
 for file in libcrypto3-3.5.9-r1.apk libssl3-3.5.9-r1.apk; do
     test -f "$file"
