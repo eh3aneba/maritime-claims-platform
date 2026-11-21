@@ -186,7 +186,7 @@ class RunningAIReadbackTests(unittest.TestCase):
         by_id = {cid: env[service] for service, cid in ids.items()}
         with tempfile.TemporaryDirectory() as tmp:
             dest = Path(tmp) / "private-runtime.json"
-            with patch.object(probe, "observe", side_effect=[a, deepcopy(a)]), \\
+            with patch.object(probe, "observe", side_effect=[a, deepcopy(a)]), \
                  patch.object(probe, "_read_config_env", side_effect=lambda x: by_id[x]):
                 with redirect_stdout(StringIO()) as output:
                     code = probe.main([
