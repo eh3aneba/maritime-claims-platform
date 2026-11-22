@@ -72,7 +72,8 @@ class FirstManualFaultProbeTests(unittest.TestCase):
     def test_scope_requires_prior_rollback_proof_and_no_operator_claim(self):
         with patch.object(p, "admitted_source", return_value=True), \
              patch.object(p, "run", return_value=SHA), \
-             patch.object(p.PRIOR_PROOF, "is_file", return_value=False):
+             patch.object(p, "PRIOR_PROOF") as proof:
+            proof.is_file.return_value = False
             with self.assertRaises(p.FaultProbeError):
                 p.validate_scope({"MCRI_CI_FIRST_MANUAL_FAULT_PROBE": "1"})
 
