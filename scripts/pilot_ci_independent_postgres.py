@@ -15,6 +15,7 @@ import tempfile
 import time
 from typing import Callable
 
+from pilot_ci_first_manual_recovery import admitted
 from pilot_ci_evidence_restore import EvidenceRestoreError, restore_and_reconcile
 from pilot_ci_lineage_reconcile import LineageError, collect_lineage, reconcile
 
@@ -71,7 +72,7 @@ def _query(container: str, sql: str) -> str:
 
 def _valid_env(env: dict[str, str], release_sha: str) -> str:
     password = env.get("POSTGRES_PASSWORD")
-    if (env.get("APP_ENV") != "test"
+    if ((env.get("APP_ENV") != "test" and not admitted(env))
         or env.get("MCRI_CI_RESTORE_PROBE") != "1"
         or env.get("POSTGRES_DB") != "mcri_performance"
         or env.get("POSTGRES_USER") != DB_USER
@@ -156,7 +157,9 @@ def restore_and_verify(*, dump: Path, archive: Path, release_sha: str,
                 or _query(name, revision_sql) != expected_revision):
                 raise IndependentRestoreError("independent PostgreSQL claim or migration changed")
             try:
-                lineage = collect_lineage(DB_NAME, lambda _, sql: _query(name, sql))
+                lineage_options = {"first_manual": True} if env.get("APP_ENV") == "pilot" else {}
+                lineage = collect_lineage(DB_NAME, lambda _, sql: _query(name, sql),
+                                          **lineage_options)
                 comparison = reconcile(source_lineage, lineage)
             except LineageError:
                 raise IndependentRestoreError("independent PostgreSQL lineage mismatch") from None

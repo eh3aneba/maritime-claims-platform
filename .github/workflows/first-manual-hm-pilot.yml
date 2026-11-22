@@ -9,6 +9,7 @@ on:
       - 'tests/browser/first_manual_hm_pilot_e2e.py'
       - 'scripts/design_partner_preflight.sh'
       - 'scripts/pilot_demo_*'
+      - 'scripts/pilot_ci_*'
       - 'docker-compose.yml'
       - '.github/workflows/first-manual-hm-pilot.yml'
   workflow_dispatch:
@@ -24,7 +25,7 @@ jobs:
   first-manual:
     name: Actual first-manual synthetic Pilot stack and browser
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 35
     steps:
       - name: Check out exact candidate
         uses: actions/checkout@v6
@@ -60,6 +61,11 @@ jobs:
               print("::add-mask::" + value)
               text = text.replace(marker, value)
           text = text.replace("http://localhost:", "http://127.0.0.1:")
+          # Fixed CI-only DB names used by the existing clone/recovery helper.
+          text = text.replace("POSTGRES_DB=maritime_claims", "POSTGRES_DB=mcri_performance")
+          text = text.replace("POSTGRES_USER=maritime", "POSTGRES_USER=mcri_performance")
+          text = text.replace("postgresql+psycopg://maritime:", "postgresql+psycopg://mcri_performance:")
+          text = text.replace("@db:5432/maritime_claims", "@db:5432/mcri_performance")
           with Path(".env.first-manual-ci").open("x") as out:
               out.write(text + "\nMCRI_SYNTHETIC_ONLY_CONFIRM=YES\n")
           PY
@@ -91,6 +97,30 @@ jobs:
           set +a
           export MCRI_REHEARSAL_SHA="$(git rev-parse HEAD)"
           python tests/browser/first_manual_hm_pilot_e2e.py
+      - name: Verify actual pilot-mode backup and isolated PostgreSQL plus Evidence restore
+        env:
+          MCRI_CI_FIRST_MANUAL_RECOVERY: "1"
+          MCRI_CI_RESTORE_PROBE: "1"
+        run: |
+          set -euo pipefail
+          set -a
+          source .env.first-manual-ci
+          set +a
+          export COMPOSE_ENV_FILES=.env.first-manual-ci
+          python scripts/pilot_ci_restore_probe.py --env-file .env.first-manual-ci --output artifacts/first-manual-ci/recovery.json
+      - name: Resume original disposable stack and verify authenticated claim read
+        env:
+          MCRI_CI_FIRST_MANUAL_RECOVERY: "1"
+          MCRI_CI_RESUME_PROBE: "1"
+        run: |
+          set -euo pipefail
+          set -a
+          source .env.first-manual-ci
+          set +a
+          export COMPOSE_ENV_FILES=.env.first-manual-ci
+          sha="$(git rev-parse HEAD)"
+          python scripts/pilot_ci_resume_probe.py --env-file .env.first-manual-ci --release-sha "$sha" --output artifacts/first-manual-ci/resume.json
+          python scripts/pilot_rc_running_ai_env_readback.py --env-file .env.first-manual-ci --release-sha "$sha" --require-manual-hm-pilot --output artifacts/first-manual-ci/resumed-runtime.json
       - name: Upload only bounded synthetic result JSON
         if: always()
         uses: actions/upload-artifact@v4
