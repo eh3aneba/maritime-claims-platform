@@ -182,7 +182,10 @@ def observe(*, env_file: str, env: dict[str, str],
             cross_runner_output: Path | None = None) -> dict:
     validate_guard(env_file, env)
     first_manual = env.get("APP_ENV") == "pilot"
-    if first_manual and cross_runner_output is not None:
+    if first_manual and cross_runner_output is not None and (
+        env.get("MCRI_CI_CROSS_RUNNER_EXPORT") != "1"
+        or cross_runner_output != Path("synthetic-recovery-transfer")
+    ):
         raise ProbeError("first-manual recovery transfer not authorized")
     lineage_options = {"first_manual": True} if first_manual else {}
     actual_checkout = _run(["git", "rev-parse", "HEAD"], env=env)

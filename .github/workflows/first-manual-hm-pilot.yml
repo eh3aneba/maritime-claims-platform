@@ -101,13 +101,14 @@ jobs:
         env:
           MCRI_CI_FIRST_MANUAL_RECOVERY: "1"
           MCRI_CI_RESTORE_PROBE: "1"
+          MCRI_CI_CROSS_RUNNER_EXPORT: "1"
         run: |
           set -euo pipefail
           set -a
           source .env.first-manual-ci
           set +a
           export COMPOSE_ENV_FILES=.env.first-manual-ci
-          python scripts/pilot_ci_restore_probe.py --env-file .env.first-manual-ci --output artifacts/first-manual-ci/recovery.json
+          python scripts/pilot_ci_restore_probe.py --env-file .env.first-manual-ci --output artifacts/first-manual-ci/recovery.json --cross-runner-output synthetic-recovery-transfer
       - name: Resume original disposable stack and verify authenticated claim read
         env:
           MCRI_CI_FIRST_MANUAL_RECOVERY: "1"
@@ -121,6 +122,13 @@ jobs:
           sha="$(git rev-parse HEAD)"
           python scripts/pilot_ci_resume_probe.py --env-file .env.first-manual-ci --release-sha "$sha" --output artifacts/first-manual-ci/resume.json
           python scripts/pilot_rc_running_ai_env_readback.py --env-file .env.first-manual-ci --release-sha "$sha" --require-manual-hm-pilot --output artifacts/first-manual-ci/resumed-runtime.json
+      - name: Transfer verified fictional recovery pair to a second hosted runner
+        uses: actions/upload-artifact@v4
+        with:
+          name: first-manual-synthetic-recovery-transfer
+          path: synthetic-recovery-transfer/
+          if-no-files-found: error
+          retention-days: 1
       - name: Upload only bounded synthetic result JSON
         if: always()
         uses: actions/upload-artifact@v4
@@ -132,3 +140,63 @@ jobs:
       - name: Remove only admitted disposable CI stack
         if: always() && steps.admit.outcome == 'success'
         run: docker compose --env-file .env.first-manual-ci down -v --remove-orphans
+
+  cross-runner-recovery:
+    name: First-manual recovery on distinct hosted runner
+    needs: first-manual
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Check out exact candidate
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - name: Download only fictional recovery artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: first-manual-synthetic-recovery-transfer
+          path: synthetic-recovery-transfer
+      - name: Reconcile restored first-manual documents and lineage on isolated PostgreSQL
+        env:
+          APP_ENV: pilot
+          MCRI_CI_FIRST_MANUAL_RECOVERY: "1"
+          MCRI_CI_RESTORE_PROBE: "1"
+          MCRI_CI_CROSS_RUNNER_RESTORE: "1"
+          POSTGRES_DB: mcri_performance
+          POSTGRES_USER: mcri_performance
+          NEXT_PUBLIC_API_BASE_URL: http://127.0.0.1:8000/api/v1
+          MCRI_DEMO_ORG_SLUG: pilot
+          MCRI_DEMO_EMAIL: manager@demo.mcri.app
+          MCRI_SYNTHETIC_ONLY_CONFIRM: "YES"
+          AI_PROVIDER: disabled
+          AI_MODEL: ""
+          OPENAI_API_KEY: ""
+          ALLOW_EXTERNAL_AI_RESTRICTED: "false"
+          AI_LOCAL_EXPERIMENTAL_ENABLED: "false"
+          AI_PRODUCTION_CONTROL_PLANE_ENABLED: "false"
+          EXTERNAL_EVIDENCE_LIVE_PROVIDER_ADAPTERS_ENABLED: "false"
+          EXTERNAL_EVIDENCE_LIVE_SFTP_ADAPTERS_ENABLED: "false"
+          OCR_ENABLED: "false"
+          MALWARE_SCAN_ENABLED: "true"
+          STORAGE_BACKEND: local
+        run: |
+          set -euo pipefail
+          umask 077
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          python scripts/pilot_demo_docker_target.py
+          mkdir -p artifacts
+          POSTGRES_PASSWORD="$(python -c 'import secrets; print(secrets.token_urlsafe(24))')"
+          echo "::add-mask::$POSTGRES_PASSWORD"
+          export POSTGRES_PASSWORD
+          export DATABASE_URL="postgresql+psycopg://mcri_performance:${POSTGRES_PASSWORD}@db:5432/mcri_performance"
+          python scripts/pilot_ci_cross_runner_transfer.py --sha "$(git rev-parse HEAD)" --input synthetic-recovery-transfer --output artifacts/cross-runner-restore.json
+      - name: Upload only bounded first-manual distinct-runner result
+        uses: actions/upload-artifact@v4
+        with:
+          name: first-manual-cross-runner-recovery-proof
+          path: artifacts/cross-runner-restore.json
+          if-no-files-found: error
+          retention-days: 7

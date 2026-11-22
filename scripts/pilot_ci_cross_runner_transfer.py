@@ -17,6 +17,7 @@ import re
 import shutil
 import sys
 
+from pilot_ci_first_manual_recovery import admitted
 from pilot_ci_independent_postgres import IndependentRestoreError, restore_and_verify
 from pilot_ci_lineage_reconcile import ALL_TABLES, REQUIRED_NONEMPTY, MAX_ROWS_PER_TABLE
 from pilot_recovery_pair import RecoveryEvidenceError, check_record, observe
@@ -25,6 +26,7 @@ SHA = re.compile(r"[a-f0-9]{40}\Z")
 DIGEST = re.compile(r"[a-f0-9]{64}\Z")
 REVISION = re.compile(r"[0-9]{4}_[a-z0-9_]+\Z")
 SCHEMA = "mcri-synthetic-cross-runner-transfer-v1"
+MANUAL_SCHEMA = "mcri-first-manual-cross-runner-transfer-v1"
 BASENAMES = frozenset((
     "synthetic.dump", "synthetic.dump.sha256", "synthetic.dump.meta",
     "synthetic-evidence.tar", "pair.json", "source-lineage.json",
@@ -70,7 +72,8 @@ class CrossRunnerError(ValueError):
 
 
 def guard(*, sha: str, env: dict[str, str], mode: str) -> None:
-    if (not SHA.fullmatch(sha) or env.get("APP_ENV") != "test"
+    if (mode not in ("export", "restore") or not SHA.fullmatch(sha)
+        or (env.get("APP_ENV") != "test" and not admitted(env))
         or env.get("POSTGRES_DB") != "mcri_performance"
         or env.get("POSTGRES_USER") != "mcri_performance"
         or env.get("MCRI_CI_RESTORE_PROBE") != "1"
@@ -79,7 +82,7 @@ def guard(*, sha: str, env: dict[str, str], mode: str) -> None:
         raise CrossRunnerError("synthetic cross-runner CI-only guard failed")
 
 
-def checked_lineage(value: object) -> dict[str, tuple[int, str]]:
+def checked_lineage(value: object, *, first_manual: bool = False) -> dict[str, tuple[int, str]]:
     if not isinstance(value, dict) or set(value) != set(ALL_TABLES):
         raise CrossRunnerError("incomplete source lineage fingerprint families")
     valid: dict[str, tuple[int, str]] = {}
@@ -88,24 +91,31 @@ def checked_lineage(value: object) -> dict[str, tuple[int, str]]:
         if (not isinstance(pair, (list, tuple)) or len(pair) != 2
             or type(pair[0]) is not int or not 0 <= pair[0] <= MAX_ROWS_PER_TABLE
             or not isinstance(pair[1], str) or not DIGEST.fullmatch(pair[1])
-            or (table in REQUIRED_NONEMPTY and pair[0] == 0)):
+            or (table in REQUIRED_NONEMPTY and pair[0] == 0
+                and not (first_manual and table == "reserve_history"))):
             raise CrossRunnerError("invalid source lineage fingerprint")
+        if first_manual and table == "reserve_history" and pair[0] != 0:
+            raise CrossRunnerError("first-manual reserve history must remain empty")
+        if first_manual and table == "documents" and pair[0] != 2:
+            raise CrossRunnerError("first-manual document census mismatch")
+        if first_manual and table == "initial_assessments" and pair[0] != 1:
+            raise CrossRunnerError("first-manual assessment census mismatch")
         valid[table] = (pair[0], pair[1])
     return valid
 
 
-def validate_record(record: object, sha: str) -> dict:
+def validate_record(record: object, sha: str, *, first_manual: bool = False) -> dict:
     if not isinstance(record, dict) or set(record) != {
         "schema", "release_sha", "synthetic_claim_count",
         "source_alembic_revision", "source_lineage",
-    } or record["schema"] != SCHEMA or record["release_sha"] != sha:
+    } or record["schema"] != (MANUAL_SCHEMA if first_manual else SCHEMA) or record["release_sha"] != sha:
         raise CrossRunnerError("synthetic transfer source record identity invalid")
     if record["synthetic_claim_count"] != "1":
         raise CrossRunnerError("synthetic source claim count is not one")
     if (not isinstance(record["source_alembic_revision"], str)
         or not REVISION.fullmatch(record["source_alembic_revision"])):
         raise CrossRunnerError("synthetic source Alembic revision malformed")
-    checked_lineage(record["source_lineage"])
+    checked_lineage(record["source_lineage"], first_manual=first_manual)
     return record
 
 
@@ -133,13 +143,14 @@ def export_pair(*, root: Path, dump: Path, archive: Path, manifest: Path,
     guard(sha=sha, env=env, mode="export")
     if root != FIXED_TRANSFER or claim_count != "1":
         raise CrossRunnerError("cross-runner export destination or claim scope invalid")
+    first_manual = env.get("APP_ENV") == "pilot"
     record = validate_record({
-        "schema": SCHEMA,
+        "schema": MANUAL_SCHEMA if first_manual else SCHEMA,
         "release_sha": sha,
         "synthetic_claim_count": claim_count,
         "source_alembic_revision": revision,
         "source_lineage": source_lineage,
-    }, sha)
+    }, sha, first_manual=first_manual)
     if (dump.name != "synthetic.dump" or archive.name != "synthetic-evidence.tar"
         or manifest.name != "pair.json"):
         raise CrossRunnerError("unexpected synthetic source artifact names")
@@ -178,6 +189,7 @@ def export_pair(*, root: Path, dump: Path, archive: Path, manifest: Path,
 
 def verify(*, root: Path, sha: str, env: dict[str, str]) -> dict:
     guard(sha=sha, env=env, mode="restore")
+    first_manual = env.get("APP_ENV") == "pilot"
     if root != FIXED_TRANSFER:
         raise CrossRunnerError("cross-runner verification path invalid")
     pair_valid(root, sha)
@@ -186,7 +198,7 @@ def verify(*, root: Path, sha: str, env: dict[str, str]) -> dict:
             raise CrossRunnerError("cross-runner source fingerprint record oversized")
         record = validate_record(
             json.loads((root / "source-lineage.json").read_text(encoding="utf-8")),
-            sha,
+            sha, first_manual=first_manual,
         )
         result = restore_and_verify(
             dump=root / "synthetic.dump",
@@ -194,7 +206,7 @@ def verify(*, root: Path, sha: str, env: dict[str, str]) -> dict:
             release_sha=sha,
             expected_claim_count=record["synthetic_claim_count"],
             expected_revision=record["source_alembic_revision"],
-            source_lineage=checked_lineage(record["source_lineage"]),
+            source_lineage=checked_lineage(record["source_lineage"], first_manual=first_manual),
             env=env,
         )
     except IndependentRestoreError as exc:
@@ -210,6 +222,7 @@ def verify(*, root: Path, sha: str, env: dict[str, str]) -> dict:
         or result.get("isolated_container_network_disabled") is not True
         or result.get("separate_engine_lineage_families_matched") != len(ALL_TABLES)
         or result.get("separate_engine_documents_matched", 0) < 1
+        or (first_manual and result.get("separate_engine_documents_matched") != 2)
         or result.get("pilot_authorized") is not False):
         raise CrossRunnerError("separate CI runner result incomplete")
     return {
@@ -218,6 +231,8 @@ def verify(*, root: Path, sha: str, env: dict[str, str]) -> dict:
         "observed_at_utc": datetime.now(timezone.utc)
             .isoformat(timespec="seconds").replace("+00:00", "Z"),
         "github_actions_separate_job_restored": True,
+        "app_env_observed": env.get("APP_ENV"),
+        "first_manual_empty_reserve_verified": first_manual,
         "separate_postgres_engine_network_disabled": True,
         "lineage_families_reconciled": len(ALL_TABLES),
         "documents_reconciled": result["separate_engine_documents_matched"],

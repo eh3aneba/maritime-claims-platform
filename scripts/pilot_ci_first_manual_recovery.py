@@ -1,7 +1,8 @@
 """Narrow admission predicates for first-manual synthetic recovery on hosted CI.
 
-No operator dotenv, remote Docker daemon, customer path, cross-runner export
-or real pilot recovery is authorized by these predicates.
+No operator dotenv, remote Docker daemon, customer path or real pilot recovery
+is authorized by these predicates. The separate cross-runner gate also requires
+explicit export/restore markers and mode-bound synthetic lineage.
 """
 from __future__ import annotations
 
