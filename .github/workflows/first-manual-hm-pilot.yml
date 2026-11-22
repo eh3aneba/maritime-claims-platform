@@ -25,12 +25,13 @@ jobs:
   first-manual:
     name: Actual first-manual synthetic Pilot stack and browser
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 50
     steps:
       - name: Check out exact candidate
         uses: actions/checkout@v6
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
       - uses: actions/setup-python@v7
         with:
           python-version: '3.13'
@@ -122,6 +123,16 @@ jobs:
           sha="$(git rev-parse HEAD)"
           python scripts/pilot_ci_resume_probe.py --env-file .env.first-manual-ci --release-sha "$sha" --output artifacts/first-manual-ci/resume.json
           python scripts/pilot_rc_running_ai_env_readback.py --env-file .env.first-manual-ci --release-sha "$sha" --require-manual-hm-pilot --output artifacts/first-manual-ci/resumed-runtime.json
+      - name: Exercise previous exact-base backend image rollback without DB downgrade
+        env:
+          MCRI_CI_FIRST_MANUAL_RECOVERY: "1"
+          MCRI_CI_FIRST_MANUAL_ROLLBACK: "1"
+        run: |
+          set -euo pipefail
+          set -a
+          source .env.first-manual-ci
+          set +a
+          python scripts/pilot_ci_first_manual_rollback.py
       - name: Transfer verified fictional recovery pair to a second hosted runner
         uses: actions/upload-artifact@v4
         with:
