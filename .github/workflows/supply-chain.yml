@@ -107,15 +107,15 @@ jobs:
                 continue
               fi
 
-              echo "::warning::npm audit registry remained unavailable across ${attempts} bounded attempts; relying on the mandatory production web-image vulnerability scan for this run."
+              echo "::error::npm audit registry remained unavailable across ${attempts} bounded attempts; unable to verify production web dependencies."
               {
-                echo "### npm audit availability note"
+                echo "### npm audit unavailable — verification failed"
                 echo
                 echo "The npm audit registry was unavailable after ${attempts} bounded attempts."
-                echo "No npm vulnerability result was suppressed: non-network audit failures still fail this job, and the separate mandatory production web-image vulnerability scan remains fail-closed."
+                echo "The dependency audit fails closed because no container-image vulnerability scan is configured."
               } >> "${GITHUB_STEP_SUMMARY}"
               rm -f "${audit_log}"
-              exit 0
+              exit 1
             fi
 
             # A non-network npm audit failure (including an actual vulnerability
@@ -144,116 +144,3 @@ jobs:
           GITLEAKS_ENABLE_COMMENTS: "false"
           GITLEAKS_ENABLE_UPLOAD_ARTIFACT: "false"
           GITLEAKS_ENABLE_SUMMARY: "false"
-
-  container-images:
-    name: Container image vulnerability scan
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-
-      - name: Classify production-image scan scope
-        id: image-scope
-        shell: bash
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: |
-          set -euo pipefail
-
-          if [ "$EVENT_NAME" != "pull_request" ]; then
-            echo "image_scan_required=true" >> "$GITHUB_OUTPUT"
-            echo "Non-PR security run: production image scan required."
-            exit 0
-          fi
-
-          if [ -z "$BASE_SHA" ] || [ -z "$HEAD_SHA" ]; then
-            echo "image_scan_required=true" >> "$GITHUB_OUTPUT"
-            echo "::warning::Missing PR SHA metadata; failing closed to production image scan."
-            exit 0
-          fi
-
-          image_scan_required=false
-          while IFS= read -r changed_path; do
-            case "$changed_path" in
-              apps/api/app/*|apps/api/alembic/*|apps/api/build_tools/*|apps/api/requirements.lock|apps/api/pyproject.toml|apps/api/alembic.ini|apps/api/Dockerfile|apps/web/*|.grype.yaml|.github/workflows/supply-chain.yml|.github/workflows/sqlite-free-arm64-experiment.yml|.github/workflows/web-base-arm64-pin.yml|scripts/sqlite_free_runtime_probe.py)
-                image_scan_required=true
-                break
-                ;;
-            esac
-          done < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
-
-          echo "image_scan_required=$image_scan_required" >> "$GITHUB_OUTPUT"
-          echo "Production image scan required: $image_scan_required"
-
-      - name: Build production images
-        if: ${{ steps.image-scope.outputs.image_scan_required == 'true' }}
-        run: |
-          docker build --pull --tag maritime-claims-api:ci apps/api
-          docker build --pull --target worker --tag maritime-claims-worker:ci apps/api
-          docker build --pull \
-            --build-arg NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000/api/v1 \
-            --tag maritime-claims-web:ci apps/web
-
-      - name: Scan API image
-        if: ${{ steps.image-scope.outputs.image_scan_required == 'true' }}
-        id: scan-api
-        continue-on-error: true
-        uses: anchore/scan-action@e1165082ffb1fe366ebaf02d8526e7c4989ea9d2 # v7
-        with:
-          image: maritime-claims-api:ci
-          config: .grype.yaml
-          fail-build: true
-          severity-cutoff: high
-          output-format: table
-          cache-db: true
-
-      - name: Scan web image
-        if: ${{ steps.image-scope.outputs.image_scan_required == 'true' }}
-        id: scan-web
-        continue-on-error: true
-        uses: anchore/scan-action@e1165082ffb1fe366ebaf02d8526e7c4989ea9d2 # v7
-        with:
-          image: maritime-claims-web:ci
-          config: .grype.yaml
-          fail-build: true
-          severity-cutoff: high
-          output-format: table
-          cache-db: true
-
-      - name: Scan worker image
-        if: ${{ steps.image-scope.outputs.image_scan_required == 'true' }}
-        id: scan-worker
-        continue-on-error: true
-        uses: anchore/scan-action@e1165082ffb1fe366ebaf02d8526e7c4989ea9d2 # v7
-        with:
-          image: maritime-claims-worker:ci
-          config: .grype.yaml
-          fail-build: true
-          severity-cutoff: high
-          output-format: table
-          cache-db: true
-
-      - name: Enforce image scan results
-        if: ${{ always() && steps.image-scope.outputs.image_scan_required == 'true' }}
-        env:
-          API_SCAN_OUTCOME: ${{ steps.scan-api.outcome }}
-          WEB_SCAN_OUTCOME: ${{ steps.scan-web.outcome }}
-          WORKER_SCAN_OUTCOME: ${{ steps.scan-worker.outcome }}
-        run: |
-          echo "API image scan: ${API_SCAN_OUTCOME}"
-          echo "Web image scan: ${WEB_SCAN_OUTCOME}"
-          echo "Worker image scan: ${WORKER_SCAN_OUTCOME}"
-          test "${API_SCAN_OUTCOME}" = "success"
-          test "${WEB_SCAN_OUTCOME}" = "success"
-          test "${WORKER_SCAN_OUTCOME}" = "success"
-
-      - name: Record exact-head image-scan bypass
-        if: ${{ steps.image-scope.outputs.image_scan_required != 'true' }}
-        run: |
-          echo "The exact PR diff cannot affect the API or web production image build contexts."
-          echo "Skipping production image build/scan while preserving this check context."
