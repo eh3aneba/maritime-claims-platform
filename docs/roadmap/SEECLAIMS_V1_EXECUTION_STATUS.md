@@ -1,5 +1,110 @@
 # SeeClaims — Execution Roadmap v1 | Status and gates
 
+## Latest verified checkpoint — 2026-11-24 after PR #983 merge (synthetic rehearsal PASS; customer Pilot NO-GO)
+
+**Protected `main` observed at this checkpoint:** `06c65286879b794aeb6ff918d8c8d5db027d4526`,
+the squash merge of [PR #983](https://github.com/eh3aneba/maritime-claims-platform/pull/983)
+(the first-manual fictional MT ORION rehearsal and hardened frozen-environment
+admission). This is a dated **GitHub source/CI milestone**, not evidence of an
+approved persistent operator host, image provenance, customer deployment, a
+human underwriting decision or real-data authorization. Read the current
+GitHub branch again before using the SHA in a future release record.
+
+### Repository gate change explicitly approved by the owner
+
+[PR #985](https://github.com/eh3aneba/maritime-claims-platform/pull/985)
+was squash-merged as `dc8fa1d124e5b5d4acbd980782d645785cd2b657`.
+The owner removed **Container image vulnerability scan** from both
+`.github/workflows/supply-chain.yml` and the active [Protect main
+ruleset](https://github.com/eh3aneba/maritime-claims-platform/rules/20842512).
+It is now **10**, not 11, required GitHub check contexts. The remaining
+required checks are Backend tests; PostgreSQL migration chain; Frontend
+typecheck and build; Docker Compose validation; Scoped CI gate;
+PostgreSQL concurrency gate; Production dependency audit and SBOM;
+Secret history scan; Production environment policy; and Operational
+performance gate. The dependency audit now fails closed if `npm audit`
+remains unavailable; removal of image scanning did **not** remove secret
+history, production dependency or SBOM checks.
+
+**Do not claim the CVEs were fixed:** Grype's former API/Web/Worker image
+gate is no longer part of the owner's repository CI policy; the previously
+reported Alpine/OpenSSL findings remain unresolved and are tracked in
+[Issue #952](https://github.com/eh3aneba/maritime-claims-platform/issues/952).
+A green Supply Chain Security check **now means dependency/SBOM and secret
+history jobs passed**, not that a production image vulnerability scan was
+performed. This control reduction is not an independent security approval
+or authorization to use customer evidence.
+
+### Exact-source synthetic rehearsal evidence
+
+On the final pre-merge PR #983 head
+`b13053ec5b8de7d17450317eee5efb362c58ab5c`,
+all **seven** named workflows completed SUCCESS:
+
+- [Full Backend Pre-Merge #45360117658](https://github.com/eh3aneba/maritime-claims-platform/actions/runs/45360117658):
+  Backend aggregate and the 64 actual backend test shards passed.
+- [PostgreSQL Concurrency Regression Suite #45360119423](https://github.com/eh3aneba/maritime-claims-platform/actions/runs/45360119423):
+  required concurrency gate and all 17 groups passed.
+- [Continuous Integration #45360117959](https://github.com/eh3aneba/maritime-claims-platform/actions/runs/45360117959):
+  browser E2E, migration, Compose and frontend checks passed.
+- [First Manual H&M Pilot Rehearsal #45360118106](https://github.com/eh3aneba/maritime-claims-platform/actions/runs/45360118106):
+  both actual disposable-stack/browser and **distinct hosted runner**
+  recovery jobs passed. Actual `APP_ENV=pilot` fictional MT ORION tests
+  exercised manual upload, OCR/AI disabled, quarantine/ClamAV outage,
+  matched synthetic PostgreSQL+Evidence restore, same-schema backend
+  rollback, API/Worker fault recovery and bounded transfer/restore.
+- [Operational Performance Smoke #45360117796](https://github.com/eh3aneba/maritime-claims-platform/actions/runs/45360117796),
+  [Production Deployment Policy #45360118032](https://github.com/eh3aneba/maritime-claims-platform/actions/runs/45360118032)
+  and [Supply Chain Security #45360117707](https://github.com/eh3aneba/maritime-claims-platform/actions/runs/45360117707)
+  passed their **current** required gates.
+
+All **10/10 currently required checks** succeeded at that exact PR head;
+GitHub had no unresolved PR reviews or review threads, and the branch
+was up to date with its protected base before squash merge. The resulting
+**main** merge SHA differs from the tested PR head. At this dated post-merge
+read, main's Production environment policy and Secret history scan had
+completed SUCCESS, while its Production dependency audit/SBOM was still
+IN PROGRESS; do not silently substitute the pre-merge result for a later
+post-merge push result.
+
+### Unresolved non-CI admission gates — named human and host evidence
+
+- [#653](https://github.com/eh3aneba/maritime-claims-platform/issues/653):
+  selected and independently controlled **empty, isolated synthetic-only
+  operator host**, approved private change record, exact image source and
+  registry digests, actual 11-service runtime census, protected environment,
+  original-source manual handling by a real H&M operator.
+- [#653](https://github.com/eh3aneba/maritime-claims-platform/issues/653):
+  operator-observed **off-host** matched PostgreSQL+Evidence restore,
+  compatible rollback, measured recovery point/duration, actual alert
+  delivery/acknowledgment and assigned monitoring/escalation ownership.
+  Ephemeral GitHub Actions runner success does not establish any of these
+  on a persistent or selected operator host.
+- [#764](https://github.com/eh3aneba/maritime-claims-platform/issues/764):
+  independent private disposition of eight historical potential secret
+  findings (revoke/rotate if real); a green PR Gitleaks context is not the
+  required independent classification.
+- [#894](https://github.com/eh3aneba/maritime-claims-platform/issues/894):
+  written product/security decision about incoming **signed** PDFs,
+  which are preserved but not cryptographically authenticated. Signed
+  originals must not be represented as verified.
+- [#810](https://github.com/eh3aneba/maritime-claims-platform/issues/810):
+  independent bilingual H&M source review. Automated OCR remains **OFF**
+  for this narrowed scope. AI, SFTP and external integrations are OFF too;
+  SFTP acceptance #652 is conditional on separately enabling that feature.
+- Accountable tenant/onboarding, data classification, retention/offboarding,
+  an actual private v5 RC evidence record and human release decision remain
+  pending. `pilot_rc_gate.py check --require-first-manual-hm` validates
+  record structure only; it cannot supply missing real-world evidence.
+
+**Decision:** continue GitHub-side hardening and fictional/manual CI
+rehearsal. **NO-GO for a real-data/customer pilot or any unattended
+persistent production deployment.** Neither prior image-scan removal nor
+successful disposable CI runs imply a resolved security risk.
+
+---
+
+
 ## Latest verified checkpoint — 2026-11-20 after protected #969 merge (customer Pilot NO-GO)
 
 **Protected `main` source SHA observed at this dated checkpoint:** `5b84441686fbf24f47c75379506bcb7c06b021b2`,
