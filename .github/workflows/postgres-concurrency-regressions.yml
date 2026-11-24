@@ -1,6 +1,12 @@
 name: PostgreSQL Concurrency Regression Suite
 
+# Explicit protected-main release validation request, not a deployment trigger.
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'docs/pilot/RC_VALIDATION_REQUEST.md'
   pull_request:
     branches:
       - main
