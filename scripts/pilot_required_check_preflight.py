@@ -179,7 +179,7 @@ def main(argv: list[str] | None = None) -> int:
     if not result["all_required_checks_green"]:
         print("NO-GO: some stable required context names are missing or not green.")
         return 1
-    print("11/11 required context names observed green on exact open PR head.")
+    print(f"{len(EXPECTED_CONTEXTS)}/{len(EXPECTED_CONTEXTS)} required context names observed green on exact open PR head.")
     print("Ruleset activation and failing-check enforcement remain UNPROVEN; Pilot NO-GO.")
     return 0
 
