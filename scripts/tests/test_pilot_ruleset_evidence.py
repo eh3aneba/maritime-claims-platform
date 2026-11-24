@@ -49,7 +49,7 @@ class ProtectMainEvidenceTests(unittest.TestCase):
         self.assertTrue(result["metadata_complete"])
         self.assertIs(result["pilot_authorized"], False)
         self.assertIs(result["failing_check_enforcement_proven"], False)
-        self.assertEqual(result["required_context_count"], 11)
+        self.assertEqual(result["required_context_count"], 10)
         self.assertEqual(result["missing_expected_contexts"], [])
         self.assertTrue(result["safety_properties"]["enforces_checks_on_creation"])
         self.assertTrue(result["safety_properties"]["unattributed_changes_approval_required"])
@@ -59,8 +59,20 @@ class ProtectMainEvidenceTests(unittest.TestCase):
                    "Frontend typecheck and build", "Docker Compose validation"]
         result = proof.evaluate(*fixture(present), repo=REPO)
         self.assertFalse(result["metadata_complete"])
-        self.assertEqual(len(result["missing_expected_contexts"]), 7)
+        self.assertEqual(len(result["missing_expected_contexts"]), 6)
         self.assertIn("PostgreSQL concurrency gate", result["missing_expected_contexts"])
+
+
+    def test_removed_image_scan_is_an_unexpected_extra_not_a_required_check(self):
+        listed, detail = fixture()
+        detail["rules"][-1]["parameters"]["required_status_checks"].append(
+            {"context": "Container image vulnerability scan"}
+        )
+        record = proof.evaluate(listed, detail, repo=REPO)
+        self.assertFalse(record["metadata_complete"])
+        self.assertEqual(record["expected_context_count"], 10)
+        self.assertEqual(record["unexpected_context_count"], 1)
+        self.assertEqual(record["missing_expected_contexts"], [])
 
     def test_no_bypass_and_strict_policy_are_mandatory(self):
         for mutate in (

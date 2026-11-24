@@ -157,6 +157,14 @@ class BranchProtectionNegativeReadbackTests(unittest.TestCase):
                 pr_number=999, sha=RED_SHA, target="Backend tests", phase="red",
             )
 
+
+    def test_current_required_set_excludes_decommissioned_image_scan(self):
+        self.assertEqual(len(evidence.EXPECTED_CONTEXTS), 10)
+        self.assertNotIn("Container image vulnerability scan", evidence.EXPECTED_CONTEXTS)
+        self.assertNotIn("Container image vulnerability scan", evidence.NEW_CONTEXTS)
+        red = observed()
+        self.assertEqual(red["required_context_count_observed"], 10)
+
     def test_matching_pair_stays_unverified_without_human_review(self):
         red = observed()
         green = observed(phase="green", sha=GREEN_SHA)
@@ -176,7 +184,7 @@ class BranchProtectionNegativeReadbackTests(unittest.TestCase):
             ("pr_head_ref", "pilot/other-branch"),
             ("ruleset_updated_at", "2026-10-12T10:10:00Z"),
             ("pr_head_sha", RED_SHA),
-            ("target_check_run_id", 5),
+            ("target_check_run_id", observed()["target_check_run_id"]),
             ("observed_at_utc", "2026-10-12T09:00:00Z"),
         ):
             red = observed()
@@ -196,7 +204,7 @@ class BranchProtectionNegativeReadbackTests(unittest.TestCase):
             ("pilot_authorized", True),
             ("enforcement_causality_independently_verified", True),
             ("github_merge_api_refusal_actually_observed", True),
-            ("eleven_required_contexts_observed", False),
+            ("required_context_count_observed", 11),
         ):
             tampered = deepcopy(green)
             tampered[key] = value

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Local GitHub Admin-only, fail-closed activation of 11 Protect main checks.
+"""Local GitHub Admin-only, fail-closed activation of ten Protect main checks.
 
 Default mode is read-only. Only --apply plus an explicit approval ticket and
 ruleset ID permit one PUT to the *existing* ruleset, never a new ruleset.
@@ -29,6 +29,9 @@ from pilot_required_check_preflight import (
 
 REPO = "eh3aneba/maritime-claims-platform"
 RULESET_ID = 20842512
+# Historical 4-check bootstrap only. Current live Protect main already has 10
+# required checks; no write is proposed for a ruleset with its current set.
+# This guard prevents resurrecting the owner-removed image-scan context.
 ORIGINAL = frozenset({
     "Backend tests", "PostgreSQL migration chain",
     "Frontend typecheck and build", "Docker Compose validation",
@@ -70,8 +73,8 @@ def make_proposal(listed: object, detail: object, check_record: object) -> dict:
     if set(current) != ORIGINAL:
         raise ActivationError("expected exact four-context starting state missing")
     missing = EXPECTED_CONTEXTS - ORIGINAL
-    if set(state["missing_expected_contexts"]) != missing or len(missing) != 7:
-        raise ActivationError("requested seven-context change is not exact")
+    if set(state["missing_expected_contexts"]) != missing or len(missing) != 6:
+        raise ActivationError("requested six-context recovery is not exact")
     result = {
         "name": detail["name"],
         "target": detail["target"],
@@ -84,10 +87,10 @@ def make_proposal(listed: object, detail: object, check_record: object) -> dict:
     updated["parameters"]["required_status_checks"] = (
         deepcopy(existing) + [{"context": name} for name in sorted(missing)]
     )
-    if (len(updated["parameters"]["required_status_checks"]) != 11
+    if (len(updated["parameters"]["required_status_checks"]) != len(EXPECTED_CONTEXTS)
             or set(x["context"] for x in updated["parameters"]["required_status_checks"])
             != EXPECTED_CONTEXTS):
-        raise ActivationError("generated ruleset would not require exactly eleven contexts")
+        raise ActivationError("generated ruleset would not require exactly ten contexts")
     return result
 
 
@@ -170,17 +173,17 @@ def execute(*, pr: int, sha: str, apply: bool, ticket: str | None,
             raise ActivationError("proof check identities changed before update")
         _write_ruleset(proposal, token or "")
         changed = True
-        # Successful PUT by itself is not 11/11 proof: read back separately.
+        # Successful PUT by itself is not ten-check proof: read back separately.
         try:
             observed_list, observed_detail = fetch_ruleset(repo=REPO, token=token)
             after = evaluate_ruleset(observed_list, observed_detail, repo=REPO)
         except EvidenceError:
             raise ActivationError("ruleset update sent; independent readback unavailable") from None
         if after["ruleset_id"] != RULESET_ID or not after["metadata_complete"]:
-            raise ActivationError("ruleset update sent; 11/11 security readback NOT confirmed")
+            raise ActivationError("ruleset update sent; ten-check ruleset readback NOT confirmed")
         required = after["required_context_count"]
     return {
-        "schema": "mcri-pilot-main-ruleset-admin-handoff-v1",
+        "schema": "mcri-pilot-main-ruleset-admin-handoff-v2",
         "repository": REPO,
         "ruleset_id": RULESET_ID,
         "pr_number": pr,
@@ -192,7 +195,7 @@ def execute(*, pr: int, sha: str, apply: bool, ticket: str | None,
         "intended_required_checks": len(EXPECTED_CONTEXTS),
         "exact_open_pr_check_emission_verified": True,
         "ruleset_update_sent": changed,
-        "eleven_check_ruleset_readback_confirmed": changed and required == 11,
+        "ten_check_ruleset_readback_confirmed": changed and required == len(EXPECTED_CONTEXTS),
         "deliberate_failed_required_check_merge_refusal_proven": False,
         "customer_pilot_authorized": False,
     }
@@ -226,9 +229,9 @@ def main(argv: list[str] | None = None) -> int:
         print("NO-GO: exclusive operator result unavailable", file=sys.stderr)
         return 2
     if not args.apply:
-        print("DRY RUN ONLY: exact 4->11 proposal prepared, no GitHub setting changed.")
+        print("DRY RUN ONLY: legacy 4->10 recovery proposal; no GitHub setting changed.")
     else:
-        print("RULESET 11/11 LIVE READBACK CONFIRMED; negative merge test still required.")
+        print("RULESET 10/10 LIVE READBACK CONFIRMED; negative merge test still required.")
     print("No real-data Pilot GO.")
     return 0
 

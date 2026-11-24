@@ -19,6 +19,8 @@ from urllib.request import Request, urlopen
 
 REPO_RE = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\Z")
 RULESET_NAME = "Protect main"
+# Owner-approved Protect main policy from 2026-11-24: exactly ten contexts.
+# The former container-image vulnerability scan is no longer a required check.
 EXPECTED_CONTEXTS = frozenset((
     "Backend tests",
     "PostgreSQL migration chain",
@@ -29,7 +31,6 @@ EXPECTED_CONTEXTS = frozenset((
     "Operational performance gate",
     "Production dependency audit and SBOM",
     "Secret history scan",
-    "Container image vulnerability scan",
     "Production environment policy",
 ))
 
@@ -109,7 +110,7 @@ def evaluate(listed: object, detail: object, *, repo: str) -> dict:
     unexpected_count = len(actual - EXPECTED_CONTEXTS)
     ready = not missing and unexpected_count == 0 and all(properties.values())
     return {
-        "schema": "mcri-pilot-protect-main-readback-v1",
+        "schema": "mcri-pilot-protect-main-readback-v2",
         "repository": repo,
         "ruleset_id": listed_id,
         "ruleset_name": RULESET_NAME,

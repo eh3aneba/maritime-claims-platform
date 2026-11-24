@@ -47,10 +47,26 @@ class CheckNamesPreflightTests(unittest.TestCase):
     def test_complete_exact_head_is_check_presence_only(self):
         record = self.evaluate()
         self.assertTrue(record["all_required_checks_green"])
-        self.assertEqual(record["exact_name_contexts_present"], 11)
+        self.assertEqual(record["exact_name_contexts_present"], 10)
         self.assertFalse(record["ruleset_mutated"])
         self.assertFalse(record["failing_required_check_enforcement_proven"])
         self.assertFalse(record["pilot_authorized"])
+
+
+    def test_removed_image_scan_is_not_counted_as_required(self):
+        pr, checks = sample()
+        checks.append({
+            "id": 9999,
+            "name": "Container image vulnerability scan",
+            "head_sha": SHA,
+            "status": "completed",
+            "conclusion": "failure",
+            "app": {"slug": "github-actions"},
+        })
+        result = self.evaluate(pr, checks)
+        self.assertTrue(result["all_required_checks_green"])
+        self.assertEqual(result["required_context_count"], 10)
+        self.assertNotIn("Container image vulnerability scan", result["expected_checks"])
 
     def test_missing_or_skipped_required_check_fails_without_hiding(self):
         pr, checks = sample()
@@ -139,7 +155,7 @@ class CheckNamesPreflightTests(unittest.TestCase):
         pr, checks = sample()
         migration = next(x for x in checks if x["name"] == "PostgreSQL migration chain")
         first = [x for x in checks if x is not migration]
-        first += [{"name": f"Backend tests shard {i}"} for i in range(90)]
+        first += [{"name": f"Backend tests shard {i}"} for i in range(91)]
         self.assertEqual(len(first), 100)
         called = []
 
@@ -162,13 +178,13 @@ class CheckNamesPreflightTests(unittest.TestCase):
         )
         self.assertEqual(len(called), 3)
         self.assertEqual(len(runs), 101)
-        self.assertEqual(result["exact_name_contexts_present"], 11)
+        self.assertEqual(result["exact_name_contexts_present"], 10)
         self.assertTrue(result["all_required_checks_green"])
 
     def test_truncated_second_page_rejected(self):
         from unittest.mock import patch
         pr, checks = sample()
-        first = list(checks) + [{"name": f"optional-{i}"} for i in range(89)]
+        first = list(checks) + [{"name": f"optional-{i}"} for i in range(90)]
         self.assertEqual(len(first), 100)
 
         def request(url, *, token):
@@ -187,7 +203,7 @@ class CheckNamesPreflightTests(unittest.TestCase):
     def test_duplicate_required_context_hidden_on_second_page_fails_closed(self):
         from unittest.mock import patch
         pr, checks = sample()
-        first = list(checks) + [{"name": f"optional-{i}"} for i in range(89)]
+        first = list(checks) + [{"name": f"optional-{i}"} for i in range(90)]
         dup = deepcopy(checks[0])
         dup["id"] = 100001
 

@@ -2,7 +2,7 @@
 """Read-only red/blocked -> green/clean observation for Pilot issue #461.
 
 This observes live GitHub metadata on *two separately created commits* of one
-disposable synthetic-only PR, after an Admin independently activates 11/11
+disposable synthetic-only PR, after an Admin independently confirms the current ten
 required checks. No settings change or merge is attempted. State alone is
 NOT proof of a refused merge action or of causal enforcement. Never Pilot GO.
 """
@@ -30,7 +30,7 @@ ORIGINAL = frozenset((
 ))
 
 NEW_CONTEXTS = frozenset(EXPECTED_CONTEXTS - ORIGINAL)
-SCHEMA = "mcri-pilot-required-check-negative-observation-v1"
+SCHEMA = "mcri-pilot-required-check-negative-observation-v2"
 
 
 class NegativeObservationError(ValueError):
@@ -51,7 +51,7 @@ def evaluate(*, listed: object, ruleset: object, pr: object, runs: object,
         raise NegativeObservationError("ruleset or exact-head check evidence incomplete") from None
     if (not protection["metadata_complete"]
             or protection["ruleset_id"] != RULESET_ID
-            or protection["required_context_count"] != 11
+            or protection["required_context_count"] != len(EXPECTED_CONTEXTS)
             or not isinstance(pr, dict)
             or pr.get("draft") is not False
             or pr.get("mergeable") is not True
@@ -65,7 +65,7 @@ def evaluate(*, listed: object, ruleset: object, pr: object, runs: object,
             or not isinstance(pr.get("head"), dict)
             or not isinstance(pr["head"].get("ref"), str)
             or not pr["head"]["ref"]):
-        raise NegativeObservationError("live 11/11 policy or PR merge-state boundary missing")
+        raise NegativeObservationError("live ten-check policy or PR merge-state boundary missing")
     statuses = checks["expected_checks"]
     if set(statuses) != EXPECTED_CONTEXTS:
         raise NegativeObservationError("expected exact stable check set missing")
@@ -105,7 +105,7 @@ def evaluate(*, listed: object, ruleset: object, pr: object, runs: object,
         "observed_at_utc": datetime.now(timezone.utc).isoformat(
             timespec="seconds"
         ).replace("+00:00", "Z"),
-        "eleven_required_contexts_observed": True,
+        "required_context_count_observed": len(EXPECTED_CONTEXTS),
         "red_required_check_and_blocked_metadata_observed": phase == "red",
         "green_required_checks_and_clean_metadata_observed": phase == "green",
         "github_merge_api_refusal_actually_observed": False,
@@ -137,7 +137,7 @@ def compare(red: object, green: object) -> dict:
                 or not isinstance(record["pr_base_sha"], str)
                 or not SHA.fullmatch(record["pr_head_sha"])
                 or not SHA.fullmatch(record["pr_base_sha"])
-                or record["eleven_required_contexts_observed"] is not True
+                or record["required_context_count_observed"] != len(EXPECTED_CONTEXTS)
                 or record["github_merge_api_refusal_actually_observed"] is not False
                 or record["enforcement_causality_independently_verified"] is not False
                 or record["pilot_authorized"] is not False
@@ -159,7 +159,7 @@ def compare(red: object, green: object) -> dict:
     if not consistent:
         raise NegativeObservationError("red-to-green observation identity/order mismatch")
     return {
-        "schema": "mcri-pilot-branch-protection-paired-observation-v1",
+        "schema": "mcri-pilot-branch-protection-paired-observation-v2",
         "ruleset_id": RULESET_ID,
         "pr_number": red["pr_number"],
         "target_required_check": red["target_required_check"],
@@ -175,7 +175,7 @@ def evaluate_schema_keys() -> tuple[str, ...]:
         "schema", "repository", "ruleset_id", "pr_number",
         "target_required_check", "phase", "pr_head_sha", "pr_base_sha",
         "pr_head_ref", "ruleset_updated_at", "target_check_run_id",
-        "observed_at_utc", "eleven_required_contexts_observed",
+        "observed_at_utc", "required_context_count_observed",
         "red_required_check_and_blocked_metadata_observed",
         "green_required_checks_and_clean_metadata_observed",
         "github_merge_api_refusal_actually_observed",
