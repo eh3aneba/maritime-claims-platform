@@ -82,7 +82,7 @@ def evaluate(pr: object, check_runs: object, *, repo: str, pr_number: int,
             ids[name] = selected["id"]
 
     return {
-        "schema": "mcri-protect-main-preactivation-check-names-v1",
+        "schema": "mcri-protect-main-preactivation-check-names-v2",
         "repository": repo,
         "pr_number": pr_number,
         "pr_head_sha": exact_sha,
