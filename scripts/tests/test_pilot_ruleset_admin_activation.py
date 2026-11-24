@@ -61,7 +61,7 @@ def sample():
     check_record = {
         "repository": gate.REPO,
         "all_required_checks_green": True,
-        "exact_name_contexts_present": 11,
+        "exact_name_contexts_present": 10,
         "expected_checks": {
             name: {"outcome": "pass", "check_run_id": i + 1}
             for i, name in enumerate(sorted(EXPECTED_CONTEXTS))
@@ -71,7 +71,7 @@ def sample():
 
 
 class RulesetAdminActivationTests(unittest.TestCase):
-    def test_only_seven_contexts_added_every_other_setting_intact(self):
+    def test_only_six_contexts_added_every_other_setting_intact(self):
         listed, detail, checks = sample()
         before = deepcopy(detail)
         payload = gate.make_proposal(listed, detail, checks)
@@ -94,7 +94,7 @@ class RulesetAdminActivationTests(unittest.TestCase):
             new_rule["parameters"]["strict_required_status_checks_policy"],
             original["parameters"]["strict_required_status_checks_policy"],
         )
-        self.assertEqual(len(new_rule["parameters"]["required_status_checks"]), 11)
+        self.assertEqual(len(new_rule["parameters"]["required_status_checks"]), 10)
 
     def test_refuses_unsafe_ruleset_and_unexpected_baseline(self):
         for mutation in (
@@ -115,6 +115,17 @@ class RulesetAdminActivationTests(unittest.TestCase):
             mutation(detail)
             with self.assertRaises(gate.ActivationError):
                 gate.make_proposal(listed, detail, checks)
+
+
+    def test_current_ten_check_ruleset_is_not_reactivated_or_mutated(self):
+        listed, detail, record = sample()
+        detail["rules"][-1]["parameters"]["required_status_checks"] = [
+            {"context": x} for x in sorted(EXPECTED_CONTEXTS)
+        ]
+        self.assertEqual(len(EXPECTED_CONTEXTS), 10)
+        self.assertNotIn("Container image vulnerability scan", EXPECTED_CONTEXTS)
+        with self.assertRaises(gate.ActivationError):
+            gate.make_proposal(listed, detail, record)
 
     def test_refuses_missing_or_skipped_or_duplicate_preflight(self):
         for mutation in (
@@ -178,8 +189,8 @@ class RulesetAdminActivationTests(unittest.TestCase):
                 token="dummy",
             )
         writing.assert_called_once()
-        self.assertEqual(evidence["current_required_checks"], 11)
-        self.assertTrue(evidence["eleven_check_ruleset_readback_confirmed"])
+        self.assertEqual(evidence["current_required_checks"], 10)
+        self.assertTrue(evidence["ten_check_ruleset_readback_confirmed"])
         self.assertFalse(evidence["deliberate_failed_required_check_merge_refusal_proven"])
         self.assertFalse(evidence["customer_pilot_authorized"])
 
