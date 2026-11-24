@@ -1,6 +1,12 @@
 name: Full Backend Pre-Merge
 
+# Explicit protected-main release validation request, not a deployment trigger.
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'docs/pilot/RC_VALIDATION_REQUEST.md'
   pull_request:
     branches:
       - main
@@ -21,7 +27,7 @@ concurrency:
 jobs:
   classify:
     name: Classify backend changes
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.pull_request.draft == false }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'push' || github.event.pull_request.draft == false }}
     runs-on: ubuntu-latest
     timeout-minutes: 2
     outputs:
@@ -78,7 +84,7 @@ jobs:
   backend-shard:
     name: Backend tests shard ${{ matrix.shard }}
     needs: classify
-    if: ${{ (github.event_name == 'workflow_dispatch' || github.event.pull_request.draft == false) && needs.classify.outputs.backend_required == 'true' }}
+    if: ${{ (github.event_name == 'workflow_dispatch' || github.event_name == 'push' || github.event.pull_request.draft == false) && needs.classify.outputs.backend_required == 'true' }}
     runs-on: ubuntu-latest
     # Individual end-to-end Evidence lineage tests can legitimately approach 25 minutes;
     # retain bounded headroom for pytest reporting and Actions cleanup without masking hangs.
@@ -205,7 +211,7 @@ jobs:
       - classify
       - backend-shard
       - backend-narrow
-    if: ${{ always() && (github.event_name == 'workflow_dispatch' || github.event.pull_request.draft == false) }}
+    if: ${{ always() && (github.event_name == 'workflow_dispatch' || github.event_name == 'push' || github.event.pull_request.draft == false) }}
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
