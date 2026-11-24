@@ -1,17 +1,34 @@
 name: First Manual H&M Pilot Rehearsal
 
+# The synthetic stack is disposable. A protected-main push must prove the
+# actual squash-merge SHA as well as the pre-merge PR head; neither is a
+# persistent selected host or a real-customer pilot authorization.
 on:
-  pull_request:
+  push:
     branches:
       - main
-    paths:
-      - 'apps/api/app/demo/seed_mt_orion.py'
+    paths: &pilot_rehearsal_paths
+      - 'apps/api/app/**'
+      - 'apps/api/alembic/**'
+      - 'apps/api/Dockerfile'
+      - 'apps/api/requirements.lock'
+      - 'apps/api/pyproject.toml'
+      - 'apps/web/**'
+      - '.env.pilot.example'
       - 'tests/browser/first_manual_hm_pilot_e2e.py'
+      - 'tests/browser/requirements.lock'
       - 'scripts/design_partner_preflight.sh'
       - 'scripts/pilot_demo_*'
       - 'scripts/pilot_ci_*'
+      - 'scripts/pilot_compose_*'
+      - 'scripts/pilot_rc_running_ai_env_readback.py'
+      - 'scripts/pilot_running_image_identity.py'
       - 'docker-compose.yml'
       - '.github/workflows/first-manual-hm-pilot.yml'
+  pull_request:
+    branches:
+      - main
+    paths: *pilot_rehearsal_paths
   workflow_dispatch:
 
 permissions:
