@@ -305,7 +305,7 @@ alone is insufficient for Pilot GO.
    to the existing four: `Scoped CI gate`,
    `PostgreSQL concurrency gate`, `Operational performance gate`,
    `Production dependency audit and SBOM`, `Secret history scan`,
-   `Container image vulnerability scan` and `Production environment policy`.
+   and `Production environment policy`.
    Choose each exact context supplied by GitHub's checks picker. Never add
    optional/path-selected matrix jobs in their place.
 3. Preserve **strict/up-to-date required checks**, the required checks on
