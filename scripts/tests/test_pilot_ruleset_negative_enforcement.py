@@ -184,7 +184,7 @@ class BranchProtectionNegativeReadbackTests(unittest.TestCase):
             ("pr_head_ref", "pilot/other-branch"),
             ("ruleset_updated_at", "2026-10-12T10:10:00Z"),
             ("pr_head_sha", RED_SHA),
-            ("target_check_run_id", 5),
+            ("target_check_run_id", observed()["target_check_run_id"]),
             ("observed_at_utc", "2026-10-12T09:00:00Z"),
         ):
             red = observed()
