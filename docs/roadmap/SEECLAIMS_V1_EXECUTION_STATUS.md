@@ -1,9 +1,8 @@
 # SeeClaims — Execution Roadmap v1 | Status and gates
 
-
 ## Latest verified checkpoint — 2026-11-24 after PR #983 merge (synthetic rehearsal PASS; customer Pilot NO-GO)
 
-**Protected \`main\` observed at this checkpoint:** \`06c65286879b794aeb6ff918d8c8d5db027d4526\`,
+**Protected `main` observed at this checkpoint:** `06c65286879b794aeb6ff918d8c8d5db027d4526`,
 the squash merge of [PR #983](https://github.com/eh3aneba/maritime-claims-platform/pull/983)
 (the first-manual fictional MT ORION rehearsal and hardened frozen-environment
 admission). This is a dated **GitHub source/CI milestone**, not evidence of an
@@ -14,16 +13,16 @@ GitHub branch again before using the SHA in a future release record.
 ### Repository gate change explicitly approved by the owner
 
 [PR #985](https://github.com/eh3aneba/maritime-claims-platform/pull/985)
-was squash-merged as \`dc8fa1d124e5b5d4acbd980782d645785cd2b657\`.
+was squash-merged as `dc8fa1d124e5b5d4acbd980782d645785cd2b657`.
 The owner removed **Container image vulnerability scan** from both
-\`.github/workflows/supply-chain.yml\` and the active [Protect main
+`.github/workflows/supply-chain.yml` and the active [Protect main
 ruleset](https://github.com/eh3aneba/maritime-claims-platform/rules/20842512).
 It is now **10**, not 11, required GitHub check contexts. The remaining
 required checks are Backend tests; PostgreSQL migration chain; Frontend
 typecheck and build; Docker Compose validation; Scoped CI gate;
 PostgreSQL concurrency gate; Production dependency audit and SBOM;
 Secret history scan; Production environment policy; and Operational
-performance gate. The dependency audit now fails closed if \`npm audit\`
+performance gate. The dependency audit now fails closed if `npm audit`
 remains unavailable; removal of image scanning did **not** remove secret
 history, production dependency or SBOM checks.
 
@@ -39,7 +38,7 @@ or authorization to use customer evidence.
 ### Exact-source synthetic rehearsal evidence
 
 On the final pre-merge PR #983 head
-\`b13053ec5b8de7d17450317eee5efb362c58ab5c\`,
+`b13053ec5b8de7d17450317eee5efb362c58ab5c`,
 all **seven** named workflows completed SUCCESS:
 
 - [Full Backend Pre-Merge #45360117658](https://github.com/eh3aneba/maritime-claims-platform/actions/runs/45360117658):
@@ -50,7 +49,7 @@ all **seven** named workflows completed SUCCESS:
   browser E2E, migration, Compose and frontend checks passed.
 - [First Manual H&M Pilot Rehearsal #45360118106](https://github.com/eh3aneba/maritime-claims-platform/actions/runs/45360118106):
   both actual disposable-stack/browser and **distinct hosted runner**
-  recovery jobs passed. Actual \`APP_ENV=pilot\` fictional MT ORION tests
+  recovery jobs passed. Actual `APP_ENV=pilot` fictional MT ORION tests
   exercised manual upload, OCR/AI disabled, quarantine/ClamAV outage,
   matched synthetic PostgreSQL+Evidence restore, same-schema backend
   rollback, API/Worker fault recovery and bounded transfer/restore.
@@ -95,7 +94,7 @@ post-merge push result.
   SFTP acceptance #652 is conditional on separately enabling that feature.
 - Accountable tenant/onboarding, data classification, retention/offboarding,
   an actual private v5 RC evidence record and human release decision remain
-  pending. \`pilot_rc_gate.py check --require-first-manual-hm\` validates
+  pending. `pilot_rc_gate.py check --require-first-manual-hm` validates
   record structure only; it cannot supply missing real-world evidence.
 
 **Decision:** continue GitHub-side hardening and fictional/manual CI
