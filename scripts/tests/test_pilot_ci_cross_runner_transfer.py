@@ -211,6 +211,22 @@ class CrossRunnerTransferTests(unittest.TestCase):
             with self.assertRaises(t.CrossRunnerError):
                 t.pair_valid(root, SHA)
 
+    def test_first_manual_record_requires_mode_and_exact_census(self):
+        manual = {**LINEAGE, "documents": (2, "a" * 64),
+                  "reserve_history": (0, "b" * 64)}
+        record = {"schema": t.MANUAL_SCHEMA, "release_sha": SHA,
+                  "synthetic_claim_count": "1", "source_alembic_revision": REV,
+                  "source_lineage": manual}
+        t.validate_record(record, SHA, first_manual=True)
+        with self.assertRaises(t.CrossRunnerError):
+            t.validate_record(record, SHA)
+        for key, count in (("documents", 1), ("reserve_history", 1),
+                           ("initial_assessments", 2)):
+            with self.subTest(key=key), self.assertRaises(t.CrossRunnerError):
+                t.validate_record({**record, "source_lineage": {
+                    **manual, key: (count, "a" * 64),
+                }}, SHA, first_manual=True)
+
     def test_malformed_lineage_bounds_and_unknown_families_rejected(self):
         for modified in (
             {**LINEAGE, "unknown": (1, "a" * 64)},

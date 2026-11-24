@@ -21,6 +21,7 @@ import urllib.parse
 import urllib.request
 
 import pilot_compose_readiness as readiness
+from pilot_ci_first_manual_recovery import admitted_source
 
 SHA_RE = re.compile(r"[a-f0-9]{40}\Z")
 TEST_DB = "mcri_performance"
@@ -45,9 +46,12 @@ class ResumeError(RuntimeError):
 
 def validate_guard(*, env_file: str, env: dict[str, str],
                    release_sha: str) -> None:
-    if (env_file != ".env.performance"
+    source_ok = (
+        admitted_source(env_file, env) if env.get("APP_ENV") == "pilot"
+        else env_file == ".env.performance" and env.get("APP_ENV") == "test"
+    )
+    if (not source_ok
         or env.get("MCRI_CI_RESUME_PROBE") != "1"
-        or env.get("APP_ENV") != "test"
         or env.get("POSTGRES_DB") != TEST_DB
         or env.get("POSTGRES_USER") != TEST_USER
         or not SHA_RE.fullmatch(release_sha)
@@ -164,6 +168,7 @@ def observe(*, env_file: str, env: dict[str, str], release_sha: str,
             timespec="seconds").replace("+00:00", "Z"),
         "operator_supplied_release_sha": release_sha,
         "environment": "ephemeral_ci_synthetic_only",
+        "app_env_observed": env.get("APP_ENV"),
         "writers_observed_stopped_before_restart": True,
         "writers_started": len(RESTART_SERVICES),
         "compose_services_healthy_after_restart": True,

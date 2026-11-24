@@ -71,11 +71,15 @@ def canonical_fingerprint(raw: str) -> tuple[int, str]:
     return len(rows), hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
-def collect_lineage(db: str, query: Callable[[str, str], str]) -> dict[str, tuple[int, str]]:
+def collect_lineage(db: str, query: Callable[[str, str], str], *,
+                    first_manual: bool = False) -> dict[str, tuple[int, str]]:
     readings: dict[str, tuple[int, str]] = {}
     for table in ALL_TABLES:
         result = canonical_fingerprint(query(db, sql_for(table)))
-        if table in REQUIRED_NONEMPTY and result[0] < 1:
+        if first_manual and table == "reserve_history":
+            if result[0] != 0:
+                raise LineageError("first-manual synthetic reserve history must be empty")
+        elif table in REQUIRED_NONEMPTY and result[0] < 1:
             raise LineageError("required synthetic lineage family empty")
         readings[table] = result
     return readings

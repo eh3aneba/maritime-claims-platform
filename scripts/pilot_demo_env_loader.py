@@ -22,6 +22,67 @@ DANGEROUS = frozenset((
     "NODE_OPTIONS", "PYTHONPATH", "PYTHONHOME", "PYTHONSTARTUP",
 ))
 DANGEROUS_PREFIXES = ("BASH_", "LD_", "PYTHON", "GIT_", "NPM_CONFIG_", "DOCKER_", "COMPOSE_")
+# Explicitly limited to the documented pilot template, tracked Compose
+# interpolation contract, and the synthetic-only admission flag. Even a
+# syntactically valid shell variable such as MCRI_PRIVATE_TMP or ENV_FILE
+# can override preflight control state if exported. Unknown application
+# knobs must be reviewed rather than becoming arbitrary shell assignments.
+ALLOWED_KEYS = frozenset((
+    "ACCESS_TOKEN_EXPIRE_MINUTES",
+    "AI_LOCAL_EXPERIMENTAL_ENABLED",
+    "AI_MAX_INPUT_CHARS",
+    "AI_MAX_OUTPUT_TOKENS",
+    "AI_MODEL",
+    "AI_PRODUCTION_CONTROL_PLANE_ENABLED",
+    "AI_PROMPT_BUNDLE_VERSION",
+    "AI_PROVIDER",
+    "AI_SCHEMA_BUNDLE_VERSION",
+    "ALLOW_EXTERNAL_AI_RESTRICTED",
+    "API_V1_PREFIX",
+    "APP_ENV",
+    "APP_NAME",
+    "AUTH_COOKIE_NAME",
+    "CLAMAV_HOST",
+    "CLAMAV_PORT",
+    "CLAMAV_TIMEOUT_SECONDS",
+    "CORS_ALLOWED_ORIGINS",
+    "DATABASE_URL",
+    "EXTERNAL_EVIDENCE_LIVE_PROVIDER_ADAPTERS_ENABLED",
+    "EXTERNAL_EVIDENCE_LIVE_SFTP_ADAPTERS_ENABLED",
+    "EXTERNAL_EVIDENCE_OBSERVER_POLL_SECONDS",
+    "EXTERNAL_EVIDENCE_REVIEW_PROJECTOR_ID",
+    "EXTERNAL_EVIDENCE_REVIEW_PROJECTOR_POLL_SECONDS",
+    "EXTERNAL_EVIDENCE_SCHEDULER_POLL_SECONDS",
+    "EXTERNAL_EVIDENCE_SERVICE_EXECUTOR_ID",
+    "GOVERNANCE_WEBHOOK_MAX_ATTEMPTS",
+    "GOVERNANCE_WEBHOOK_POLL_SECONDS",
+    "GOVERNANCE_WEBHOOK_REPLAY_WINDOW_SECONDS",
+    "GOVERNANCE_WEBHOOK_TIMEOUT_SECONDS",
+    "JWT_ALGORITHM",
+    "LOCAL_STORAGE_PATH",
+    "MALWARE_SCAN_ENABLED",
+    "MAX_UPLOAD_MB",
+    "MCRI_DEMO_EMAIL",
+    "MCRI_DEMO_ORG_NAME",
+    "MCRI_DEMO_ORG_SLUG",
+    "MCRI_DEMO_PASSWORD",
+    "MCRI_SYNTHETIC_ONLY_CONFIRM",
+    "NEXT_PUBLIC_API_BASE_URL",
+    "OCR_ENABLED",
+    "OCR_LANGUAGES",
+    "OCR_MAX_PAGES",
+    "OCR_TIMEOUT_SECONDS",
+    "OPENAI_API_KEY",
+    "POSTGRES_DB",
+    "POSTGRES_PASSWORD",
+    "POSTGRES_USER",
+    "PROCESSING_MAX_ATTEMPTS",
+    "PROCESSING_POLL_SECONDS",
+    "SECRET_KEY",
+    "STORAGE_BACKEND",
+    "TOKEN_AUDIENCE",
+    "TOKEN_ISSUER",
+))
 MAX_ENV_BYTES = 65536
 
 
@@ -42,7 +103,7 @@ def parse_env(text: str) -> dict[str, str]:
         name, value = line.split("=", 1)
         if (not NAME.fullmatch(name) or name in DANGEROUS
                 or name.startswith(DANGEROUS_PREFIXES)
-                or name in env):
+                or name not in ALLOWED_KEYS or name in env):
             raise SyntheticEnvError("unsafe or duplicate synthetic environment key")
         if value.startswith(('"', "'")):
             if len(value) < 2 or value[-1] != value[0] or value[0] in value[1:-1]:

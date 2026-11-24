@@ -1,0 +1,233 @@
+name: First Manual H&M Pilot Rehearsal
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'apps/api/app/demo/seed_mt_orion.py'
+      - 'tests/browser/first_manual_hm_pilot_e2e.py'
+      - 'scripts/design_partner_preflight.sh'
+      - 'scripts/pilot_demo_*'
+      - 'scripts/pilot_ci_*'
+      - 'docker-compose.yml'
+      - '.github/workflows/first-manual-hm-pilot.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: first-manual-hm-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  first-manual:
+    name: Actual first-manual synthetic Pilot stack and browser
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - name: Check out exact candidate
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: tests/browser/requirements.lock
+      - name: Install locked browser dependencies
+        run: |
+          python -m pip install --require-hashes -r tests/browser/requirements.lock
+          python -m pip check
+          python -m playwright install --with-deps chromium
+      - name: Generate private synthetic-only pilot dotenv from committed template
+        run: |
+          set -euo pipefail
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          umask 077
+          python - <<'PY'
+          from pathlib import Path
+          import secrets
+          text = Path(".env.pilot.example").read_text()
+          replacements = {
+              "REPLACE_WITH_RANDOM_DATABASE_PASSWORD": secrets.token_urlsafe(32),
+              "REPLACE_WITH_AT_LEAST_32_RANDOM_CHARACTERS": secrets.token_urlsafe(48),
+              "REPLACE_WITH_DEMO_PASSWORD_12_CHARS_MIN": secrets.token_urlsafe(32),
+          }
+          for marker, value in replacements.items():
+              if marker not in text:
+                  raise SystemExit("missing synthetic configuration placeholder")
+              print("::add-mask::" + value)
+              text = text.replace(marker, value)
+          text = text.replace("http://localhost:", "http://127.0.0.1:")
+          # Fixed CI-only DB names used by the existing clone/recovery helper.
+          text = text.replace("POSTGRES_DB=maritime_claims", "POSTGRES_DB=mcri_performance")
+          text = text.replace("POSTGRES_USER=maritime", "POSTGRES_USER=mcri_performance")
+          text = text.replace("postgresql+psycopg://maritime:", "postgresql+psycopg://mcri_performance:")
+          text = text.replace("@db:5432/maritime_claims", "@db:5432/mcri_performance")
+          with Path(".env.first-manual-ci").open("x") as out:
+              out.write(text + "\nMCRI_SYNTHETIC_ONLY_CONFIRM=YES\n")
+          PY
+          mkdir -p artifacts/first-manual-ci
+      - name: Validate rendered config and empty dedicated CI Engine before any startup
+        id: admit
+        run: |
+          set -euo pipefail
+          sha="$(git rev-parse HEAD)"
+          python scripts/pilot_demo_docker_target.py
+          python scripts/pilot_compose_port_policy.py --env-file .env.first-manual-ci
+          python scripts/pilot_demo_empty_stack.py --env-file .env.first-manual-ci --strict-empty-docker-host
+          python scripts/pilot_rc_compose_feature_observation.py --env-file .env.first-manual-ci --release-sha "$sha" --output artifacts/first-manual-ci/rendered.json
+      - name: Build and start actual pilot-mode stack with minimal NEW synthetic claim
+        run: bash scripts/design_partner_preflight.sh .env.first-manual-ci
+      - name: Check all 11 services and actual running first-manual flags
+        run: |
+          set -euo pipefail
+          sha="$(git rev-parse HEAD)"
+          python scripts/pilot_compose_readiness.py --env-file .env.first-manual-ci --release-sha "$sha" --output artifacts/first-manual-ci/readiness.json
+          python scripts/pilot_rc_running_ai_env_readback.py --env-file .env.first-manual-ci --release-sha "$sha" --require-manual-hm-pilot --output artifacts/first-manual-ci/runtime.json
+      - name: Execute real authenticated manual upload, OCR-off and preliminary export
+        run: |
+          set -euo pipefail
+          # This file is generated solely from a tracked literal CI template,
+          # not an operator-provided input. Never source private operator dotenv.
+          set -a
+          source .env.first-manual-ci
+          set +a
+          export MCRI_REHEARSAL_SHA="$(git rev-parse HEAD)"
+          python tests/browser/first_manual_hm_pilot_e2e.py
+      - name: Verify actual pilot-mode backup and isolated PostgreSQL plus Evidence restore
+        env:
+          MCRI_CI_FIRST_MANUAL_RECOVERY: "1"
+          MCRI_CI_RESTORE_PROBE: "1"
+          MCRI_CI_CROSS_RUNNER_EXPORT: "1"
+        run: |
+          set -euo pipefail
+          set -a
+          source .env.first-manual-ci
+          set +a
+          export COMPOSE_ENV_FILES=.env.first-manual-ci
+          python scripts/pilot_ci_restore_probe.py --env-file .env.first-manual-ci --output artifacts/first-manual-ci/recovery.json --cross-runner-output synthetic-recovery-transfer
+      - name: Resume original disposable stack and verify authenticated claim read
+        env:
+          MCRI_CI_FIRST_MANUAL_RECOVERY: "1"
+          MCRI_CI_RESUME_PROBE: "1"
+        run: |
+          set -euo pipefail
+          set -a
+          source .env.first-manual-ci
+          set +a
+          export COMPOSE_ENV_FILES=.env.first-manual-ci
+          sha="$(git rev-parse HEAD)"
+          python scripts/pilot_ci_resume_probe.py --env-file .env.first-manual-ci --release-sha "$sha" --output artifacts/first-manual-ci/resume.json
+          python scripts/pilot_rc_running_ai_env_readback.py --env-file .env.first-manual-ci --release-sha "$sha" --require-manual-hm-pilot --output artifacts/first-manual-ci/resumed-runtime.json
+      - name: Exercise previous exact-base backend image rollback without DB downgrade
+        env:
+          MCRI_CI_FIRST_MANUAL_RECOVERY: "1"
+          MCRI_CI_FIRST_MANUAL_ROLLBACK: "1"
+        run: |
+          set -euo pipefail
+          set -a
+          source .env.first-manual-ci
+          set +a
+          python scripts/pilot_ci_first_manual_rollback.py
+      - name: Detect real bounded API and worker failures and verify recovered fictional claim
+        env:
+          MCRI_CI_FIRST_MANUAL_RECOVERY: "1"
+          MCRI_CI_FIRST_MANUAL_FAULT_PROBE: "1"
+        run: |
+          set -euo pipefail
+          set -a
+          source .env.first-manual-ci
+          set +a
+          python scripts/pilot_ci_first_manual_fault_probe.py
+      - name: Verify scanner-outage synthetic upload quarantine and real ClamAV recovery
+        env:
+          MCRI_CI_FIRST_MANUAL_RECOVERY: "1"
+          MCRI_CI_FIRST_MANUAL_CLAMAV_FAULT: "1"
+        run: |
+          set -euo pipefail
+          set -a
+          source .env.first-manual-ci
+          set +a
+          python scripts/pilot_ci_first_manual_clamav_outage.py
+      - name: Transfer verified fictional recovery pair to a second hosted runner
+        uses: actions/upload-artifact@v4
+        with:
+          name: first-manual-synthetic-recovery-transfer
+          path: synthetic-recovery-transfer/
+          if-no-files-found: error
+          retention-days: 1
+      - name: Upload only bounded synthetic result JSON
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: first-manual-hm-synthetic-ci
+          path: artifacts/first-manual-ci/*.json
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Remove only admitted disposable CI stack
+        if: always() && steps.admit.outcome == 'success'
+        run: docker compose --env-file .env.first-manual-ci down -v --remove-orphans
+
+  cross-runner-recovery:
+    name: First-manual recovery on distinct hosted runner
+    needs: first-manual
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Check out exact candidate
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - name: Download only fictional recovery artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: first-manual-synthetic-recovery-transfer
+          path: synthetic-recovery-transfer
+      - name: Reconcile restored first-manual documents and lineage on isolated PostgreSQL
+        env:
+          APP_ENV: pilot
+          MCRI_CI_FIRST_MANUAL_RECOVERY: "1"
+          MCRI_CI_RESTORE_PROBE: "1"
+          MCRI_CI_CROSS_RUNNER_RESTORE: "1"
+          POSTGRES_DB: mcri_performance
+          POSTGRES_USER: mcri_performance
+          NEXT_PUBLIC_API_BASE_URL: http://127.0.0.1:8000/api/v1
+          MCRI_DEMO_ORG_SLUG: pilot
+          MCRI_DEMO_EMAIL: manager@demo.mcri.app
+          MCRI_SYNTHETIC_ONLY_CONFIRM: "YES"
+          AI_PROVIDER: disabled
+          AI_MODEL: ""
+          OPENAI_API_KEY: ""
+          ALLOW_EXTERNAL_AI_RESTRICTED: "false"
+          AI_LOCAL_EXPERIMENTAL_ENABLED: "false"
+          AI_PRODUCTION_CONTROL_PLANE_ENABLED: "false"
+          EXTERNAL_EVIDENCE_LIVE_PROVIDER_ADAPTERS_ENABLED: "false"
+          EXTERNAL_EVIDENCE_LIVE_SFTP_ADAPTERS_ENABLED: "false"
+          OCR_ENABLED: "false"
+          MALWARE_SCAN_ENABLED: "true"
+          STORAGE_BACKEND: local
+        run: |
+          set -euo pipefail
+          umask 077
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          python scripts/pilot_demo_docker_target.py
+          mkdir -p artifacts
+          POSTGRES_PASSWORD="$(python -c 'import secrets; print(secrets.token_urlsafe(24))')"
+          echo "::add-mask::$POSTGRES_PASSWORD"
+          export POSTGRES_PASSWORD
+          export DATABASE_URL="postgresql+psycopg://mcri_performance:${POSTGRES_PASSWORD}@db:5432/mcri_performance"
+          python scripts/pilot_ci_cross_runner_transfer.py --sha "$(git rev-parse HEAD)" --input synthetic-recovery-transfer --output artifacts/cross-runner-restore.json
+      - name: Upload only bounded first-manual distinct-runner result
+        uses: actions/upload-artifact@v4
+        with:
+          name: first-manual-cross-runner-recovery-proof
+          path: artifacts/cross-runner-restore.json
+          if-no-files-found: error
+          retention-days: 7

@@ -19,6 +19,7 @@ import subprocess
 import sys
 import tempfile
 
+from pilot_ci_first_manual_recovery import admitted_source
 from pilot_ci_evidence_restore import EvidenceRestoreError, restore_and_reconcile
 from pilot_ci_lineage_reconcile import LineageError, collect_lineage, reconcile
 from pilot_ci_independent_postgres import IndependentRestoreError, restore_and_verify
@@ -165,6 +166,10 @@ def quiesce_compose_writers(env_file: str, env: dict[str, str]) -> None:
 
 
 def validate_guard(env_file: str, environ: dict[str, str]) -> None:
+    if environ.get("APP_ENV") == "pilot":
+        if not admitted_source(env_file, environ) or environ.get("MCRI_CI_RESTORE_PROBE") != "1":
+            raise ProbeError("first-manual hosted CI recovery guard not satisfied")
+        return
     if (env_file != ".env.performance"
         or environ.get("APP_ENV") != "test"
         or environ.get("MCRI_CI_RESTORE_PROBE") != "1"
@@ -176,6 +181,13 @@ def validate_guard(env_file: str, environ: dict[str, str]) -> None:
 def observe(*, env_file: str, env: dict[str, str],
             cross_runner_output: Path | None = None) -> dict:
     validate_guard(env_file, env)
+    first_manual = env.get("APP_ENV") == "pilot"
+    if first_manual and cross_runner_output is not None and (
+        env.get("MCRI_CI_CROSS_RUNNER_EXPORT") != "1"
+        or cross_runner_output != Path("synthetic-recovery-transfer")
+    ):
+        raise ProbeError("first-manual recovery transfer not authorized")
+    lineage_options = {"first_manual": True} if first_manual else {}
     actual_checkout = _run(["git", "rev-parse", "HEAD"], env=env)
     if not SHA_RE.fullmatch(actual_checkout):
         raise ProbeError("actual checkout commit SHA unavailable")
@@ -199,11 +211,25 @@ def observe(*, env_file: str, env: dict[str, str],
     source_revision = _query(env_file, env, TEST_DB, version_sql)
     if source_count != "1" or not source_revision:
         raise ProbeError("synthetic MT ORION seed or Alembic baseline unavailable")
+    if first_manual:
+        # Exact one-case synthetic census; no preapproved fixture AI, reserve
+        # or reviewed assessment is allowed to silently enter the dump.
+        for table, expected in (
+            ("claims", "1"), ("organizations", "1"), ("documents", "2"),
+            ("ai_runs", "0"), ("reserve_history", "0"),
+            ("initial_assessments", "1"),
+        ):
+            if _query(env_file, env, TEST_DB, f"SELECT COUNT(*) FROM {table};") != expected:
+                raise ProbeError("first-manual synthetic recovery census mismatch")
+        if _query(env_file, env, TEST_DB,
+                  "SELECT COUNT(*) FROM initial_assessments WHERE approved_by_id IS NOT NULL;") != "0":
+            raise ProbeError("first-manual synthetic assessment already approved")
     # Capture source lineage only *after* synthetic Compose writers have stopped.
     # Raw per-table SQL is private in-memory data and is never written to CI.
     try:
         source_lineage = collect_lineage(
-            TEST_DB, lambda database, sql: _query(env_file, env, database, sql))
+            TEST_DB, lambda database, sql: _query(env_file, env, database, sql),
+            **lineage_options)
     except LineageError:
         raise ProbeError("synthetic source claim lineage could not be validated") from None
 
@@ -265,7 +291,8 @@ def observe(*, env_file: str, env: dict[str, str],
                 raise ProbeError("synthetic cloned database verification failed")
             try:
                 restored_lineage = collect_lineage(
-                    CLONE_DB, lambda database, sql: _query(env_file, env, database, sql))
+                    CLONE_DB, lambda database, sql: _query(env_file, env, database, sql),
+                    **lineage_options)
                 lineage_result = reconcile(source_lineage, restored_lineage)
             except LineageError:
                 raise ProbeError("synthetic recovered DB lineage reconciliation failed") from None
@@ -323,6 +350,8 @@ def observe(*, env_file: str, env: dict[str, str],
             timespec="seconds").replace("+00:00", "Z"),
         "observed_checkout_sha": actual_checkout,
         "environment": "ephemeral_ci_synthetic_only",
+        "app_env_observed": env.get("APP_ENV"),
+        "first_manual_empty_reserve_verified": first_manual,
         "postgres_dump_archive_validated": True,
         "postgres_backup_sidecars_reverified": True,
         "evidence_archive_integrity_bound": True,

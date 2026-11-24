@@ -151,12 +151,17 @@ def review_run(db, run: AIRun, reviewer: User) -> None:
 
 
 def main() -> None:
+    # First manual-only pilot starts with an empty NEW claim. The rich
+    # test/development demo replays fake AI extraction/review, reserve and
+    # approval records; it must never seed those in the pilot environment.
+    manual_only = os.getenv("APP_ENV", "development").strip().lower() == "pilot"
     fixture_dir = Path(os.getenv("MCRI_DEMO_FIXTURE_DIR", "/demo/mt-orion")).resolve()
-    if not fixture_dir.is_dir():
-        raise SystemExit(f"Demo fixture directory does not exist: {fixture_dir}")
-    missing_files = [name for name in DOC_TYPES if not (fixture_dir / name).is_file()]
-    if missing_files:
-        raise SystemExit(f"Demo fixtures are incomplete: {', '.join(missing_files)}")
+    if not manual_only:
+        if not fixture_dir.is_dir():
+            raise SystemExit(f"Demo fixture directory does not exist: {fixture_dir}")
+        missing_files = [name for name in DOC_TYPES if not (fixture_dir / name).is_file()]
+        if missing_files:
+            raise SystemExit(f"Demo fixtures are incomplete: {', '.join(missing_files)}")
 
     org_slug = os.getenv("MCRI_DEMO_ORG_SLUG", "pilot").strip().lower()
     org_name = os.getenv("MCRI_DEMO_ORG_NAME", "Pilot Marine Insurer").strip()
@@ -173,6 +178,8 @@ def main() -> None:
             )
         )
         if existing_claim is not None:
+            if manual_only:
+                raise SystemExit("Manual synthetic pilot refuses a pre-existing MT ORION claim")
             print(
                 f"MT ORION demo already exists: {existing_claim.claim_reference} "
                 f"({existing_claim.id}). Seed is idempotent; no changes made."
@@ -240,12 +247,17 @@ def main() -> None:
                 claim_type=ClaimType.HULL_MACHINERY,
                 priority=ClaimPriority.HIGH,
                 external_reference=DEMO_EXTERNAL_REFERENCE,
-                estimated_loss=Decimal("550000"),
+                estimated_loss=None if manual_only else Decimal("550000"),
                 currency="USD",
                 handler_id=manager.id,
             ),
         )
         db.commit()
+
+        if manual_only:
+            print("Manual synthetic MT ORION NEW claim initialized; no source files, fixture AI, reserve or assessment approval seeded.")
+            print("Human-source review and release approval remain unverified.")
+            return
 
         change_claim_status(db, claim=claim, new_status=ClaimStatus.TRIAGE, current_user=manager)
         change_claim_status(db, claim=claim, new_status=ClaimStatus.INVESTIGATION, current_user=manager)

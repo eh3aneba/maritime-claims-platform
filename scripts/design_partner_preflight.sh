@@ -28,6 +28,8 @@ fi
 # the private file and emits NUL-delimited literal assignments.
 umask 077
 MCRI_PRIVATE_TMP="$(mktemp -d)"
+# Internal cleanup and frozen-file paths cannot be overridden by dotenv.
+readonly MCRI_PRIVATE_TMP
 trap 'rm -f -- "$MCRI_PRIVATE_TMP/assignments" "$MCRI_PRIVATE_TMP/frozen.env"; rmdir -- "$MCRI_PRIVATE_TMP"' EXIT
 # One validated read produces BOTH Bash literal assignments and one frozen
 # Compose dotenv file; no further reads of the mutable original after this.
@@ -38,6 +40,7 @@ while IFS= read -r -d '' assignment; do
 done < "$MCRI_PRIVATE_TMP/assignments"
 rm -f -- "$MCRI_PRIVATE_TMP/assignments"
 ENV_FILE="$MCRI_PRIVATE_TMP/frozen.env"
+readonly ENV_FILE
 
 : "${MCRI_DEMO_PASSWORD:?MCRI_DEMO_PASSWORD must be set in $ENV_FILE}"
 if [[ ${#MCRI_DEMO_PASSWORD} -lt 12 ]]; then
@@ -54,7 +57,14 @@ docker compose --env-file "$ENV_FILE" -f docker-compose.yml config >/dev/null
 python scripts/pilot_compose_port_policy.py --env-file "$ENV_FILE"
 # Fail closed before Docker up/migrations/demo seed if any target project
 # container or persistent named Evidence/Postgres/ClamAV volume already exists.
-python scripts/pilot_demo_empty_stack.py --env-file "$ENV_FILE"
+if [[ "$APP_ENV" == "pilot" ]]; then
+  # Recheck the whole local Engine immediately before first-pilot startup
+  # using the SAME validated snapshot; no caller can downgrade this to the
+  # project-only synthetic CI guard by adding flags.
+  python scripts/pilot_demo_empty_stack.py --env-file "$ENV_FILE" --strict-empty-docker-host
+else
+  python scripts/pilot_demo_empty_stack.py --env-file "$ENV_FILE"
+fi
 
 echo "[2/6] Building and starting database/API/worker/web..."
 docker compose --env-file "$ENV_FILE" -f docker-compose.yml up -d --build
